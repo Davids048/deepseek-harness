@@ -9,7 +9,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import {
   createUserInstruction,
   payloadGet,
-  textOr,
   type ActionPayload,
   type Project,
   type UserActionOptions,
@@ -20,8 +19,7 @@ export const name = 'dreamverse-rewrite-video-sequence'
 export const inject = ['dreamverseProjects']
 
 /**
- * Apply the command's rewrite settings to the project, then replace the selected or completed sequence after
- * successful generation.
+ * Replace the selected or completed sequence after successful generation.
  * @param project - the project that owns the round.
  * @param payload - the `rewrite_seed_prompts` command.
  * @param options - the retained reference assets.
@@ -32,12 +30,6 @@ export async function rewriteVideoSequence(
   { referenceAssets }: UserActionOptions,
 ): Promise<void> {
   const instruction = createUserInstruction(payload['prompt_id'], payload['rewrite_instruction'])
-  project.promptEnhancementModel = project.promptEnhancer.resolveRewriteModel(
-    payloadGet(payload, 'rewrite_model', project.promptEnhancementModel))
-  project.sequencePromptTemperature = project.promptEnhancer.resolveRewriteTemperature(
-    payloadGet(payload, 'rewrite_temperature', project.sequencePromptTemperature))
-  project.sequenceRewriteSystemPromptOverride = textOr(payload['rewrite_window_system_prompt'], '').trim()
-  project.sequenceCreationSystemPromptOverride = textOr(payload['rewrite_user_system_prompt'], '').trim()
   await generateRewrittenSequence(project, instruction, {
     sourcePrompts: project.completedSequenceSegments.map(segment => segment.prompt),
     promptsToRewrite: payloadGet(payload, 'prompt_window_prompts'),

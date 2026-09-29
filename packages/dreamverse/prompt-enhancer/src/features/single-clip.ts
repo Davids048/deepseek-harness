@@ -10,10 +10,7 @@ import { parseJsonObject, requirePromptField } from '../utils/schemas.ts'
 import { elapsedMs, type FeatureDependencies, type PromptResult } from './index.ts'
 
 /** Inputs of `expandClip`. */
-export interface ExpandClipOptions extends FeatureDependencies {
-  /** The requested logical model; an unknown or absent name selects the settings default. */
-  readonly model?: string | null | undefined
-}
+export type ExpandClipOptions = FeatureDependencies
 
 /**
  * Accept a reply whose JSON object carries a nonblank `prompt` string.
@@ -33,14 +30,14 @@ function acceptClip(reply: VendorReply): string {
 export async function expandClip(conditioningPrompt: unknown, options: ExpandClipOptions): Promise<PromptResult> {
   const { settings, race, segmentDurationSec } = options
   const cleaned = typeof conditioningPrompt === 'string' ? stripWhitespace(conditioningPrompt) : ''
-  const resolvedModel = settings.resolveRewriteModel(options.model)
+  const model = settings.rewriteDefaultModel
   if (!cleaned) {
     return {
       prompt: '',
       fallbackUsed: true,
       error: 'No valid prompt provided.',
       provider: race.providerLabel,
-      model: resolvedModel,
+      model,
       latencyMs: 0.0,
     }
   }
@@ -56,7 +53,7 @@ export async function expandClip(conditioningPrompt: unknown, options: ExpandCli
   const request: ChatRequest = {
     systemPrompt: options.systemPrompt,
     userContent: dumpsJson(userPayload),
-    model: resolvedModel,
+    model,
     defaultModel: settings.rewriteDefaultModel,
     temperature: settings.temperature,
     maxCompletionTokens: options.maxCompletionTokens,
@@ -68,7 +65,7 @@ export async function expandClip(conditioningPrompt: unknown, options: ExpandCli
       timeoutMs: options.timeoutMs,
       signal: options.signal,
     })
-    return { prompt, fallbackUsed: false, error: null, provider, model: resolvedModel, latencyMs: elapsedMs(started) }
+    return { prompt, fallbackUsed: false, error: null, provider, model, latencyMs: elapsedMs(started) }
   } catch (error) {
     if (options.signal?.aborted) throw error
     return {
@@ -76,7 +73,7 @@ export async function expandClip(conditioningPrompt: unknown, options: ExpandCli
       fallbackUsed: true,
       error: errorText(error),
       provider: race.providerLabel,
-      model: resolvedModel,
+      model,
       latencyMs: elapsedMs(started),
     }
   }

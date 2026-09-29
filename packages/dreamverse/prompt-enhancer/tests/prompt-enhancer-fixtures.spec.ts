@@ -25,19 +25,14 @@ interface FixtureArgs {
   prompts?: unknown[]
   segment_duration_sec: number
   segment_count?: number
-  model?: string | null
   locked_segments?: unknown[] | null
   next_segment_idx?: number | null
   prompts_to_rewrite?: unknown
   preset_id?: string | null
   preset_label?: string | null
   rewrite_instruction?: string | null
-  rewrite_model?: string | null
-  rewrite_temperature?: number | null
   generation_mode?: string
   reference_labels?: string[]
-  system_prompt_override?: string | null
-  new_rollout_system_prompt_override?: string | null
 }
 
 interface RecordedRequest {
@@ -55,7 +50,6 @@ interface Fixture {
   operation: 'expand_clip' | 'continue_video' | 'rewrite_rollout'
   settings: {
     rewrite_default_model: string
-    rewrite_model_options: string[]
     temperature: number
     rewrite_default_temperature: number
     max_completion_tokens: number
@@ -120,7 +114,7 @@ interface FixtureFile {
 }
 
 const fixtureFile = JSON.parse(fs.readFileSync(new URL('./fixtures/fixtures.json', import.meta.url), 'utf8')) as FixtureFile
-const templates = new PromptTemplates({ devtoolsEnabled: false, devtoolsPromptDirectory: '' })
+const templates = new PromptTemplates({})
 
 /** Map the reference template attribute names to the loaded TypeScript templates. */
 const loadedTemplates: Record<string, string> = {
@@ -139,7 +133,6 @@ const loadedTemplates: Record<string, string> = {
 function fixtureSettings(values: Fixture['settings']): PromptSettings {
   const settings = new PromptSettings(undefined)
   settings.rewriteDefaultModel = values.rewrite_default_model
-  settings.rewriteModelOptions = [...values.rewrite_model_options]
   settings.temperature = values.temperature
   settings.rewriteDefaultTemperature = values.rewrite_default_temperature
   settings.maxCompletionTokens = values.max_completion_tokens
@@ -161,10 +154,10 @@ async function runOperation(enhancer: PromptEnhancer, fixture: Fixture): Promise
   }
   switch (fixture.operation) {
     case 'expand_clip':
-      return await enhancer.expandClip(args.conditioning_prompt ?? null, { ...common, model: args.model })
+      return await enhancer.expandClip(args.conditioning_prompt ?? null, common)
     case 'continue_video':
       return await enhancer.continueVideo(args.conditioning_prompt ?? null, {
-        ...common, lockedSegments: args.locked_segments, nextSegmentIdx: args.next_segment_idx, model: args.model,
+        ...common, lockedSegments: args.locked_segments, nextSegmentIdx: args.next_segment_idx,
       })
     case 'rewrite_rollout':
       return await enhancer.rewriteRollout(args.prompts ?? [], {
@@ -174,10 +167,6 @@ async function runOperation(enhancer: PromptEnhancer, fixture: Fixture): Promise
         presetId: args.preset_id,
         presetLabel: args.preset_label,
         rewriteInstruction: args.rewrite_instruction,
-        rewriteModel: args.rewrite_model,
-        rewriteTemperature: args.rewrite_temperature,
-        systemPromptOverride: args.system_prompt_override,
-        newRolloutSystemPromptOverride: args.new_rollout_system_prompt_override,
       })
   }
 }
@@ -199,7 +188,7 @@ describe('reference prompt fixtures', () => {
   })
 
   it('covers all three operations and every generation mode', () => {
-    expect(fixtureFile.fixtures.length).toBeGreaterThanOrEqual(200)
+    expect(fixtureFile.fixtures.length).toBeGreaterThanOrEqual(170)
     expect(new Set(fixtureFile.fixtures.map(fixture => fixture.operation)))
       .toEqual(new Set(['expand_clip', 'continue_video', 'rewrite_rollout']))
     expect(new Set(fixtureFile.fixtures.map(fixture => fixture.args.generation_mode ?? 't2va')))

@@ -65,15 +65,15 @@ afterEach(() => {
 type FeatureCall = (deps: Dependencies) => Promise<PromptResult | RolloutResult>
 
 describe('prompt features', () => {
-  it.each([5, 10, 15])('expands a clip with the supplied template and selected model for %i seconds', async (duration) => {
+  it.each([5, 10, 15])('expands a clip with the supplied template and default model for %i seconds', async (duration) => {
     const { deps, sdk } = promptDependencies()
     sdk.payload = response('{"prompt":"Extended single clip"}')
-    const result = await expandClip('A forest walk', { ...deps, segmentDurationSec: duration, model: 'gpt-alt' })
-    expect([result.prompt, result.model, result.provider]).toEqual(['Extended single clip', 'gpt-alt', 'cerebras'])
+    const result = await expandClip('A forest walk', { ...deps, segmentDurationSec: duration })
+    expect([result.prompt, result.model, result.provider]).toEqual(['Extended single clip', 'gpt-test', 'cerebras'])
     expect(result.fallbackUsed).toBe(false)
     expect(result.error).toBeNull()
     expect(result.latencyMs).toBeGreaterThanOrEqual(0)
-    expect(sdk.requests[0]?.['model']).toBe('gpt-alt')
+    expect(sdk.requests[0]?.['model']).toBe('gpt-test')
     expect(systemMessage(sdk.requests[0])).toEqual({ role: 'system', content: SYSTEM_PROMPT })
     const { request: instruction, ...payload } = userPayload(sdk.requests[0])
     expect(instruction).toContain('"prompt"')
@@ -90,10 +90,10 @@ describe('prompt features', () => {
       const { deps, sdk } = promptDependencies()
       sdk.payload = response('{"next_prompt":"Next scene"}')
       const result = await continueVideo(direction, {
-        ...deps, segmentDurationSec: duration, lockedSegments: ['Segment 1', 'Segment 2'], nextSegmentIdx: 3, model: 'gpt-alt',
+        ...deps, segmentDurationSec: duration, lockedSegments: ['Segment 1', 'Segment 2'], nextSegmentIdx: 3,
       })
-      expect([result.prompt, result.model, result.fallbackUsed, result.error]).toEqual(['Next scene', 'gpt-alt', false, null])
-      expect(sdk.requests[0]?.['model']).toBe('gpt-alt')
+      expect([result.prompt, result.model, result.fallbackUsed, result.error]).toEqual(['Next scene', 'gpt-test', false, null])
+      expect(sdk.requests[0]?.['model']).toBe('gpt-test')
       const payload = userPayload(sdk.requests[0])
       const requestText = String(payload['request'])
       expect(payload['segment_duration_sec']).toBe(duration)
@@ -152,11 +152,11 @@ describe('prompt features', () => {
     sdk.payload = response('{"segment_prompts":["A","B"]}')
     const result = await rewriteRollout(['prompt one', 'prompt two'], {
       ...deps, segmentCount: 6, segmentDurationSec: 5, presetId: 'preset_a', presetLabel: 'Preset A',
-      rewriteInstruction: 'cinematic', rewriteModel: 'gpt-alt', rewriteTemperature: 0.2,
+      rewriteInstruction: 'cinematic',
     })
-    expect([result.fallbackUsed, result.model]).toEqual([false, 'gpt-alt'])
-    expect(sdk.requests[0]?.['model']).toBe('gpt-alt')
-    expect(sdk.requests[0]?.['temperature']).toBe(0.2)
+    expect([result.fallbackUsed, result.model]).toEqual([false, 'gpt-test'])
+    expect(sdk.requests[0]?.['model']).toBe('gpt-test')
+    expect(sdk.requests[0]?.['temperature']).toBe(0.4)
     expect(systemMessage(sdk.requests[0])).toEqual({ role: 'system', content: SYSTEM_PROMPT })
     const { request: instruction, ...payload } = userPayload(sdk.requests[0])
     expect(instruction).toContain('"segment_prompts"')
@@ -268,26 +268,20 @@ describe('prompt features', () => {
     }
   })
 
-  const modelCases: [string, (deps: Dependencies, model: string | null) => Promise<PromptResult | RolloutResult>, string][] = [
-    ['single-clip', (deps, model) => expandClip('An idea', { ...deps, segmentDurationSec: 5, model }), '{"prompt":"Accepted prompt"}'],
-    ['guided-continuation', (deps, model) => continueVideo('An idea', { ...deps, segmentDurationSec: 5, model }),
-      '{"next_prompt":"Accepted prompt"}'],
-    ['automatic-continuation', (deps, model) => continueVideo(null, { ...deps, segmentDurationSec: 5, model }),
-      '{"next_prompt":"Accepted prompt"}'],
-    ['rollout', (deps, model) => rewriteRollout(['one', 'two'], { ...deps, segmentCount: 6, segmentDurationSec: 5, rewriteModel: model }),
-      '{"segment_prompts":["A","B"]}'],
+  const modelCases: [string, FeatureCall, string][] = [
+    ['single-clip', deps => expandClip('An idea', { ...deps, segmentDurationSec: 5 }), '{"prompt":"Accepted prompt"}'],
+    ['guided-continuation', deps => continueVideo('An idea', { ...deps, segmentDurationSec: 5 }), '{"next_prompt":"Accepted prompt"}'],
+    ['automatic-continuation', deps => continueVideo(null, { ...deps, segmentDurationSec: 5 }), '{"next_prompt":"Accepted prompt"}'],
+    ['rollout', deps => rewriteRollout(['one', 'two'], { ...deps, segmentCount: 6, segmentDurationSec: 5 }), '{"segment_prompts":["A","B"]}'],
   ]
 
-  it.each(modelCases)('%s maps an edited default model to the vendor alias', async (_name, call, content) => {
-    for (const selectedModel of [null, 'gpt-alt', 'gpt-test']) {
-      const { deps, sdk } = promptDependencies('vendor-specific-model')
-      deps.settings.setRewriteDefaultModel('gpt-alt')
-      sdk.payload = response(content)
-      const result = await call(deps, selectedModel)
-      expect([result.fallbackUsed, result.error]).toEqual([false, null])
-      expect(result.model).toBe(selectedModel ?? 'gpt-alt')
-      expect(sdk.requests[0]?.['model']).toBe(selectedModel === 'gpt-test' ? 'gpt-test' : 'vendor-specific-model')
-    }
+  it.each(modelCases)('%s maps the default model to the vendor alias', async (_name, call, content) => {
+    const { deps, sdk } = promptDependencies('vendor-specific-model')
+    sdk.payload = response(content)
+    const result = await call(deps)
+    expect([result.fallbackUsed, result.error]).toEqual([false, null])
+    expect(result.model).toBe('gpt-test')
+    expect(sdk.requests[0]?.['model']).toBe('vendor-specific-model')
   })
 
   const labelCases: [(deps: Dependencies, labels: string[]) => Promise<PromptResult | RolloutResult>, string][] = [

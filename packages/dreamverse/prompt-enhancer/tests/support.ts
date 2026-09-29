@@ -53,7 +53,6 @@ export function testRace(stages: VendorClient[][], diagnostics: PromptDiagnostic
 export function testSettings(): PromptSettings {
   const settings = new PromptSettings(undefined)
   settings.rewriteDefaultModel = 'gpt-test'
-  settings.rewriteModelOptions = ['gpt-test', 'gpt-alt']
   settings.temperature = 0.4
   settings.rewriteDefaultTemperature = 0.4
   settings.maxCompletionTokens = 512
@@ -94,22 +93,17 @@ export function templatePathOptions(directory: string): PromptTemplateOptions {
     fs.writeFileSync(filePath, `${content}\n`, 'utf8')
     overrides[field] = filePath
   }
-  return { devtoolsEnabled: false, devtoolsPromptDirectory: path.join(directory, 'prompts.local'), ...overrides }
+  return overrides
 }
 
 /**
- * Load templates whose editor writes stay within the test directory, including a redirected Ref2VA template, like
- * the reference `prompt_templates` fixture.
+ * Load templates from the test directory and replace the Ref2VA text, like the reference `prompt_templates` fixture.
  * @param directory - the test directory.
  * @returns the loaded templates.
  */
 export function testTemplates(directory: string): PromptTemplates {
   const templates = new PromptTemplates(templatePathOptions(directory))
-  const ref2vaPath = path.join(directory, 'ref2va.md')
-  fs.writeFileSync(ref2vaPath, 'reference shot template\n', 'utf8')
-  templates.ref2vaSystemPromptPath = ref2vaPath
-  templates.ref2vaSystemPromptFallbackPath = null
-  templates.reload()
+  templates.ref2vaSystemPrompt = 'reference shot template'
   return templates
 }
 

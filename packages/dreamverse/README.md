@@ -145,7 +145,7 @@ class DreamverseAssetsManager {
 
 ### `dreamversePromptEnhancer` (`@dreamverse/prompt-enhancer`)
 
-A direct port of `PromptEnhancer`, `PromptSettings`, the three features, `ProviderRace`, `VendorClient`, `PromptTemplates`, and the template editor. The bundled Markdown templates are byte-identical copies of `apps/dreamverse/dreamverse/prompt_enhancement/templates/resources/`. Provider settings come from `CEREBRAS_API_KEY`, `GROQ_API_KEY`, `FASTVIDEO_PROMPT_MODEL`, `FASTVIDEO_PROMPT_CEREBRAS_MODEL`, `FASTVIDEO_PROMPT_GROQ_MODEL`, `FASTVIDEO_PROMPT_GROQ_API_BASE_URL`, and `CEREBRAS_BASE_URL` through validated Config fields.
+A direct port of `PromptEnhancer`, `PromptSettings`, the three features, `ProviderRace`, `VendorClient`, and `PromptTemplates`. The bundled Markdown templates are byte-identical copies of `apps/dreamverse/dreamverse/prompt_enhancement/templates/resources/`. Provider settings come from `CEREBRAS_API_KEY`, `GROQ_API_KEY`, `FASTVIDEO_PROMPT_MODEL`, `FASTVIDEO_PROMPT_CEREBRAS_MODEL`, `FASTVIDEO_PROMPT_GROQ_MODEL`, `FASTVIDEO_PROMPT_GROQ_API_BASE_URL`, and `CEREBRAS_BASE_URL` through validated Config fields.
 
 ### `dreamverseProjects` (`@dreamverse/project`)
 
@@ -175,7 +175,7 @@ An action type without a registered handler fails the round with `ValueError`-ki
 
 ### Browser server (`@dreamverse/browser-server`)
 
-Config: `host`, `port`, `devtoolsEnabled`, `curatedPresetsFilePath`, `curatedPresetsFallbackFilePath`. Listens with `node:http` and `ws` inside `ctx.effect`. It serves every browser route itself:
+Config: `host`, `port`. Listens with `node:http` and `ws` inside `ctx.effect`. It serves every browser route itself:
 
 | Route | Behavior |
 | --- | --- |
@@ -184,14 +184,14 @@ Config: `host`, `port`, `devtoolsEnabled`, `curatedPresetsFilePath`, `curatedPre
 | `GET /readyz` | 200 when `dreamverseGeneration.ready()` reports ready, otherwise 503 with `detail` |
 | `GET /creation-capabilities` | The reference `lobby_capabilities_as_dict` payload from `ModelFacts` and the upload policy |
 | `/assets` routes | Ports of `routes/assets.py`, including ranged content responses |
-| `GET /curated-presets`, `POST /curated-presets/append` | Ports of the reference handlers, served when devtools are enabled |
-| `GET`/`POST /prompt-system-config` | Ports of the reference handlers |
 
 ## Intentional differences from the reference
 
 - The harness sends no `queue_status`, and GPU state stays inside the backend: `/status` and `/internal/monitor/capacity` are not served, `/readyz` reports backend readiness without GPU counts, and the `gpu_assigned` project log event carries no `gpu_id`.
 - The prompt safety filter is removed.
 - The LTX-only LoRA routes are not served.
+- Developer tools are not ported: the harness serves no `/curated-presets`, `/curated-presets/append`, or `/prompt-system-config` route, and prompt templates load without the `prompts.local` developer overlay.
+- The browser cannot choose rewrite settings: `project_init_v1` and `rewrite_seed_prompts` ignore `rewrite_model`, `rewrite_temperature`, `rewrite_window_system_prompt`, and `rewrite_user_system_prompt`, and `set_rewrite_model` and `set_rewrite_temperature` are unsupported commands. Every rewrite uses the startup model (`FASTVIDEO_PROMPT_MODEL`), temperature, and templates.
 - The backend keeps continuation state for its latest segment only, across all projects of the user. A segment generated for another project invalidates a project's continuation state.
 
 ## Verification

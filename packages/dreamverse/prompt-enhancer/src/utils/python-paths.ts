@@ -2,7 +2,7 @@
  * Python `pathlib` semantics for prompt template paths.
  *
  * The reference reports template source paths as `str(Path(...))`, tries `.md`/`.txt` alternates with
- * `Path.with_suffix`, names backups from `Path.suffixes`, and reads files as UTF-8 text with universal newlines.
+ * `Path.with_suffix`, and reads files as UTF-8 text with universal newlines.
  * These helpers reproduce those strings and reads so reported paths and loaded text match the reference.
  *
  * @module @dreamverse/prompt-enhancer/utils/python-paths
@@ -49,17 +49,6 @@ function splitName(path: string): { prefix: string; name: string } {
 }
 
 /**
- * Read the parent directory like Python `PurePosixPath.parent`.
- * @param path - the path text.
- * @returns the parent path, `.` for a bare name, or `/` for a root-level path.
- */
-export function pathParent(path: string): string {
-  const { prefix } = splitName(path)
-  if (prefix === '') return '.'
-  return prefix === '/' || prefix === '//' ? prefix : prefix.slice(0, -1)
-}
-
-/**
  * Read the final suffix like Python `PurePath.suffix`.
  * @param path - the path text.
  * @returns the suffix including its dot, or `''`.
@@ -80,27 +69,6 @@ export function withSuffix(path: string, suffix: string): string {
   const { prefix, name } = splitName(path)
   const oldSuffix = pathSuffix(path)
   return `${prefix}${oldSuffix ? name.slice(0, -oldSuffix.length) : name}${suffix}`
-}
-
-/**
- * Replace the final component like Python `PurePath.with_name`.
- * @param path - the path text.
- * @param name - the replacement file name.
- * @returns the normalized path with the new name.
- */
-export function withName(path: string, name: string): string {
-  return `${splitName(path).prefix}${name}`
-}
-
-/**
- * Read every suffix of the file name like Python 3.12 `PurePath.suffixes`.
- * @param path - the path text.
- * @returns the suffixes in order, each including its dot.
- */
-export function pathSuffixes(path: string): string[] {
-  const { name } = splitName(path)
-  if (name.endsWith('.')) return []
-  return name.replace(/^\.+/, '').split('.').slice(1).map(suffix => `.${suffix}`)
 }
 
 /**

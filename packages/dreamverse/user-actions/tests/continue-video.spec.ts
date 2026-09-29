@@ -92,7 +92,7 @@ describe('append_prompt', () => {
         expect(appended.referenceSegmentId).toBe(mode === 'ref2va' ? null : preceding)
         if (enhance) {
           expect(harness!.enhancer.continueVideo.mock.calls).toEqual([['Follow the fox', {
-            lockedSegments: ['Accepted scene'], nextSegmentIdx: 2, model: 'model-a', timeoutMs: 20000,
+            lockedSegments: ['Accepted scene'], nextSegmentIdx: 2, timeoutMs: 20000,
             generationMode: mode, segmentDurationSec: duration, referenceLabels: assetIds.map(() => 'Picture 1'),
             signal: run.project.generationSignal,
           }]])
@@ -306,13 +306,11 @@ describe('append_prompt', () => {
     { type: 'rewrite_seed_prompts', rewrite_instruction: 'another rewrite' },
     { type: 'simple_generate', prompt: 'another clip' },
     { type: 'set_enhancement', enabled: false },
-    { type: 'set_rewrite_model', rewrite_model: 'model-b' },
-    { type: 'set_rewrite_temperature', rewrite_temperature: 0.9 },
   ])('rejects $type while the continuation prompt is prepared', async (command) => {
     const enhancer = new FakePromptEnhancer()
     const held = holdPromptCall(enhancer.continueVideo, () => promptResult('B'))
     const run = await startWithCompletedVideo({ enhancement_enabled: true }, ['A'], { enhancer })
-    const settings = [run.project.promptEnhancementEnabled, run.project.promptEnhancementModel, run.project.sequencePromptTemperature]
+    const enhancementEnabled = run.project.promptEnhancementEnabled
     const after = run.socket.entries.length
     await run.project.processBrowserCommand({ type: 'append_prompt', prompt: 'Continue A' })
     await within(held.entered.promise)
@@ -322,8 +320,7 @@ describe('append_prompt', () => {
       type: 'error', prompt_id: null, message: 'Wait for this generation round to finish before changing the video.',
     }])
     expect(run.project.generationRoundStatus).toBe('preparing')
-    expect([run.project.promptEnhancementEnabled, run.project.promptEnhancementModel, run.project.sequencePromptTemperature])
-      .toEqual(settings)
+    expect(run.project.promptEnhancementEnabled).toBe(enhancementEnabled)
     held.release.resolve()
     const call = await run.generation.nextCall()
     call.finish.resolve()

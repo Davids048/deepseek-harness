@@ -101,7 +101,7 @@ async function expandClip(
   let response: PromptResult
   try {
     response = await project.awaitPromptWork(async () => await project.promptEnhancer.expandClip(prompt, {
-      model, timeoutMs, generationMode: settings.generation_mode, segmentDurationSec: settings.segment_duration_sec,
+      timeoutMs, generationMode: settings.generation_mode, segmentDurationSec: settings.segment_duration_sec,
       referenceLabels: project.buildPromptImageLabels(referenceAssets.length), signal: project.generationSignal,
     }))
   } catch (error) {

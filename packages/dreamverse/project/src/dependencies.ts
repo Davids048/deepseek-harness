@@ -73,7 +73,6 @@ export interface RolloutResult {
 /** Keyword arguments of `PromptEnhancer.expand_clip`, plus the abort signal that stops the provider race. */
 export interface ExpandClipOptions {
   segmentDurationSec: number
-  model: string
   timeoutMs: number
   generationMode: string
   referenceLabels: string[]
@@ -98,21 +97,17 @@ export interface RewriteRolloutOptions {
   presetId: unknown
   presetLabel: unknown
   rewriteInstruction: string
-  rewriteModel: string
-  rewriteTemperature: number
   timeoutMs: number
   generationMode: string
   referenceLabels: string[]
-  systemPromptOverride: string
-  newRolloutSystemPromptOverride: string
   /** The project's generation signal; aborting it rejects the operation. */
   signal: AbortSignal
 }
 
 /** The `dreamversePromptEnhancer` members that project and user-action code calls. */
 export interface DreamversePromptEnhancer {
-  resolveRewriteModel(requestedModel: unknown): string
-  resolveRewriteTemperature(requestedTemperature: unknown): number
+  /** The rewrite model configured at startup; browser events and project log events report it as `rewrite_model`. */
+  rewriteModel(): string
   expandClip(conditioningPrompt: string, options: ExpandClipOptions): Promise<PromptResult>
   continueVideo(conditioningPrompt: string | null, options: ContinueVideoOptions): Promise<PromptResult>
   rewriteRollout(prompts: string[], options: RewriteRolloutOptions): Promise<RolloutResult>

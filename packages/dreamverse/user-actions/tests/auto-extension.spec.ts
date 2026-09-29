@@ -86,7 +86,7 @@ describe('Auto Extension', () => {
     expect(run.project.generationRoundStatus).toBe('preparing')
     expect(run.project.promptEnhancementEnabled).toBe(false)
     expect(enhancer.continueVideo.mock.calls).toEqual([[null, {
-      lockedSegments: ['A'], nextSegmentIdx: 2, model: 'model-a', timeoutMs: 20000, generationMode: 't2va',
+      lockedSegments: ['A'], nextSegmentIdx: 2, timeoutMs: 20000, generationMode: 't2va',
       segmentDurationSec: 5, referenceLabels: [], signal: run.project.generationSignal,
     }]])
     provider.release.resolve()

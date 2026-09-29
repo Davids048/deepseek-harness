@@ -91,7 +91,7 @@ describe('generate_single_clip', () => {
         expect(segment!.instruction).toEqual({ requestId: 'clip', text: 'A fox' })
         if (enhance) {
           expect(harness.enhancer.expandClip.mock.calls).toEqual([['A fox', {
-            model: 'model-a', timeoutMs: 20000, generationMode: mode, segmentDurationSec: duration,
+            timeoutMs: 20000, generationMode: mode, segmentDurationSec: duration,
             // Only the reference-image model numbers its images; first-frame models have no image labels.
             referenceLabels: mode === 'ref2va' ? ['Picture 1'] : [], signal: run.project.generationSignal,
           }]])

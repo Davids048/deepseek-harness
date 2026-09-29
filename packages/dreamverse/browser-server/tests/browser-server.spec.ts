@@ -1,21 +1,20 @@
 /**
- * The browser server plugin, mounted through Cordis with fake generation, asset, project, and prompt enhancer
- * services, serves the reference project protocol and browser HTTP routes.
+ * The browser server plugin, mounted through Cordis with fake generation, asset, and project services, serves the
+ * reference project protocol and browser HTTP routes.
  */
 import { once } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { request as httpRequest, type IncomingHttpHeaders, type OutgoingHttpHeaders } from 'node:http'
 import { join } from 'node:path'
 import { Context, type Fiber } from '@deepseek-ai/cordis'
 import { AssetNotFoundError, MediaValidationError, UploadTooLargeError } from '@dreamverse/assets-manager'
 import { ProjectValidationError } from '@dreamverse/project'
-import { PromptRuntimeError, PromptValueError } from '@dreamverse/prompt-enhancer'
 import WebSocket from 'ws'
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest'
 import * as browserServer from '../src/index.ts'
 import type {
-  AssetRecord, CreationConfig, DreamverseAssetsManager, DreamverseGeneration, DreamverseProjects, DreamversePromptEnhancer,
-  ModelFacts, Project, ProjectInit, ProjectSocket, PromptConfigUpdate,
+  AssetRecord, CreationConfig, DreamverseAssetsManager, DreamverseGeneration, DreamverseProjects, ModelFacts, Project,
+  ProjectInit, ProjectSocket,
 } from '../src/dependencies.ts'
 
 const PORT = 18322
@@ -132,18 +131,14 @@ interface Fakes {
   generation: DreamverseGeneration & { readiness: () => Promise<{ ready: boolean; detail: string | null }> }
   assets: FakeAssets
   projects: DreamverseProjects & { created: FakeProject[]; logged: Array<[string, string, Record<string, unknown> | undefined]> }
-  enhancer: DreamversePromptEnhancer & { saved: PromptConfigUpdate[] }
   createProject: ReturnType<typeof vi.fn<(init: ProjectInit) => Promise<FakeProject>>>
-  saveFailure: Error | undefined
 }
 
 /** Build recording fakes: a ready generation backend, an empty asset library, and projects that serve until closed. */
 function makeFakes(): Fakes {
   const created: FakeProject[] = []
   const logged: Fakes['projects']['logged'] = []
-  const saved: PromptConfigUpdate[] = []
   const fakes: Fakes = {
-    saveFailure: undefined,
     createProject: vi.fn(async (init: ProjectInit) => {
       const project = new FakeProject(init.projectId, init.socket)
       created.push(project)
@@ -162,15 +157,6 @@ function makeFakes(): Fakes {
       logProjectEvent: async (projectId, event, payload) => {
         steps.push(`logged ${event}`)
         logged.push([projectId, event, payload])
-      },
-    },
-    enhancer: {
-      saved,
-      getPromptConfig: () => ({ rewrite_model: 'gpt-oss-120b', rewrite_temperature: 0.7 }),
-      savePromptConfig: (update) => {
-        if (fakes.saveFailure) throw fakes.saveFailure
-        saved.push(update)
-        return { rewrite_model: update.rewrite_model ?? 'gpt-oss-120b', rewrite_temperature: 0.7 }
       },
     },
   }
@@ -193,10 +179,7 @@ async function startBrowserServer(fakes: Fakes, config: Partial<browserServer.Co
   root.provide('dreamverseGeneration', fakes.generation)
   root.provide('dreamverseAssetsManager', fakes.assets)
   root.provide('dreamverseProjects', fakes.projects)
-  root.provide('dreamversePromptEnhancer', fakes.enhancer)
-  const fiber = root.plugin(browserServer, {
-    host: '127.0.0.1', port: PORT, devtoolsEnabled: false, curatedPresetsFilePath: join(tempRoot, 'unused.json'), ...config,
-  })
+  const fiber = root.plugin(browserServer, { host: '127.0.0.1', port: PORT, ...config })
   await fiber.await()
   return fiber
 }
@@ -416,13 +399,21 @@ describe('/ws project protocol', () => {
 describe('routing', () => {
   it('answers FastAPI 404 for unknown paths and plain HTTP /ws, and 405 with Allow for other methods', async () => {
     await startBrowserServer(makeFakes())
-    for (const path of ['/status', '/internal/monitor/capacity', '/lora/options', '/ws', '/assets/a%2Fb']) {
+    for (const path of ['/status', '/internal/monitor/capacity', '/lora/options', '/curated-presets', '/prompt-system-config', '/ws', '/assets/a%2Fb']) {
       expect(await callJson('GET', path)).toMatchObject({ status: 404, json: { detail: 'Not Found' } })
     }
     const head = await call('HEAD', '/healthz')
     expect([head.status, head.headers.allow]).toEqual([405, 'GET'])
     expect(await callJson('PUT', '/assets')).toMatchObject({ status: 405, headers: { allow: 'GET' }, json: { detail: 'Method Not Allowed' } })
     expect(await callJson('POST', '/assets/a1')).toMatchObject({ status: 405, headers: { allow: 'DELETE' } })
+  })
+
+  it('answers Starlette\'s plain 500 when a route throws', async () => {
+    const fakes = makeFakes()
+    fakes.assets.list = () => { throw new TypeError('unexpected') }
+    await startBrowserServer(fakes)
+    const failed = await call('GET', '/assets')
+    expect([failed.status, failed.headers['content-type'], failed.body.toString()]).toEqual([500, 'text/plain; charset=utf-8', 'Internal Server Error'])
   })
 })
 
@@ -600,157 +591,6 @@ describe('/assets', () => {
     expect(await callJson('DELETE', '/assets/a1')).toMatchObject({
       status: 404, json: { detail: 'Asset \'a1\' is unavailable. Select an asset from the library.' },
     })
-  })
-})
-
-describe('curated presets', () => {
-  /** Write catalog files under a fresh directory and return their paths. */
-  function catalogs(overlay: unknown, fallback: unknown): { overlayPath: string; fallbackPath: string } {
-    const directory = mkdtempSync(join(tempRoot, 'catalog-'))
-    const overlayPath = join(directory, 'prompts.local', 'presets.json')
-    const fallbackPath = join(directory, 'prompts', 'presets.json')
-    for (const [path, value] of [[overlayPath, overlay], [fallbackPath, fallback]] as const) {
-      if (value === undefined) continue
-      mkdirSync(join(path, '..'), { recursive: true })
-      writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value))
-    }
-    return { overlayPath, fallbackPath }
-  }
-
-  /** The plugin config that serves the curated preset routes over the given catalogs. */
-  function devtoolsConfig(overlayPath: string, fallbackPath: string | null): Partial<browserServer.Config> {
-    return { devtoolsEnabled: true, curatedPresetsFilePath: overlayPath, curatedPresetsFallbackFilePath: fallbackPath }
-  }
-
-  it('serves no curated preset routes without developer tools', async () => {
-    const { overlayPath } = catalogs([], undefined)
-    await startBrowserServer(makeFakes(), { curatedPresetsFilePath: overlayPath })
-    expect(await callJson('GET', '/curated-presets')).toMatchObject({ status: 404, json: { detail: 'Not Found' } })
-    expect(await callJson('POST', '/curated-presets/append', {})).toMatchObject({ status: 404 })
-  })
-
-  it('merges the fallback catalog with the overlay catalog by case-insensitive ID', async () => {
-    const { overlayPath, fallbackPath } = catalogs(
-      [{ id: 'Story ', label: 'overlay' }, 'not an object', { id: '  ' }, { id: null, label: 'none' }],
-      [{ id: 'story', label: 'fallback' }, { id: 'other', label: 'kept' }],
-    )
-    await startBrowserServer(makeFakes(), devtoolsConfig(overlayPath, fallbackPath))
-    expect(await callJson('GET', '/curated-presets')).toEqual({
-      status: 200,
-      headers: expect.anything(),
-      json: {
-        presets: [{ id: 'Story ', label: 'overlay' }, { id: 'other', label: 'kept' }, { id: null, label: 'none' }],
-        count: 3,
-        file_path: overlayPath,
-        fallback_file_path: fallbackPath,
-      },
-    })
-  })
-
-  it('reports catalog errors as 500 with the reference detail and absent catalogs as empty', async () => {
-    const invalid = catalogs('{bad', undefined)
-    await startBrowserServer(makeFakes(), devtoolsConfig(invalid.overlayPath, invalid.fallbackPath))
-    expect(await callJson('GET', '/curated-presets')).toMatchObject({ status: 500, json: { detail: `Invalid JSON in curated presets file: ${invalid.overlayPath}` } })
-    writeFileSync(invalid.overlayPath, '{"id": "x"}')
-    expect(await callJson('GET', '/curated-presets')).toMatchObject({ status: 500, json: { detail: `Curated presets file must contain a JSON array: ${invalid.overlayPath}` } })
-    rmSync(invalid.overlayPath)
-    expect(await callJson('GET', '/curated-presets')).toMatchObject({ status: 200, json: { presets: [], count: 0 } })
-  })
-
-  it('appends a sanitized preset to the overlay catalog and rejects duplicate IDs with 409', async () => {
-    const { overlayPath, fallbackPath } = catalogs(undefined, [{ id: 'city_story', label: 'fallback' }])
-    await startBrowserServer(makeFakes(), devtoolsConfig(overlayPath, fallbackPath))
-    const appended = await callJson('POST', '/curated-presets/append', { id: ' Café Story! ', label: ' Café ', segment_prompts: [' one ', '', 'two', '　'] })
-    const preset = { id: 'caf_story', label: 'Café', segment_prompts: ['one', 'two'] }
-    expect(appended).toMatchObject({
-      status: 200,
-      json: { type: 'curated_preset_appended', preset, count: 2, file_path: overlayPath, fallback_file_path: fallbackPath },
-    })
-    expect(readFileSync(overlayPath, 'utf8')).toBe(`${JSON.stringify([preset], null, 2)}\n`)
-    for (const id of ['CAF STORY', 'City Story']) {
-      const duplicate = await callJson('POST', '/curated-presets/append', { id, label: 'x', segment_prompts: ['a', 'b'] })
-      expect(duplicate).toMatchObject({ status: 409, json: { detail: `Preset id already exists in curated presets file: ${id.toLowerCase().replace(' ', '_')}` } })
-    }
-  })
-
-  it('validates the append body with FastAPI 422 details and the reference 400 checks', async () => {
-    const { overlayPath } = catalogs(undefined, undefined)
-    await startBrowserServer(makeFakes(), devtoolsConfig(overlayPath, null))
-    const body = { label: 1, segment_prompts: ['a', 2] }
-    expect(await callJson('POST', '/curated-presets/append', body)).toMatchObject({ status: 422, json: { detail: [
-      { type: 'missing', loc: ['body', 'id'], msg: 'Field required', input: body },
-      { type: 'string_type', loc: ['body', 'label'], msg: 'Input should be a valid string', input: 1 },
-      { type: 'string_type', loc: ['body', 'segment_prompts', 1], msg: 'Input should be a valid string', input: 2 },
-    ] } })
-    expect((await callJson('POST', '/curated-presets/append', { id: 'x', label: 'y', segment_prompts: 'ab' })).json).toEqual({ detail: [
-      { type: 'list_type', loc: ['body', 'segment_prompts'], msg: 'Input should be a valid list', input: 'ab' },
-    ] })
-    expect(await callJson('POST', '/curated-presets/append', { id: 'x', label: ' ', segment_prompts: ['a', 'b'] }))
-      .toMatchObject({ status: 400, json: { detail: 'label must be non-empty.' } })
-    expect(await callJson('POST', '/curated-presets/append', { id: 'x', label: 'y', segment_prompts: ['a', ' '] }))
-      .toMatchObject({ status: 400, json: { detail: 'segment_prompts must contain at least 2 non-empty prompts.' } })
-    expect(await callJson('POST', '/curated-presets/append', '{"id": "x", "label": "\\ud800", "segment_prompts": ["a", "b"]}'))
-      .toMatchObject({ status: 400, json: { detail: 'label and segment_prompts must contain valid UTF-8 text.' } })
-  })
-})
-
-describe('/prompt-system-config', () => {
-  it('reads and saves the prompt configuration with null for absent fields', async () => {
-    const fakes = makeFakes()
-    await startBrowserServer(fakes)
-    expect(await callJson('GET', '/prompt-system-config')).toMatchObject({
-      status: 200, json: { rewrite_model: 'gpt-oss-120b', rewrite_temperature: 0.7 },
-    })
-    const saved = await callJson('POST', '/prompt-system-config', { rewrite_model: 'm2', rewrite_temperature: '0.5', extra: 1 })
-    expect(saved).toMatchObject({ status: 200, json: { rewrite_model: 'm2', rewrite_temperature: 0.7 } })
-    expect(fakes.enhancer.saved).toEqual([{
-      next_segment_system_prompt: null, auto_extension_system_prompt: null, rewrite_window_system_prompt: null,
-      rewrite_user_system_prompt: null, ref2va_system_prompt: null, rewrite_model: 'm2', rewrite_temperature: 0.5,
-    }])
-  })
-
-  it('answers FastAPI request validation errors with 422 detail lists', async () => {
-    await startBrowserServer(makeFakes())
-    expect((await callJson('POST', '/prompt-system-config', { next_segment_system_prompt: true, rewrite_model: 3 })).json).toEqual({
-      detail: [
-        { type: 'string_type', loc: ['body', 'next_segment_system_prompt'], msg: 'Input should be a valid string', input: true },
-        { type: 'string_type', loc: ['body', 'rewrite_model'], msg: 'Input should be a valid string', input: 3 },
-      ],
-    })
-    expect(await callJson('POST', '/prompt-system-config', { rewrite_temperature: 'abc' })).toEqual({
-      status: 422,
-      headers: expect.anything(),
-      json: { detail: [{ type: 'float_parsing', loc: ['body', 'rewrite_temperature'], msg: 'Input should be a valid number, unable to parse string as a number', input: 'abc' }] },
-    })
-    expect((await callJson('POST', '/prompt-system-config', { rewrite_temperature: [1] })).json).toEqual({
-      detail: [{ type: 'float_type', loc: ['body', 'rewrite_temperature'], msg: 'Input should be a valid number', input: [1] }],
-    })
-    expect((await callJson('POST', '/prompt-system-config', [1, 2])).json).toEqual({
-      detail: [{ type: 'model_attributes_type', loc: ['body'], msg: 'Input should be a valid dictionary or object to extract fields from', input: [1, 2] }],
-    })
-    expect((await callJson('POST', '/prompt-system-config', '{"rewrite_model": "m"}', 'text/plain')).json).toEqual({
-      detail: [{ type: 'model_attributes_type', loc: ['body'], msg: 'Input should be a valid dictionary or object to extract fields from', input: '{"rewrite_model": "m"}' }],
-    })
-    expect((await callJson('POST', '/prompt-system-config')).json).toEqual({
-      detail: [{ type: 'missing', loc: ['body'], msg: 'Field required', input: null }],
-    })
-    const invalidJson = await callJson('POST', '/prompt-system-config', '{bad json')
-    expect(invalidJson.status).toBe(422)
-    expect(invalidJson.json).toMatchObject({ detail: [{ type: 'json_invalid', loc: ['body', 1], msg: 'JSON decode error', input: {} }] })
-  })
-
-  it('maps save failures to 400, 500 with detail, and plain 500, and other methods to 405', async () => {
-    const fakes = makeFakes()
-    await startBrowserServer(fakes)
-    fakes.saveFailure = new PromptValueError('rewrite_model cannot be empty.')
-    expect(await callJson('POST', '/prompt-system-config', { rewrite_model: ' ' })).toMatchObject({ status: 400, json: { detail: 'rewrite_model cannot be empty.' } })
-    fakes.saveFailure = new PromptRuntimeError('Failed to save next-segment system prompt: /x.md')
-    expect(await callJson('POST', '/prompt-system-config', {})).toMatchObject({ status: 500, json: { detail: 'Failed to save next-segment system prompt: /x.md' } })
-    fakes.saveFailure = new TypeError('unexpected')
-    const plain = await call('POST', '/prompt-system-config', { headers: { 'content-type': 'application/json' }, chunks: [Buffer.from('{}')] })
-    expect([plain.status, plain.headers['content-type'], plain.body.toString()]).toEqual([500, 'text/plain; charset=utf-8', 'Internal Server Error'])
-    const put = await callJson('PUT', '/prompt-system-config')
-    expect([put.status, put.headers.allow, put.json]).toEqual([405, 'GET', { detail: 'Method Not Allowed' }])
   })
 })
 

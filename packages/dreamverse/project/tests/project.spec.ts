@@ -63,7 +63,7 @@ function heldGeneration(gate: Deferred): UserActionHandler {
 }
 
 describe('Project creation', () => {
-  it('resolves settings, validates creation, and queues the initial sequence action', async () => {
+  it('resolves settings, ignores rewrite settings, validates creation, and queues the initial sequence action', async () => {
     const received: { payload: ActionPayload; referenceAssets: readonly AssetRecord[] }[] = []
     harness = await openProjects([actionPlugin(['generate_video_sequence'], async (_project, payload, options) => {
       received.push({ payload, referenceAssets: options.referenceAssets })
@@ -84,16 +84,11 @@ describe('Project creation', () => {
     expect({
       promptSequenceId: project.promptSequenceId, promptSequenceLabel: project.promptSequenceLabel,
       promptEnhancementEnabled: project.promptEnhancementEnabled, promptEnhancementModel: project.promptEnhancementModel,
-      sequencePromptTemperature: project.sequencePromptTemperature,
       promptEnhancementTimeoutMs: project.promptEnhancementTimeoutMs,
-      sequenceRewriteSystemPromptOverride: project.sequenceRewriteSystemPromptOverride,
-      sequenceCreationSystemPromptOverride: project.sequenceCreationSystemPromptOverride,
       autoContinueAfterGeneration: project.autoContinueAfterGeneration,
     }).toEqual({
       promptSequenceId: 'forest', promptSequenceLabel: 'Forest', promptEnhancementEnabled: false,
-      promptEnhancementModel: 'model-b', sequencePromptTemperature: 0.4, promptEnhancementTimeoutMs: 20000,
-      sequenceRewriteSystemPromptOverride: 'window', sequenceCreationSystemPromptOverride: 'user',
-      autoContinueAfterGeneration: false,
+      promptEnhancementModel: 'model-a', promptEnhancementTimeoutMs: 20000, autoContinueAfterGeneration: false,
     })
     await run.socket.waitForStatus('idle')
     expect(received).toEqual([{
@@ -206,6 +201,8 @@ describe('Project command admission', () => {
     [{ type: 'reset_to_seed_prompts' }, 'reset_to_seed_prompts'],
     [{ type: 'restart_generation' }, 'restart_generation'],
     [{ type: 'set_auto_extension', enabled: true }, 'set_auto_extension'],
+    [{ type: 'set_rewrite_model', rewrite_model: 'model-b' }, 'set_rewrite_model'],
+    [{ type: 'set_rewrite_temperature', rewrite_temperature: 0.9 }, 'set_rewrite_temperature'],
     [{ enabled: true }, 'None'],
   ])('rejects the unsupported command %j', async (command, label) => {
     harness = await openProjects(generationPlugins())
@@ -230,12 +227,6 @@ describe('Project command admission', () => {
     expect(project.promptEnhancementEnabled).toBe(true)
     await project.processBrowserCommand({ type: 'set_enhancement', enabled: 0 })
     expect(project.promptEnhancementEnabled).toBe(false)
-    await project.processBrowserCommand({ type: 'set_rewrite_model', rewrite_model: 'model-b' })
-    expect(project.promptEnhancementModel).toBe('model-b')
-    await project.processBrowserCommand({ type: 'set_rewrite_model', rewrite_model: 'unknown' })
-    expect(project.promptEnhancementModel).toBe('model-a')
-    await project.processBrowserCommand({ type: 'set_rewrite_temperature', rewrite_temperature: 0.9 })
-    expect(project.sequencePromptTemperature).toBe(0.9)
     expect(run.socket.entries.slice(after)).toEqual([])
   })
 
@@ -244,15 +235,13 @@ describe('Project command admission', () => {
     { type: 'rewrite_seed_prompts', rewrite_instruction: 'another rewrite' },
     { type: 'simple_generate', prompt: 'another clip' },
     { type: 'set_enhancement', enabled: true },
-    { type: 'set_rewrite_model', rewrite_model: 'model-b' },
-    { type: 'set_rewrite_temperature', rewrite_temperature: 0.9 },
   ])('rejects $type while the round prepares and keeps its settings', async (command) => {
     const gate = new Deferred()
     harness = await openProjects([actionPlugin(['generate_video_sequence'], heldGeneration(gate))])
     const run = await harness.start(projectPayload({ curated_prompts: ['A'] }))
     await run.socket.waitForStatus('preparing')
     const { project } = run
-    const settings = [project.promptEnhancementEnabled, project.promptEnhancementModel, project.sequencePromptTemperature]
+    const enhancementEnabled = project.promptEnhancementEnabled
     const after = run.socket.entries.length
     await project.processBrowserCommand(command)
     expect(run.socket.entries.slice(after)).toEqual([{
@@ -260,7 +249,7 @@ describe('Project command admission', () => {
       message: 'Wait for this generation round to finish before changing the video.',
     }])
     expect(project.generationRoundStatus).toBe('preparing')
-    expect([project.promptEnhancementEnabled, project.promptEnhancementModel, project.sequencePromptTemperature]).toEqual(settings)
+    expect(project.promptEnhancementEnabled).toBe(enhancementEnabled)
     gate.resolve()
     ;(await run.generation.nextCall()).finish.resolve()
     await run.socket.waitForStatus('idle')

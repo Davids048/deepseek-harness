@@ -6880,9 +6880,6 @@ importers:
       '@dreamverse/project':
         specifier: workspace:*
         version: link:../project
-      '@dreamverse/prompt-enhancer':
-        specifier: workspace:*
-        version: link:../prompt-enhancer
       ws:
         specifier: ^8.21.0
         version: 8.21.0

@@ -10,7 +10,6 @@
     "ws": "^8.21.0",
     "@dreamverse/project": "workspace:*",
     "@dreamverse/generation-client": "workspace:*",
-    "@dreamverse/prompt-enhancer": "workspace:*",
     "@dreamverse/assets-manager": "workspace:*"
   },
   "peerDependencies": {

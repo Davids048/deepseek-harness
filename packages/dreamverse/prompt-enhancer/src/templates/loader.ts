@@ -1,5 +1,5 @@
 /**
- * Load prompt templates and retain their configured and source paths.
+ * Load prompt templates and retain the files that supplied them.
  *
  * @module @dreamverse/prompt-enhancer/templates/loader
  */
@@ -16,12 +16,8 @@ export const PACKAGED_TEMPLATE_DIRECTORY = normalizePath(fileURLToPath(new URL('
 const SYSTEM_PROMPT_WRAPPER = new RegExp(
   `^SYSTEM_PROMPT${PYTHON_SPACE_CLASS}*=${PYTHON_SPACE_CLASS}*('''|""")([\\s\\S]*?)\\1${PYTHON_SPACE_CLASS}*$`, 'u')
 
-/** Template path choices captured when one enhancer is constructed. */
+/** Template path overrides captured when one enhancer is constructed. */
 export interface PromptTemplateOptions {
-  /** Developer mode reads each template from `devtoolsPromptDirectory` and falls back to the packaged file. */
-  readonly devtoolsEnabled: boolean
-  /** The developer overlay directory; the reference uses `apps/dreamverse/dreamverse/prompts.local`. */
-  readonly devtoolsPromptDirectory: string
   /** `FASTVIDEO_PROMPT_ENHANCE_SYSTEM_PROMPT_PATH`; blank selects the packaged file. */
   readonly enhanceSystemPromptPath?: string | undefined
   /** `FASTVIDEO_PROMPT_AUTO_SYSTEM_PROMPT_PATH`. */
@@ -33,22 +29,13 @@ export interface PromptTemplateOptions {
 }
 
 /**
- * Select an explicit template path, or the packaged file with its developer overlay.
+ * Select an explicit template path, or the packaged file.
  * @param filename - the packaged template file name.
  * @param override - the configured path override.
- * @param options - the developer-mode choice and overlay directory.
- * @returns the configured path and its fallback path.
+ * @returns the stripped override when it is nonblank, otherwise the packaged file.
  */
-function resolveTemplatePaths(
-  filename: string,
-  override: string | undefined,
-  options: PromptTemplateOptions,
-): [string, string | null] {
-  const explicitPath = stripWhitespace(override ?? '')
-  if (explicitPath) return [explicitPath, null]
-  const packagedPath = joinPath(PACKAGED_TEMPLATE_DIRECTORY, filename)
-  if (options.devtoolsEnabled) return [joinPath(options.devtoolsPromptDirectory, filename), packagedPath]
-  return [packagedPath, null]
+function resolveTemplatePath(filename: string, override: string | undefined): string {
+  return stripWhitespace(override ?? '') || joinPath(PACKAGED_TEMPLATE_DIRECTORY, filename)
 }
 
 /**
@@ -61,23 +48,6 @@ export function promptFileCandidates(path: string): string[] {
   const suffix = pathSuffix(path)
   if (suffix === '.txt') candidatePaths.push(withSuffix(path, '.md'))
   else if (suffix === '.md') candidatePaths.push(withSuffix(path, '.txt'))
-  return candidatePaths
-}
-
-/**
- * List the configured path's candidates followed by the fallback path's candidates, without duplicates.
- * @param path - the configured template path.
- * @param fallbackPath - the packaged fallback path.
- * @returns the candidate paths in load order.
- */
-function templateCandidates(path: string, fallbackPath: string | null): string[] {
-  const candidatePaths: string[] = []
-  for (const currentPath of [path, fallbackPath]) {
-    if (!currentPath) continue
-    for (const candidate of promptFileCandidates(currentPath)) {
-      if (!candidatePaths.includes(candidate)) candidatePaths.push(candidate)
-    }
-  }
   return candidatePaths
 }
 
@@ -101,12 +71,11 @@ function readTemplate(candidate: string, promptName: string): string {
  * Load a required template and record the path that supplied it.
  * @param path - the configured template path.
  * @param promptName - the template name used in failure messages.
- * @param fallbackPath - the packaged fallback path.
  * @returns the template text and its source path.
  * @throws PromptRuntimeError when no candidate exists, or the first existing candidate is unreadable or empty.
  */
-function loadPromptRequiredWithPath(path: string, promptName: string, fallbackPath: string | null): [string, string] {
-  const candidatePaths = templateCandidates(path, fallbackPath)
+function loadPromptRequiredWithPath(path: string, promptName: string): [string, string] {
+  const candidatePaths = promptFileCandidates(path)
   for (const candidate of candidatePaths) {
     if (!isFile(candidate)) continue
     const text = readTemplate(candidate, promptName)
@@ -122,7 +91,6 @@ function loadPromptRequiredWithPath(path: string, promptName: string, fallbackPa
  * @param promptName - the template name used in failure messages.
  * @param fallbackPromptText - the text used when no candidate is populated.
  * @param fallbackPromptSourcePath - the source path reported with the fallback text.
- * @param fallbackPath - the packaged fallback path.
  * @returns the template text and its source path.
  */
 function loadPromptWithPromptFallback(
@@ -130,9 +98,8 @@ function loadPromptWithPromptFallback(
   promptName: string,
   fallbackPromptText: string,
   fallbackPromptSourcePath: string,
-  fallbackPath: string | null,
 ): [string, string] {
-  for (const candidate of templateCandidates(path, fallbackPath)) {
+  for (const candidate of promptFileCandidates(path)) {
     if (!isFile(candidate)) continue
     const text = readTemplate(candidate, promptName)
     if (text) return [text, candidate]
@@ -153,78 +120,38 @@ export function normalizePromptFileText(text: string): string {
   return normalized
 }
 
-/**
- * Own configured template paths, loaded text, and the files that supplied the text.
- *
- * Paths are selected once at construction; `reload` and the editor use the retained paths. Fields are mutable so
- * the editor and tests can redirect them like the reference's attributes.
- */
+/** Loaded template text and the files that supplied it; the files are read once, at construction. */
 export class PromptTemplates {
-  enhanceSystemPromptPath: string
-  enhanceSystemPromptFallbackPath: string | null
-  autoSystemPromptPath: string
-  autoSystemPromptFallbackPath: string | null
-  rewriteAllSystemPromptPath: string
-  rewriteAllSystemPromptFallbackPath: string | null
-  rewriteUserSystemPromptPath: string
-  rewriteUserSystemPromptFallbackPath: string | null
-  ref2vaSystemPromptPath: string
-  ref2vaSystemPromptFallbackPath: string | null
-
-  ref2vaSystemPrompt!: string
-  ref2vaSystemPromptSourcePath!: string
-  enhanceSystemPrompt!: string
-  enhanceSystemPromptSourcePath!: string
-  autoSystemPrompt!: string
-  autoSystemPromptSourcePath!: string
-  rewriteAllSystemPrompt!: string
-  rewriteAllSystemPromptSourcePath!: string
-  rewriteUserSystemPrompt!: string
-  rewriteUserSystemPromptSourcePath!: string
+  ref2vaSystemPrompt: string
+  ref2vaSystemPromptSourcePath: string
+  enhanceSystemPrompt: string
+  enhanceSystemPromptSourcePath: string
+  autoSystemPrompt: string
+  autoSystemPromptSourcePath: string
+  rewriteAllSystemPrompt: string
+  rewriteAllSystemPromptSourcePath: string
+  rewriteUserSystemPrompt: string
+  rewriteUserSystemPromptSourcePath: string
 
   /**
-   * Select this enhancer's template files, then load their text.
-   * @param options - the developer-mode choice, overlay directory, and path overrides.
+   * Select this enhancer's template files, then load their text. The Ref2VA template has no path override.
+   * @param options - the path overrides.
    * @throws PromptRuntimeError when a required template is missing, unreadable, or empty.
    */
   constructor(options: PromptTemplateOptions) {
-    [this.enhanceSystemPromptPath, this.enhanceSystemPromptFallbackPath] = resolveTemplatePaths(
-      'next_segment_system_prompt.md', options.enhanceSystemPromptPath, options)
-    ;[this.autoSystemPromptPath, this.autoSystemPromptFallbackPath] = resolveTemplatePaths(
-      'auto_extension_system_prompt.md', options.autoSystemPromptPath, options)
-    ;[this.rewriteAllSystemPromptPath, this.rewriteAllSystemPromptFallbackPath] = resolveTemplatePaths(
-      'rewrite_window_system_prompt.md', options.rewriteAllSystemPromptPath, options)
-    ;[this.rewriteUserSystemPromptPath, this.rewriteUserSystemPromptFallbackPath] = resolveTemplatePaths(
-      'rewrite_user_system_prompt.md', options.rewriteUserSystemPromptPath, options)
-    // The reference template has no path override; developer mode still overlays it.
-    this.ref2vaSystemPromptPath = joinPath(PACKAGED_TEMPLATE_DIRECTORY, 'ref2va_system_prompt.md')
-    this.ref2vaSystemPromptFallbackPath = null
-    if (options.devtoolsEnabled) {
-      this.ref2vaSystemPromptFallbackPath = this.ref2vaSystemPromptPath
-      this.ref2vaSystemPromptPath = joinPath(options.devtoolsPromptDirectory, 'ref2va_system_prompt.md')
-    }
-    this.reload()
-  }
-
-  /**
-   * Load template text and retain each resolved source path.
-   * @throws PromptRuntimeError when a required template is missing, unreadable, or empty.
-   */
-  reload(): void {
-    ;[this.ref2vaSystemPrompt, this.ref2vaSystemPromptSourcePath] = loadPromptRequiredWithPath(
-      this.ref2vaSystemPromptPath, 'reference video', this.ref2vaSystemPromptFallbackPath)
+    [this.ref2vaSystemPrompt, this.ref2vaSystemPromptSourcePath] = loadPromptRequiredWithPath(
+      joinPath(PACKAGED_TEMPLATE_DIRECTORY, 'ref2va_system_prompt.md'), 'reference video')
     ;[this.enhanceSystemPrompt, this.enhanceSystemPromptSourcePath] = loadPromptRequiredWithPath(
-      this.enhanceSystemPromptPath, 'next-segment', this.enhanceSystemPromptFallbackPath)
+      resolveTemplatePath('next_segment_system_prompt.md', options.enhanceSystemPromptPath), 'next-segment')
     ;[this.autoSystemPrompt, this.autoSystemPromptSourcePath] = loadPromptRequiredWithPath(
-      this.autoSystemPromptPath, 'auto-extension', this.autoSystemPromptFallbackPath)
+      resolveTemplatePath('auto_extension_system_prompt.md', options.autoSystemPromptPath), 'auto-extension')
     ;[this.rewriteAllSystemPrompt, this.rewriteAllSystemPromptSourcePath] = loadPromptRequiredWithPath(
-      this.rewriteAllSystemPromptPath, 'rewrite-window', this.rewriteAllSystemPromptFallbackPath)
+      resolveTemplatePath('rewrite_window_system_prompt.md', options.rewriteAllSystemPromptPath), 'rewrite-window')
     ;[this.rewriteUserSystemPrompt, this.rewriteUserSystemPromptSourcePath] = loadPromptWithPromptFallback(
-      this.rewriteUserSystemPromptPath,
+      resolveTemplatePath('rewrite_user_system_prompt.md', options.rewriteUserSystemPromptPath),
       'rewrite-user',
       this.rewriteAllSystemPrompt,
       this.rewriteAllSystemPromptSourcePath,
-      this.rewriteUserSystemPromptFallbackPath,
     )
   }
 }

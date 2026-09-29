@@ -65,9 +65,8 @@ describe('generate_video_sequence', () => {
     const scenes = ['Scene 1', 'Scene 2', 'Scene 3', 'Scene 4']
     await finishRound(run, scenes)
     expect(harness.enhancer.rewriteRollout.mock.calls).toEqual([[[], {
-      promptsToRewrite: [], presetId: null, presetLabel: '', rewriteInstruction: 'Explore a forest',
-      rewriteModel: 'model-a', rewriteTemperature: 1, timeoutMs: 20000, systemPromptOverride: '',
-      newRolloutSystemPromptOverride: '', generationMode: mode,
+      promptsToRewrite: [], presetId: null, presetLabel: '', rewriteInstruction: 'Explore a forest', timeoutMs: 20000,
+      generationMode: mode,
       // Only the reference-image model numbers its images; first-frame models have no image labels.
       referenceLabels: mode === 'ref2va' ? ['Picture 1'] : [], segmentCount: 4, segmentDurationSec: 5,
       signal: run.project.generationSignal,
@@ -94,7 +93,7 @@ describe('generate_video_sequence', () => {
     ])
   })
 
-  it('passes the project-init rewrite settings to the initial rollout', async () => {
+  it('passes the project-init preset to the initial rollout and ignores browser rewrite settings', async () => {
     harness = await openUserActions()
     const run = await harness.start(projectPayload({
       segment_count: 6, preset_id: 'custom_editable', preset_label: 'Custom rollout', curated_prompts: [],
@@ -103,12 +102,12 @@ describe('generate_video_sequence', () => {
       rewrite_user_system_prompt: 'User rewrite prompt', enhancement_enabled: true,
     }))
     await finishRound(run, ['Scene 1', 'Scene 2', 'Scene 3', 'Scene 4', 'Scene 5', 'Scene 6'])
-    expect(harness.enhancer.rewriteRollout.mock.calls[0]![1]).toMatchObject({
-      presetId: 'custom_editable', presetLabel: 'Custom rollout',
-      rewriteInstruction: 'A moonbase corridor thriller with flooding', rewriteModel: 'model-b',
-      rewriteTemperature: 0.4, timeoutMs: 20000, systemPromptOverride: 'Window rewrite prompt',
-      newRolloutSystemPromptOverride: 'User rewrite prompt', segmentCount: 6,
+    expect(harness.enhancer.rewriteRollout.mock.calls[0]![1]).toEqual({
+      promptsToRewrite: [], presetId: 'custom_editable', presetLabel: 'Custom rollout',
+      rewriteInstruction: 'A moonbase corridor thriller with flooding', timeoutMs: 20000, generationMode: 't2va',
+      referenceLabels: [], segmentCount: 6, segmentDurationSec: 5, signal: run.project.generationSignal,
     })
+    expect(run.project.promptEnhancementModel).toBe('model-a')
     expect([run.project.promptSequenceId, run.project.promptSequenceLabel]).toEqual(['test-scenes', 'Test scenes'])
   })
 

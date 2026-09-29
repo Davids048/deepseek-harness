@@ -113,7 +113,7 @@ async function enhanceContinuation(project: Project, request: ContinuationReques
   try {
     response = await project.awaitPromptWork(async () => await project.promptEnhancer.continueVideo(
       request.conditioningPrompt, {
-        lockedSegments: history, nextSegmentIdx: history.length + 1, model, timeoutMs,
+        lockedSegments: history, nextSegmentIdx: history.length + 1, timeoutMs,
         generationMode: settings.generation_mode, segmentDurationSec: settings.segment_duration_sec,
         referenceLabels: project.buildPromptImageLabels(request.referenceAssets.length),
         signal: project.generationSignal,

@@ -466,7 +466,6 @@ export function promptResult(prompt: string, fields: Partial<PromptResult> = {})
  * segment count, like the reference test provider race.
  */
 export class FakePromptEnhancer implements DreamversePromptEnhancer {
-  readonly modelOptions = ['model-a', 'model-b']
   readonly expandClip = vi.fn(async (_prompt: string, _options: ExpandClipOptions): Promise<PromptResult> =>
     promptResult('Expanded clip'))
 
@@ -479,19 +478,14 @@ export class FakePromptEnhancer implements DreamversePromptEnhancer {
     const count = sourcePrompts.length > 0 ? sourcePrompts.length : options.segmentCount
     const scenes = Array.from({ length: count }, (_value, index) => `Scene ${index + 1}`)
     return {
-      prompts: scenes, sourcePrompts, fallbackUsed: false, error: null, provider: 'test', model: options.rewriteModel,
+      prompts: scenes, sourcePrompts, fallbackUsed: false, error: null, provider: 'test', model: 'model-a',
       latencyMs: 12.345, rolloutId: 'test-scenes', rolloutLabel: 'Test scenes',
       rawResponseText: JSON.stringify({ id: 'test-scenes', label: 'Test scenes', segment_prompts: scenes }),
     }
   })
 
-  resolveRewriteModel(requestedModel: unknown): string {
-    const candidate = typeof requestedModel === 'string' ? requestedModel.trim() : ''
-    return this.modelOptions.includes(candidate) ? candidate : 'model-a'
-  }
-
-  resolveRewriteTemperature(requestedTemperature: unknown): number {
-    return typeof requestedTemperature === 'number' ? Math.min(2, Math.max(0, requestedTemperature)) : 1
+  rewriteModel(): string {
+    return 'model-a'
   }
 }
 

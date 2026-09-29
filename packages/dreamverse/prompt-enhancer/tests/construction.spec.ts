@@ -42,27 +42,19 @@ type RawConfig = Parameters<typeof Config>[0]
  * @returns the configuration after schema validation and defaults.
  */
 function config(overrides: Record<string, unknown> = {}): ReturnType<typeof Config> {
-  const { devtoolsEnabled: _devtoolsEnabled, ...paths } = templatePathOptions(tmp)
   const raw: Record<string, unknown> = {
-    cerebrasApiKey: 'test-cerebras-construction', groqApiKey: 'test-groq-construction', ...paths, ...overrides,
+    cerebrasApiKey: 'test-cerebras-construction', groqApiKey: 'test-groq-construction', ...templatePathOptions(tmp), ...overrides,
   }
   return Config(raw as RawConfig)
 }
 
 describe('Config', () => {
   it('applies the reference defaults and keeps a blank Groq URL', () => {
-    const parsed = Config({ devtoolsPromptDirectory: '/overlay' })
-    expect(parsed).toMatchObject({
+    expect(Config({})).toMatchObject({
       groqApiBaseUrl: 'https://api.groq.com/openai/v1',
       cerebrasBaseUrl: 'https://api.cerebras.ai',
-      devtoolsEnabled: false,
-      devtoolsPromptDirectory: '/overlay',
     })
-    expect(Config({ devtoolsPromptDirectory: '/overlay', groqApiBaseUrl: '' }).groqApiBaseUrl).toBe('')
-  })
-
-  it('requires the developer overlay directory', () => {
-    expect(() => Config({})).toThrow()
+    expect(Config({ groqApiBaseUrl: '' }).groqApiBaseUrl).toBe('')
   })
 })
 
@@ -84,9 +76,7 @@ describe('DreamversePromptEnhancer', () => {
       { cerebras: 'cerebras/second', groq: 'groq/second' }],
   ])('captures the logical model and vendor aliases %j', async (overrides, logicalModel, aliases) => {
     const service = new DreamversePromptEnhancer(new Context(), config(overrides))
-    const promptConfig = service.getPromptConfig()
-    expect([promptConfig.rewrite_model, promptConfig.rewrite_model_options, promptConfig.auto_extension_system_prompt])
-      .toEqual([logicalModel, [logicalModel], 'clip and auto template'])
+    expect(service.rewriteModel()).toBe(logicalModel)
     const result = await service.expandClip('A river', { segmentDurationSec: 5 })
     expect([result.prompt, result.model, result.fallbackUsed]).toEqual(['Detailed river', logicalModel, false])
     const provider = result.provider as 'cerebras' | 'groq'
@@ -136,34 +126,22 @@ describe('DreamversePromptEnhancer', () => {
     }
   })
 
-  it('retains each service\'s template files when another is constructed', () => {
-    const fields = [
-      ['enhanceSystemPromptPath', 'next_segment_system_prompt'],
-      ['autoSystemPromptPath', 'auto_extension_system_prompt'],
-      ['rewriteAllSystemPromptPath', 'rewrite_window_system_prompt'],
-      ['rewriteUserSystemPromptPath', 'rewrite_user_system_prompt'],
-    ] as const
-    const services = ['first', 'second'].map((name) => {
+  it('keeps each service\'s template files when another is constructed', async () => {
+    const names = ['first', 'second']
+    const services = names.map((name) => {
       const directory = path.join(tmp, name)
       fs.mkdirSync(directory)
-      const overrides: Record<string, string> = {}
-      for (const [option, field] of fields) {
-        const filePath = path.join(directory, `${field}.md`)
-        fs.writeFileSync(filePath, `${name} ${field}\n`)
-        overrides[option] = `  ${filePath} \n`
-      }
-      return new DreamversePromptEnhancer(new Context(), config(overrides))
+      const filePath = path.join(directory, 'auto_extension_system_prompt.md')
+      fs.writeFileSync(filePath, `${name} auto_extension_system_prompt\n`)
+      return new DreamversePromptEnhancer(new Context(), config({ autoSystemPromptPath: `  ${filePath} \n` }))
     })
-    const secondFiles = fields.map(([, field]) => fs.readFileSync(path.join(tmp, 'second', `${field}.md`), 'utf8'))
-    const edits = Object.fromEntries(fields.map(([, field]) => [field, `edited first ${field}`]))
-    const saved = services[0]?.savePromptConfig(edits)
-    for (const [, field] of fields) {
-      expect(saved?.[field]).toBe(`edited first ${field}`)
-      expect(saved?.[`${field}_path`]).toBe(path.join(tmp, 'first', `${field}.md`))
-      expect(fs.readFileSync(path.join(tmp, 'first', `${field}.md`), 'utf8')).toBe(`edited first ${field}\n`)
+    for (const [index, name] of names.entries()) {
+      captured = []
+      await services[index]?.expandClip('A river', { segmentDurationSec: 5 })
+      const systemPrompts = captured.map(request => (request.body['messages'] as { content: string }[])[0]?.content)
+      expect(systemPrompts.length).toBeGreaterThan(0)
+      for (const systemPrompt of systemPrompts) expect(systemPrompt).toBe(`${name} auto_extension_system_prompt`)
     }
-    expect(fields.map(([, field]) => fs.readFileSync(path.join(tmp, 'second', `${field}.md`), 'utf8'))).toEqual(secondFiles)
-    expect(services[1]?.getPromptConfig().next_segment_system_prompt).toBe('second next_segment_system_prompt')
   })
 
   it('routes diagnostics through the plugin logger without format substitution', async () => {

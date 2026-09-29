@@ -49,7 +49,6 @@ TEMPLATE_KEYS = (
 )
 BASE_SETTINGS = {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": ["gpt-oss-120b", "gpt-alt"],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000,
@@ -105,7 +104,7 @@ def case(name: str, operation: str, args: dict[str, Any], reply_value: dict[str,
 
 
 def clip_cases() -> None:
-    """Expand one clip across modes, labels, durations, models, and reply formats."""
+    """Expand one clip across modes, labels, durations, and reply formats."""
     for mode in ("t2va", "i2v", "ref2va"):
         for labels in ([], LABELS):
             for duration in (5, 10):
@@ -113,10 +112,6 @@ def clip_cases() -> None:
                     "conditioning_prompt": "  A forest walk at dawn  ", "segment_duration_sec": duration,
                     "generation_mode": mode, "reference_labels": labels,
                 }, reply('{"prompt":"A misty forest path at dawn, birdsong rising."}'))
-    for model in (None, "gpt-alt", " gpt-alt ", "unknown-model"):
-        case(f"clip/model={model}", "expand_clip", {
-            "conditioning_prompt": "A moonbase", "segment_duration_sec": 5, "model": model,
-        }, reply('{"prompt":"Detailed moonbase"}'))
     for prompt in ("", "   ", None, 5):
         case(f"clip/blank-input={prompt!r}", "expand_clip", {
             "conditioning_prompt": prompt, "segment_duration_sec": 5,
@@ -183,10 +178,6 @@ def continuation_cases() -> None:
         case(f"continue/blank-direction={prompt!r}", "continue_video", {
             "conditioning_prompt": prompt, "segment_duration_sec": 5, "locked_segments": ["One"],
         }, reply('{"next_prompt":"unused"}'))
-    for model in ("gpt-alt", "unknown-model"):
-        case(f"continue/model={model}", "continue_video", {
-            "conditioning_prompt": None, "segment_duration_sec": 5, "locked_segments": ["One"], "model": model,
-        }, reply('{"next_prompt":"ok"}'))
     replies = {
         "fenced": 'Continuation:\n```json\n{"next_prompt": "Fenced next"}\n```',
         "prose-wrapped": 'Here: {"next_prompt": "Embedded next"} done',
@@ -215,7 +206,7 @@ def rollout_json(count: int, **extra: Any) -> str:
 
 
 def rollout_cases() -> None:
-    """Create and edit rollouts across counts, windows, overrides, metadata, and reply formats."""
+    """Create and edit rollouts across counts, windows, metadata, and reply formats."""
     for mode in ("t2va", "i2v", "ref2va"):
         for labels in ([], ["Picture 1"]):
             for count in (1, 3, 6):
@@ -237,29 +228,15 @@ def rollout_cases() -> None:
         "cleaned-window": [" browser one ", "", None, 7, "browser two"],
     }
     for label, window in windows.items():
-        for override in (None, "project rewrite template", "  "):
-            case(f"rollout/window={label}/override={override!r}", "rewrite_rollout", {
-                "prompts": [" stored one ", "stored two", 9, ""], "segment_count": 6, "segment_duration_sec": 5,
-                "prompts_to_rewrite": window, "rewrite_instruction": "Make it cinematic",
-                "system_prompt_override": override,
-            }, reply('{"segment_prompts":["A","B"]}'))
-    overrides = [
-        (None, None), ("window override", None), (None, "initial override"), ("window override", "initial override"),
-        ("window override", "  "), (" window override ", ""), (None, " initial override "),
-    ]
-    for window_override, initial_override in overrides:
-        for mode in ("t2va", "ref2va"):
-            case(f"rollout/new-overrides/{window_override!r}/{initial_override!r}/{mode}", "rewrite_rollout", {
-                "prompts": [], "segment_count": 3, "segment_duration_sec": 5,
-                "prompts_to_rewrite": [" ", None, 7], "rewrite_instruction": "A moonbase thriller",
-                "system_prompt_override": window_override, "new_rollout_system_prompt_override": initial_override,
-                "generation_mode": mode,
-            }, reply(rollout_json(3)))
-    for model, temperature in ((None, None), ("gpt-alt", 0.2), (" gpt-alt ", 5), ("unknown", -1), (None, 1.35)):
-        case(f"rollout/model={model!r}/temperature={temperature}", "rewrite_rollout", {
-            "prompts": ["one", "two"], "segment_count": 6, "segment_duration_sec": 5,
-            "rewrite_instruction": "cinematic", "rewrite_model": model, "rewrite_temperature": temperature,
+        case(f"rollout/window={label}", "rewrite_rollout", {
+            "prompts": [" stored one ", "stored two", 9, ""], "segment_count": 6, "segment_duration_sec": 5,
+            "prompts_to_rewrite": window, "rewrite_instruction": "Make it cinematic",
         }, reply('{"segment_prompts":["A","B"]}'))
+    for mode in ("t2va", "ref2va"):
+        case(f"rollout/new-junk-window/{mode}", "rewrite_rollout", {
+            "prompts": [], "segment_count": 3, "segment_duration_sec": 5,
+            "prompts_to_rewrite": [" ", None, 7], "rewrite_instruction": "A moonbase thriller", "generation_mode": mode,
+        }, reply(rollout_json(3)))
     for preset_id, preset_label in ((None, None), ("preset_a", "Preset A"), ("  ", "  "), (" padded ", " Label ")):
         for response in ('{"segment_prompts":["A","B"]}', "invalid prose"):
             case(f"rollout/preset={preset_id!r}/{preset_label!r}/reply={response[:8]}", "rewrite_rollout", {
@@ -341,7 +318,6 @@ def build_settings(values: dict[str, Any]) -> PromptSettings:
     """Apply one fixture's request defaults to fresh settings."""
     settings = PromptSettings()
     settings.rewrite_default_model = values["rewrite_default_model"]
-    settings.rewrite_model_options = list(values["rewrite_model_options"])
     settings.temperature = values["temperature"]
     settings.rewrite_default_temperature = values["rewrite_default_temperature"]
     settings.max_completion_tokens = values["max_completion_tokens"]

@@ -10,28 +10,18 @@ import type { Logger } from '@deepseek-ai/cordis'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { deleteAsset, listAssets, readAssetContent, uploadAsset } from './asset-routes.ts'
 import { getCreationCapabilities } from './creation-route.ts'
-import { appendCuratedPreset, getCuratedPresets, type CuratedPresetsFiles } from './curated-presets-routes.ts'
-import type { DreamverseAssetsManager, DreamverseGeneration, DreamverseProjects, DreamversePromptEnhancer } from './dependencies.ts'
+import type { DreamverseAssetsManager, DreamverseGeneration, DreamverseProjects } from './dependencies.ts'
 import { getHealthz, getReadyz } from './health-routes.ts'
 import { sendInternalServerError, sendJson } from './http.ts'
 import { ProjectConnection } from './project-connection.ts'
 import { BrowserProjectSocket } from './project-socket.ts'
-import { getPromptSystemConfig, savePromptSystemConfig } from './prompt-config-route.ts'
 
 /** The services the browser server routes to. */
 export interface BrowserServerServices {
   generation: DreamverseGeneration
   assets: DreamverseAssetsManager
   projects: DreamverseProjects
-  promptEnhancer: DreamversePromptEnhancer
   logger: Logger
-}
-
-/** The route choices of the reference `ApplicationSettings`. */
-export interface BrowserServerRoutes {
-  /** Serve the curated preset routes, like the reference `devtools_enabled`. */
-  devtoolsEnabled: boolean
-  curatedPresets: CuratedPresetsFiles
 }
 
 /** One FastAPI route: one method and one path pattern whose groups are the decoded path parameters. */
@@ -60,11 +50,10 @@ export class DreamverseBrowserServer {
   private readonly routes: Route[]
 
   /**
-   * @param services - the generation, asset, project, prompt enhancer, and logger services.
-   * @param routeOptions - the developer tools switch and the curated preset catalog paths.
+   * @param services - the generation, asset, project, and logger services.
    */
-  constructor(private readonly services: BrowserServerServices, routeOptions: BrowserServerRoutes) {
-    this.routes = this.createRoutes(routeOptions)
+  constructor(private readonly services: BrowserServerServices) {
+    this.routes = this.createRoutes()
     this.server = createServer((request, response) => { this.serveHttp(request, response) })
     this.server.on('upgrade', (request: IncomingMessage, socket: Duplex, head: Buffer) => {
       if (requestPath(request) !== '/ws') {
@@ -103,18 +92,13 @@ export class DreamverseBrowserServer {
     await Promise.all([listenerClosed, ...this.connections])
   }
 
-  /**
-   * The reference routes: health, prompt configuration, creation capabilities, assets, and, with developer tools,
-   * curated presets.
-   */
-  private createRoutes({ devtoolsEnabled, curatedPresets }: BrowserServerRoutes): Route[] {
-    const { generation, assets, promptEnhancer, logger } = this.services
-    const routes: Route[] = [
+  /** The reference routes: health, creation capabilities, and assets. */
+  private createRoutes(): Route[] {
+    const { generation, assets, logger } = this.services
+    return [
       { method: 'GET', path: /^\/health$/, handle: (_request, response) => { getHealthz(response) } },
       { method: 'GET', path: /^\/healthz$/, handle: (_request, response) => { getHealthz(response) } },
       { method: 'GET', path: /^\/readyz$/, handle: (_request, response) => getReadyz(response, generation, logger) },
-      { method: 'GET', path: /^\/prompt-system-config$/, handle: (_request, response) => { getPromptSystemConfig(response, promptEnhancer) } },
-      { method: 'POST', path: /^\/prompt-system-config$/, handle: (request, response) => savePromptSystemConfig(request, response, promptEnhancer) },
       { method: 'GET', path: /^\/creation-capabilities$/, handle: (_request, response) => getCreationCapabilities(response, generation, assets, logger) },
       { method: 'GET', path: /^\/assets$/, handle: (_request, response) => { listAssets(response, assets) } },
       { method: 'POST', path: /^\/assets$/, handle: (request, response) => uploadAsset(request, response, assets) },
@@ -125,13 +109,6 @@ export class DreamverseBrowserServer {
       },
       { method: 'DELETE', path: /^\/assets\/([^/]+)$/, handle: (_request, response, [assetId = '']) => { deleteAsset(response, assets, assetId) } },
     ]
-    if (devtoolsEnabled) {
-      routes.push(
-        { method: 'GET', path: /^\/curated-presets$/, handle: (_request, response) => { getCuratedPresets(response, curatedPresets) } },
-        { method: 'POST', path: /^\/curated-presets\/append$/, handle: (request, response) => appendCuratedPreset(request, response, curatedPresets) },
-      )
-    }
-    return routes
   }
 
   private serveProject(projectSocket: WebSocket): void {

@@ -1,14 +1,13 @@
 /**
  * Failure kinds that mirror the Python exception classes raised by the reference prompt enhancer.
  *
- * The prompt configuration route answers HTTP 400 for a Python `ValueError` and HTTP 500 with the message for a
- * Python `RuntimeError`; projects treat `ValueError` as a recoverable validation failure. Callers distinguish the
- * two kinds with `instanceof`.
+ * Projects treat `ValueError` as a recoverable validation failure. Callers distinguish the two kinds with
+ * `instanceof`.
  *
  * @module @dreamverse/prompt-enhancer/utils/errors
  */
 
-/** A failure the reference raises as Python `ValueError`, such as a rejected setting or an unsupported mode. */
+/** A failure the reference raises as Python `ValueError`, such as an unsupported mode or a rejected reply. */
 export class PromptValueError extends Error {
   override name = 'PromptValueError'
 }

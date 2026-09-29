@@ -61,10 +61,6 @@ export interface RewriteRolloutOptions extends FeatureDependencies {
   readonly presetId?: string | null | undefined
   readonly presetLabel?: string | null | undefined
   readonly rewriteInstruction?: string | null | undefined
-  /** The requested logical model; an unknown or absent name selects the settings default. */
-  readonly rewriteModel?: string | null | undefined
-  /** The requested temperature; an absent value selects the settings default. */
-  readonly rewriteTemperature?: number | null | undefined
 }
 
 /**
@@ -124,7 +120,7 @@ function buildRewriteUserPayload(options: {
  */
 export async function rewriteRollout(prompts: string[], options: RewriteRolloutOptions): Promise<RolloutResult> {
   const { settings, race } = options
-  const resolvedModel = settings.resolveRewriteModel(options.rewriteModel)
+  const model = settings.rewriteDefaultModel
   const instruction = normalizePrompt(options.rewriteInstruction)
   if (prompts.length === 0 && !instruction) {
     return {
@@ -133,7 +129,7 @@ export async function rewriteRollout(prompts: string[], options: RewriteRolloutO
       fallbackUsed: true,
       error: 'No valid prompts to rewrite or generate.',
       provider: race.providerLabel,
-      model: resolvedModel,
+      model,
       latencyMs: 0.0,
       rolloutId: resolveRolloutId(options.presetId),
       rolloutLabel: resolveRolloutLabel(options.presetLabel),
@@ -157,9 +153,9 @@ export async function rewriteRollout(prompts: string[], options: RewriteRolloutO
   const request: ChatRequest = {
     systemPrompt: options.systemPrompt,
     userContent: dumpsJson(userPayload),
-    model: resolvedModel,
+    model,
     defaultModel: settings.rewriteDefaultModel,
-    temperature: settings.resolveRewriteTemperature(options.rewriteTemperature),
+    temperature: settings.rewriteDefaultTemperature,
     maxCompletionTokens: options.maxCompletionTokens,
   }
 
@@ -191,7 +187,7 @@ export async function rewriteRollout(prompts: string[], options: RewriteRolloutO
       fallbackUsed: false,
       error: null,
       provider,
-      model: resolvedModel,
+      model,
       latencyMs: elapsedMs(started),
       rolloutId,
       rolloutLabel,
@@ -205,7 +201,7 @@ export async function rewriteRollout(prompts: string[], options: RewriteRolloutO
       fallbackUsed: true,
       error: errorText(error),
       provider: race.providerLabel,
-      model: resolvedModel,
+      model,
       latencyMs: elapsedMs(started),
       rolloutId: resolveRolloutId(options.presetId),
       rolloutLabel: resolveRolloutLabel(options.presetLabel),

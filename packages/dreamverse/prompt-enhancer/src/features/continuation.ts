@@ -15,8 +15,6 @@ export interface ContinueVideoOptions extends FeatureDependencies {
   readonly lockedSegments?: readonly unknown[] | null | undefined
   /** The 1-based index of the new segment; other values select the segment after the locked history. */
   readonly nextSegmentIdx?: number | null | undefined
-  /** The requested logical model; an unknown or absent name selects the settings default. */
-  readonly model?: string | null | undefined
 }
 
 /**
@@ -50,14 +48,14 @@ export async function continueVideo(conditioningPrompt: unknown, options: Contin
   const { settings, race, segmentDurationSec } = options
   const automatic = conditioningPrompt === null || conditioningPrompt === undefined
   const cleaned = typeof conditioningPrompt === 'string' ? stripWhitespace(conditioningPrompt) : ''
-  const resolvedModel = settings.resolveRewriteModel(options.model)
+  const model = settings.rewriteDefaultModel
   if (!automatic && !cleaned) {
     return {
       prompt: '',
       fallbackUsed: true,
       error: 'No valid prompt provided.',
       provider: race.providerLabel,
-      model: resolvedModel,
+      model,
       latencyMs: 0.0,
     }
   }
@@ -86,7 +84,7 @@ export async function continueVideo(conditioningPrompt: unknown, options: Contin
   const request: ChatRequest = {
     systemPrompt: options.systemPrompt,
     userContent: dumpsJson(userPayload),
-    model: resolvedModel,
+    model,
     defaultModel: settings.rewriteDefaultModel,
     temperature: settings.temperature,
     maxCompletionTokens: options.maxCompletionTokens,
@@ -98,7 +96,7 @@ export async function continueVideo(conditioningPrompt: unknown, options: Contin
       timeoutMs: options.timeoutMs,
       signal: options.signal,
     })
-    return { prompt, fallbackUsed: false, error: null, provider, model: resolvedModel, latencyMs: elapsedMs(started) }
+    return { prompt, fallbackUsed: false, error: null, provider, model, latencyMs: elapsedMs(started) }
   } catch (error) {
     if (options.signal?.aborted) throw error
     return {
@@ -106,7 +104,7 @@ export async function continueVideo(conditioningPrompt: unknown, options: Contin
       fallbackUsed: true,
       error: errorText(error),
       provider: race.providerLabel,
-      model: resolvedModel,
+      model,
       latencyMs: elapsedMs(started),
     }
   }

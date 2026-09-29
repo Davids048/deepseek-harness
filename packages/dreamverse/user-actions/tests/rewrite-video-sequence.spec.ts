@@ -68,16 +68,16 @@ async function startWithAcceptedSequence(
 }
 
 describe('rewrite_seed_prompts', () => {
-  it.each(['t2va', 'ref2va'])('captures the selected %s window and rewrite settings for the provider', async (mode) => {
+  it.each(['t2va', 'ref2va'])('captures the selected %s window for the provider and ignores browser rewrite settings', async (mode) => {
     const assets = new FakeAssets()
     const assetIds = mode === 'ref2va' ? [assets.addImage('image').assetId] : []
     const enhancer = new FakePromptEnhancer()
     const entered = new Deferred()
     const release = new Deferred()
-    enhancer.rewriteRollout.mockImplementationOnce(async (_prompts, options) => {
+    enhancer.rewriteRollout.mockImplementationOnce(async () => {
       entered.resolve()
       await release.promise
-      return rollout(['Rewritten beach', 'Rewritten sunset'], { model: options.rewriteModel })
+      return rollout(['Rewritten beach', 'Rewritten sunset'])
     })
     const generation = new FakeGeneration(mode === 'ref2va' ? ref2vaFacts() : undefined)
     const run = await startWithAcceptedSequence(['Accepted scene'], { generation, assets, enhancer }, {
@@ -100,21 +100,16 @@ describe('rewrite_seed_prompts', () => {
     await finishRound(run, ['Rewritten beach', 'Rewritten sunset'])
     expect(enhancer.rewriteRollout.mock.calls).toEqual([[['Accepted scene'], {
       promptsToRewrite: ['Archived beach', 'Archived sunset'], presetId: 'accepted-sequence',
-      presetLabel: 'Accepted sequence', rewriteInstruction: 'Add rain', rewriteModel: 'model-b',
-      rewriteTemperature: 0.4, timeoutMs: 20000, systemPromptOverride: 'rewrite template',
-      newRolloutSystemPromptOverride: 'seed template', generationMode: mode,
+      presetLabel: 'Accepted sequence', rewriteInstruction: 'Add rain', timeoutMs: 20000, generationMode: mode,
       referenceLabels: assetIds.map(() => 'Picture 1'), segmentCount: 1, segmentDurationSec: 5,
       signal: run.project.generationSignal,
     }]])
     expect([run.project.promptSequenceId, run.project.promptSequenceLabel]).toEqual(['rewritten-sequence', 'Rewritten sequence'])
-    expect([
-      run.project.promptEnhancementModel, run.project.sequencePromptTemperature,
-      run.project.sequenceRewriteSystemPromptOverride, run.project.sequenceCreationSystemPromptOverride,
-    ]).toEqual(['model-b', 0.4, 'rewrite template', 'seed template'])
+    expect(run.project.promptEnhancementModel).toBe('model-a')
     const prompts = ['Rewritten beach', 'Rewritten sunset']
     expect(run.socket.entries.slice(after)).toEqual([
       roundStatus('preparing'),
-      { type: 'seed_prompts_updated', prompts, model: 'model-b', latency_ms: 12.35, raw_llm_output: DIAGNOSTIC_TEXT },
+      { type: 'seed_prompts_updated', prompts, model: 'model-a', latency_ms: 12.35, raw_llm_output: DIAGNOSTIC_TEXT },
       { type: 'rewrite_seed_prompts_complete', prompt_id: 'rewrite' },
       roundStatus('generating'),
       streamStart('rewrite', 'Add rain', prompts),

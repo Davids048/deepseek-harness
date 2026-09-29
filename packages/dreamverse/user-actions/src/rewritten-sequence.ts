@@ -82,7 +82,7 @@ export async function generateRewrittenSequence(
 }
 
 /**
- * Request the rollout with the project's rewrite settings captured before the provider wait.
+ * Request the rollout with the project's preset and generation settings captured before the provider wait.
  * @param project - the project that owns the round.
  * @param instruction - the seed or rewrite instruction.
  * @param input - the source prompts, the selected window, and the retained reference assets.
@@ -99,16 +99,12 @@ async function requestRollout(
   const presetId = project.promptSequenceId
   const presetLabel = project.promptSequenceLabel
   const model = project.promptEnhancementModel
-  const temperature = project.sequencePromptTemperature
   const timeoutMs = project.promptEnhancementTimeoutMs
-  const systemPrompt = project.sequenceRewriteSystemPromptOverride
-  const userSystemPrompt = project.sequenceCreationSystemPromptOverride
   const settings = project.videoGenerationSettings
   try {
     return await project.awaitPromptWork(async () => await project.promptEnhancer.rewriteRollout(sourcePrompts, {
-      promptsToRewrite, presetId, presetLabel, rewriteInstruction: instruction.text, rewriteModel: model,
-      rewriteTemperature: temperature, timeoutMs, systemPromptOverride: systemPrompt,
-      newRolloutSystemPromptOverride: userSystemPrompt, generationMode: settings.generation_mode,
+      promptsToRewrite, presetId, presetLabel, rewriteInstruction: instruction.text, timeoutMs,
+      generationMode: settings.generation_mode,
       referenceLabels: project.buildPromptImageLabels(input.referenceAssets.length),
       segmentCount: settings.segment_count, segmentDurationSec: settings.segment_duration_sec,
       signal: project.generationSignal,

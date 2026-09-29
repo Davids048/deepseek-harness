@@ -1,8 +1,7 @@
 /**
  * Structural types for the services that the browser server consumes: the `dreamverseProjects` Project surface, the
- * `dreamversePromptEnhancer` prompt configuration methods, the `dreamverseGeneration` model facts and readiness, and
- * the `dreamverseAssetsManager` library. They restate the members that `packages/dreamverse/README.md` defines, so the
- * browser server compiles and tests against fakes.
+ * `dreamverseGeneration` model facts and readiness, and the `dreamverseAssetsManager` library. They restate the
+ * members that `packages/dreamverse/README.md` defines, so the browser server compiles and tests against fakes.
  *
  * @module @dreamverse/browser-server/dependencies
  */
@@ -48,28 +47,6 @@ export interface DreamverseProjects {
   createProject(init: ProjectInit): Promise<Project>
   /** Writes one connection-level project log event; logging failures do not reject. */
   logProjectEvent(projectId: string, event: string, payload?: Record<string, unknown>): Promise<void>
-}
-
-/**
- * The validated `POST /prompt-system-config` body keyed by its JSON fields; `null` stands for an absent or `null`
- * field, as the reference passes `None` for every such keyword.
- */
-export interface PromptConfigUpdate {
-  next_segment_system_prompt: string | null
-  auto_extension_system_prompt: string | null
-  rewrite_window_system_prompt: string | null
-  rewrite_user_system_prompt: string | null
-  ref2va_system_prompt: string | null
-  rewrite_model: string | null
-  rewrite_temperature: number | null
-}
-
-/** The `dreamversePromptEnhancer` members that the browser HTTP routes call. */
-export interface DreamversePromptEnhancer {
-  /** The editable prompt templates and prompt settings, with reference snake_case keys. */
-  getPromptConfig(): object
-  /** Throws `PromptValueError` for invalid input and `PromptRuntimeError` for file failures. */
-  savePromptConfig(update: PromptConfigUpdate): object
 }
 
 /** The `ModelFacts` fields that `GET /creation-capabilities` reports. */

@@ -88,7 +88,7 @@ interface QueuedGenerationAction {
 const BROWSER_GENERATION_COMMANDS: ReadonlySet<unknown> = new Set(['append_prompt', 'rewrite_seed_prompts', 'simple_generate'])
 
 /** Browser settings commands admitted under the same round rules as generation commands. */
-const BROWSER_SETTING_COMMANDS: ReadonlySet<unknown> = new Set(['set_enhancement', 'set_rewrite_model', 'set_rewrite_temperature'])
+const BROWSER_SETTING_COMMANDS: ReadonlySet<unknown> = new Set(['set_enhancement'])
 
 /** Settings that `Project.create()` resolves from `project_init_v1` before constructing the project. */
 interface ProjectCreationFields {
@@ -98,9 +98,6 @@ interface ProjectCreationFields {
   promptSequenceLabel: string
   promptEnhancementEnabled: boolean
   promptEnhancementModel: string
-  sequencePromptTemperature: number
-  sequenceRewriteSystemPromptOverride: string
-  sequenceCreationSystemPromptOverride: string
 }
 
 /** FIFO of admitted actions with one consumer, the project's generation loop. */
@@ -157,10 +154,8 @@ export class Project {
   promptSequenceId: unknown
   promptSequenceLabel: string
   promptEnhancementEnabled: boolean
-  promptEnhancementModel: string
-  sequencePromptTemperature: number
-  sequenceRewriteSystemPromptOverride: string
-  sequenceCreationSystemPromptOverride: string
+  /** The startup rewrite model that browser events and project log events report as `rewrite_model`. */
+  readonly promptEnhancementModel: string
   autoContinueAfterGeneration = false
   activeGenerationPlan: GenerationPlan | null = null
   generationRoundStatus: GenerationRoundStatus = 'idle'
@@ -184,9 +179,6 @@ export class Project {
     this.promptSequenceLabel = fields.promptSequenceLabel
     this.promptEnhancementEnabled = fields.promptEnhancementEnabled
     this.promptEnhancementModel = fields.promptEnhancementModel
-    this.sequencePromptTemperature = fields.sequencePromptTemperature
-    this.sequenceRewriteSystemPromptOverride = fields.sequenceRewriteSystemPromptOverride
-    this.sequenceCreationSystemPromptOverride = fields.sequenceCreationSystemPromptOverride
     this.generationPlanController = new GenerationPlanController(this)
   }
 
@@ -205,11 +197,7 @@ export class Project {
     const promptSequenceId = payloadGet(payload, 'preset_id')
     const promptSequenceLabel = textOr(payload['preset_label'], '').trim()
     const promptEnhancementEnabled = isTruthy(payloadGet(payload, 'enhancement_enabled', true))
-    const promptEnhancementModel = services.promptEnhancer.resolveRewriteModel(payloadGet(payload, 'rewrite_model'))
-    const sequencePromptTemperature = services.promptEnhancer.resolveRewriteTemperature(
-      payloadGet(payload, 'rewrite_temperature'))
-    const sequenceRewriteSystemPromptOverride = textOr(payload['rewrite_window_system_prompt'], '').trim()
-    const sequenceCreationSystemPromptOverride = textOr(payload['rewrite_user_system_prompt'], '').trim()
+    const promptEnhancementModel = services.promptEnhancer.rewriteModel()
     const rawInstruction = textOr(payload['initial_rollout_prompt'], '').trim()
     const incoming = payloadGet(payload, 'curated_prompts', [])
     const prompts = Array.isArray(incoming)
@@ -219,8 +207,7 @@ export class Project {
     const videoGenerationSettings = validateProjectCreation(payload, modelFacts)
     const project = new Project(init, services, {
       modelFacts, videoGenerationSettings, promptSequenceId, promptSequenceLabel, promptEnhancementEnabled,
-      promptEnhancementModel, sequencePromptTemperature, sequenceRewriteSystemPromptOverride,
-      sequenceCreationSystemPromptOverride,
+      promptEnhancementModel,
     })
     const autoExtensionEnabled = payloadGet(payload, 'auto_extension_enabled', false)
     if (typeof autoExtensionEnabled !== 'boolean') {
@@ -304,11 +291,6 @@ export class Project {
     }
     if (command === 'set_enhancement') {
       this.promptEnhancementEnabled = isTruthy(payloadGet(payload, 'enabled', this.promptEnhancementEnabled))
-    } else if (command === 'set_rewrite_model') {
-      this.promptEnhancementModel = this.promptEnhancer.resolveRewriteModel(payloadGet(payload, 'rewrite_model'))
-    } else if (command === 'set_rewrite_temperature') {
-      this.sequencePromptTemperature = this.promptEnhancer.resolveRewriteTemperature(
-        payloadGet(payload, 'rewrite_temperature'))
     } else {
       await this.admitGenerationCommand(structuredClone(payload))
     }

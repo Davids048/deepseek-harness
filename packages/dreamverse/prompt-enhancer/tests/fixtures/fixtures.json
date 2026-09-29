@@ -12,10 +12,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -66,10 +62,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -120,10 +112,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -177,10 +165,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -234,10 +218,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -288,10 +268,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -342,10 +318,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -399,10 +371,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -456,10 +424,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -510,10 +474,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -564,10 +524,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -621,10 +577,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -674,226 +626,10 @@
    }
   },
   {
-   "name": "clip/model=None",
-   "operation": "expand_clip",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "conditioning_prompt": "A moonbase",
-    "segment_duration_sec": 5,
-    "model": null
-   },
-   "reply": {
-    "text": "{\"prompt\":\"Detailed moonbase\"}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"prompt\":\"Detailed moonbase\"}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "auto_system_prompt",
-     "user_content": "{\"request\": \"Expand the user prompt into one complete 5-second audiovisual shot. Respond with valid JSON only as {\\\"prompt\\\": \\\"...\\\"}.\", \"segment_duration_sec\": 5, \"user_prompt\": \"A moonbase\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 1.0,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompt": "Detailed moonbase",
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "clip/model=gpt-alt",
-   "operation": "expand_clip",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "conditioning_prompt": "A moonbase",
-    "segment_duration_sec": 5,
-    "model": "gpt-alt"
-   },
-   "reply": {
-    "text": "{\"prompt\":\"Detailed moonbase\"}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"prompt\":\"Detailed moonbase\"}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "auto_system_prompt",
-     "user_content": "{\"request\": \"Expand the user prompt into one complete 5-second audiovisual shot. Respond with valid JSON only as {\\\"prompt\\\": \\\"...\\\"}.\", \"segment_duration_sec\": 5, \"user_prompt\": \"A moonbase\"}",
-     "model": "gpt-alt",
-     "default_model": "gpt-oss-120b",
-     "temperature": 1.0,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompt": "Detailed moonbase",
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-alt"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "clip/model= gpt-alt ",
-   "operation": "expand_clip",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "conditioning_prompt": "A moonbase",
-    "segment_duration_sec": 5,
-    "model": " gpt-alt "
-   },
-   "reply": {
-    "text": "{\"prompt\":\"Detailed moonbase\"}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"prompt\":\"Detailed moonbase\"}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "auto_system_prompt",
-     "user_content": "{\"request\": \"Expand the user prompt into one complete 5-second audiovisual shot. Respond with valid JSON only as {\\\"prompt\\\": \\\"...\\\"}.\", \"segment_duration_sec\": 5, \"user_prompt\": \"A moonbase\"}",
-     "model": "gpt-alt",
-     "default_model": "gpt-oss-120b",
-     "temperature": 1.0,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompt": "Detailed moonbase",
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-alt"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "clip/model=unknown-model",
-   "operation": "expand_clip",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "conditioning_prompt": "A moonbase",
-    "segment_duration_sec": 5,
-    "model": "unknown-model"
-   },
-   "reply": {
-    "text": "{\"prompt\":\"Detailed moonbase\"}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"prompt\":\"Detailed moonbase\"}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "auto_system_prompt",
-     "user_content": "{\"request\": \"Expand the user prompt into one complete 5-second audiovisual shot. Respond with valid JSON only as {\\\"prompt\\\": \\\"...\\\"}.\", \"segment_duration_sec\": 5, \"user_prompt\": \"A moonbase\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 1.0,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompt": "Detailed moonbase",
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
    "name": "clip/blank-input=''",
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -933,10 +669,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -976,10 +708,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1019,10 +747,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1062,10 +786,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1114,10 +834,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1166,10 +882,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1218,10 +930,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1270,10 +978,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1322,10 +1026,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1374,10 +1074,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1426,10 +1122,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1478,10 +1170,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1530,10 +1218,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1582,10 +1266,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1634,10 +1314,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1686,10 +1362,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1738,10 +1410,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1790,10 +1458,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1842,10 +1506,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1894,10 +1554,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1946,10 +1602,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -1998,10 +1650,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2059,10 +1707,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 16384
@@ -2112,10 +1756,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-alt",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2164,10 +1804,6 @@
    "operation": "expand_clip",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2205,10 +1841,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2267,10 +1899,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2329,10 +1957,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2394,10 +2018,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2459,10 +2079,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2521,10 +2137,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2583,10 +2195,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2648,10 +2256,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2713,10 +2317,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2775,10 +2375,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2837,10 +2433,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2902,10 +2494,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -2967,10 +2555,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3020,10 +2604,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3073,10 +2653,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3126,10 +2702,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3179,10 +2751,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3234,10 +2802,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3289,10 +2853,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3350,10 +2910,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3411,10 +2967,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3468,10 +3020,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3525,10 +3073,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3582,10 +3126,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3639,10 +3179,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3696,10 +3232,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3753,10 +3285,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3799,10 +3327,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3845,10 +3369,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -3887,126 +3407,10 @@
    }
   },
   {
-   "name": "continue/model=gpt-alt",
-   "operation": "continue_video",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "conditioning_prompt": null,
-    "segment_duration_sec": 5,
-    "locked_segments": [
-     "One"
-    ],
-    "model": "gpt-alt"
-   },
-   "reply": {
-    "text": "{\"next_prompt\":\"ok\"}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"next_prompt\":\"ok\"}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "enhance_system_prompt",
-     "user_content": "{\"request\": \"<locked_segments>\\nsegment_1 (0-5s): \\\"One\\\"\\n</locked_segments>\\n\\nWrite exactly one new segment (segment_2) that continues linearly from the locked segments. Infer the next narrative beat from this history. The segment lasts 5 seconds. Respond with valid JSON only as {\\\"next_prompt\\\": \\\"...\\\"}.\", \"segment_duration_sec\": 5}",
-     "model": "gpt-alt",
-     "default_model": "gpt-oss-120b",
-     "temperature": 1.0,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompt": "ok",
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-alt"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "continue/model=unknown-model",
-   "operation": "continue_video",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "conditioning_prompt": null,
-    "segment_duration_sec": 5,
-    "locked_segments": [
-     "One"
-    ],
-    "model": "unknown-model"
-   },
-   "reply": {
-    "text": "{\"next_prompt\":\"ok\"}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"next_prompt\":\"ok\"}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "enhance_system_prompt",
-     "user_content": "{\"request\": \"<locked_segments>\\nsegment_1 (0-5s): \\\"One\\\"\\n</locked_segments>\\n\\nWrite exactly one new segment (segment_2) that continues linearly from the locked segments. Infer the next narrative beat from this history. The segment lasts 5 seconds. Respond with valid JSON only as {\\\"next_prompt\\\": \\\"...\\\"}.\", \"segment_duration_sec\": 5}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 1.0,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompt": "ok",
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
    "name": "continue/reply=fenced/direction=True",
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4058,10 +3462,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4113,10 +3513,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4168,10 +3564,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4223,10 +3615,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4278,10 +3666,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4333,10 +3717,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4388,10 +3768,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4443,10 +3819,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4498,10 +3870,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4553,10 +3921,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4608,10 +3972,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4663,10 +4023,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4727,10 +4083,6 @@
    "operation": "continue_video",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4768,10 +4120,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4832,10 +4180,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4898,10 +4242,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -4967,10 +4307,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5036,10 +4372,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5102,10 +4434,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5170,10 +4498,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5241,10 +4565,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5312,10 +4632,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5376,10 +4692,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5442,10 +4754,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5511,10 +4819,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5580,10 +4884,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5646,10 +4946,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5714,10 +5010,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5785,10 +5077,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5856,10 +5144,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5920,10 +5204,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -5986,10 +5266,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -6055,10 +5331,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -6124,10 +5396,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -6190,10 +5458,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -6258,10 +5522,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -6329,10 +5589,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -6396,14 +5652,10 @@
    }
   },
   {
-   "name": "rollout/window=none/override=None",
+   "name": "rollout/window=none",
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -6418,8 +5670,7 @@
     "segment_count": 6,
     "segment_duration_sec": 5,
     "prompts_to_rewrite": null,
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": null
+    "rewrite_instruction": "Make it cinematic"
    },
    "reply": {
     "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
@@ -6467,156 +5718,10 @@
    }
   },
   {
-   "name": "rollout/window=none/override='project rewrite template'",
+   "name": "rollout/window=empty-list",
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": null,
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "project rewrite template"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "project rewrite template",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"stored one\", \"stored two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "stored one",
-     "stored two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=none/override='  '",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": null,
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "  "
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"stored one\", \"stored two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "stored one",
-     "stored two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=empty-list/override=None",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -6631,8 +5736,7 @@
     "segment_count": 6,
     "segment_duration_sec": 5,
     "prompts_to_rewrite": [],
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": null
+    "rewrite_instruction": "Make it cinematic"
    },
    "reply": {
     "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
@@ -6680,156 +5784,10 @@
    }
   },
   {
-   "name": "rollout/window=empty-list/override='project rewrite template'",
+   "name": "rollout/window=junk-list",
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [],
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "project rewrite template"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "project rewrite template",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"stored one\", \"stored two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "stored one",
-     "stored two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=empty-list/override='  '",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [],
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "  "
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"stored one\", \"stored two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "stored one",
-     "stored two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=junk-list/override=None",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -6848,8 +5806,7 @@
      null,
      7
     ],
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": null
+    "rewrite_instruction": "Make it cinematic"
    },
    "reply": {
     "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
@@ -6897,164 +5854,10 @@
    }
   },
   {
-   "name": "rollout/window=junk-list/override='project rewrite template'",
+   "name": "rollout/window=string",
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     "  ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "project rewrite template"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "project rewrite template",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"stored one\", \"stored two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "stored one",
-     "stored two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=junk-list/override='  '",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     "  ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "  "
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"stored one\", \"stored two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "stored one",
-     "stored two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=string/override=None",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -7069,8 +5872,7 @@
     "segment_count": 6,
     "segment_duration_sec": 5,
     "prompts_to_rewrite": "invalid window",
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": null
+    "rewrite_instruction": "Make it cinematic"
    },
    "reply": {
     "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
@@ -7118,156 +5920,10 @@
    }
   },
   {
-   "name": "rollout/window=string/override='project rewrite template'",
+   "name": "rollout/window=dict",
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": "invalid window",
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "project rewrite template"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "project rewrite template",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"stored one\", \"stored two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "stored one",
-     "stored two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=string/override='  '",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": "invalid window",
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "  "
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"stored one\", \"stored two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "stored one",
-     "stored two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=dict/override=None",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -7284,8 +5940,7 @@
     "prompts_to_rewrite": {
      "prompt": "one"
     },
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": null
+    "rewrite_instruction": "Make it cinematic"
    },
    "reply": {
     "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
@@ -7333,160 +5988,10 @@
    }
   },
   {
-   "name": "rollout/window=dict/override='project rewrite template'",
+   "name": "rollout/window=cleaned-window",
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": {
-     "prompt": "one"
-    },
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "project rewrite template"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "project rewrite template",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"stored one\", \"stored two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "stored one",
-     "stored two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=dict/override='  '",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": {
-     "prompt": "one"
-    },
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "  "
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"stored one\", \"stored two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "stored one",
-     "stored two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=cleaned-window/override=None",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -7507,8 +6012,7 @@
      7,
      "browser two"
     ],
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": null
+    "rewrite_instruction": "Make it cinematic"
    },
    "reply": {
     "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
@@ -7556,168 +6060,10 @@
    }
   },
   {
-   "name": "rollout/window=cleaned-window/override='project rewrite template'",
+   "name": "rollout/new-junk-window/t2va",
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " browser one ",
-     "",
-     null,
-     7,
-     "browser two"
-    ],
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "project rewrite template"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "project rewrite template",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"browser one\", \"browser two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "browser one",
-     "browser two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/window=cleaned-window/override='  '",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     " stored one ",
-     "stored two",
-     9,
-     ""
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " browser one ",
-     "",
-     null,
-     7,
-     "browser two"
-    ],
-    "rewrite_instruction": "Make it cinematic",
-    "system_prompt_override": "  "
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"Make it cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"browser one\", \"browser two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "browser one",
-     "browser two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/None/None/t2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -7732,8 +6078,6 @@
      7
     ],
     "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": null,
-    "new_rollout_system_prompt_override": null,
     "generation_mode": "t2va"
    },
    "reply": {
@@ -7780,14 +6124,10 @@
    }
   },
   {
-   "name": "rollout/new-overrides/None/None/ref2va",
+   "name": "rollout/new-junk-window/ref2va",
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -7802,8 +6142,6 @@
      7
     ],
     "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": null,
-    "new_rollout_system_prompt_override": null,
     "generation_mode": "ref2va"
    },
    "reply": {
@@ -7842,1191 +6180,6 @@
     "rollout_id": "current_rollout",
     "rollout_label": "Current rollout",
     "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/'window override'/None/t2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": "window override",
-    "new_rollout_system_prompt_override": null,
-    "generation_mode": "t2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "window override",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/'window override'/None/ref2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": "window override",
-    "new_rollout_system_prompt_override": null,
-    "generation_mode": "ref2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "ref2va_system_prompt",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 8192
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/None/'initial override'/t2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": null,
-    "new_rollout_system_prompt_override": "initial override",
-    "generation_mode": "t2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "initial override",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/None/'initial override'/ref2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": null,
-    "new_rollout_system_prompt_override": "initial override",
-    "generation_mode": "ref2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "ref2va_system_prompt",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 8192
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/'window override'/'initial override'/t2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": "window override",
-    "new_rollout_system_prompt_override": "initial override",
-    "generation_mode": "t2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "initial override",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/'window override'/'initial override'/ref2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": "window override",
-    "new_rollout_system_prompt_override": "initial override",
-    "generation_mode": "ref2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "ref2va_system_prompt",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 8192
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/'window override'/'  '/t2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": "window override",
-    "new_rollout_system_prompt_override": "  ",
-    "generation_mode": "t2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_user_system_prompt",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/'window override'/'  '/ref2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": "window override",
-    "new_rollout_system_prompt_override": "  ",
-    "generation_mode": "ref2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "ref2va_system_prompt",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 8192
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/' window override '/''/t2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": " window override ",
-    "new_rollout_system_prompt_override": "",
-    "generation_mode": "t2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "window override",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/' window override '/''/ref2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": " window override ",
-    "new_rollout_system_prompt_override": "",
-    "generation_mode": "ref2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "ref2va_system_prompt",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 8192
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/None/' initial override '/t2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": null,
-    "new_rollout_system_prompt_override": " initial override ",
-    "generation_mode": "t2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt": "initial override",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/new-overrides/None/' initial override '/ref2va",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [],
-    "segment_count": 3,
-    "segment_duration_sec": 5,
-    "prompts_to_rewrite": [
-     " ",
-     null,
-     7
-    ],
-    "rewrite_instruction": "A moonbase thriller",
-    "system_prompt_override": null,
-    "new_rollout_system_prompt_override": " initial override ",
-    "generation_mode": "ref2va"
-   },
-   "reply": {
-    "text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "ref2va_system_prompt",
-     "user_content": "{\"mode\": \"new_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 3 segment prompts.\", \"user_instruction\": \"A moonbase thriller\", \"desired_segment_count\": 3, \"segment_duration_sec\": 5, \"rollout_id_hint\": \"current_rollout\", \"rollout_label_hint\": \"Current rollout\"}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 8192
-    }
-   ],
-   "result": {
-    "prompts": [
-     "Generated segment 1",
-     "Generated segment 2",
-     "Generated segment 3"
-    ],
-    "source_prompts": [],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\": [\"Generated segment 1\", \"Generated segment 2\", \"Generated segment 3\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/model=None/temperature=None",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     "one",
-     "two"
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "rewrite_instruction": "cinematic",
-    "rewrite_model": null,
-    "rewrite_temperature": null
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"one\", \"two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.7,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "one",
-     "two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/model='gpt-alt'/temperature=0.2",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     "one",
-     "two"
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "rewrite_instruction": "cinematic",
-    "rewrite_model": "gpt-alt",
-    "rewrite_temperature": 0.2
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"one\", \"two\"]}}",
-     "model": "gpt-alt",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.2,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "one",
-     "two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-alt",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/model=' gpt-alt '/temperature=5",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     "one",
-     "two"
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "rewrite_instruction": "cinematic",
-    "rewrite_model": " gpt-alt ",
-    "rewrite_temperature": 5
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"one\", \"two\"]}}",
-     "model": "gpt-alt",
-     "default_model": "gpt-oss-120b",
-     "temperature": 2.0,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "one",
-     "two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-alt",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/model='unknown'/temperature=-1",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     "one",
-     "two"
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "rewrite_instruction": "cinematic",
-    "rewrite_model": "unknown",
-    "rewrite_temperature": -1
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"one\", \"two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 0.0,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "one",
-     "two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
-   },
-   "raises": null,
-   "provider_success_counts": {
-    "cerebras": 1,
-    "groq": 0
-   }
-  },
-  {
-   "name": "rollout/model=None/temperature=1.35",
-   "operation": "rewrite_rollout",
-   "settings": {
-    "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
-    "temperature": 1.0,
-    "rewrite_default_temperature": 0.7,
-    "max_completion_tokens": 3000
-   },
-   "args": {
-    "prompts": [
-     "one",
-     "two"
-    ],
-    "segment_count": 6,
-    "segment_duration_sec": 5,
-    "rewrite_instruction": "cinematic",
-    "rewrite_model": null,
-    "rewrite_temperature": 1.35
-   },
-   "reply": {
-    "text": "{\"segment_prompts\":[\"A\",\"B\"]}",
-    "raw_response": {
-     "choices": [
-      {
-       "message": {
-        "content": "{\"segment_prompts\":[\"A\",\"B\"]}"
-       }
-      }
-     ]
-    }
-   },
-   "requests": [
-    {
-     "system_prompt_template": "rewrite_all_system_prompt",
-     "user_content": "{\"mode\": \"edit_existing_rollout\", \"request\": \"Rewrite all segment prompts with improved continuity and cinematic detail. Keep count and ordering identical. Return JSON as {\\\"id\\\": \\\"...\\\", \\\"label\\\": \\\"...\\\", \\\"segment_prompts\\\": [\\\"...\\\"]}. Include exactly 2 segment prompts.\", \"user_instruction\": \"cinematic\", \"desired_segment_count\": 2, \"segment_duration_sec\": 5, \"current_rollout\": {\"id\": \"current_rollout\", \"label\": \"Current rollout\", \"segment_prompts\": [\"one\", \"two\"]}}",
-     "model": "gpt-oss-120b",
-     "default_model": "gpt-oss-120b",
-     "temperature": 1.35,
-     "max_completion_tokens": 3000
-    }
-   ],
-   "result": {
-    "prompts": [
-     "A",
-     "B"
-    ],
-    "source_prompts": [
-     "one",
-     "two"
-    ],
-    "fallback_used": false,
-    "error": null,
-    "provider": "cerebras",
-    "model": "gpt-oss-120b",
-    "rollout_id": "current_rollout",
-    "rollout_label": "Current rollout",
-    "raw_response_text": "{\"segment_prompts\":[\"A\",\"B\"]}"
    },
    "raises": null,
    "provider_success_counts": {
@@ -9039,10 +6192,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9108,10 +6257,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9177,10 +6322,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9246,10 +6387,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9315,10 +6452,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9384,10 +6517,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9453,10 +6582,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9522,10 +6647,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9591,10 +6712,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9642,10 +6759,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9706,10 +6819,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9776,10 +6885,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9858,10 +6963,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9927,10 +7028,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -9996,10 +7093,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10065,10 +7158,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10134,10 +7223,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10203,10 +7288,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10272,10 +7353,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10341,10 +7418,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10410,10 +7483,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10479,10 +7548,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10548,10 +7613,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10617,10 +7678,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10686,10 +7743,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10755,10 +7808,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10824,10 +7873,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10893,10 +7938,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -10962,10 +8003,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11031,10 +8068,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11100,10 +8133,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11169,10 +8198,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11238,10 +8263,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11307,10 +8328,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11376,10 +8393,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11445,10 +8458,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11514,10 +8523,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11583,10 +8588,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11652,10 +8653,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11728,10 +8725,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11800,10 +8793,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11858,10 +8847,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11916,10 +8901,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -11974,10 +8955,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12032,10 +9009,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12090,10 +9063,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12148,10 +9117,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12206,10 +9171,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12264,10 +9225,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12322,10 +9279,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12380,10 +9333,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12438,10 +9387,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12496,10 +9441,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12554,10 +9495,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12612,10 +9549,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12670,10 +9603,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12728,10 +9657,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12786,10 +9711,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12844,10 +9765,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 3000
@@ -12888,10 +9805,6 @@
    "operation": "rewrite_rollout",
    "settings": {
     "rewrite_default_model": "gpt-oss-120b",
-    "rewrite_model_options": [
-     "gpt-oss-120b",
-     "gpt-alt"
-    ],
     "temperature": 1.0,
     "rewrite_default_temperature": 0.7,
     "max_completion_tokens": 16384

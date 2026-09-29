@@ -21,8 +21,7 @@
           process.getBuiltinModule('node:os').homedir(), '.local/state'), 'fastvideo/dreamverse'),
           'assets')
 
-    # The reference prompt-enhancement variables; DREAMVERSE_PROMPTS_LOCAL_DIR names the developer
-    # template overlay directory that the reference derives from its package location.
+    # The reference prompt-enhancement variables.
     - id: dreamverse-prompt-enhancer
       name: '@dreamverse/prompt-enhancer'
       config:
@@ -33,9 +32,6 @@
         groqModel: !!js process.env.FASTVIDEO_PROMPT_GROQ_MODEL
         groqApiBaseUrl: !!js process.env.FASTVIDEO_PROMPT_GROQ_API_BASE_URL
         cerebrasBaseUrl: !!js process.env.CEREBRAS_BASE_URL
-        # The reference `_env_bool("FASTVIDEO_ENABLE_DEVTOOLS", False)`: unrecognized spellings select False.
-        devtoolsEnabled: !!js "['1', 'true', 'yes', 'on'].includes((process.env.FASTVIDEO_ENABLE_DEVTOOLS ?? '').trim().toLowerCase())"
-        devtoolsPromptDirectory: !!js process.env.DREAMVERSE_PROMPTS_LOCAL_DIR
         enhanceSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_ENHANCE_SYSTEM_PROMPT_PATH
         autoSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_AUTO_SYSTEM_PROMPT_PATH
         rewriteAllSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_REWRITE_ALL_SYSTEM_PROMPT_PATH
@@ -65,29 +61,9 @@
     - id: dreamverse-action-rewrite-video-sequence
       name: '@dreamverse/user-actions/rewrite-video-sequence'
 
-    # DREAMVERSE_BROWSER_PORT is the port the DreamVerse UI reaches through BACKEND_PORT. The route settings follow
-    # the reference `load_application_settings`: `_env_bool("FASTVIDEO_ENABLE_DEVTOOLS", False)` and
-    # `_resolve_curated_presets_paths`. A non-blank FASTVIDEO_CURATED_PRESETS_FILE_PATH selects one catalog without a
-    # fallback. Otherwise the catalog is <frontend root>/prompts/selected_ltx2_continuation_story_presets.json; with
-    # developer tools, the prompts.local copy is the catalog and the prompts copy is its fallback. The frontend root is
-    # FASTVIDEO_DREAMVERSE_FRONTEND_ROOT, else $FASTVIDEO_ROOT/apps/dreamverse/web.
+    # DREAMVERSE_BROWSER_PORT is the port the DreamVerse UI reaches through BACKEND_PORT.
     - id: dreamverse-browser-server
       name: '@dreamverse/browser-server'
       config:
         host: !!js process.env.DREAMVERSE_BROWSER_HOST || '127.0.0.1'
         port: !!js process.env.DREAMVERSE_BROWSER_PORT && Number(process.env.DREAMVERSE_BROWSER_PORT)
-        devtoolsEnabled: !!js "['1', 'true', 'yes', 'on'].includes((process.env.FASTVIDEO_ENABLE_DEVTOOLS ?? '').trim().toLowerCase())"
-        curatedPresetsFilePath: !!js >-
-          process.env.FASTVIDEO_CURATED_PRESETS_FILE_PATH?.trim() || process.getBuiltinModule('node:path').join(
-          process.env.FASTVIDEO_DREAMVERSE_FRONTEND_ROOT
-          || process.getBuiltinModule('node:path').join(process.env.FASTVIDEO_ROOT, 'apps/dreamverse/web'),
-          ['1', 'true', 'yes', 'on'].includes((process.env.FASTVIDEO_ENABLE_DEVTOOLS ?? '').trim().toLowerCase())
-          ? 'prompts.local' : 'prompts',
-          'selected_ltx2_continuation_story_presets.json')
-        curatedPresetsFallbackFilePath: !!js >-
-          process.env.FASTVIDEO_CURATED_PRESETS_FILE_PATH?.trim()
-          || !['1', 'true', 'yes', 'on'].includes((process.env.FASTVIDEO_ENABLE_DEVTOOLS ?? '').trim().toLowerCase())
-          ? null : process.getBuiltinModule('node:path').join(
-          process.env.FASTVIDEO_DREAMVERSE_FRONTEND_ROOT
-          || process.getBuiltinModule('node:path').join(process.env.FASTVIDEO_ROOT, 'apps/dreamverse/web'),
-          'prompts', 'selected_ltx2_continuation_story_presets.json')
