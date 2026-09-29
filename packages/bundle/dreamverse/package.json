@@ -1,0 +1,23 @@
+{
+  "name": "@dreamverse/bundle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@dreamverse/generation-client": "workspace:*",
+    "@dreamverse/prompt-enhancer": "workspace:*",
+    "@dreamverse/project": "workspace:*",
+    "@dreamverse/user-actions": "workspace:*",
+    "@dreamverse/browser-server": "workspace:*",
+    "@dreamverse/assets-manager": "workspace:*"
+  }
+}

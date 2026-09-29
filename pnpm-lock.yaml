@@ -2117,6 +2117,27 @@ importers:
         specifier: workspace:~
         version: link:../../../vendor/cordis
 
+  packages/bundle/dreamverse:
+    dependencies:
+      '@dreamverse/assets-manager':
+        specifier: workspace:*
+        version: link:../../dreamverse/assets-manager
+      '@dreamverse/browser-server':
+        specifier: workspace:*
+        version: link:../../dreamverse/browser-server
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../../dreamverse/generation-client
+      '@dreamverse/project':
+        specifier: workspace:*
+        version: link:../../dreamverse/project
+      '@dreamverse/prompt-enhancer':
+        specifier: workspace:*
+        version: link:../../dreamverse/prompt-enhancer
+      '@dreamverse/user-actions':
+        specifier: workspace:*
+        version: link:../../dreamverse/user-actions
+
   packages/bundle/headless:
     dependencies:
       '@deepseek-ai/dsh-brand':
@@ -6828,6 +6849,141 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:*
         version: link:../../core/session
+
+  packages/dreamverse/assets-manager:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      sharp:
+        specifier: ^0.35.3
+        version: 0.35.3(@types/node@22.20.0)
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/dreamverse/browser-server:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@dreamverse/assets-manager':
+        specifier: workspace:*
+        version: link:../assets-manager
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../generation-client
+      '@dreamverse/project':
+        specifier: workspace:*
+        version: link:../project
+      '@dreamverse/prompt-enhancer':
+        specifier: workspace:*
+        version: link:../prompt-enhancer
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+
+  packages/dreamverse/generation-client:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+
+  packages/dreamverse/project:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@dreamverse/assets-manager':
+        specifier: workspace:*
+        version: link:../assets-manager
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../generation-client
+      '@dreamverse/prompt-enhancer':
+        specifier: workspace:*
+        version: link:../prompt-enhancer
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+
+  packages/dreamverse/prompt-enhancer:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+
+  packages/dreamverse/user-actions:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@dreamverse/assets-manager':
+        specifier: workspace:*
+        version: link:../assets-manager
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../generation-client
+      '@dreamverse/project':
+        specifier: workspace:*
+        version: link:../project
+      '@dreamverse/prompt-enhancer':
+        specifier: workspace:*
+        version: link:../prompt-enhancer
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   packages/experimental/agent-team:
     dependencies:

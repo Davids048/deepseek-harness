@@ -1,0 +1,26 @@
+{
+  "name": "@dreamverse/browser-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "ws": "^8.21.0",
+    "@dreamverse/project": "workspace:*",
+    "@dreamverse/generation-client": "workspace:*",
+    "@dreamverse/prompt-enhancer": "workspace:*",
+    "@dreamverse/assets-manager": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/schemastery": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@types/node": "^22.20.0",
+    "@types/ws": "^8.18.1"
+  }
+}
