@@ -450,6 +450,12 @@
     { "path": "./packages/lsp/lsp" },
     { "path": "./packages/lsp/lsp-stdio" },
     { "path": "./packages/lsp/tool-lsp" },
+    { "path": "./packages/dreamverse/generation-client" },
+    { "path": "./packages/dreamverse/assets-manager" },
+    { "path": "./packages/dreamverse/prompt-enhancer" },
+    { "path": "./packages/dreamverse/project" },
+    { "path": "./packages/dreamverse/user-actions" },
+    { "path": "./packages/dreamverse/browser-server" },
     { "path": "./apps/cli" },
     { "path": "./apps/desktop-host" },
     { "path": "./apps/desktop/tsconfig.host.json" }
