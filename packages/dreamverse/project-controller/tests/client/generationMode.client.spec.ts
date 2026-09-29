@@ -1,0 +1,41 @@
+/** @vitest-environment jsdom */
+import { describe, expect, it } from 'vitest'
+
+import {
+  DEFAULT_GENERATION_MODE,
+  GENERATION_MODES,
+  fromGenerationMode,
+  getGenerationMode,
+  isGenerationMode,
+  toGenerationMode,
+} from '../../src/client/generationMode.ts'
+
+describe('generation modes', () => {
+  it('exposes stable wire IDs in the expected product order', () => {
+    expect(GENERATION_MODES.map(mode => mode.id)).toEqual([
+      't2va',
+      'i2v',
+      'fl2va',
+      'ref2va',
+    ])
+    expect(DEFAULT_GENERATION_MODE).toBe('t2va')
+  })
+
+  it('validates and resolves generation mode values', () => {
+    expect(isGenerationMode('ref2va')).toBe(true)
+    expect(isGenerationMode('unknown')).toBe(false)
+    expect(getGenerationMode('fl2va').label).toBe('FL2VA')
+  })
+
+  it('maps creation studio mode IDs to upstream wire values', () => {
+    expect(toGenerationMode('t2v')).toBe('t2va')
+    expect(toGenerationMode('fl2av')).toBe('fl2va')
+    expect(toGenerationMode('ref2av')).toBe('ref2va')
+  })
+
+  it('maps upstream wire values back to creation studio mode IDs', () => {
+    expect(fromGenerationMode('t2va')).toBe('t2v')
+    expect(fromGenerationMode('fl2va')).toBe('fl2av')
+    expect(fromGenerationMode('ref2va')).toBe('ref2av')
+  })
+})

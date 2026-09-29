@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "sharp": "^0.35.3" },
+  "exports": { ".": "./src/index.ts", "./client/*": "./src/client/*" },
+  "dependencies": { "sharp": "^0.35.3", "@deepseek-ai/dsh-host-frontend-static": "workspace:*", "@deepseek-ai/dsh-web-frontend": "workspace:*", "@dreamverse/http-routes": "workspace:*" },
   "peerDependencies": { "@deepseek-ai/cordis": "workspace:~", "@deepseek-ai/schemastery": "workspace:~" },
-  "devDependencies": { "@deepseek-ai/cordis": "workspace:~", "@deepseek-ai/schemastery": "workspace:~", "@types/node": "^22.20.0" }
+  "devDependencies": { "@deepseek-ai/cordis": "workspace:~", "@deepseek-ai/dsh-host-webserver": "workspace:*", "@deepseek-ai/schemastery": "workspace:~", "@types/node": "^22.20.0" }
 }

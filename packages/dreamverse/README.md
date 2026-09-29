@@ -1,21 +1,23 @@
 # dreamverse/ — DreamVerse on DeepSeek Harness
 
-This package group runs the DreamVerse application as Cordis plugins inside DeepSeek Harness. Each user runs one harness instance. The harness owns everything the user sees and decides: the browser protocol, projects, user actions, prompt enhancement, the asset library, and product rules. Video generation is a separate API served by a FastVideo generation backend on a GPU machine; the harness reaches it over one stable connection, and GPU details never reach the user.
+This package group runs the DreamVerse application as Cordis plugins inside DeepSeek Harness. Each user runs one harness instance. The harness owns everything the user sees and decides: the DreamVerse page, the browser protocol, projects, user actions, prompt enhancement, the asset library, and product rules. The DreamVerse page is a port of the FastVideo DreamVerse Next.js frontend as DSH browser plugins in [`../dreamverse-ui/`](../dreamverse-ui/README.md). Video generation is a separate API served by a FastVideo generation backend on a GPU machine; the harness reaches it over one stable connection, and GPU details never reach the user.
 
 The Python DreamVerse server in `apps/dreamverse/dreamverse/` (FastVideo checkout) is the behavioral reference. For the same browser messages, model replies, and generated media, the harness sends the same browser events in the same order and writes the same project log events, except for the intentional differences listed at the end of this file.
 
 ## Process layout
 
 ```
-Browser (DreamVerse Next.js UI, apps/dreamverse/web)
-   │  BACKEND_PORT points at the harness browser server
+Browser (the DreamVerse page at the `dsh web:` token URL)
+   │
    ▼
 dsh --profile dreamverse  (Node, one instance per user)
-   @dreamverse/browser-server      /ws project protocol and every browser HTTP route
+   @deepseek-ai/dsh-host-webserver DSH web server on DREAMVERSE_BROWSER_PORT; DreamVerse plugins register routes on it
+   @dreamverse/ui-*                the DreamVerse page as browser plugins (packages/dreamverse-ui/)
+   @dreamverse/project-controller  /ws project protocol, health, readiness, and creation capability routes
    @dreamverse/project             Project state, action admission, creation rules, generation plans, project log
    @dreamverse/user-actions/*      one Cordis plugin per user action
    @dreamverse/prompt-enhancer     prompt templates, prompt settings, Cerebras/Groq provider race
-   @dreamverse/assets-manager              asset files, their index, upload validation, retention
+   @dreamverse/assets-manager      asset files, their index, upload validation, retention, /assets routes
    @dreamverse/generation-client   client for the generation backend API
    │
    ▼  HTTP + WebSocket (local port or tunnel)
@@ -30,14 +32,15 @@ The split rule: Python keeps only work that needs GPUs, torch, or FastVideo. Eve
 | Package | Cordis plugin entries | Service key | Role |
 | --- | --- | --- | --- |
 | `generation-client` | `@dreamverse/generation-client` | `dreamverseGeneration` | Client for the generation backend API |
-| `assets-manager` | `@dreamverse/assets-manager` | `dreamverseAssetsManager` | Port of `dreamverse/assets/` (library and media inspection) |
+| `assets-manager` | `@dreamverse/assets-manager` | `dreamverseAssetsManager` | Port of `dreamverse/assets/` (library and media inspection) and `routes/assets.py`; `./client/assets.ts` is the frontend's asset client (`lib/assets.ts`) |
 | `prompt-enhancer` | `@dreamverse/prompt-enhancer` | `dreamversePromptEnhancer` | Port of `dreamverse/prompt_enhancement/` without prompt safety |
 | `project` | `@dreamverse/project` | `dreamverseProjects` | Port of `dreamverse/project/` except user actions and the WebSocket connection |
 | `user-actions` | `@dreamverse/user-actions/generate-video-sequence`, `/generate-single-clip`, `/continue-video`, `/rewrite-video-sequence` | none (each registers handlers into `dreamverseProjects`) | Port of `dreamverse/project/user_actions/` |
-| `browser-server` | `@dreamverse/browser-server` | none | Port of `project_websocket_connection.py` and the browser HTTP routes |
+| `project-controller` | `@dreamverse/project-controller` | none | Port of `project_websocket_connection.py` and the health, readiness, and creation capability routes; `./client/*` holds the frontend's React-free project modules (`lib/ws/`, `stores/`, creation configuration, project storage) |
+| `http-routes` | none (library) | none | Starlette-compatible responses and route dispatch shared by the DreamVerse HTTP routes |
 | `../bundle/dreamverse` | bundle patch only | none | `cordis.patch.yml` that mounts every row above |
 
-Every package is ESM TypeScript loaded from source through the `dsh` launcher's tsx hook: `package.json` `exports` point at `./src/*.ts`, and no build step exists for these packages.
+Every package is ESM TypeScript loaded from source through the `dsh` launcher's tsx hook: `package.json` `exports` point at `./src/*.ts`, and the Host code needs no build step. The `src/client/` modules of `project-controller` and `assets-manager` are browser code: the `@dreamverse/ui-*` bundles compile them from source, and each package's `tsconfig.client.json` typechecks them apart from the Host code (`tsconfig.host.json`).
 
 ## Generation backend API
 
@@ -143,6 +146,8 @@ class DreamverseAssetsManager {
 }
 ```
 
+While the DSH web server (`webServer`) is available, the service registers one `/assets` prefix route on it: ports of `routes/assets.py`, including ranged content responses. The DSH page shell loads its own scripts, styles, fonts, and language packs from `./assets/`, so a GET or HEAD request under `/assets` that matches no asset GET route serves the shell's file through `frontend-static`'s `serveStatic`; every other unmatched path answers FastAPI's JSON 404 or 405.
+
 ### `dreamversePromptEnhancer` (`@dreamverse/prompt-enhancer`)
 
 A direct port of `PromptEnhancer`, `PromptSettings`, the three features, `ProviderRace`, `VendorClient`, and `PromptTemplates`. The bundled Markdown templates are byte-identical copies of `apps/dreamverse/dreamverse/prompt_enhancement/templates/resources/`. Provider settings come from `CEREBRAS_API_KEY`, `GROQ_API_KEY`, `FASTVIDEO_PROMPT_MODEL`, `FASTVIDEO_PROMPT_CEREBRAS_MODEL`, `FASTVIDEO_PROMPT_GROQ_MODEL`, `FASTVIDEO_PROMPT_GROQ_API_BASE_URL`, and `CEREBRAS_BASE_URL` through validated Config fields.
@@ -173,9 +178,9 @@ interface Project {
 
 An action type without a registered handler fails the round with `ValueError`-kind `Unsupported project action: <type>`. Error kinds mirror the reference exception classes: `DreamverseValueError` stands for Python `ValueError`; `ProjectValidationError extends DreamverseValueError` carries `reason`. Any other `Error` stands for a non-`ValueError` exception.
 
-### Browser server (`@dreamverse/browser-server`)
+### Project controller (`@dreamverse/project-controller`)
 
-Config: `host`, `port`. Listens with `node:http` and `ws` inside `ctx.effect`. It serves every browser route itself:
+No config. Inside `ctx.effect`, the plugin registers `/ws` on the DSH web server with `registerUpgrade()` and the HTTP routes below with `register()`. Each HTTP route dispatches through `@dreamverse/http-routes`, so another method on a known path answers FastAPI's 405 and a failing route answers Starlette's plain 500:
 
 | Route | Behavior |
 | --- | --- |
@@ -183,13 +188,17 @@ Config: `host`, `port`. Listens with `node:http` and `ws` inside `ctx.effect`. I
 | `GET /health`, `GET /healthz` | The reference payload |
 | `GET /readyz` | 200 when `dreamverseGeneration.ready()` reports ready, otherwise 503 with `detail` |
 | `GET /creation-capabilities` | The reference `lobby_capabilities_as_dict` payload from `ModelFacts` and the upload policy |
-| `/assets` routes | Ports of `routes/assets.py`, including ranged content responses |
+| `/assets` routes | Registered by `dreamverseAssetsManager` |
+
+The bundle patch also mounts the DSH web rows: `dsh-host-webserver` (host `DREAMVERSE_BROWSER_HOST`, port `DREAMVERSE_BROWSER_PORT`, no compression), `dsh-web-app` (serves the page shell as the web server's fallback route and prints the `dsh web:` token URL), `dsh-client-modules`, `dsh-client-connection`, `dsh-api-remotes`, `dsh-client-ui-renderer`, and the six `@dreamverse/ui-*` page plugins ([`../dreamverse-ui/`](../dreamverse-ui/README.md)).
 
 ## Intentional differences from the reference
 
 - The harness sends no `queue_status`, and GPU state stays inside the backend: `/status` and `/internal/monitor/capacity` are not served, `/readyz` reports backend readiness without GPU counts, and the `gpu_assigned` project log event carries no `gpu_id`.
 - The prompt safety filter is removed.
 - The LTX-only LoRA routes are not served.
+- The DSH web server answers every path that no DreamVerse route claims: `/` serves the token-protected DreamVerse page (open the `dsh web:` URL printed at startup once; the page then sets a cookie), and other unclaimed paths get the web server's answer instead of FastAPI's JSON 404. Under `/assets`, GET and HEAD requests that match no asset GET route (for example `GET /assets/<id>`, a 405 in the reference) serve the DSH page shell's files instead.
+- The DreamVerse page runs as DSH browser plugins instead of the Next.js frontend and omits the frontend's developer tools, rewrite inspector, monitor page, LoRA controls, and voice input. [`../dreamverse-ui/`](../dreamverse-ui/README.md#differences-from-the-fastvideo-frontend) lists the visible differences.
 - Developer tools are not ported: the harness serves no `/curated-presets`, `/curated-presets/append`, or `/prompt-system-config` route, and prompt templates load without the `prompts.local` developer overlay.
 - The browser cannot choose rewrite settings: `project_init_v1` and `rewrite_seed_prompts` ignore `rewrite_model`, `rewrite_temperature`, `rewrite_window_system_prompt`, and `rewrite_user_system_prompt`, and `set_rewrite_model` and `set_rewrite_temperature` are unsupported commands. Every rewrite uses the startup model (`FASTVIDEO_PROMPT_MODEL`), temperature, and templates.
 - The backend keeps continuation state for its latest segment only, across all projects of the user. A segment generated for another project invalidates a project's continuation state.
@@ -198,5 +207,6 @@ Config: `host`, `port`. Listens with `node:http` and `ws` inside `ctx.effect`. I
 
 - `services/dreamverse-generation/tests/`: pytest for the backend API against the reference mock backend.
 - `packages/dreamverse/*/tests/`: vitest unit tests for each package.
+- `packages/dreamverse-ui/*/tests/`: the frontend's component and page tests, run against the DreamVerse page plugins.
 - `dreamverse-parity/`: black-box parity runs of the same browser sessions against the Python reference server and the harness, with a deterministic stub LLM and the mock generation backend.
-- `dreamverse-e2e/`: the DreamVerse Next.js UI driven by Playwright against the harness with the backend serving H3 Ref2VA on four GPUs.
+- `dreamverse-e2e/`: one Playwright script that drives the DreamVerse page (or, for comparison, the FastVideo Next.js frontend) against the harness with the backend serving H3 Ref2VA on four GPUs.

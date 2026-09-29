@@ -46,3 +46,5 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+# Tailwind output that packages/dreamverse-ui/kit/tsdown.config.ts writes before bundling.
+packages/dreamverse-ui/kit/src/client/styles/app.generated.css

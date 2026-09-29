@@ -1,0 +1,26 @@
+{
+  "name": "@dreamverse/project-controller",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client/*": "./src/client/*"
+  },
+  "dependencies": {
+    "ws": "^8.21.0",
+    "@dreamverse/project": "workspace:*",
+    "@dreamverse/generation-client": "workspace:*",
+    "@dreamverse/assets-manager": "workspace:*",
+    "@dreamverse/http-routes": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@types/node": "^22.20.0",
+    "@types/ws": "^8.18.1"
+  }
+}

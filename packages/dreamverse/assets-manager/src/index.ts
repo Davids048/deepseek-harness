@@ -2,16 +2,21 @@
  * DreamVerse asset library as the `dreamverseAssetsManager` Cordis service.
  *
  * A port of `apps/dreamverse/dreamverse/assets/`: `AssetLibrary`, `inspect_media`, and `upload_policy_as_dict` with
- * the reference messages. The service opens the library under the configured root when the plugin starts and closes
- * it when the plugin unloads.
+ * the reference messages, plus the reference `/assets` HTTP routes. The service opens the library under the configured
+ * root when the plugin starts and closes it when the plugin unloads. While the DSH web server (`webServer`) is
+ * available, the service registers the `/assets` routes on it; other GET and HEAD requests under `/assets` serve the
+ * DSH page shell's files, which the shell loads from `./assets/`.
  *
  * @module @dreamverse/assets-manager
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
 
+import { assetsRouteHandler } from './asset-routes.ts'
 import { AssetLibrary, type AssetRecord } from './library.ts'
 import { uploadPolicy } from './media.ts'
+import { shellFileResponder } from './shell-files.ts'
 
 export { AssetNotFoundError, type AssetRecord } from './library.ts'
 export { MediaValidationError, UploadTooLargeError, type MediaType } from './media.ts'
@@ -49,6 +54,13 @@ export default class DreamverseAssetsManager extends Service {
   constructor(ctx: Context, config: Config) {
     super(ctx, 'dreamverseAssetsManager')
     this.root = config.root
+    ctx.inject(['webServer'], (webCtx) => {
+      webCtx.effect(() => webCtx.webServer.register({
+        kind: 'prefix',
+        path: '/assets',
+        handler: assetsRouteHandler(this, webCtx.logger('dreamverse'), shellFileResponder()),
+      }), 'dreamverse /assets routes')
+    })
   }
 
   /** Open the library and finish persisted deletions; the returned disposer closes the index. */

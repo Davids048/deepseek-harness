@@ -61,9 +61,67 @@
     - id: dreamverse-action-rewrite-video-sequence
       name: '@dreamverse/user-actions/rewrite-video-sequence'
 
-    # DREAMVERSE_BROWSER_PORT is the port the DreamVerse UI reaches through BACKEND_PORT.
-    - id: dreamverse-browser-server
-      name: '@dreamverse/browser-server'
+    # The DSH web server on DREAMVERSE_BROWSER_PORT: the DreamVerse page, `/ws`, and the browser HTTP routes. No
+    # compression, so route responses stay byte-identical to the reference.
+    - id: dreamverse-webserver
+      name: '@deepseek-ai/dsh-host-webserver'
       config:
         host: !!js process.env.DREAMVERSE_BROWSER_HOST || '127.0.0.1'
         port: !!js process.env.DREAMVERSE_BROWSER_PORT && Number(process.env.DREAMVERSE_BROWSER_PORT)
+        compression: none
+
+    # Serves the DSH page shell as the web server's fallback and prints the token URL that opens the page.
+    - id: dreamverse-web-runtime
+      name: '@deepseek-ai/dsh-web-app'
+      config:
+        openBrowser: false
+        printUrl: true
+        surfaceContext: false
+        trustedHosts: []
+
+    # Builds the page's plugin list and serves each browser plugin's code under /plugins.
+    - id: dreamverse-client-modules
+      name: '@deepseek-ai/dsh-client-modules'
+
+    # Page authorization (token and cookie) and the /api browser connection.
+    - id: dreamverse-client-connection
+      name: '@deepseek-ai/dsh-client-connection'
+      inject: [webRuntime]
+      config:
+        trustedHosts: !!js ctx.webRuntime.trustedHosts
+
+    # The application event source that the browser connection subscribes to.
+    - id: dreamverse-api-remotes
+      name: '@deepseek-ai/dsh-api-remotes'
+
+    # Mounts the page's React tree from the `root` slot.
+    - id: dreamverse-ui-renderer
+      name: '@deepseek-ai/dsh-client-ui-renderer'
+
+    # DreamVerse page: fills the `root` slot and declares the child slots that the rows below fill.
+    - id: dreamverse-ui-kit
+      name: '@dreamverse/ui-kit'
+
+    # Project creation and the directing composer: `dreamverse.creation-studio` and `dreamverse.chatbar`.
+    - id: dreamverse-ui-creation
+      name: '@dreamverse/ui-creation'
+
+    # Live and archived playback: `dreamverse.player`.
+    - id: dreamverse-ui-player
+      name: '@dreamverse/ui-player'
+
+    # The prompt event timeline: `dreamverse.workspace`.
+    - id: dreamverse-ui-directing
+      name: '@dreamverse/ui-directing'
+
+    # The asset library dialog: `dreamverse.asset-library`.
+    - id: dreamverse-ui-assets
+      name: '@dreamverse/ui-assets'
+
+    # Saved project history: `dreamverse.sidebar`.
+    - id: dreamverse-ui-project-history
+      name: '@dreamverse/ui-project-history'
+
+    # `/ws` projects plus the health, readiness, and creation capability routes on the web server.
+    - id: dreamverse-project-controller
+      name: '@dreamverse/project-controller'

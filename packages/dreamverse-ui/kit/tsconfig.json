@@ -1,0 +1,38 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "resolveJsonModule": true,
+    "types": [
+      "node",
+      "client-build-environment"
+    ]
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../client/ui-renderer"
+    },
+    {
+      "path": "../../client/ui-slots"
+    },
+    {
+      "path": "../../host/webserver"
+    },
+    {
+      "path": "../../util/crypto"
+    },
+    {
+      "path": "../../dreamverse/assets-manager/tsconfig.client.json"
+    },
+    {
+      "path": "../../dreamverse/project-controller/tsconfig.client.json"
+    }
+  ]
+}

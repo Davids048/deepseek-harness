@@ -1,0 +1,34 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../host/webserver"
+    },
+    {
+      "path": "../assets-manager/tsconfig.host.json"
+    },
+    {
+      "path": "../generation-client"
+    },
+    {
+      "path": "../http-routes"
+    },
+    {
+      "path": "../project"
+    }
+  ],
+  "exclude": [
+    "src/client"
+  ]
+}

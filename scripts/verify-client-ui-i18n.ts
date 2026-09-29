@@ -316,6 +316,16 @@ export function clientSourceRoot(file: string): string | undefined {
   return index < 0 ? undefined : normalized.slice(0, index + marker.length - 1)
 }
 
+/**
+ * Whether the check skips one source file. The DreamVerse UI (`packages/dreamverse-ui/`) is an English-only port of the
+ * FastVideo DreamVerse frontend and keeps that frontend's inline copy.
+ * @param file - Repository-relative path with `/` separators.
+ * @returns True when the file keeps product copy outside the locale dictionaries.
+ */
+export function skipsUiI18nCheck(file: string): boolean {
+  return file.startsWith('packages/dreamverse-ui/')
+}
+
 function sourceFiles(): string[] {
   const clientComponentRoots = new Set(
     globSync('packages/*/*/src/client/**/*.tsx', { cwd: root })
@@ -332,7 +342,7 @@ function sourceFiles(): string[] {
     ...globSync('apps/desktop/renderer/*.js', { cwd: root }),
   ])]
     .map(file => file.replaceAll('\\', '/'))
-    .filter(file => !file.endsWith('.d.ts'))
+    .filter(file => !file.endsWith('.d.ts') && !skipsUiI18nCheck(file))
     .sort()
 }
 

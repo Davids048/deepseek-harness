@@ -130,6 +130,12 @@
     { "path": "./packages/api/workspace-files/tsconfig.client.json" },
     { "path": "./packages/client/web" },
     { "path": "./packages/context/file-reference" },
+    { "path": "./packages/dreamverse-ui/kit" },
+    { "path": "./packages/dreamverse-ui/creation" },
+    { "path": "./packages/dreamverse-ui/player" },
+    { "path": "./packages/dreamverse-ui/directing" },
+    { "path": "./packages/dreamverse-ui/assets" },
+    { "path": "./packages/dreamverse-ui/project-history" },
     { "path": "./apps/web" }
   ]
 }
