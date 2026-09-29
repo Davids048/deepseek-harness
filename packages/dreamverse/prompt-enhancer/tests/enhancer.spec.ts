@@ -11,7 +11,7 @@ import { PromptEnhancer } from '../src/prompt-enhancer.ts'
 import { PACKAGED_TEMPLATE_DIRECTORY } from '../src/templates/loader.ts'
 import { PromptValueError } from '../src/utils/errors.ts'
 import type { JsonObject } from '../src/utils/python-text.ts'
-import { UNUSED_ENDPOINT, recordingDiagnostics, temporaryDirectory, testRace, testSettings, testTemplates, type TemporaryDirectory } from './support.ts'
+import { UNUSED_ENDPOINT, recordingDiagnostics, requestBodyText, temporaryDirectory, testRace, testSettings, testTemplates, type TemporaryDirectory } from './support.ts'
 
 /** Vendor request bodies recorded by the stubbed `fetch`, and the assistant text or failure it answers with. */
 interface SdkStub {
@@ -30,7 +30,7 @@ beforeEach(() => {
   tmp = temporary.directory
   sdk = { content: '', failure: null, requests: [] }
   vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
-    sdk.requests.push(JSON.parse(String(init.body)) as JsonObject)
+    sdk.requests.push(JSON.parse(requestBodyText(init)) as JsonObject)
     // A non-retryable status reaches the result on the first attempt, like the reference SDK stub's exception.
     if (sdk.failure !== null) return Promise.resolve(new Response(sdk.failure, { status: 400 }))
     return Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: sdk.content } }] })))

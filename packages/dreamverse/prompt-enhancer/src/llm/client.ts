@@ -302,11 +302,13 @@ function isTimeoutFailure(error: unknown): boolean {
 function sleepBeforeRetry(seconds: number, signal: AbortSignal | undefined): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Exact cancellation reason is the contract.
       reject(signal.reason)
       return
     }
     const onAbort = () => {
       clearTimeout(timer)
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Exact cancellation reason is the contract.
       reject(signal?.reason)
     }
     const timer = setTimeout(() => {

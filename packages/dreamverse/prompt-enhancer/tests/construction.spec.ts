@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import DreamversePromptEnhancer, { Config, PromptRuntimeError } from '../src/index.ts'
 import type { JsonObject } from '../src/utils/python-text.ts'
-import { temporaryDirectory, templatePathOptions, type TemporaryDirectory } from './support.ts'
+import { requestBodyText, temporaryDirectory, templatePathOptions, type TemporaryDirectory } from './support.ts'
 
 interface CapturedRequest {
   url: string
@@ -23,7 +23,7 @@ beforeEach(() => {
   tmp = temporary.directory
   captured = []
   vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
-    captured.push({ url, body: JSON.parse(String(init.body)) as JsonObject })
+    captured.push({ url, body: JSON.parse(requestBodyText(init)) as JsonObject })
     return Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: '{"prompt":"Detailed river"}' } }] })))
   }))
 })
@@ -32,9 +32,6 @@ afterEach(() => {
   vi.unstubAllGlobals()
   temporary.cleanup()
 })
-
-/** Raw Config input as the loader supplies it; an absent environment variable arrives as `undefined`. */
-type RawConfig = Parameters<typeof Config>[0]
 
 /**
  * Build a validated configuration with synthetic keys and test template paths.
@@ -45,7 +42,7 @@ function config(overrides: Record<string, unknown> = {}): ReturnType<typeof Conf
   const raw: Record<string, unknown> = {
     cerebrasApiKey: 'test-cerebras-construction', groqApiKey: 'test-groq-construction', ...templatePathOptions(tmp), ...overrides,
   }
-  return Config(raw as RawConfig)
+  return Config(raw)
 }
 
 describe('Config', () => {
@@ -92,10 +89,11 @@ describe('DreamversePromptEnhancer', () => {
     }))
     const headers: Record<string, string>[] = []
     vi.stubGlobal('fetch', vi.fn((url: string, init: RequestInit) => {
-      captured.push({ url, body: JSON.parse(String(init.body)) as JsonObject })
+      captured.push({ url, body: JSON.parse(requestBodyText(init)) as JsonObject })
       headers.push(init.headers as Record<string, string>)
       return new Promise<Response>((_resolve, reject) => {
-        init.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- like fetch, reject with the exact abort reason.
+        init.signal?.addEventListener('abort', () => { reject(init.signal?.reason) })
       })
     }))
     const controller = new AbortController()

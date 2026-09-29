@@ -17,7 +17,7 @@ import { PromptSettings } from '../src/settings.ts'
 import { PromptTemplates } from '../src/templates/loader.ts'
 import { PromptValueError } from '../src/utils/errors.ts'
 import { dumpsJson, type JsonObject } from '../src/utils/python-text.ts'
-import { FakeVendor, recordingDiagnostics, testRace } from './support.ts'
+import { FakeVendor, recordingDiagnostics, requestBodyText, testRace } from './support.ts'
 
 /** Snake_case inputs recorded by the generator; the positional argument is included by name. */
 interface FixtureArgs {
@@ -248,10 +248,10 @@ beforeAll(() => {
     }
     const requests = recordedRequests.get(key) ?? []
     recordedRequests.set(key, requests)
-    requests.push({ path: pathname, authorization: new Headers(init.headers).get('authorization'), raw_body: String(init.body) })
+    requests.push({ path: pathname, authorization: new Headers(init.headers).get('authorization'), raw_body: requestBodyText(init) })
     const response = script[Math.min(requests.length, script.length) - 1]
     const reply = new Response(response?.body ?? '', { status: response?.status ?? 500, headers: response?.headers ?? {} })
-    return new Promise(resolve => setTimeout(() => resolve(reply), response?.delay_ms ?? 0))
+    return new Promise((resolve) => { setTimeout(() => { resolve(reply) }, response?.delay_ms ?? 0) })
   }))
 })
 

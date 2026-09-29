@@ -168,7 +168,8 @@ describe('VendorClient.complete', () => {
 
   it('rejects with the abort reason when the race aborts the request', async () => {
     stubFetch(({ init }) => new Promise((_resolve, reject) => {
-      init.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- like fetch, reject with the exact abort reason.
+      init.signal?.addEventListener('abort', () => { reject(init.signal?.reason) })
     }))
     const vendor = new VendorClient('groq', 'm', { url: 'https://vendor.test', apiKey: 'k' }, recordingDiagnostics())
     const controller = new AbortController()

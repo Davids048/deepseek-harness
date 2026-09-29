@@ -84,8 +84,8 @@ export default class DreamversePromptEnhancer extends Service {
   constructor(ctx: Context, config: Config) {
     const logger = ctx.logger('dreamverse-prompt-enhancer')
     const diagnostics: PromptDiagnostics = {
-      info: line => logger.info('%s', line),
-      warn: line => logger.warn('%s', line),
+      info: (line) => { logger.info('%s', line) },
+      warn: (line) => { logger.warn('%s', line) },
     }
     const enhancer = PromptEnhancer.fromConfig(config, diagnostics)
     super(ctx, 'dreamversePromptEnhancer')

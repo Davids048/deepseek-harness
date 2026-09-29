@@ -71,7 +71,17 @@ export interface TemporaryDirectory {
  */
 export function temporaryDirectory(): TemporaryDirectory {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dreamverse-prompt-'))
-  return { directory, cleanup: () => fs.rmSync(directory, { recursive: true, force: true }) }
+  return { directory, cleanup: () => { fs.rmSync(directory, { recursive: true, force: true }) } }
+}
+
+/**
+ * The text body of a request that a provider client sent; the clients always send JSON text.
+ * @param init - the captured request's fetch options.
+ * @returns the body text.
+ */
+export function requestBodyText(init: RequestInit): string {
+  if (typeof init.body !== 'string') throw new TypeError('Expected a text request body.')
+  return init.body
 }
 
 /**

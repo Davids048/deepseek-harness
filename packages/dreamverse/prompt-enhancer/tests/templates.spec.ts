@@ -163,7 +163,7 @@ describe('PromptTemplates', () => {
     vi.spyOn(fs, 'readFileSync').mockImplementation(((file: fs.PathOrFileDescriptor, readOptions?: unknown) => {
       if (file === denied) throw permissionError(denied)
       return readFileSync(file, readOptions as BufferEncoding)
-    }) as typeof fs.readFileSync)
+    }))
     expect(() => new PromptTemplates(options)).toThrow(new RegExp(`Failed to read .* system prompt: .*${filename}`))
   })
 

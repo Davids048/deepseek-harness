@@ -9,7 +9,7 @@ import { VendorClient } from '../src/llm/client.ts'
 import type { ProviderRace } from '../src/llm/race.ts'
 import type { PromptSettings } from '../src/settings.ts'
 import type { JsonObject } from '../src/utils/python-text.ts'
-import { FakeVendor, UNUSED_ENDPOINT, recordingDiagnostics, testRace, testSettings, textReply } from './support.ts'
+import { FakeVendor, UNUSED_ENDPOINT, recordingDiagnostics, requestBodyText, testRace, testSettings, textReply } from './support.ts'
 
 const SYSTEM_PROMPT = 'caller-selected system prompt'
 
@@ -40,7 +40,7 @@ function response(content: string): JsonObject {
 function promptDependencies(requestModel = 'gpt-test'): { deps: Dependencies; sdk: SdkStub } {
   const sdk: SdkStub = { payload: {}, requests: [] }
   vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
-    sdk.requests.push(JSON.parse(String(init.body)) as JsonObject)
+    sdk.requests.push(JSON.parse(requestBodyText(init)) as JsonObject)
     return Promise.resolve(new Response(JSON.stringify(sdk.payload)))
   }))
   const vendor = new VendorClient('cerebras', requestModel, UNUSED_ENDPOINT, recordingDiagnostics())
@@ -322,7 +322,8 @@ describe('prompt features', () => {
 
   it('rethrows the caller abort instead of returning a fallback result', async () => {
     const vendor = new FakeVendor('cerebras', (_request, signal) => new Promise((_resolve, reject) => {
-      signal?.addEventListener('abort', () => reject(signal.reason))
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- like fetch, reject with the exact abort reason.
+      signal?.addEventListener('abort', () => { reject(signal.reason) })
     }))
     const controller = new AbortController()
     const pending = expandClip('An idea', {

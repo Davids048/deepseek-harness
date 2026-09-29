@@ -254,7 +254,8 @@ export function reprPython(value: unknown): string {
   if (isJsonObject(value)) {
     return `{${Object.entries(value).map(([key, item]) => `${reprString(key)}: ${reprPython(item)}`).join(', ')}}`
   }
-  return String(value)
+  if (typeof value === 'number') return String(value)
+  throw new TypeError(`reprPython received a ${typeof value}, which is not a decoded JSON value.`)
 }
 
 /**

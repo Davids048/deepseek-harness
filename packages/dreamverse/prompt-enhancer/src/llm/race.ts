@@ -64,6 +64,7 @@ class AttemptOutcomeQueue<T> {
     return new Promise((resolve, reject) => {
       const onAbort = () => {
         this.waiter = undefined
+        // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- Exact cancellation reason is the contract.
         reject(signal?.reason)
       }
       if (signal?.aborted) {
@@ -285,9 +286,11 @@ async function runAttempt<T>(
     : undefined
   try {
     const value = await attemptReply(client, request, accept, controller.signal)
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- the timer can fire while the attempt is awaited.
     if (timedOut) outcomes.push({ status: 'error', providerName: client.name, message: timeoutMessage(timeoutSeconds) })
     else if (!controller.signal.aborted) outcomes.push({ status: 'success', providerName: client.name, value })
   } catch (error) {
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- the timer can fire while the attempt is awaited.
     if (timedOut) outcomes.push({ status: 'error', providerName: client.name, message: timeoutMessage(timeoutSeconds) })
     else if (!controller.signal.aborted) outcomes.push({ status: 'error', providerName: client.name, message: errorText(error) })
   } finally {

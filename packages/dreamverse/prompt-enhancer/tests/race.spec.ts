@@ -30,7 +30,8 @@ function gate(): { promise: Promise<void>; open: () => void; opened: () => boole
  */
 function untilAborted(signal: AbortSignal | undefined): Promise<never> {
   return new Promise((_resolve, reject) => {
-    signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+    // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- like fetch, reject with the exact abort reason.
+    signal?.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
   })
 }
 
@@ -152,7 +153,7 @@ describe('ProviderRace', () => {
       if (url.includes('fast')) {
         return Promise.resolve(new Response(JSON.stringify({ choices: [{ message: { content: 'accepted' } }] })))
       }
-      init.signal?.addEventListener('abort', () => slowAborted.open())
+      init.signal?.addEventListener('abort', () => { slowAborted.open() })
       return untilAborted(init.signal ?? undefined)
     }))
     const diagnostics = recordingDiagnostics()
