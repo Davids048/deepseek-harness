@@ -15,6 +15,9 @@ import { getHealthz, getReadyz } from './health-routes.ts'
 import { ProjectConnection } from './project-connection.ts'
 import { BrowserProjectSocket } from './project-socket.ts'
 
+/** How often the server pings each open project socket so that proxies keep it open while it is idle. */
+const PROJECT_SOCKET_PING_INTERVAL_MS = 20_000
+
 /** The services the project controller routes to. */
 export interface ProjectControllerServices {
   generation: DreamverseGeneration
@@ -72,6 +75,10 @@ export class DreamverseProjectController {
   }
 
   private serveProject(projectSocket: WebSocket): void {
+    // A proxy such as a Cloudflare tunnel drops a socket that carries no data for about two minutes, which happens
+    // between generation rounds. The reference uvicorn server pings every 20 seconds by default; do the same.
+    const pingTimer = setInterval(() => { projectSocket.ping() }, PROJECT_SOCKET_PING_INTERVAL_MS)
+    projectSocket.once('close', () => { clearInterval(pingTimer) })
     const connection = new ProjectConnection(new BrowserProjectSocket(projectSocket), this.services)
     const running = connection.run().catch((error: unknown) => { this.services.logger.warn(error) })
     this.connections.add(running)
