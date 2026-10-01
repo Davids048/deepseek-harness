@@ -1,0 +1,27 @@
+# DreamVerse generation backend for `fastvideo serve --config`: MiniMax H3 reference-to-video (Ref2VA) behind the
+# streaming_v2 API. The generator settings follow FastVideo's examples/inference/basic/basic_minimax_h3_ref2va.py;
+# sampling keeps the minimax_h3_ref2va preset defaults, including its denoising steps.
+generator:
+  model_path: MiniMaxAI/MiniMax-H3
+  engine:
+    num_gpus: 4
+    use_fsdp_inference: true
+    parallelism:
+      tp_size: 1
+      sp_size: 4
+    offload:
+      dit: false
+      dit_layerwise: false
+      text_encoder: true
+      vae: true
+      pin_cpu_memory: false
+  pipeline:
+    workload_type: i2v
+    components:
+      override_pipeline_cls_name: MiniMaxH3Ref2VAModularPipeline
+
+server:
+  host: 127.0.0.1
+  port: 8029
+
+streaming_v2: {}

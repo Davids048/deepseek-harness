@@ -109,13 +109,14 @@ async function enhanceContinuation(project: Project, request: ContinuationReques
   const timeoutMs = project.promptEnhancementTimeoutMs
   const settings = project.videoGenerationSettings
   const { promptId, rawPrompt, history } = request
+  const labels = project.promptImageLabels({ append: true, referenceCount: request.referenceAssets.length })
   let response: PromptResult
   try {
     response = await project.awaitPromptWork(async () => await project.promptEnhancer.continueVideo(
       request.conditioningPrompt, {
         lockedSegments: history, nextSegmentIdx: history.length + 1, timeoutMs,
         generationMode: settings.generation_mode, segmentDurationSec: settings.segment_duration_sec,
-        referenceLabels: project.buildPromptImageLabels(request.referenceAssets.length),
+        referenceLabels: labels.referenceLabels, firstFrameLabel: labels.firstFrameLabel,
         signal: project.generationSignal,
       }))
   } catch (error) {

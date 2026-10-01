@@ -38,14 +38,14 @@ class MediaTarget {
 
 /**
  * Yields scripted outputs and holds the terminal outcome (success or failure) until `finish`. An abort rejects at once
- * with `signal.reason`, as the generation client does after closing the segment's socket.
+ * with `signal.reason`, as the generation client does after cancelling the segment's request.
  */
 class ScriptedGeneration implements DreamverseGeneration {
   readonly requests: SegmentRequest[] = []
   /** Resolved unless `holdFinish()` holds the backend reply. */
   finish = new Deferred()
   readonly terminalWait = new Deferred()
-  /** True after the iteration ended, when the client has closed the segment's socket. */
+  /** True after the iteration ended, when the client has cancelled the segment's request. */
   closed = false
 
   constructor(private readonly script?: (SegmentOutput | Error)[]) {
@@ -67,15 +67,14 @@ class ScriptedGeneration implements DreamverseGeneration {
   }
 
   private async *iterate(request: SegmentRequest): AsyncGenerator<SegmentOutput> {
-    const streamId = `stream-${request.segmentIdx}`
     const script = this.script ?? [
-      { kind: 'media_metadata', streamId, mime: 'video/mp4' }, { kind: 'chunk', bytes: Buffer.from('video') },
-      { kind: 'media_end', streamId, chunks: 1 },
-      { kind: 'segment_finished', timings: { e2e_latency_ms: 12 }, continuationHandle: `handle-${request.segmentIdx}` },
+      ...(request.returnLastFrame ? [{ kind: 'last_frame', png: Buffer.from(`frame of ${request.prompt}`) } as const] : []),
+      { kind: 'video_start', mime: 'video/mp4' }, { kind: 'chunk', bytes: Buffer.from('video') },
+      { kind: 'done', timings: { e2e_latency_ms: 12 } },
     ]
     try {
       for (const output of script) {
-        if (output instanceof Error || output.kind === 'segment_finished') {
+        if (output instanceof Error || output.kind === 'done') {
           this.terminalWait.resolve()
           const aborted = await Promise.race([this.finish.promise.then(() => false), aborts(request.signal)])
           if (aborted) throw request.signal?.reason
@@ -96,53 +95,59 @@ function aborts(signal: AbortSignal | undefined): Promise<true> {
   })
 }
 
-function request(segmentIdx: number, signal?: AbortSignal): SegmentRequest {
+function request(index: number, fields: { signal?: AbortSignal; returnLastFrame?: boolean } = {}): SegmentRequest {
   return {
-    prompt: `scene-${segmentIdx}`, frameWidth: 1280, frameHeight: 704, numFrames: 121, segmentIdx,
-    continueFrom: segmentIdx === 1 ? null : `handle-${segmentIdx - 1}`, referenceImages: [], ...(signal ? { signal } : {}),
+    prompt: `scene-${index}`, frameWidth: 1280, frameHeight: 704, numFrames: 121, referenceImages: [],
+    returnLastFrame: fields.returnLastFrame ?? false, ...(fields.signal ? { signal: fields.signal } : {}),
   }
 }
 
+/** The stream ID of the browser event at `index`. */
+function streamIdAt(target: MediaTarget, index: number): unknown {
+  return (target.emitted[index] as Record<string, unknown>)['stream_id']
+}
+
 describe('streamSegmentToBrowser', () => {
-  it('preserves request identity, browser order, delivered counts, and continuation handles across segments', async () => {
+  it('preserves request identity, browser order, delivered counts, and last frames across segments', async () => {
     const generation = new ScriptedGeneration()
     const target = new MediaTarget(generation)
-    const requests = [request(1), request(2)]
-    for (const segmentRequest of requests) {
-      expect(await streamSegmentToBrowser(target, segmentRequest)).toEqual({
-        deliveryStats: { timings: { e2e_latency_ms: 12 }, chunkCount: 1, byteCount: 5 },
-        continuationHandle: `handle-${segmentRequest.segmentIdx}`,
-      })
-    }
+    const requests = [request(1, { returnLastFrame: true }), request(2)]
+    expect(await streamSegmentToBrowser(target, 1, requests[0]!)).toEqual({
+      deliveryStats: { timings: { e2e_latency_ms: 12 }, chunkCount: 1, byteCount: 5 }, lastFrame: Buffer.from('frame of scene-1'),
+    })
+    expect(await streamSegmentToBrowser(target, 2, requests[1]!)).toEqual({
+      deliveryStats: { timings: { e2e_latency_ms: 12 }, chunkCount: 1, byteCount: 5 }, lastFrame: null,
+    })
     expect(generation.requests).toEqual(requests)
     expect(generation.requests[0]).toBe(requests[0])
+    const streamId: unknown = expect.stringMatching(/^seg00[12]-[0-9a-f]{8}$/)
     expect(target.emitted).toEqual([
-      { type: 'media_init', segment_idx: 1, mime: 'video/mp4', stream_id: 'stream-1' },
-      'video', { type: 'media_segment_complete', segment_idx: 1, stream_id: 'stream-1' },
-      { type: 'media_init', segment_idx: 2, mime: 'video/mp4', stream_id: 'stream-2' },
-      'video', { type: 'media_segment_complete', segment_idx: 2, stream_id: 'stream-2' },
+      { type: 'media_init', segment_idx: 1, mime: 'video/mp4', stream_id: streamId },
+      'video', { type: 'media_segment_complete', segment_idx: 1, stream_id: streamId },
+      { type: 'media_init', segment_idx: 2, mime: 'video/mp4', stream_id: streamId },
+      'video', { type: 'media_segment_complete', segment_idx: 2, stream_id: streamId },
     ])
+    expect([streamIdAt(target, 0), streamIdAt(target, 3)]).toEqual([streamIdAt(target, 2), streamIdAt(target, 5)])
+    expect(String(streamIdAt(target, 0)).startsWith('seg001-')).toBe(true)
+    expect(String(streamIdAt(target, 3)).startsWith('seg002-')).toBe(true)
   })
 
-  it.each([true, false])('announces media completion only after the worker reply (success=%s)', async (successful) => {
+  it.each([true, false])('announces media completion only after the backend reply (success=%s)', async (successful) => {
     const outcome: SegmentOutput | Error = successful
-      ? { kind: 'segment_finished', timings: { generation_ms: 2 }, continuationHandle: 'handle' }
-      : new GenerationSegmentError('worker failed after media', 'RuntimeError', false)
+      ? { kind: 'done', timings: { generation_ms: 2 } }
+      : new GenerationSegmentError('worker failed after media', 'generation_failed', false)
     const generation = new ScriptedGeneration([
-      { kind: 'media_metadata', streamId: 'stream', mime: 'video/mp4' }, { kind: 'chunk', bytes: Buffer.from('first') },
-      { kind: 'media_end', streamId: 'stream', chunks: 1 }, outcome,
+      { kind: 'video_start', mime: 'video/mp4' }, { kind: 'chunk', bytes: Buffer.from('first') }, outcome,
     ]).holdFinish()
     const target = new MediaTarget(generation)
-    const delivery = streamSegmentToBrowser(target, request(1))
+    const delivery = streamSegmentToBrowser(target, 1, request(1))
     const settled = delivery.then(() => 'resolved', () => 'rejected')
     await within(generation.terminalWait.promise)
     expect(target.emitted.at(-1)).toBe('first')
     generation.finish.resolve()
     if (successful) {
-      expect(await delivery).toEqual({
-        deliveryStats: { timings: { generation_ms: 2 }, chunkCount: 1, byteCount: 5 }, continuationHandle: 'handle',
-      })
-      expect(target.emitted.at(-1)).toEqual({ type: 'media_segment_complete', segment_idx: 1, stream_id: 'stream' })
+      expect(await delivery).toEqual({ deliveryStats: { timings: { generation_ms: 2 }, chunkCount: 1, byteCount: 5 }, lastFrame: null })
+      expect(target.emitted.at(-1)).toEqual({ type: 'media_segment_complete', segment_idx: 1, stream_id: streamIdAt(target, 0) })
     } else {
       await expect(delivery).rejects.toThrow('worker failed after media')
       expect(target.emitted.at(-1)).toBe('first')
@@ -151,27 +156,28 @@ describe('streamSegmentToBrowser', () => {
   })
 
   it.each([
-    ['metadata', 'Segment 1 AV stream did not initialize (no media_init event)'],
-    ['successful reply', 'Segment 1 stream ended without a successful worker reply'],
-  ])('rejects a stream without its %s', async (missing, message) => {
+    ['video start', false, 'Segment 1 AV stream did not initialize (no media_init event)'],
+    ['successful reply', false, 'Segment 1 stream ended without a successful backend reply'],
+    ['requested last frame', true, 'Segment 1 finished without the requested last frame'],
+  ])('rejects a stream without its %s', async (missing, returnLastFrame, message) => {
     const script: SegmentOutput[] = [
-      { kind: 'media_metadata', streamId: 'stream', mime: 'video/mp4' }, { kind: 'chunk', bytes: Buffer.from('video') },
-      { kind: 'media_end', streamId: 'stream', chunks: 1 }, { kind: 'segment_finished', timings: {}, continuationHandle: 'handle' },
+      { kind: 'video_start', mime: 'video/mp4' }, { kind: 'chunk', bytes: Buffer.from('video') }, { kind: 'done', timings: {} },
     ]
-    script.splice(missing === 'metadata' ? 0 : -1, 1)
+    if (missing === 'video start') script.splice(0, 1)
+    if (missing === 'successful reply') script.splice(-1, 1)
     const generation = new ScriptedGeneration(script)
     const target = new MediaTarget(generation)
-    await expect(streamSegmentToBrowser(target, request(1))).rejects.toThrow(new Error(message))
+    await expect(streamSegmentToBrowser(target, 1, request(1, { returnLastFrame }))).rejects.toThrow(new Error(message))
     expect(generation.closed).toBe(true)
     expect(target.emitted.some(event => typeof event === 'object' && event['type'] === 'media_segment_complete')).toBe(false)
   })
 
   it.each([
-    [new GenerationSegmentError('The worker rejected this shot.', 'ValueError', true), DreamverseValueError],
-    [new GenerationSegmentError('fake GPU step failed', 'RuntimeError', false), Error],
-  ])('converts worker failure %s to the reference error kind', async (failure, kind) => {
-    const generation = new ScriptedGeneration([{ kind: 'media_metadata', streamId: 'stream', mime: 'video/mp4' }, failure])
-    const error = await streamSegmentToBrowser(new MediaTarget(generation), request(1)).then(() => null, (reason: unknown) => reason)
+    [new GenerationSegmentError('The backend rejected this shot.', 'invalid_request', true), DreamverseValueError],
+    [new GenerationSegmentError('fake GPU step failed', 'generation_failed', false), Error],
+  ])('converts backend failure %s to the reference error kind', async (failure, kind) => {
+    const generation = new ScriptedGeneration([{ kind: 'video_start', mime: 'video/mp4' }, failure])
+    const error = await streamSegmentToBrowser(new MediaTarget(generation), 1, request(1)).then(() => null, (reason: unknown) => reason)
     expect(error).toBeInstanceOf(kind)
     expect(error).not.toBeInstanceOf(GenerationSegmentError)
     expect(error instanceof DreamverseValueError).toBe(kind === DreamverseValueError)
@@ -185,8 +191,8 @@ describe('streamSegmentToBrowser', () => {
     if (ending === 'abort') target.holdBinary = new Deferred()
     else target.rejectMedia = true
     const deliverTwo = async (): Promise<void> => {
-      await streamSegmentToBrowser(target, request(1, abort.signal))
-      await streamSegmentToBrowser(target, request(2, abort.signal))
+      await streamSegmentToBrowser(target, 1, request(1, { signal: abort.signal }))
+      await streamSegmentToBrowser(target, 2, request(2, { signal: abort.signal }))
     }
     const settled = deliverTwo().then(() => null, (reason: unknown) => reason)
     await within(target.receivedChunk.promise)
@@ -205,15 +211,14 @@ describe('streamSegmentToBrowser', () => {
 
   it('counts only non-empty chunks after their socket write finishes', async () => {
     const generation = new ScriptedGeneration([
-      { kind: 'media_metadata', streamId: 'stream', mime: 'video/mp4' }, { kind: 'chunk', bytes: Buffer.from('ab') },
-      { kind: 'chunk', bytes: Buffer.alloc(0) }, { kind: 'chunk', bytes: Buffer.from('cde') },
-      { kind: 'media_end', streamId: 'stream', chunks: 2 }, { kind: 'segment_finished', timings: {}, continuationHandle: 'handle' },
+      { kind: 'video_start', mime: 'video/mp4' }, { kind: 'chunk', bytes: Buffer.from('ab') },
+      { kind: 'chunk', bytes: Buffer.alloc(0) }, { kind: 'chunk', bytes: Buffer.from('cde') }, { kind: 'done', timings: {} },
     ])
     const target = new MediaTarget(generation)
     target.holdBinary = new Deferred()
-    const delivery = streamSegmentToBrowser(target, request(1))
+    const delivery = streamSegmentToBrowser(target, 1, request(1))
     await within(target.receivedChunk.promise)
-    expect(target.emitted).toEqual([{ type: 'media_init', segment_idx: 1, mime: 'video/mp4', stream_id: 'stream' }])
+    expect(target.emitted).toEqual([{ type: 'media_init', segment_idx: 1, mime: 'video/mp4', stream_id: streamIdAt(target, 0) }])
     target.holdBinary.resolve()
     expect((await within(delivery)).deliveryStats).toEqual({ timings: {}, chunkCount: 2, byteCount: 5 })
     expect(target.emitted.filter(event => typeof event === 'string')).toEqual(['ab', 'cde'])

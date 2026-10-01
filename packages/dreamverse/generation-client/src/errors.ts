@@ -26,14 +26,17 @@ export class ProjectValidationError extends DreamverseValueError {
   }
 }
 
-/** A worker failure that the generation backend reported with `segment_error` while it generated one segment. */
+/**
+ * A segment failure that the generation backend reported, with HTTP 400 before its event stream or with an `error`
+ * event in it. The backend's `invalid_request` code is the `ValueError` kind; `generation_failed` is not.
+ */
 export class GenerationSegmentError extends Error {
   override name = 'GenerationSegmentError'
 
   /**
-   * @param message - the worker exception text.
-   * @param errorType - the Python exception class name.
-   * @param isValueError - whether the Python exception is a `ValueError`.
+   * @param message - the backend's failure message.
+   * @param errorType - the backend's error code: `invalid_request` or `generation_failed`.
+   * @param isValueError - whether the failure is the `ValueError` kind, a problem with the request itself.
    */
   constructor(message: string, readonly errorType: string, readonly isValueError: boolean) {
     super(message)

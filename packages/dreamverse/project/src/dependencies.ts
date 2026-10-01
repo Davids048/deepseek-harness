@@ -80,10 +80,18 @@ export interface ExpandClipOptions {
   signal: AbortSignal
 }
 
-/** Keyword arguments of `PromptEnhancer.continue_video`. */
+/** Keyword arguments of `PromptEnhancer.continue_video`, plus the first-frame label of the new segment. */
 export interface ContinueVideoOptions extends ExpandClipOptions {
   lockedSegments: string[]
   nextSegmentIdx: number
+  /** Label of the previous segment's last frame that the new segment starts from; null when it carries none. */
+  firstFrameLabel: string | null
+}
+
+/** Image labels of the rollout segments after the first, each of which starts from the previous segment's last frame. */
+export interface ContinuedSegmentLabels {
+  referenceLabels: string[]
+  firstFrameLabel: string
 }
 
 /**
@@ -99,7 +107,10 @@ export interface RewriteRolloutOptions {
   rewriteInstruction: string
   timeoutMs: number
   generationMode: string
+  /** Labels of the first segment's reference images. */
   referenceLabels: string[]
+  /** Labels of every later segment; null when later segments do not continue their predecessor. */
+  continuedSegmentLabels: ContinuedSegmentLabels | null
   /** The project's generation signal; aborting it rejects the operation. */
   signal: AbortSignal
 }

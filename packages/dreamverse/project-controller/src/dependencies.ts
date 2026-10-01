@@ -66,9 +66,9 @@ export interface ModelFacts {
 
 /** The `dreamverseGeneration` members that the project controller's HTTP routes call. */
 export interface DreamverseGeneration {
-  /** `GET /v1/model` of the generation backend; rejects when the backend is unreachable. */
+  /** The generation backend's model facts; rejects when the backend is unreachable. */
   model(): Promise<ModelFacts>
-  /** `GET /readyz` of the generation backend. */
+  /** The generation backend's readiness; rejects when the backend is unreachable. */
   ready(): Promise<{ ready: boolean; detail: string | null }>
 }
 

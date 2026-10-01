@@ -5,6 +5,7 @@ import {
   FakeAssets,
   FakeGeneration,
   FakePromptEnhancer,
+  lastFrameBytes,
   ref2vaFacts,
   referenceImage,
   within,
@@ -44,9 +45,9 @@ describe('generate_video_sequence', () => {
       .toEqual(expected.map((prompt, index) => [prompt, index, 'preset', null]))
     expect(new Set(segments.map(segment => segment.segmentId)).size).toBe(expected.length)
     expect(harness.enhancer.rewriteRollout).not.toHaveBeenCalled()
-    // On a first-frame model, each prepared segment continues from its predecessor's continuation handle.
-    expect(run.generation.calls.map(call => call.request.continueFrom))
-      .toEqual(expected.map((_prompt, index) => index === 0 ? null : `continuation-${index}`))
+    // On a first-frame model, each later prepared segment starts from its predecessor's last frame.
+    expect(run.generation.calls.map(call => call.request.referenceImages))
+      .toEqual(expected.map((_prompt, index) => index === 0 ? [] : [lastFrameBytes(index)]))
     expect(run.socket.entries).toEqual([
       roundStatus('preparing'), roundStatus('generating'), streamStart(null, '', expected),
       ...expected.flatMap((_prompt, index) => segmentEntries(index + 1, 'curated', index, null)),
@@ -67,8 +68,10 @@ describe('generate_video_sequence', () => {
     expect(harness.enhancer.rewriteRollout.mock.calls).toEqual([[[], {
       promptsToRewrite: [], presetId: null, presetLabel: '', rewriteInstruction: 'Explore a forest', timeoutMs: 20000,
       generationMode: mode,
-      // Only the reference-image model numbers its images; first-frame models have no image labels.
+      // Only the reference-image model numbers its images; first-frame models have no image labels. Each later
+      // ref2va segment starts from its predecessor's last frame, Picture 1, so its reference label shifts by one.
       referenceLabels: mode === 'ref2va' ? ['Picture 1'] : [], segmentCount: 4, segmentDurationSec: 5,
+      continuedSegmentLabels: mode === 'ref2va' ? { referenceLabels: ['Picture 2'], firstFrameLabel: 'Picture 1' } : null,
       signal: run.project.generationSignal,
     }]])
     const segments = run.project.completedSequenceSegments
@@ -105,7 +108,8 @@ describe('generate_video_sequence', () => {
     expect(harness.enhancer.rewriteRollout.mock.calls[0]![1]).toEqual({
       promptsToRewrite: [], presetId: 'custom_editable', presetLabel: 'Custom rollout',
       rewriteInstruction: 'A moonbase corridor thriller with flooding', timeoutMs: 20000, generationMode: 't2va',
-      referenceLabels: [], segmentCount: 6, segmentDurationSec: 5, signal: run.project.generationSignal,
+      referenceLabels: [], segmentCount: 6, segmentDurationSec: 5, continuedSegmentLabels: null,
+      signal: run.project.generationSignal,
     })
     expect(run.project.promptEnhancementModel).toBe('model-a')
     expect([run.project.promptSequenceId, run.project.promptSequenceLabel]).toEqual(['test-scenes', 'Test scenes'])
@@ -226,12 +230,14 @@ describe('generate_video_sequence', () => {
     }))
     await finishRound(run, kind === 'seed' ? ['Scene 1', 'Scene 2'] : ['A lake', 'A forest'])
     for (const segment of run.project.completedSequenceSegments) expect(segment.referenceAssets).toEqual([side, front])
-    // Reference shots are independent: each request starts fresh video and carries the ordered images.
+    // The second request starts from the first segment's last frame, then carries the ordered images.
     const images = [referenceImage('side'), referenceImage('front')]
-    expect(run.generation.calls.map(call => [call.request.continueFrom, call.request.referenceImages]))
-      .toEqual([[null, images], [null, images]])
+    expect(run.generation.calls.map(call => call.request.referenceImages)).toEqual([images, [lastFrameBytes(1), ...images]])
     if (kind === 'seed') {
-      expect(harness.enhancer.rewriteRollout.mock.calls[0]![1].referenceLabels).toEqual(['Picture 1', 'Picture 2'])
+      expect(harness.enhancer.rewriteRollout.mock.calls[0]![1]).toMatchObject({
+        referenceLabels: ['Picture 1', 'Picture 2'],
+        continuedSegmentLabels: { referenceLabels: ['Picture 2', 'Picture 3'], firstFrameLabel: 'Picture 1' },
+      })
     }
   })
 
@@ -248,25 +254,24 @@ describe('generate_video_sequence', () => {
     expect(assets.fileExists('first-person')).toBe(true)
     first.finish.resolve()
     const second = await run.generation.nextCall()
-    expect(second.request.referenceImages).toEqual([referenceImage('first-person')])
-    expect([first.request.continueFrom, second.request.continueFrom]).toEqual([null, null])
+    expect(second.request.referenceImages).toEqual([lastFrameBytes(1), referenceImage('first-person')])
     expect(assets.fileExists('first-person')).toBe(true)
     second.finish.resolve()
     await run.socket.waitForStatus('idle')
     expect(assets.fileExists('first-person')).toBe(false)
-    for (const command of [
-      { type: 'append_prompt', prompt: 'River' },
-      { type: 'simple_generate', prompt: 'Mountain', enhancement_enabled: false },
-      { type: 'rewrite_seed_prompts', rewrite_instruction: 'Add rain', prompt_window_prompts: ['Mountain'] },
-    ]) {
+    // An appended segment starts from the accepted video's last frame; the other actions start fresh video.
+    for (const [command, predecessorImages] of [
+      [{ type: 'append_prompt', prompt: 'River' }, [lastFrameBytes(2)]],
+      [{ type: 'simple_generate', prompt: 'Mountain', enhancement_enabled: false }, []],
+      [{ type: 'rewrite_seed_prompts', rewrite_instruction: 'Add rain', prompt_window_prompts: ['Mountain'] }, []],
+    ] as const) {
       const after = run.socket.entries.length
       await run.project.processBrowserCommand({ ...command, reference_asset_ids: ['second-person'] })
       const call = await run.generation.nextCall()
-      expect([call.request.referenceImages, call.request.continueFrom]).toEqual([[referenceImage('second-person')], null])
+      expect(call.request.referenceImages).toEqual([...predecessorImages, referenceImage('second-person')])
       call.finish.resolve()
       await run.socket.waitForStatus('idle', after)
     }
-    expect([...run.project.videoSegmentsById.values()].every(segment => segment.referenceSegmentId === null)).toBe(true)
     expect(assets.fileExists('second-person')).toBe(true)
     expect(assets.totalRetained()).toBe(0)
   })

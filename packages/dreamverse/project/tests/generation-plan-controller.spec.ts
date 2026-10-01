@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer'
 import { hostname } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { GenerationSegmentError } from '../src/index.ts'
-import { STALE_CONTINUATION_MESSAGE, settle, within, type BrowserEvent } from './fakes.ts'
+import { lastFrameBytes, settle, within, type BrowserEvent } from './fakes.ts'
 import { MEASURED_LATENCY, openProjects, type ProjectsHarness } from './harness.ts'
 import { actionPlugin, appendPrompt, generatePrompts } from './test-actions.ts'
 
@@ -35,13 +35,14 @@ function status(value: string): BrowserEvent {
   return { type: 'generation_round_status', status: value, auto_extension_enabled: false }
 }
 
-/** The browser events of one successfully streamed segment. */
+/** The browser events of one successfully streamed segment; the harness generates its stream ID. */
 function segmentEvents(segmentIdx: number, fields: { source: string; seedPromptIndex: number | null; promptId: string | null }): unknown[] {
+  const streamId: unknown = expect.stringMatching(new RegExp(`^seg${String(segmentIdx).padStart(3, '0')}-[0-9a-f]{8}$`))
   return [
     { type: 'ltx2_segment_start', segment_idx: segmentIdx, source: fields.source, seed_prompt_index: fields.seedPromptIndex, prompt_id: fields.promptId },
-    { type: 'media_init', segment_idx: segmentIdx, mime: 'video/mp4', stream_id: `stream-${segmentIdx}` },
+    { type: 'media_init', segment_idx: segmentIdx, mime: 'video/mp4', stream_id: streamId },
     Buffer.from('segment!'),
-    { type: 'media_segment_complete', segment_idx: segmentIdx, stream_id: `stream-${segmentIdx}` },
+    { type: 'media_segment_complete', segment_idx: segmentIdx, stream_id: streamId },
   ]
 }
 
@@ -58,27 +59,27 @@ describe('GenerationPlanController', () => {
     expect(socket.entries).toContainEqual(Buffer.from('segment!'))
     expect(socket.eventsOfType('ltx2_stream_complete')).toEqual([])
     expect(first.request).toEqual({
-      prompt: 'A', frameWidth: 1280, frameHeight: 704, numFrames: 121, segmentIdx: 1, continueFrom: null,
-      referenceImages: [], signal: project.generationSignal,
+      prompt: 'A', frameWidth: 1280, frameHeight: 704, numFrames: 121, referenceImages: [], returnLastFrame: true,
+      signal: project.generationSignal,
     })
     first.finish.resolve()
     const second = await generation.nextCall()
     expect(project.videoSegmentsById.get(plan.segmentIds[0]!)).toBe(firstRecord)
     expect(firstRecord.status).toBe('completed')
     expect(firstRecord.deliveryStats).toEqual({ timings: { e2e_latency_ms: 1 }, chunkCount: 1, byteCount: 8 })
-    expect(firstRecord.continuationHandle).toBe('continuation-1')
-    // Each chained segment continues from its predecessor's handle.
-    expect(second.request.continueFrom).toBe('continuation-1')
+    expect(firstRecord.lastFrame).toEqual(lastFrameBytes(1))
+    // Each chained segment starts from its predecessor's last frame.
+    expect(second.request.referenceImages).toEqual([lastFrameBytes(1)])
     expect(project.completedSequenceHistory).toEqual([])
     second.finish.resolve()
     const third = await generation.nextCall()
-    expect(third.request.continueFrom).toBe('continuation-2')
+    expect(third.request.referenceImages).toEqual([lastFrameBytes(2)])
     expect(project.completedSequenceHistory).toEqual([])
     third.finish.resolve()
     await socket.waitForStatus('idle')
     expect(project.completedSequenceSegments.map(segment => segment.status)).toEqual(['completed', 'completed', 'completed'])
-    expect(project.completedSequenceSegments.map(segment => segment.continuationHandle)).toEqual([
-      'continuation-1', 'continuation-2', 'continuation-3',
+    expect(project.completedSequenceSegments.map(segment => segment.lastFrame)).toEqual([
+      lastFrameBytes(1), lastFrameBytes(2), lastFrameBytes(3),
     ])
     expect(project.completedSequenceHistory).toEqual([plan.sequenceIds])
     expect(generation.calls).toHaveLength(3)
@@ -108,7 +109,7 @@ describe('GenerationPlanController', () => {
     const h = await open()
     const run = await h.start(projectPayload({ curated_prompts: ['A', 'B'] }))
     const { socket } = run
-    run.generation.rejectSegments = new GenerationSegmentError('worker failed', 'RuntimeError', false)
+    run.generation.rejectSegments = new GenerationSegmentError('worker failed', 'generation_failed', false)
     const error = await run.outcome
     expect(error).toEqual(new Error('worker failed'))
     expect(run.project.generationRoundStatus).toBe('failed')
@@ -129,13 +130,13 @@ describe('GenerationPlanController', () => {
     ])
   })
 
-  it('reports a worker ValueError, resets continuation state, and keeps the project editable', async () => {
+  it('reports a backend ValueError, keeps the project editable, and keeps the accepted segment last frame', async () => {
     const run = await (await open()).start(projectPayload({ curated_prompts: ['A'] }))
     ;(await run.generation.nextCall()).finish.resolve()
     await run.socket.waitForStatus('idle')
     const acceptedIds = run.project.completedSequenceSegmentIds
     expect(run.project.generationPlanController.lastCompletedSegmentId).toBe(acceptedIds[0])
-    run.generation.rejectSegments = new GenerationSegmentError('The worker rejected this shot.', 'ValueError', true)
+    run.generation.rejectSegments = new GenerationSegmentError('The worker rejected this shot.', 'invalid_request', true)
     const after = run.socket.entries.length
     await run.project.processBrowserCommand({ type: 'simple_generate', prompt: 'Rejected', prompt_id: 'clip' })
     await run.socket.waitForStatus('failed', after)
@@ -146,16 +147,16 @@ describe('GenerationPlanController', () => {
     expect(run.project.completedSequenceSegmentIds).toBe(acceptedIds)
     expect(run.project.isClosed).toBe(false)
 
-    // The backend no longer holds the accepted segment's conditioning, so it refuses the accepted segment's handle.
+    // The project keeps the accepted segment's last frame, so a later append still continues it.
     run.generation.rejectSegments = null
     const retry = run.socket.entries.length
     await run.project.processBrowserCommand({ type: 'append_prompt', prompt: 'Next', prompt_id: 'append' })
-    await run.socket.waitForStatus('failed', retry)
-    expect(run.generation.requests.at(-1)!.continueFrom).toBe('continuation-1')
-    expect(run.socket.eventsOfType('error', retry)).toEqual([
-      { type: 'error', message: STALE_CONTINUATION_MESSAGE, prompt_id: 'append' },
-    ])
-    expect(run.generation.calls).toHaveLength(1)
+    const following = await run.generation.nextCall()
+    expect(following.request.referenceImages).toEqual([lastFrameBytes(1)])
+    following.finish.resolve()
+    await run.socket.waitForStatus('idle', retry)
+    expect(run.project.completedSequencePrompts).toEqual(['A', 'Next'])
+    expect(run.generation.calls).toHaveLength(2)
   })
 
   it('appends a continuation that references the completed segment', async () => {
@@ -166,8 +167,7 @@ describe('GenerationPlanController', () => {
     const after = run.socket.entries.length
     await run.project.processBrowserCommand({ type: 'append_prompt', prompt: 'B', prompt_id: 'continue' })
     const following = await run.generation.nextCall()
-    expect([following.request.continueFrom, following.request.referenceImages]).toEqual([preceding.continuationHandle, []])
-    expect(following.request.segmentIdx).toBe(2)
+    expect(following.request.referenceImages).toEqual([preceding.lastFrame])
     following.finish.resolve()
     await run.socket.waitForStatus('idle', after)
     expect(run.project.completedSequencePrompts).toEqual(['A', 'B'])

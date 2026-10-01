@@ -80,7 +80,8 @@ export function roundStatus(status: string, autoExtensionEnabled = false): Brows
  * @param source - the wire source label.
  * @param seedPromptIndex - the segment's sequence index.
  * @param promptId - the instruction's request ID.
- * @returns `ltx2_segment_start`, `media_init`, the chunk, and `media_segment_complete`.
+ * @returns `ltx2_segment_start`, `media_init`, the chunk, and `media_segment_complete`; the stream ID matches the
+ *   harness-generated form for the segment.
  */
 export function segmentEntries(
   segmentIdx: number,
@@ -88,11 +89,12 @@ export function segmentEntries(
   seedPromptIndex: number | null,
   promptId: string | null,
 ): (BrowserEvent | Buffer)[] {
+  const streamId: unknown = expect.stringMatching(new RegExp(`^seg${String(segmentIdx).padStart(3, '0')}-[0-9a-f]{8}$`))
   return [
     { type: 'ltx2_segment_start', segment_idx: segmentIdx, source, seed_prompt_index: seedPromptIndex, prompt_id: promptId },
-    { type: 'media_init', segment_idx: segmentIdx, mime: 'video/mp4', stream_id: `stream-${segmentIdx}` },
+    { type: 'media_init', segment_idx: segmentIdx, mime: 'video/mp4', stream_id: streamId },
     Buffer.from('segment!'),
-    { type: 'media_segment_complete', segment_idx: segmentIdx, stream_id: `stream-${segmentIdx}` },
+    { type: 'media_segment_complete', segment_idx: segmentIdx, stream_id: streamId },
   ]
 }
 

@@ -9,6 +9,7 @@ import {
   holdPromptCall,
   promptResult,
   ref2vaFacts,
+  lastFrameBytes,
   referenceImage,
   within,
   type HeldPromptCall,
@@ -87,7 +88,7 @@ describe('Auto Extension', () => {
     expect(run.project.promptEnhancementEnabled).toBe(false)
     expect(enhancer.continueVideo.mock.calls).toEqual([[null, {
       lockedSegments: ['A'], nextSegmentIdx: 2, timeoutMs: 20000, generationMode: 't2va',
-      segmentDurationSec: 5, referenceLabels: [], signal: run.project.generationSignal,
+      segmentDurationSec: 5, referenceLabels: [], firstFrameLabel: null, signal: run.project.generationSignal,
     }]])
     provider.release.resolve()
     const following = await run.generation.nextCall()
@@ -104,7 +105,7 @@ describe('Auto Extension', () => {
     ])
     const segment = run.project.completedSequenceSegments.at(-1)!
     expect([segment.source, segment.wireSource, segment.instruction]).toEqual(['automatic', 'auto_enhanced', null])
-    expect(following.request.continueFrom).toBe('continuation-1')
+    expect(following.request.referenceImages).toEqual([lastFrameBytes(1)])
     expect(run.generation.calls).toHaveLength(2)
     expect(harness!.logEvents('generation_round_start').map(entry => entry['action'])).toEqual(['generate_video_sequence', 'auto_extend'])
     expect(harness!.logEvents('enhance_request')).toEqual([logEntry('enhance_request', {
@@ -132,7 +133,8 @@ describe('Auto Extension', () => {
     const after = run.socket.entries.length
     secondAutomatic.finish.resolve()
     await run.socket.waitForStatus('idle', after)
-    expect(run.generation.calls.map(call => call.request.segmentIdx)).toEqual([1, 2, 3])
+    // Each automatic segment starts from its predecessor's last frame.
+    expect(run.generation.calls.map(call => call.request.referenceImages)).toEqual([[], [lastFrameBytes(1)], [lastFrameBytes(2)]])
     expect(run.project.completedSequenceSegments).toHaveLength(3)
     expect(enhancer.continueVideo.mock.calls.map(call => [call[0], call[1].lockedSegments.length])).toEqual([[null, 1], [null, 2]])
     expect(run.socket.events(automaticStart).filter(event => MANUAL_PROMPT_EVENTS.has(String(event['type'])))).toEqual([])
@@ -374,7 +376,7 @@ describe('Auto Extension', () => {
     await run.project.processBrowserCommand({ type: 'stop_auto_extension' })
     provider.release.resolve()
     const automatic = await run.generation.nextCall()
-    expect([automatic.request.referenceImages, automatic.request.continueFrom]).toEqual([[], 'continuation-1'])
+    expect(automatic.request.referenceImages).toEqual([lastFrameBytes(1)])
     expect(assets.fileExists('first')).toBe(false)
     const after = run.socket.entries.length
     automatic.finish.resolve()
@@ -399,11 +401,12 @@ describe('Auto Extension', () => {
     })
     ;(await run.generation.nextCall()).finish.resolve()
     await within(provider.entered.promise)
-    expect(harness!.enhancer.continueVideo.mock.calls[0]![1].referenceLabels).toEqual(['Picture 1', 'Picture 2'])
+    expect(harness!.enhancer.continueVideo.mock.calls[0]![1]).toMatchObject({
+      referenceLabels: ['Picture 2', 'Picture 3'], firstFrameLabel: 'Picture 1',
+    })
     provider.release.resolve()
     const automatic = await run.generation.nextCall()
-    expect([automatic.request.continueFrom, automatic.request.referenceImages])
-      .toEqual([null, [referenceImage('side'), referenceImage('front')]])
+    expect(automatic.request.referenceImages).toEqual([lastFrameBytes(2), referenceImage('side'), referenceImage('front')])
     assets.deleteAsset('front')
     expect(assets.fileExists('front')).toBe(true)
     automatic.finish.resolve()

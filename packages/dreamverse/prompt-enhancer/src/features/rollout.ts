@@ -54,6 +54,14 @@ export interface RolloutResult {
   rawResponseText: string | null
 }
 
+/** Image labels of the rollout segments after the first, each of which starts from the previous segment's last frame. */
+export interface ContinuedSegmentLabels {
+  /** Labels of the protagonist's reference images in each later segment. */
+  readonly referenceLabels: readonly string[]
+  /** Label of the previous segment's last frame in each later segment. */
+  readonly firstFrameLabel: string
+}
+
 /** Inputs of `rewriteRollout`. */
 export interface RewriteRolloutOptions extends FeatureDependencies {
   /** The number of prompts to create when the source is empty. */
@@ -61,6 +69,8 @@ export interface RewriteRolloutOptions extends FeatureDependencies {
   readonly presetId?: string | null | undefined
   readonly presetLabel?: string | null | undefined
   readonly rewriteInstruction?: string | null | undefined
+  /** Labels of the segments after the first; null or omitted when later segments start fresh. */
+  readonly continuedSegmentLabels?: ContinuedSegmentLabels | null | undefined
 }
 
 /**
@@ -150,6 +160,13 @@ export async function rewriteRollout(prompts: string[], options: RewriteRolloutO
     + `Include exactly ${expectedLen} segment prompts.`
   const referenceLabels = options.referenceLabels ?? []
   if (referenceLabels.length > 0) userPayload['protagonist_reference_labels'] = [...referenceLabels]
+  const continued = options.continuedSegmentLabels ?? null
+  if (continued !== null) {
+    userPayload.request += ` Segment 1 starts fresh. Every later segment starts from <${continued.firstFrameLabel}>, `
+      + 'the last frame of the segment before it.'
+    userPayload['continued_segment_first_frame_label'] = continued.firstFrameLabel
+    userPayload['continued_segment_protagonist_reference_labels'] = [...continued.referenceLabels]
+  }
   const request: ChatRequest = {
     systemPrompt: options.systemPrompt,
     userContent: dumpsJson(userPayload),

@@ -101,11 +101,17 @@ async function requestRollout(
   const model = project.promptEnhancementModel
   const timeoutMs = project.promptEnhancementTimeoutMs
   const settings = project.videoGenerationSettings
+  const referenceCount = input.referenceAssets.length
+  // The first segment starts fresh; each later segment may start from the segment before it.
+  const laterLabels = project.promptImageLabels({ index: 1, referenceCount })
+  const continuedSegmentLabels = laterLabels.firstFrameLabel === null
+    ? null
+    : { referenceLabels: laterLabels.referenceLabels, firstFrameLabel: laterLabels.firstFrameLabel }
   try {
     return await project.awaitPromptWork(async () => await project.promptEnhancer.rewriteRollout(sourcePrompts, {
       promptsToRewrite, presetId, presetLabel, rewriteInstruction: instruction.text, timeoutMs,
       generationMode: settings.generation_mode,
-      referenceLabels: project.buildPromptImageLabels(input.referenceAssets.length),
+      referenceLabels: project.promptImageLabels({ referenceCount }).referenceLabels, continuedSegmentLabels,
       segmentCount: settings.segment_count, segmentDurationSec: settings.segment_duration_sec,
       signal: project.generationSignal,
     }))

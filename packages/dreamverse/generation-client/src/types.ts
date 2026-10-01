@@ -1,11 +1,15 @@
 /**
- * Values that the DreamVerse generation backend API returns and accepts. TypeScript fields use camelCase; keys of
+ * Values that the generation backend's streaming_v2 API returns and accepts. TypeScript fields use camelCase; keys of
  * nested maps keep the backend's values, such as `16:9` or `720p`.
  *
  * @module @dreamverse/generation-client/types
  */
 
-/** The served model's facts from `GET /v1/model`, computed from the reference `ModelCapabilities`. */
+/**
+ * The served model's facts. The model-specific values come from `GET /v1/streamv2/capabilities`; `generationModes`,
+ * `unsupportedGenerationModes`, `usesPreviousFrame`, and `referenceLabels` are the harness's values for the H3 Ref2VA
+ * model that the backend serves, and `aspectRatios` and `resolutions` list the keys of `frameSizes`.
+ */
 export interface ModelFacts {
   modelId: string
   name: string
@@ -17,44 +21,45 @@ export interface ModelFacts {
   resolutions: string[]
   minSegmentDurationSec: number
   maxSegmentDurationSec: number
+  /** The most images that one segment request can carry, including a predecessor's last frame. */
   maxReferenceImages: number
   maxReferenceAspectRatio: number | null
-  /** Whether a segment continues from the preceding segment's generated video. */
+  /** Whether a segment continues from the preceding segment's generated video, starting from its last frame. */
   usesPreviousFrame: boolean
   /** `[width, height]` by aspect ratio and then by resolution, for every supported pair. */
   frameSizes: Record<string, Record<string, [number, number]>>
   /** Native frame count by segment duration in seconds, for every duration from the minimum to the maximum. */
   numFramesByDurationSec: Record<string, number>
-  /** Prompt labels of the reference images; the labels for N images are the first N entries. */
+  /** Prompt labels of the request images in request order; the labels for N images are the first N entries. */
   referenceLabels: string[]
 }
 
-/** Backend readiness from `GET /readyz`. */
+/** Backend readiness from `GET /v1/streamv2/health`. */
 export interface GenerationReadiness {
   ready: boolean
-  /** The backend's `detail` while it is not ready; null when it is ready. */
+  /** Why the backend is not ready; null when it is ready. */
   detail: string | null
 }
 
-/** The inputs of one `generate_segment` request. */
+/** The inputs of one `POST /v1/streamv2/generate` request. */
 export interface SegmentRequest {
   prompt: string
   frameWidth: number
   frameHeight: number
   numFrames: number
-  /** The segment's one-based position in its display sequence. */
-  segmentIdx: number
-  /** The continuation handle of the segment that this segment continues, or null to start fresh video. */
-  continueFrom: string | null
-  /** Image bytes in selection order; the backend writes each image under its `name`. */
-  referenceImages: { name: string; data: Buffer }[]
-  /** Aborting closes the request's socket and rejects the iteration with `signal.reason`. */
+  /** Image bytes in request order; the prompt names them `Picture 1`, `Picture 2`, and so on. */
+  referenceImages: Buffer[]
+  /** The generation seed; omitted, the backend uses its default seed. */
+  seed?: number
+  /** Whether the backend returns the segment's last decoded frame, as PNG bytes, before its video. */
+  returnLastFrame: boolean
+  /** Aborting cancels the HTTP request and rejects the iteration with `signal.reason`. */
   signal?: AbortSignal
 }
 
 /** One output of a segment request, in the order the backend sent it. */
 export type SegmentOutput =
-  | { kind: 'media_metadata'; streamId: string; mime: string }
+  | { kind: 'last_frame'; png: Buffer }
+  | { kind: 'video_start'; mime: string }
   | { kind: 'chunk'; bytes: Buffer }
-  | { kind: 'media_end'; streamId: string; chunks: number }
-  | { kind: 'segment_finished'; timings: Record<string, number>; continuationHandle: string }
+  | { kind: 'done'; timings: Record<string, number> }

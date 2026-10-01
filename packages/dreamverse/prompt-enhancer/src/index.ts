@@ -19,7 +19,7 @@ import {
 } from './prompt-enhancer.ts'
 
 export type { PromptResult } from './features/index.ts'
-export type { RolloutResult } from './features/rollout.ts'
+export type { ContinuedSegmentLabels, RolloutResult } from './features/rollout.ts'
 export type { ContinueVideoRequest, ExpandClipRequest, RewriteRolloutRequest } from './prompt-enhancer.ts'
 export { PromptRuntimeError, PromptValueError } from './utils/errors.ts'
 

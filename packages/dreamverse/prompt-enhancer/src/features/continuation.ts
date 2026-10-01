@@ -15,6 +15,8 @@ export interface ContinueVideoOptions extends FeatureDependencies {
   readonly lockedSegments?: readonly unknown[] | null | undefined
   /** The 1-based index of the new segment; other values select the segment after the locked history. */
   readonly nextSegmentIdx?: number | null | undefined
+  /** Label of the previous segment's last frame that the new segment starts from; null or omitted for none. */
+  readonly firstFrameLabel?: string | null | undefined
 }
 
 /**
@@ -76,11 +78,16 @@ export async function continueVideo(conditioningPrompt: unknown, options: Contin
       + `Write exactly one new segment (segment_${segmentIdx}) `
       + 'continuing from the locked segments. '
   }
+  const firstFrameLabel = options.firstFrameLabel ?? null
+  if (firstFrameLabel !== null) {
+    instruction += `The new segment starts from <${firstFrameLabel}>, the last frame of the previous segment. `
+  }
   instruction += `The segment lasts ${segmentDurationSec} seconds. `
     + 'Respond with valid JSON only as {"next_prompt": "..."}.'
   const userPayload: JsonObject = { request: instruction, segment_duration_sec: segmentDurationSec }
   const referenceLabels = options.referenceLabels ?? []
   if (referenceLabels.length > 0) userPayload['protagonist_reference_labels'] = [...referenceLabels]
+  if (firstFrameLabel !== null) userPayload['first_frame_label'] = firstFrameLabel
   const request: ChatRequest = {
     systemPrompt: options.systemPrompt,
     userContent: dumpsJson(userPayload),

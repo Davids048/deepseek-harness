@@ -17,6 +17,7 @@ import type {
   ModelFacts,
 } from './dependencies.ts'
 import { PROMPT_TIMEOUT_MS } from './dependencies.ts'
+import { continuesPreviousSegment, segmentImageLabels, type SegmentImageLabels } from './conditioning.ts'
 import { DreamverseValueError, ProjectClosedError, ProjectValidationError, errorMessage } from './errors.ts'
 import { GenerationPlan, segmentRecord } from './generation-plan.ts'
 import { GenerationPlanController } from './generation-plan-controller.ts'
@@ -348,7 +349,8 @@ export class Project {
   }
 
   /**
-   * Register display order and model-required dependencies for complete segment inputs.
+   * Register display order and model-required dependencies for complete segment inputs. `continuesPreviousSegment`
+   * decides which segments continue the segment before them.
    * @param segments - the new segment records of one generation call.
    * @param options - `append` extends the latest completed sequence instead of replacing it.
    * @returns the validated plan; its segments join `videoSegmentsById`.
@@ -358,16 +360,14 @@ export class Project {
     const append = options.append ?? false
     if (segments.length === 0) throw new DreamverseValueError('A generation round requires at least one video segment.')
     const completedIds = this.completedSequenceSegmentIds
-    let predecessor = append ? completedIds.at(-1) ?? null : null
-    if (append && predecessor === null) throw new DreamverseValueError('Generate a video before continuing it.')
-    // A supplied first frame starts the appended shot from that image. Text-only continuation reuses the previous
-    // shot; later shots can still form a chain.
-    if (append && (segments[0]?.referenceAssets.length ?? 0) > 0) predecessor = null
-    if (this.modelFacts.usesPreviousFrame) {
-      for (const segment of segments) {
-        segment.referenceSegmentId = predecessor
-        predecessor = segment.segmentId
+    let previousId = append ? completedIds.at(-1) ?? null : null
+    if (append && previousId === null) throw new DreamverseValueError('Generate a video before continuing it.')
+    for (const [index, segment] of segments.entries()) {
+      const position = { append, index, referenceCount: segment.referenceAssets.length }
+      if (continuesPreviousSegment(this.modelFacts, this.videoGenerationSettings.generation_mode, position)) {
+        segment.referenceSegmentId = previousId
       }
+      previousId = segment.segmentId
     }
     const segmentIds = segments.map(segment => segment.segmentId)
     const plan = new GenerationPlan(segmentIds, [...(append ? completedIds : []), ...segmentIds], append)
@@ -429,12 +429,17 @@ export class Project {
   }
 
   /**
-   * Build the prompt enhancer's ordered image labels, such as `Picture 1`.
-   * @param count - the number of reference assets.
-   * @returns the served model's first `count` labels; models without numbered references return none.
+   * Name the images that a segment's request will carry, such as `Picture 1`, for the prompt enhancer. Registration
+   * with the same round position gives the segment the predecessor that these labels assume.
+   * @param position - whether the round appends, the segment's index in it (default 0), and its reference count.
+   * @returns the reference image labels and, for a segment that continues a predecessor, the first-frame label.
    */
-  buildPromptImageLabels(count: number): string[] {
-    return this.modelFacts.referenceLabels.slice(0, count)
+  promptImageLabels(position: { append?: boolean; index?: number; referenceCount: number }): SegmentImageLabels {
+    const generationMode = this.videoGenerationSettings.generation_mode
+    const continuesPrevious = continuesPreviousSegment(this.modelFacts, generationMode, {
+      append: position.append ?? false, index: position.index ?? 0, referenceCount: position.referenceCount,
+    })
+    return segmentImageLabels(this.modelFacts, generationMode, position.referenceCount, continuesPrevious)
   }
 
   /**
@@ -608,7 +613,7 @@ export class Project {
   /**
    * Claim the next Auto Extension round after a successful round, using the accepted video and reference images.
    *
-   * First-frame models continue their previous output. Reference-conditioned models retain the preceding shot's
+   * The new segment continues the previous output. Reference-conditioned models also retain the preceding shot's
    * ordered assets for this round.
    * @throws {DreamverseValueError} when no completed video exists or its reference assets are unavailable.
    */

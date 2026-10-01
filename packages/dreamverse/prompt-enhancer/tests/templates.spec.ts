@@ -37,14 +37,15 @@ function permissionError(filePath: string): NodeJS.ErrnoException {
 }
 
 describe('packaged templates', () => {
-  it('are byte-identical copies of the reference resources when the reference checkout is present', () => {
+  it('copy the reference resources byte for byte, except the H3 Ref2VA prompt, when the reference checkout is present', () => {
     const names = fs.readdirSync(PACKAGED_TEMPLATE_DIRECTORY).sort()
     expect(names).toEqual([
       'auto_extension_system_prompt.md', 'next_segment_system_prompt.md', 'ref2va_system_prompt.md',
       'rewrite_user_system_prompt.md', 'rewrite_window_system_prompt.md',
     ])
     if (!fs.existsSync(REFERENCE_RESOURCES)) return
-    for (const name of names) {
+    // The packaged H3 Ref2VA prompt names a continued segment's first frame, which the reference prompt lacks.
+    for (const name of names.filter(name => name !== 'ref2va_system_prompt.md')) {
       expect(fs.readFileSync(path.join(PACKAGED_TEMPLATE_DIRECTORY, name)))
         .toEqual(fs.readFileSync(path.join(REFERENCE_RESOURCES, name)))
     }
@@ -69,6 +70,15 @@ describe('packaged templates', () => {
     expect(template).toContain('350–500 English words')
     expect(template).toContain('<Picture 1>')
     expect(template).toContain('<Subject 1>')
+  })
+
+  it('tells H3 Ref2VA which picture is the first frame of a continued segment', () => {
+    const template = packaged('ref2va_system_prompt.md')
+    for (const field of ['`protagonist_reference_labels`', '`first_frame_label`', '`continued_segment_first_frame_label`', '`continued_segment_protagonist_reference_labels`']) {
+      expect(template).toContain(field)
+    }
+    expect(template).toContain('"<Picture N> is the first frame of [Shot 1], showing ..."')
+    expect(template).toContain('[keyframe completion + reference generation]')
   })
 
   it('adds one continuation segment after any history', () => {

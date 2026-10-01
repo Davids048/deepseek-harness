@@ -1,14 +1,13 @@
 /**
  * Execute a fixed generation plan and stream every segment as its output arrives.
  *
- * User actions prepare plans; this controller only submits ready segments and records outcomes. The generation
- * backend owns the worker and the continuation state.
+ * User actions prepare plans; this controller only submits ready segments and records outcomes, including each
+ * segment's last frame, which a later segment starts from.
  *
  * @module @dreamverse/project/generation-plan-controller
  */
 
-import { readFile } from 'node:fs/promises'
-import type { AssetRecord } from './dependencies.ts'
+import { segmentRequestImages } from './conditioning.ts'
 import { ProjectClosedError, errorMessage } from './errors.ts'
 import { segmentRecord, type GenerationPlan } from './generation-plan.ts'
 import type { Project } from './project.ts'
@@ -26,10 +25,9 @@ export class GenerationPlanController {
   /**
    * Generate the accepted plan without admitting edits between its segments.
    *
-   * Independent segments start fresh video; a segment with a predecessor continues from the predecessor's
-   * continuation handle, and the backend rejects a handle whose continuation state it no longer holds. On failure,
-   * unfinished segments of the plan become `cancelled` when the project closed and `failed` otherwise, and the error
-   * propagates.
+   * Independent segments start fresh video; a segment with a predecessor starts from the predecessor's last frame.
+   * On failure, unfinished segments of the plan become `cancelled` when the project closed and `failed` otherwise,
+   * and the error propagates.
    * @param plan - the fixed round.
    */
   async execute(plan: GenerationPlan): Promise<void> {
@@ -78,8 +76,8 @@ export class GenerationPlanController {
   }
 
   /**
-   * Publish segment origin, submit its input to the generation backend, and retain its output statistics and
-   * continuation handle.
+   * Publish segment origin, submit its input to the generation backend, and retain its output statistics and last
+   * frame.
    * @param segment - the ready segment.
    * @param segmentIdx - the segment's one-based position in the plan's display sequence.
    */
@@ -97,23 +95,21 @@ export class GenerationPlanController {
     if (project.isClosed) throw new ProjectClosedError()
     segment.status = 'generating'
     const startedAt = performance.now()
-    // A predecessor supplies conditioning; only independent shots send the selected images.
     const predecessorId = segment.referenceSegmentId
+    const predecessor = predecessorId === null ? null : segmentRecord(project.videoSegmentsById, predecessorId)
     const { creationConfig } = segment
-    const streamed = await streamSegmentToBrowser(project, {
+    const streamed = await streamSegmentToBrowser(project, segmentIdx, {
       prompt: segment.prompt,
       frameWidth: creationConfig.frame_width,
       frameHeight: creationConfig.frame_height,
       numFrames: creationConfig.num_frames,
-      segmentIdx,
-      continueFrom: predecessorId === null
-        ? null
-        : segmentRecord(project.videoSegmentsById, predecessorId).continuationHandle,
-      referenceImages: predecessorId === null ? await readReferenceImages(segment.referenceAssets) : [],
+      referenceImages: await segmentRequestImages(project.modelFacts, segment, predecessor),
+      // A later round can continue any completed segment of a model that continues segments.
+      returnLastFrame: project.modelFacts.usesPreviousFrame,
       signal: project.generationSignal,
     })
     segment.deliveryStats = streamed.deliveryStats
-    segment.continuationHandle = streamed.continuationHandle
+    segment.lastFrame = streamed.lastFrame
     segment.status = 'completed'
     const totalMs = performance.now() - startedAt
     const workerMs = segment.deliveryStats.timings['e2e_latency_ms'] || 0
@@ -125,13 +121,4 @@ export class GenerationPlanController {
       segment_idx: segmentIdx, latency_ms: latency, data_size_bytes: segment.deliveryStats.byteCount,
     })
   }
-}
-
-/**
- * Read the selected images' bytes for a segment request.
- * @param referenceAssets - the retained assets in selection order.
- * @returns each asset's bytes, named by its asset ID.
- */
-async function readReferenceImages(referenceAssets: readonly AssetRecord[]): Promise<{ name: string; data: Buffer }[]> {
-  return await Promise.all(referenceAssets.map(async asset => ({ name: asset.assetId, data: await readFile(asset.filePath) })))
 }

@@ -12,6 +12,7 @@ import {
   Deferred,
   FakeGeneration,
   FakeSocket,
+  lastFrameBytes,
   ref2vaFacts,
   referenceImage,
   settle,
@@ -450,13 +451,13 @@ describe('Project reference assets', () => {
     return harness
   }
 
-  it('sends a fresh ref2va segment its images without a continuation handle and releases a deleted reference after the round', async () => {
+  it('sends a fresh ref2va segment only its reference images and releases a deleted reference after the round', async () => {
     const { assets } = await openRef2va()
     const run = await harness!.start(projectPayload({ ...REF2VA, reference_asset_ids: ['image'], curated_prompts: ['A wave'] }))
     const call = await run.generation.nextCall()
     expect(call.request).toEqual({
-      prompt: 'A wave', frameWidth: 1344, frameHeight: 768, numFrames: 124, segmentIdx: 1, continueFrom: null,
-      referenceImages: [referenceImage('image')], signal: run.project.generationSignal,
+      prompt: 'A wave', frameWidth: 1344, frameHeight: 768, numFrames: 124, referenceImages: [referenceImage('image')],
+      returnLastFrame: true, signal: run.project.generationSignal,
     })
     assets.deleteAsset('image')
     expect(assets.fileExists('image')).toBe(true)
@@ -468,13 +469,25 @@ describe('Project reference assets', () => {
     expect(harness!.logEvents('generation_round_start')[0]).toMatchObject({ reference_asset_ids: ['image'] })
   })
 
+  it('starts a later ref2va segment from its predecessor last frame, sent before the reference images', async () => {
+    await openRef2va()
+    const run = await harness!.start(projectPayload({ ...REF2VA, reference_asset_ids: ['image'], curated_prompts: ['A wave', 'A shore'] }))
+    const first = await run.generation.nextCall()
+    first.finish.resolve()
+    const second = await run.generation.nextCall()
+    expect(second.request.referenceImages).toEqual([lastFrameBytes(1), referenceImage('image')])
+    second.finish.resolve()
+    await run.socket.waitForStatus('idle')
+    expect(harness!.logEvents('segment_start')[1]).toMatchObject({ reference_asset_ids: ['image'] })
+  })
+
   it.each([
     [{ reference_asset_ids: ['image', 'image'] }, 'reference_asset_ids must not contain duplicates.', []],
     [{ reference_asset_ids: 'image' }, 'reference_asset_ids must be a list of nonempty asset IDs.', []],
     [{ reference_asset_ids: [' '] }, 'reference_asset_ids must be a list of nonempty asset IDs.', []],
     [{ reference_asset_ids: ['image'], last_frame_image: 'data:image/png;base64,' }, 'Upload references through /assets and supply reference_asset_ids.', []],
-    [{ reference_asset_ids: [] }, 'ref2va requires 1 to 9 reference images.', []],
-    [{ reference_asset_ids: Array.from({ length: 10 }, (_value, index) => `image-${index}`) }, 'ref2va requires 1 to 9 reference images.', []],
+    [{ reference_asset_ids: [] }, 'ref2va requires 1 to 8 reference images.', []],
+    [{ reference_asset_ids: Array.from({ length: 9 }, (_value, index) => `image-${index}`) }, 'ref2va requires 1 to 8 reference images.', []],
     [{ reference_asset_ids: ['image', 'missing'] }, "Asset 'missing' is unavailable. Select an asset from the library.", [['image', 'missing']]],
     [{ reference_asset_ids: ['image', 'clip'] }, 'This generation workflow accepts reference images only.', [['image', 'clip']]],
     [{ reference_asset_ids: ['image', 'panorama'] }, 'Reference image aspect ratio must be between 1:4 and 4:1.', [['image', 'panorama']]],

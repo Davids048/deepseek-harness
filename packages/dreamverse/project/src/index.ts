@@ -16,6 +16,7 @@ import { errorMessage } from './errors.ts'
 import { Project, type ProjectInit, type UserActionHandler, type UserActionRegistration } from './project.ts'
 import { ProjectEventLogger } from './project-logger.ts'
 
+export * from './conditioning.ts'
 export * from './dependencies.ts'
 export * from './errors.ts'
 export * from './generation-plan.ts'

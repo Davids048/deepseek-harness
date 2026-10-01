@@ -1,12 +1,13 @@
 /**
- * `dreamverseGeneration`: the harness client for the DreamVerse generation backend API. HTTP calls use `fetch`; each
- * segment request uses one WebSocket to `/v1/generation`.
+ * `dreamverseGeneration`: the harness client for the generation backend's streaming_v2 API, which `fastvideo serve`
+ * serves with a `streaming_v2:` config block. HTTP calls use `fetch`; each segment request is one
+ * `POST /v1/streamv2/generate` whose response is a server-sent event stream.
  *
  * @module @dreamverse/generation-client
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { generateSegment } from './generation-socket.ts'
+import { generateSegment } from './generation-stream.ts'
 import type { GenerationReadiness, ModelFacts, SegmentOutput, SegmentRequest } from './types.ts'
 
 export * from './errors.ts'
@@ -21,27 +22,27 @@ declare module '@deepseek-ai/cordis' {
 
 /** Generation backend location. */
 export interface Config {
-  /** HTTP base URL of the generation backend, such as `http://127.0.0.1:8010`. */
+  /** HTTP base URL of the generation backend, such as `http://127.0.0.1:8029`. */
   baseUrl: string
 }
 
-/** `GET /v1/model` response fields. */
-interface ModelFactsBody {
+/** `GET /v1/streamv2/capabilities` response fields: the served model's facts. */
+interface CapabilitiesBody {
   model_id: string
   name: string
-  generation_modes: Record<string, string>
-  unsupported_generation_modes: Record<string, string>
-  aspect_ratios: string[]
-  resolutions: string[]
   min_segment_duration_sec: number
   max_segment_duration_sec: number
   max_reference_images: number
   max_reference_aspect_ratio: number | null
-  uses_previous_frame: boolean
   frame_sizes: Record<string, Record<string, [number, number]>>
   num_frames_by_duration_sec: Record<string, number>
-  reference_labels: string[]
 }
+
+/**
+ * The generation modes of the H3 Ref2VA model that the streaming_v2 backend serves: ordered reference images. The
+ * capabilities response does not carry them.
+ */
+const SERVED_GENERATION_MODES: Record<string, string> = { ref2va: 'reference_images' }
 
 /** Reads the backend's model facts and readiness and streams segments. */
 export class DreamverseGeneration extends Service {
@@ -50,7 +51,7 @@ export class DreamverseGeneration extends Service {
   })
 
   private readonly baseUrl: URL
-  /** The first successful `GET /v1/model` result; the served model stays fixed for the backend's lifetime. */
+  /** The first successful capabilities result; the served model stays fixed for the backend's lifetime. */
   private modelFacts: ModelFacts | null = null
 
   /**
@@ -63,58 +64,56 @@ export class DreamverseGeneration extends Service {
   }
 
   /**
-   * Read the served model's facts; the first successful response is reused afterwards.
+   * Read the served model's facts; the first successful response is reused afterwards. The capabilities supply the
+   * model-specific values. The client adds the Ref2VA generation mode, `Picture 1` to `Picture N` labels for the
+   * `max_reference_images` request images, and `usesPreviousFrame: true`, because every continued segment starts from
+   * its predecessor's last frame.
    * @returns the model facts.
    * @throws Error naming the route for a status other than 200, or the `fetch` error when the backend is unreachable.
    */
   async model(): Promise<ModelFacts> {
     if (this.modelFacts !== null) return this.modelFacts
-    const body = await readBody<ModelFactsBody>(await fetch(new URL('/v1/model', this.baseUrl)), 'GET /v1/model')
+    const route = '/v1/streamv2/capabilities'
+    const body = await readBody<CapabilitiesBody>(await fetch(new URL(route, this.baseUrl)), `GET ${route}`)
     this.modelFacts = {
       modelId: body.model_id,
       name: body.name,
-      generationModes: body.generation_modes,
-      unsupportedGenerationModes: body.unsupported_generation_modes,
-      aspectRatios: body.aspect_ratios,
-      resolutions: body.resolutions,
+      generationModes: { ...SERVED_GENERATION_MODES },
+      unsupportedGenerationModes: {},
+      aspectRatios: Object.keys(body.frame_sizes),
+      resolutions: [...new Set(Object.values(body.frame_sizes).flatMap(sizes => Object.keys(sizes)))],
       minSegmentDurationSec: body.min_segment_duration_sec,
       maxSegmentDurationSec: body.max_segment_duration_sec,
       maxReferenceImages: body.max_reference_images,
       maxReferenceAspectRatio: body.max_reference_aspect_ratio,
-      usesPreviousFrame: body.uses_previous_frame,
+      usesPreviousFrame: true,
       frameSizes: body.frame_sizes,
       numFramesByDurationSec: body.num_frames_by_duration_sec,
-      referenceLabels: body.reference_labels,
+      referenceLabels: Array.from({ length: body.max_reference_images }, (_value, index) => `Picture ${index + 1}`),
     }
     return this.modelFacts
   }
 
   /**
-   * Read whether the backend's worker is initialized.
-   * @returns ready on 200; not ready with the backend's `detail` on 503.
+   * Read whether the backend serves requests.
+   * @returns ready when `GET /v1/streamv2/health` answers 200.
    * @throws Error naming the route for any other status, or the `fetch` error when the backend is unreachable.
    */
   async ready(): Promise<GenerationReadiness> {
-    const response = await fetch(new URL('/readyz', this.baseUrl))
-    if (response.status === 503) {
-      const body = await response.json() as { detail: string }
-      return { ready: false, detail: body.detail }
-    }
-    await readBody<object>(response, 'GET /readyz')
+    const route = '/v1/streamv2/health'
+    await readBody<object>(await fetch(new URL(route, this.baseUrl)), `GET ${route}`)
     return { ready: true, detail: null }
   }
 
   /**
-   * Stream one segment over its own WebSocket. The iteration ends after `segment_finished` or `segment_ended` and
-   * rejects with `GenerationSegmentError` after `segment_error`. Leaving the iteration or aborting `request.signal`
-   * closes the socket; an abort rejects with `signal.reason`.
+   * Stream one segment with its own HTTP request. The iteration ends after `done` and rejects with
+   * `GenerationSegmentError` after HTTP 400 or an `error` event. Leaving the iteration or aborting `request.signal`
+   * cancels the request; an abort rejects with `signal.reason`.
    * @param request - the segment inputs and an optional abort signal.
    * @returns the backend outputs in arrival order.
    */
   generateSegment(request: SegmentRequest): AsyncIterable<SegmentOutput> {
-    const url = new URL('/v1/generation', this.baseUrl)
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-    return generateSegment(url, request)
+    return generateSegment(new URL('/v1/streamv2/generate', this.baseUrl), request)
   }
 }
 

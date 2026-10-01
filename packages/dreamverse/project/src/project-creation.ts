@@ -6,6 +6,7 @@
  * @module @dreamverse/project/project-creation
  */
 
+import { referenceImageLimit } from './conditioning.ts'
 import type { ModelFacts } from './dependencies.ts'
 import { DreamverseValueError, ProjectValidationError } from './errors.ts'
 import { payloadGet, pythonRepr, textOr, type ActionPayload } from './python-values.ts'
@@ -128,7 +129,8 @@ export function parseReferenceAssetIds(payload: ActionPayload): string[] {
 
 /**
  * Check the selected mode's image count before accepting a generation action; port of
- * `ModelCapabilities.validate_reference_assets`.
+ * `ModelCapabilities.validate_reference_assets`. The limit is `referenceImageLimit`, which keeps a request image for
+ * a continued segment's first frame.
  * @param modelFacts - the served model's facts.
  * @param generationMode - the project's validated generation mode.
  * @param referenceCount - the number of selected reference assets.
@@ -139,8 +141,9 @@ export function validateReferenceAssets(modelFacts: ModelFacts, generationMode: 
     if (referenceCount > 0) throw new DreamverseValueError('Text-to-video mode does not accept reference images.')
     return
   }
-  if (!(referenceCount >= 1 && referenceCount <= modelFacts.maxReferenceImages)) {
-    throw new DreamverseValueError(`${generationMode} requires 1 to ${modelFacts.maxReferenceImages} reference images.`)
+  const limit = referenceImageLimit(modelFacts, generationMode)
+  if (!(referenceCount >= 1 && referenceCount <= limit)) {
+    throw new DreamverseValueError(`${generationMode} requires 1 to ${limit} reference images.`)
   }
 }
 

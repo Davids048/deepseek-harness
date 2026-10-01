@@ -55,10 +55,10 @@ export interface VideoSegmentInit {
 /**
  * One version of a video segment, from complete prompt input through delivered output.
  *
- * The prompt and the project's creation config are the segment's model input; the generation backend builds the
- * FastVideo request from them. `referenceSegmentId` names the preceding video that the segment continues; null
- * starts independent video. `continuationHandle` is the backend's handle for continuing this segment after it
- * completes. Reference assets record the action's ordered selection; file retention belongs to the executing action
+ * The prompt and the project's creation config are the segment's model input. `referenceSegmentId` names the
+ * preceding video that the segment continues; null starts independent video. `lastFrame` is the PNG of the
+ * segment's last decoded frame, which a later segment starts from; `conditioning.ts` decides which images a request
+ * carries. Reference assets record the action's ordered selection; file retention belongs to the executing action
  * and ends after its generation finishes.
  */
 export class VideoSegment {
@@ -73,7 +73,7 @@ export class VideoSegment {
   referenceSegmentId: string | null
   status: SegmentStatus = 'pending'
   deliveryStats: SegmentDeliveryStats | null = null
-  continuationHandle: string | null = null
+  lastFrame: Buffer | null = null
   error: string | null = null
 
   /** Copy the init fields and apply the reference dataclass defaults, including a random UUID segment ID. */

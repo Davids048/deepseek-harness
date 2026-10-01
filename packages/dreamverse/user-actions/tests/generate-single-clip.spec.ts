@@ -68,8 +68,7 @@ describe('generate_single_clip', () => {
         const settings = run.project.videoGenerationSettings
         expect(call.request).toEqual({
           prompt, frameWidth: settings.frame_width, frameHeight: settings.frame_height, numFrames: settings.num_frames,
-          segmentIdx: 1, continueFrom: null, referenceImages: assetIds.map(id => referenceImage(id)),
-          signal: run.project.generationSignal,
+          referenceImages: assetIds.map(id => referenceImage(id)), returnLastFrame: true, signal: run.project.generationSignal,
         })
         call.finish.resolve()
         await run.socket.waitForStatus('idle', after)
@@ -256,10 +255,11 @@ describe('generate_single_clip', () => {
       const errorEvents = failure.isValueError
         ? [{ type: 'error', message: 'Video generation failed', prompt_id: 'clip' }]
         : []
+      const streamId: unknown = expect.stringMatching(/^seg001-[0-9a-f]{8}$/)
       expect(run.socket.entries.slice(after)).toEqual([
         roundStatus('preparing'), roundStatus('generating'), streamStart('clip', 'A fox', ['A fox']),
         { type: 'ltx2_segment_start', segment_idx: 1, source: 'user_raw', seed_prompt_index: 0, prompt_id: 'clip' },
-        { type: 'media_init', segment_idx: 1, mime: 'video/mp4', stream_id: 'stream-1' },
+        { type: 'media_init', segment_idx: 1, mime: 'video/mp4', stream_id: streamId },
         Buffer.from('segment!'),
         ...errorEvents,
         roundStatus('failed'),
@@ -317,8 +317,8 @@ describe('generate_single_clip', () => {
       prompt: 'a fresh custom prompt', enhancement_enabled: true, reference_asset_ids: ['second'],
     })
     await finishRound(run, ['Expanded clip'])
-    expect(run.generation.calls.map(call => [call.request.segmentIdx, call.request.continueFrom, call.request.referenceImages]))
-      .toEqual([[1, null, [referenceImage('first')]], [1, null, [referenceImage('second')]]])
+    expect(run.generation.calls.map(call => call.request.referenceImages))
+      .toEqual([[referenceImage('first')], [referenceImage('second')]])
     expect(run.socket.eventsOfType('ltx2_stream_complete')).toHaveLength(2)
     expect(assets.totalRetained()).toBe(0)
   })

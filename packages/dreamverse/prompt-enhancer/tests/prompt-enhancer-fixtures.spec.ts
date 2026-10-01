@@ -2,7 +2,9 @@
  * Replay reference-recorded fixtures through the TypeScript `PromptEnhancer`.
  *
  * `fixtures/generate_fixtures.py` ran every fixture through the Python reference with the packaged templates and a
- * scripted vendor. Each replay must send identical request fields and return identical result fields.
+ * scripted vendor. Each replay must send identical request fields and return identical result fields. A request that
+ * the reference recorded with a template key carries the packaged template text, because the packaged H3 Ref2VA
+ * template differs from the reference template.
  */
 import fs from 'node:fs'
 
@@ -183,8 +185,8 @@ function snakeCaseResult(result: PromptResult | RolloutResult): Record<string, u
 }
 
 describe('reference prompt fixtures', () => {
-  it('loads the same packaged template text as the reference', () => {
-    expect(loadedTemplates).toEqual(fixtureFile.system_prompts)
+  it('loads the same packaged template text as the reference, except the H3 Ref2VA template', () => {
+    expect({ ...loadedTemplates, ref2va_system_prompt: null }).toEqual({ ...fixtureFile.system_prompts, ref2va_system_prompt: null })
   })
 
   it('covers all three operations and every generation mode', () => {
@@ -222,7 +224,7 @@ describe('reference prompt fixtures', () => {
       temperature: request.temperature,
       max_completion_tokens: request.maxCompletionTokens,
     }))).toEqual(fixture.requests.map(({ system_prompt: systemPrompt, system_prompt_template: templateKey, ...fields }) => ({
-      systemPrompt: templateKey === undefined ? systemPrompt : fixtureFile.system_prompts[templateKey],
+      systemPrompt: templateKey === undefined ? systemPrompt : loadedTemplates[templateKey],
       ...fields,
     })))
     expect(enhancer.getProviderSuccessCounts()).toEqual(fixture.provider_success_counts)

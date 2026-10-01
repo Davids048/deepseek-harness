@@ -5,6 +5,7 @@ import {
   FakeGeneration,
   FakePromptEnhancer,
   holdPromptCall,
+  lastFrameBytes,
   promptResult,
   ref2vaFacts,
   referenceImage,
@@ -65,10 +66,9 @@ describe('append_prompt', () => {
         })
         const call = await run.generation.nextCall()
         const prompt = enhance ? 'Following scene' : 'Follow the fox'
-        // A first-frame model continues from its predecessor's handle; a reference model starts an independent shot.
+        // The appended segment starts from its predecessor's last frame, sent before any reference image.
         expect(call.request).toMatchObject({
-          prompt, segmentIdx: 2, continueFrom: mode === 'ref2va' ? null : 'continuation-1',
-          referenceImages: assetIds.map(id => referenceImage(id)),
+          prompt, referenceImages: [lastFrameBytes(1), ...assetIds.map(id => referenceImage(id))],
         })
         expect(run.project.completedSequenceHistory).toEqual([[preceding]])
         call.finish.resolve()
@@ -89,12 +89,13 @@ describe('append_prompt', () => {
         expect(run.project.completedSequenceHistory).toEqual([[preceding], [preceding, appended.segmentId]])
         expect(appended).toMatchObject({ prompt, source: 'user', enhanced: enhance, sequenceIndex: null })
         expect(appended.instruction).toEqual({ requestId: 'continue', text: 'Follow the fox' })
-        expect(appended.referenceSegmentId).toBe(mode === 'ref2va' ? null : preceding)
+        expect(appended.referenceSegmentId).toBe(preceding)
         if (enhance) {
           expect(harness!.enhancer.continueVideo.mock.calls).toEqual([['Follow the fox', {
             lockedSegments: ['Accepted scene'], nextSegmentIdx: 2, timeoutMs: 20000,
-            generationMode: mode, segmentDurationSec: duration, referenceLabels: assetIds.map(() => 'Picture 1'),
-            signal: run.project.generationSignal,
+            // Only the reference-image model labels its images: the last frame is Picture 1.
+            generationMode: mode, segmentDurationSec: duration, referenceLabels: assetIds.map(() => 'Picture 2'),
+            firstFrameLabel: mode === 'ref2va' ? 'Picture 1' : null, signal: run.project.generationSignal,
           }]])
           expect(harness!.logEvents('rewrite_done')).toEqual([logEntry('rewrite_done', {
             kind: 'enhance_prompt', latency_ms: 3.46, response: 'Following scene', error: null,
@@ -207,7 +208,7 @@ describe('append_prompt', () => {
     expect(run.generation.calls).toHaveLength(1)
   })
 
-  it('appends an independent reference shot after a failed round without worker conditioning', async () => {
+  it('requires a rewrite before continuing a reference video after a failed round', async () => {
     const assets = new FakeAssets()
     assets.addImage('image')
     const run = await startWithCompletedVideo({
@@ -230,11 +231,12 @@ describe('append_prompt', () => {
     run.generation.rejectSegments = null
     after = run.socket.entries.length
     await run.project.processBrowserCommand({ type: 'append_prompt', prompt: 'Next story beat', reference_asset_ids: ['image'] })
-    const following = await run.generation.nextCall()
-    expect(following.request).toMatchObject({ segmentIdx: 2, continueFrom: null, referenceImages: [referenceImage('image')] })
-    following.finish.resolve()
-    await run.socket.waitForStatus('idle', after)
-    expect(run.project.completedSequenceSegmentIds).toHaveLength(2)
+    await run.socket.waitForStatus('failed', after)
+    expect(run.socket.eventsOfType('error', after)).toEqual([
+      { type: 'error', message: 'The previous generation failed. Rewrite the sequence before continuing it.', prompt_id: null },
+    ])
+    expect(run.generation.calls).toHaveLength(1)
+    expect(run.project.completedSequenceSegmentIds).toEqual(acceptedIds)
   })
 
   it('starts an image-conditioned continuation from the selected first frame', async () => {
@@ -244,14 +246,14 @@ describe('append_prompt', () => {
     const run = await startWithCompletedVideo({
       generation_mode: 'i2v', reference_asset_ids: ['first'],
     }, ['A', 'A continued'], { assets })
-    // The chained segment sends its predecessor's handle and no images.
-    expect(run.generation.calls.map(call => [call.request.continueFrom, call.request.referenceImages]))
-      .toEqual([[null, [referenceImage('first')]], ['continuation-1', []]])
+    // The chained segment sends only its predecessor's last frame.
+    expect(run.generation.calls.map(call => call.request.referenceImages))
+      .toEqual([[referenceImage('first')], [lastFrameBytes(1)]])
     expect(run.project.completedSequenceSegments.map(segment => segment.referenceAssets)).toEqual([[first], [first]])
     const after = run.socket.entries.length
     await run.project.processBrowserCommand({ type: 'append_prompt', prompt: 'B', reference_asset_ids: ['second'] })
     const call = await run.generation.nextCall()
-    expect(call.request).toMatchObject({ segmentIdx: 3, continueFrom: null, referenceImages: [referenceImage('second')] })
+    expect(call.request.referenceImages).toEqual([referenceImage('second')])
     call.finish.resolve()
     await run.socket.waitForStatus('idle', after)
     expect(run.project.completedSequenceSegments[2]!.referenceSegmentId).toBeNull()
@@ -392,6 +394,9 @@ describe('append_prompt', () => {
     })
     await finishRound(run, ['Following scene'])
     expect(run.project.completedSequenceSegments[1]!.referenceAssets).toEqual([side, front])
-    expect(harness!.enhancer.continueVideo.mock.calls[0]![1].referenceLabels).toEqual(['Picture 1', 'Picture 2'])
+    // The appended segment starts from the accepted segment's last frame, which takes Picture 1.
+    expect(harness!.enhancer.continueVideo.mock.calls[0]![1]).toMatchObject({
+      referenceLabels: ['Picture 2', 'Picture 3'], firstFrameLabel: 'Picture 1',
+    })
   })
 })

@@ -320,6 +320,35 @@ describe('prompt features', () => {
     }
   })
 
+  it('names the previous segment last frame that a continuation starts from', async () => {
+    const { deps, sdk } = promptDependencies()
+    sdk.payload = response('{"next_prompt":"Picture 2 enters the cafe"}')
+    await continueVideo(null, {
+      ...deps, segmentDurationSec: 5, lockedSegments: ['A man in a blue suit'], referenceLabels: ['Picture 2'],
+      firstFrameLabel: 'Picture 1',
+    })
+    const payload = userPayload(sdk.requests.at(-1))
+    expect(payload).toMatchObject({ protagonist_reference_labels: ['Picture 2'], first_frame_label: 'Picture 1' })
+    expect(payload['request']).toContain('The new segment starts from <Picture 1>, the last frame of the previous segment. ')
+  })
+
+  it('names the labels of rollout segments that start from the previous segment last frame', async () => {
+    const { deps, sdk } = promptDependencies()
+    sdk.payload = response('{"segment_prompts":["A","B","C"]}')
+    await rewriteRollout([], {
+      ...deps, segmentCount: 3, segmentDurationSec: 5, rewriteInstruction: 'A harbor visit', referenceLabels: ['Picture 1'],
+      continuedSegmentLabels: { referenceLabels: ['Picture 2'], firstFrameLabel: 'Picture 1' },
+    })
+    const payload = userPayload(sdk.requests.at(-1))
+    expect(payload).toMatchObject({
+      protagonist_reference_labels: ['Picture 1'],
+      continued_segment_first_frame_label: 'Picture 1',
+      continued_segment_protagonist_reference_labels: ['Picture 2'],
+    })
+    expect(payload['request']).toContain(
+      ' Segment 1 starts fresh. Every later segment starts from <Picture 1>, the last frame of the segment before it.')
+  })
+
   it('rethrows the caller abort instead of returning a fallback result', async () => {
     const vendor = new FakeVendor('cerebras', (_request, signal) => new Promise((_resolve, reject) => {
       // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- like fetch, reject with the exact abort reason.

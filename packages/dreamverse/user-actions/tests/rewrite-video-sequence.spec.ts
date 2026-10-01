@@ -102,6 +102,7 @@ describe('rewrite_seed_prompts', () => {
       promptsToRewrite: ['Archived beach', 'Archived sunset'], presetId: 'accepted-sequence',
       presetLabel: 'Accepted sequence', rewriteInstruction: 'Add rain', timeoutMs: 20000, generationMode: mode,
       referenceLabels: assetIds.map(() => 'Picture 1'), segmentCount: 1, segmentDurationSec: 5,
+      continuedSegmentLabels: mode === 'ref2va' ? { referenceLabels: ['Picture 2'], firstFrameLabel: 'Picture 1' } : null,
       signal: run.project.generationSignal,
     }]])
     expect([run.project.promptSequenceId, run.project.promptSequenceLabel]).toEqual(['rewritten-sequence', 'Rewritten sequence'])
@@ -119,7 +120,7 @@ describe('rewrite_seed_prompts', () => {
       roundStatus('idle'),
     ])
     const segments = run.project.completedSequenceSegments
-    expect(segments[1]!.referenceSegmentId).toBe(mode === 'ref2va' ? null : segments[0]!.segmentId)
+    expect(segments[1]!.referenceSegmentId).toBe(segments[0]!.segmentId)
     expect(harness!.logEvents('rewrite_done')).toEqual([logEntry('rewrite_done', {
       kind: 'seed_rewrite', rewrite_instruction: 'Add rain', latency_ms: 12.35, response: DIAGNOSTIC_TEXT,
     })])

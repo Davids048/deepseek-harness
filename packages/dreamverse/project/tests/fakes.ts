@@ -9,7 +9,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { vi } from 'vitest'
 import {
-  GenerationSegmentError,
   type AssetRecord,
   type ContinueVideoOptions,
   type DreamverseAssetsManager,
@@ -199,14 +198,19 @@ function whenAborted(signal: AbortSignal | undefined): Promise<void> {
   })
 }
 
-/** The browser-visible message the generation backend sends for a continuation handle it no longer holds. */
-export const STALE_CONTINUATION_MESSAGE = 'The video service can continue only its last completed segment.'
+/**
+ * The last frame that `FakeGeneration` returns for its nth admitted segment.
+ * @param callNumber - the one-based admission number of the segment request.
+ * @returns the PNG bytes stand-in.
+ */
+export function lastFrameBytes(callNumber: number): Buffer {
+  return Buffer.from(`last frame ${callNumber}`)
+}
 
 /**
- * Generation backend that serves one model's facts and emits media metadata and one chunk per segment, then holds
- * the reply until `finish`. Like the backend, it keeps continuation state only for its latest finished segment,
- * names finished segments `continuation-1`, `continuation-2`, and so on, and rejects any other `continueFrom`
- * handle with a `ValueError`. An abort rejects at once with `signal.reason`.
+ * Generation backend that serves one model's facts. For each segment it emits the last frame when the request asks
+ * for it (`lastFrameBytes` of the admission number), the video start, and one chunk, then holds the reply until
+ * `finish`. An abort rejects at once with `signal.reason`.
  */
 export class FakeGeneration implements DreamverseGeneration {
   /** Every segment request in arrival order, including rejected requests. */
@@ -217,8 +221,6 @@ export class FakeGeneration implements DreamverseGeneration {
   rejectSegments: Error | null = null
   /** When set, `model()` rejects with this error, as it does for an unreachable backend. */
   modelError: Error | null = null
-  private latestContinuationHandle: string | null = null
-  private finishedCount = 0
   private started: SegmentCall[] = []
   private startedChanged = new Deferred()
 
@@ -252,10 +254,6 @@ export class FakeGeneration implements DreamverseGeneration {
   private async *outputs(request: SegmentRequest): AsyncGenerator<SegmentOutput> {
     this.requests.push(request)
     request.signal?.throwIfAborted()
-    const continuable = request.continueFrom === null || request.continueFrom === this.latestContinuationHandle
-    // A started segment replaces the continuation state; a failed or abandoned segment leaves none.
-    this.latestContinuationHandle = null
-    if (!continuable) throw new GenerationSegmentError(STALE_CONTINUATION_MESSAGE, 'ValueError', true)
     if (this.rejectSegments) throw this.rejectSegments
     const call: SegmentCall = { request, finish: new Deferred(), cancelled: new Deferred(), failWith: null }
     this.calls.push(call)
@@ -263,8 +261,8 @@ export class FakeGeneration implements DreamverseGeneration {
     const startedChanged = this.startedChanged
     this.startedChanged = new Deferred()
     startedChanged.resolve()
-    const streamId = `stream-${request.segmentIdx}`
-    yield { kind: 'media_metadata', streamId, mime: 'video/mp4' }
+    if (request.returnLastFrame) yield { kind: 'last_frame', png: lastFrameBytes(this.calls.length) }
+    yield { kind: 'video_start', mime: 'video/mp4' }
     yield { kind: 'chunk', bytes: Buffer.from('segment!') }
     const aborted = await Promise.race([call.finish.promise.then(() => false), whenAborted(request.signal).then(() => true)])
     if (aborted) {
@@ -272,10 +270,7 @@ export class FakeGeneration implements DreamverseGeneration {
       throw request.signal?.reason
     }
     if (call.failWith) throw call.failWith
-    yield { kind: 'media_end', streamId, chunks: 1 }
-    this.finishedCount += 1
-    this.latestContinuationHandle = `continuation-${this.finishedCount}`
-    yield { kind: 'segment_finished', timings: { e2e_latency_ms: 1 }, continuationHandle: this.latestContinuationHandle }
+    yield { kind: 'done', timings: { e2e_latency_ms: 1 } }
   }
 }
 
@@ -309,13 +304,16 @@ export function ltxFacts(): ModelFacts {
   }
 }
 
-/** Reference-image model: independent H3 shots with up to nine images. */
+/**
+ * Reference-image model as `dreamverseGeneration` reports the streaming_v2 backend: up to nine request images, and
+ * each continued shot starts from its predecessor's last frame.
+ */
 export function ref2vaFacts(): ModelFacts {
   return {
     modelId: 'h3-ref2va', name: 'H3 Ref2AV', generationModes: { ref2va: 'reference_images' },
-    unsupportedGenerationModes: { fl2va: FL2VA_MESSAGE }, aspectRatios: ['16:9'], resolutions: ['720p'],
+    unsupportedGenerationModes: {}, aspectRatios: ['16:9'], resolutions: ['720p'],
     minSegmentDurationSec: 5, maxSegmentDurationSec: 15, maxReferenceImages: 9, maxReferenceAspectRatio: 4,
-    usesPreviousFrame: false, frameSizes: { '16:9': { '720p': [1344, 768] } },
+    usesPreviousFrame: true, frameSizes: { '16:9': { '720p': [1344, 768] } },
     // H3 aligns 24 fps durations up to 17 * n + 5 frames.
     numFramesByDurationSec: framesByDuration(5, 15, durationSec => Math.floor((durationSec * 24 - 5 + 16) / 17) * 17 + 5),
     referenceLabels: Array.from({ length: 9 }, (_value, index) => `Picture ${index + 1}`),
@@ -339,10 +337,10 @@ export function imageBytes(assetId: string): Buffer {
 /**
  * The `referenceImages` entry that a segment request carries for a library image.
  * @param assetId - the asset ID.
- * @returns the image's name and bytes.
+ * @returns the image's bytes.
  */
-export function referenceImage(assetId: string): { name: string; data: Buffer } {
-  return { name: assetId, data: imageBytes(assetId) }
+export function referenceImage(assetId: string): Buffer {
+  return imageBytes(assetId)
 }
 
 /**

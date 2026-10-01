@@ -11,7 +11,7 @@
  */
 import type { PromptResult } from './features/index.ts'
 import { continueVideo } from './features/continuation.ts'
-import { rewriteRollout, type RolloutResult } from './features/rollout.ts'
+import { rewriteRollout, type ContinuedSegmentLabels, type RolloutResult } from './features/rollout.ts'
 import { expandClip } from './features/single-clip.ts'
 import { createVendorClients, type PromptDiagnostics, type VendorSettings } from './llm/client.ts'
 import { ProviderRace } from './llm/race.ts'
@@ -37,7 +37,7 @@ export interface OperationOptions {
   readonly timeoutMs?: number | null | undefined
   /** `t2va`, `i2v`, or `ref2va`; omission selects `t2va`. */
   readonly generationMode?: string | undefined
-  /** Ordered labels of the protagonist's reference images. */
+  /** Ordered labels of the protagonist's reference images; for a rollout, those of its first segment. */
   readonly referenceLabels?: readonly string[] | undefined
   /** Aborts the provider race; the operation then rejects with the abort reason. */
   readonly signal?: AbortSignal | undefined
@@ -50,6 +50,8 @@ export type ExpandClipRequest = OperationOptions
 export interface ContinueVideoRequest extends OperationOptions {
   readonly lockedSegments?: readonly unknown[] | null | undefined
   readonly nextSegmentIdx?: number | null | undefined
+  /** Label of the previous segment's last frame that the new segment starts from; null or omitted for none. */
+  readonly firstFrameLabel?: string | null | undefined
 }
 
 /** Options of `PromptEnhancer.rewriteRollout`. */
@@ -61,6 +63,8 @@ export interface RewriteRolloutRequest extends OperationOptions {
   readonly presetId?: string | null | undefined
   readonly presetLabel?: string | null | undefined
   readonly rewriteInstruction?: string | null | undefined
+  /** Labels of the segments after the first, which start from the previous segment's last frame; null for none. */
+  readonly continuedSegmentLabels?: ContinuedSegmentLabels | null | undefined
 }
 
 /**
