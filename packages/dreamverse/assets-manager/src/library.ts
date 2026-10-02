@@ -1,8 +1,10 @@
 /**
- * Own asset files, their SQLite index, and file retention for accepted generation requests.
+ * Own asset files, their SQLite index, file retention for accepted generation requests, and the stored projects'
+ * asset references.
  *
  * A port of `apps/dreamverse/dreamverse/assets/library.py`. The directory layout and the `assets` table match the
- * reference, so the harness and the Python server can open the same `<state root>/assets` directory.
+ * reference, so the harness and the Python server can open the same `<state root>/assets` directory. The harness adds
+ * the `asset_references` table, which records the assets that each stored project uses.
  *
  * @module @dreamverse/assets-manager/library
  */
@@ -17,6 +19,16 @@ import { UploadTooLargeError, inspectMedia, mediaTypeForMime, uploadPolicy, type
 /** The requested asset is absent or deleted from the library; the reference `AssetNotFoundError(LookupError)`. */
 export class AssetNotFoundError extends Error {
   override name = 'AssetNotFoundError'
+}
+
+/** A delete names an asset that stored projects still use. */
+export class AssetInUseError extends Error {
+  override name = 'AssetInUseError'
+
+  /** @param projectCount - the number of stored projects that use the asset. */
+  constructor(readonly projectCount: number) {
+    super(`This image is used by ${projectCount} project(s). Delete those projects first.`)
+  }
 }
 
 /** One published asset; `filePath` is `<root>/files/<assetId>`. */
@@ -39,7 +51,8 @@ const PYTHON_WHITESPACE = '[\\t-\\r\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\
 const PYTHON_STRIP_PATTERN = new RegExp(`^${PYTHON_WHITESPACE}+|${PYTHON_WHITESPACE}+$`, 'gu')
 
 /**
- * Persist immutable media; defer deleted files until accepted requests release them.
+ * Persist immutable media; defer deleted files until accepted requests release them; refuse to delete media that a
+ * stored project uses.
  *
  * Each application owns one library. Every index and retention method runs synchronously, so HTTP uploads and
  * deletions and project admission observe each other's changes in call order.
@@ -63,6 +76,11 @@ export class AssetLibrary {
                     asset_id TEXT PRIMARY KEY, name TEXT NOT NULL, media_type TEXT NOT NULL,
                     mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, width INTEGER,
                     height INTEGER, duration_sec REAL, deleted INTEGER NOT NULL DEFAULT 0
+                )`,
+    )
+    this.database.exec(
+      `CREATE TABLE IF NOT EXISTS asset_references (
+                    asset_id TEXT NOT NULL, project_id TEXT NOT NULL, PRIMARY KEY (asset_id, project_id)
                 )`,
     )
     for (const row of this.database.prepare('SELECT asset_id FROM assets WHERE deleted = 1').all()) {
@@ -165,11 +183,33 @@ export class AssetLibrary {
    * Hide an asset immediately; preserve its file while generation uses it.
    * @param assetId - the asset ID.
    * @throws {AssetNotFoundError} when the asset is absent or already deleted.
+   * @throws {AssetInUseError} when a stored project uses the asset; nothing changes then.
    */
   delete(assetId: string): void {
     this.get(assetId)
+    const references = this.database.prepare('SELECT COUNT(*) AS count FROM asset_references WHERE asset_id = ?').get(assetId)
+    const projectCount = Number(references?.count ?? 0)
+    if (projectCount > 0) throw new AssetInUseError(projectCount)
     this.database.prepare('UPDATE assets SET deleted = 1 WHERE asset_id = ?').run(assetId)
     if (!this.retained.get(assetId)) this.removeDeletedFile(assetId)
+  }
+
+  /**
+   * Record that a stored project uses assets; recording an existing reference again changes nothing.
+   * @param projectId - the project ID.
+   * @param assetIds - the asset IDs that the project uses.
+   */
+  addProjectReferences(projectId: string, assetIds: readonly string[]): void {
+    const insert = this.database.prepare('INSERT OR IGNORE INTO asset_references (asset_id, project_id) VALUES (?, ?)')
+    for (const assetId of assetIds) insert.run(assetId, projectId)
+  }
+
+  /**
+   * Remove every asset reference of a project.
+   * @param projectId - the project ID.
+   */
+  removeProjectReferences(projectId: string): void {
+    this.database.prepare('DELETE FROM asset_references WHERE project_id = ?').run(projectId)
   }
 
   /** Close the index after the application has drained accepted generation requests; later calls do nothing. */

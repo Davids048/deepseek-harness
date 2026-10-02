@@ -44,6 +44,15 @@ export interface DreamverseAssetsManager {
   retain(assetIds: readonly string[]): AssetRecord[]
   /** Release one accepted retention and remove deleted files that no retention protects any more. */
   release(assetIds: readonly string[]): void
+  /**
+   * Resolve one published asset.
+   * @throws an error named `AssetNotFoundError` when the asset is absent or deleted.
+   */
+  get(assetId: string): AssetRecord
+  /** Record that a stored project uses these assets; the library refuses to delete an asset that a project uses. */
+  addProjectReferences(projectId: string, assetIds: readonly string[]): void
+  /** Remove every reference that `addProjectReferences` recorded for the project. */
+  removeProjectReferences(projectId: string): void
 }
 
 /** Reference `PromptResult`. */

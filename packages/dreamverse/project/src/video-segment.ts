@@ -50,6 +50,8 @@ export interface VideoSegmentInit {
   segmentId?: string
   referenceSegmentId?: string | null
   referenceAssets?: readonly AssetRecord[]
+  /** ISO-8601 UTC creation time; a restored segment keeps its stored time. */
+  createdAt?: string
 }
 
 /**
@@ -59,7 +61,7 @@ export interface VideoSegmentInit {
  * preceding video that the segment continues; null starts independent video. `lastFrame` is the PNG of the
  * segment's last decoded frame, which a later segment starts from; `conditioning.ts` decides which images a request
  * carries. Reference assets record the action's ordered selection; file retention belongs to the executing action
- * and ends after its generation finishes.
+ * and ends after its generation finishes. `mime` is the video's MIME type with codecs once the video starts.
  */
 export class VideoSegment {
   readonly prompt: string
@@ -70,13 +72,18 @@ export class VideoSegment {
   readonly sequenceIndex: number | null
   readonly segmentId: string
   readonly referenceAssets: readonly AssetRecord[]
+  readonly createdAt: string
   referenceSegmentId: string | null
   status: SegmentStatus = 'pending'
   deliveryStats: SegmentDeliveryStats | null = null
   lastFrame: Buffer | null = null
+  mime: string | null = null
   error: string | null = null
 
-  /** Copy the init fields and apply the reference dataclass defaults, including a random UUID segment ID. */
+  /**
+   * Copy the init fields and apply the reference dataclass defaults, including a random UUID segment ID and the
+   * current time.
+   */
   constructor(init: VideoSegmentInit) {
     this.prompt = init.prompt
     this.creationConfig = init.creationConfig
@@ -87,6 +94,7 @@ export class VideoSegment {
     this.segmentId = init.segmentId ?? randomUUID()
     this.referenceSegmentId = init.referenceSegmentId ?? null
     this.referenceAssets = init.referenceAssets ?? []
+    this.createdAt = init.createdAt ?? new Date().toISOString()
   }
 
   /** The browser's prompt origin label. */

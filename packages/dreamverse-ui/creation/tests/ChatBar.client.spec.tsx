@@ -52,8 +52,8 @@ it('shows opt-in before generation and only a stop action during automatic gener
   expect(screen.getByRole('button', { name: 'Rewrite rollout' })).toBeEnabled()
 })
 
-/** Lobby choices remain available before submission; disconnected and archived projects have no controls. */
-it('offers opt-in in the lobby and hides it while busy, disconnected, or viewing archives', () => {
+/** Lobby choices remain available before submission; disconnected projects have no controls. */
+it('offers opt-in in the lobby and hides it while busy or disconnected', () => {
   const props = { canChooseAutoExtension: true, onAutoExtensionRequestChange: vi.fn() }
   const { rerender } = render(<ChatBar {...props} />)
   expect(screen.getByRole('checkbox', { name: 'Auto extension' })).toBeEnabled()
@@ -65,6 +65,20 @@ it('offers opt-in in the lobby and hides it while busy, disconnected, or viewing
   expect(screen.queryByRole('checkbox', { name: 'Auto extension' })).not.toBeInTheDocument()
   rerender(<ChatBar {...props} projectStarted connectionClosed />)
   expect(screen.queryByRole('checkbox', { name: 'Auto extension' })).not.toBeInTheDocument()
-  rerender(<ChatBar {...props} projectStarted viewingReadOnly />)
-  expect(screen.queryByRole('checkbox', { name: 'Auto extension' })).not.toBeInTheDocument()
+})
+
+/** A disconnected project offers Reconnect only when the owner can reopen it, beside New Project. */
+it('offers Reconnect for a disconnected project that the owner can reopen', async () => {
+  const reconnect = vi.fn()
+  const startNew = vi.fn()
+  const user = userEvent.setup()
+  const props = { projectStarted: true, connectionClosed: true, onStartNewProject: startNew }
+  const { rerender } = render(<ChatBar {...props} />)
+  expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument()
+  rerender(<ChatBar {...props} onReconnect={reconnect} projectNotice="This project was opened in another window." />)
+  expect(screen.getByText('This project was opened in another window.')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Reconnect' }))
+  expect(reconnect).toHaveBeenCalledTimes(1)
+  await user.click(screen.getByRole('button', { name: 'New Project' }))
+  expect(startNew).toHaveBeenCalledTimes(1)
 })

@@ -1757,17 +1757,17 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.asset-library\', () => ctx.slots.register(\n      { name: \'dreamverse.asset-library\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:223',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:225',
   },
   {
     key: 'dreamverse.chatbar',
     kind: 'single',
     scope: 'root',
-    summary: 'Directing composer of a started project and the read-only controls of an archived one, declared by the kit\'s `root` registration.',
-    doc: 'Directing composer of a started project and the read-only controls of an archived one, declared by the kit\'s\n`root` registration. The component receives ChatBarProps; `@dreamverse/ui-creation` registers it, and\nwithout an occupant a project accepts no follow-up prompt.',
+    summary: 'Directing composer of a started project and the reconnect controls of a disconnected one, declared by the kit\'s `root` registration.',
+    doc: 'Directing composer of a started project and the reconnect controls of a disconnected one, declared by the kit\'s\n`root` registration. The component receives ChatBarProps; `@dreamverse/ui-creation` registers it, and\nwithout an occupant a project accepts no follow-up prompt.',
     registerOptions: [],
     ownerProps: [
-      '/** Owner props of `dreamverse.chatbar`: the live directing composer and read-only viewing controls. */\nexport interface ChatBarProps {\n  /** Place generation options below the prompt inside the composer. */\n  children?: ReactNode\n  referencePicker?: ReferencePickerProps | undefined\n  mentionOptions?: MentionOption[]\n  promptLabel?: string\n  promptDisabled?: boolean\n  allowEmptyPrompt?: boolean\n  projectStarted?: boolean\n  rewriteMode?: boolean\n  generationRoundBusy?: boolean\n  autoExtensionEnabled?: boolean\n  autoExtensionRequested?: boolean\n  canChooseAutoExtension?: boolean\n  onAutoExtensionRequestChange?: (enabled: boolean) => void\n  onStopGeneration?: () => void\n  isGenerating?: boolean\n  storyPresets?: StoryPresetLike[]\n  continuationDraft?: string\n  canStartProject?: boolean\n  canSubmitContinuation?: boolean\n  connectionClosed?: boolean\n  projectNotice?: string\n  projectResetPending?: boolean\n  viewingReadOnly?: boolean\n  onPresetGenerate?: (presetId: string) => void\n  /** The prompt text after each edit, including a mention the composer inserts. */\n  onContinuationInput?: (value: string) => void\n  onContinuationKeydown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void\n  onG /* …truncated — full shape in source */',
+      '/** Owner props of `dreamverse.chatbar`: the live directing composer and the reconnect controls of a closed socket. */\nexport interface ChatBarProps {\n  /** Place generation options below the prompt inside the composer. */\n  children?: ReactNode\n  referencePicker?: ReferencePickerProps | undefined\n  mentionOptions?: MentionOption[]\n  promptLabel?: string\n  promptDisabled?: boolean\n  allowEmptyPrompt?: boolean\n  projectStarted?: boolean\n  rewriteMode?: boolean\n  generationRoundBusy?: boolean\n  autoExtensionEnabled?: boolean\n  autoExtensionRequested?: boolean\n  canChooseAutoExtension?: boolean\n  onAutoExtensionRequestChange?: (enabled: boolean) => void\n  onStopGeneration?: () => void\n  isGenerating?: boolean\n  storyPresets?: StoryPresetLike[]\n  continuationDraft?: string\n  canStartProject?: boolean\n  canSubmitContinuation?: boolean\n  connectionClosed?: boolean\n  projectNotice?: string\n  projectResetPending?: boolean\n  onPresetGenerate?: (presetId: string) => void\n  /** The prompt text after each edit, including a mention the composer inserts. */\n  onContinuationInput?: (value: string) => void\n  onContinuationKeydown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void\n  onGenerate?: ()  /* …truncated — full shape in source */',
     ],
     ownerPropsReferences: [
       'AspectRatioId',
@@ -1797,7 +1797,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.chatbar\', () => ctx.slots.register(\n      { name: \'dreamverse.chatbar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:247',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:249',
   },
   {
     key: 'dreamverse.creation-studio',
@@ -1835,7 +1835,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.creation-studio\', () => ctx.slots.register(\n      { name: \'dreamverse.creation-studio\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:241',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:243',
   },
   {
     key: 'dreamverse.player',
@@ -1868,20 +1868,20 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.player\', () => ctx.slots.register(\n      { name: \'dreamverse.player\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:229',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:231',
   },
   {
     key: 'dreamverse.sidebar',
     kind: 'single',
     scope: 'root',
-    summary: 'Saved project history sidebar, declared by the kit\'s `root` registration.',
-    doc: 'Saved project history sidebar, declared by the kit\'s `root` registration. The component receives\nSidebarProps; `@dreamverse/ui-project-history` registers it, and without an occupant the page has no\nproject history.',
+    summary: 'Project history sidebar, declared by the kit\'s `root` registration.',
+    doc: 'Project history sidebar, declared by the kit\'s `root` registration. The component receives\nSidebarProps; `@dreamverse/ui-project-history` registers it, and without an occupant the page has no\nproject history.',
     registerOptions: [],
     ownerProps: [
-      '/** Owner props of `dreamverse.sidebar`: the saved project history. */\nexport interface SidebarProps {\n  open?: boolean\n  currentProjectId?: string\n  currentProjectLabel?: string\n  hasCurrentProject?: boolean\n  connectionClosed?: boolean\n  projectResetPending?: boolean\n  savedProjects?: StoredProject[]\n  viewingProjectId?: string | null\n  isViewingPastProject?: boolean\n  onClose?: () => void\n  onSelectProject?: (project: StoredProject) => void\n  onSelectCurrentProject?: () => void\n  onDeleteProject?: (projectId: string) => void\n  onNewProject?: () => void\n  onOpenAssets?: () => void\n}',
+      '/** Owner props of `dreamverse.sidebar`: the project history that the harness lists. */\nexport interface SidebarProps {\n  open?: boolean\n  /** Harness ID of the current project; the history omits it because the Current entry shows it. */\n  currentProjectId?: string\n  currentProjectLabel?: string\n  hasCurrentProject?: boolean\n  connectionClosed?: boolean\n  projectResetPending?: boolean\n  /** The harness project list, newest update first. */\n  projects?: ProjectSummary[]\n  /** The failure of the last history action, such as a deletion that the harness refused. */\n  notice?: string\n  onClose?: () => void\n  /** Opens a listed project by its harness ID. */\n  onSelectProject?: (projectId: string) => void\n  onDeleteProject?: (projectId: string) => void\n  onNewProject?: () => void\n  onOpenAssets?: () => void\n}',
     ],
     ownerPropsReferences: [
-      'StoredProject',
+      'ProjectSummary',
     ],
     standardProps: [
       'useResource: UseResource',
@@ -1901,7 +1901,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.sidebar\', () => ctx.slots.register(\n      { name: \'dreamverse.sidebar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:217',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:219',
   },
   {
     key: 'dreamverse.workspace',
@@ -1934,7 +1934,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.workspace\', () => ctx.slots.register(\n      { name: \'dreamverse.workspace\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:235',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:237',
   },
   {
     key: 'main',

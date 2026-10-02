@@ -5,10 +5,15 @@
  * generation, round status, and reference-asset release. Automatic continuation queues one action after each
  * successful round until stopped; stop lets the accepted action finish.
  *
+ * A `Project` object serves one browser socket. Its content lives in the project store: `create()` writes a new
+ * project, `open()` rebuilds a stored one, and every settled segment, recorded sequence, failed round, and closure
+ * writes the record again, so a later `open()` continues from the last completed sequence.
+ *
  * @module @dreamverse/project/project
  */
 
 import type { Buffer } from 'node:buffer'
+import { existsSync, readFileSync } from 'node:fs'
 import type {
   AssetRecord,
   DreamverseAssetsManager,
@@ -27,8 +32,9 @@ import {
   validateReferenceAssets,
   type CreationConfig,
 } from './project-creation.ts'
+import { PROJECT_SCHEMA_VERSION, type PersistedProject, type PersistedSegment, type ProjectStore, type SegmentFileKind } from './project-store.ts'
 import { type ActionPayload, isTruthy, payloadGet, pythonFormatG, pythonStr, textOr } from './python-values.ts'
-import { VideoSegment, type SegmentSource, type UserInstruction } from './video-segment.ts'
+import { VideoSegment, type SegmentSource, type SegmentStatus, type UserInstruction } from './video-segment.ts'
 
 /** One browser socket; the implementation serializes `sendJson` and `sendBytes` through one lock. */
 export interface ProjectSocket {
@@ -36,12 +42,16 @@ export interface ProjectSocket {
   sendBytes(chunk: Buffer): Promise<void>
 }
 
-/** The inputs of `DreamverseProjects.createProject()`. */
-export interface ProjectInit {
+/** The inputs of `DreamverseProjects.openProject()`. */
+export interface ProjectOpenInit {
   projectId: string
+  socket: ProjectSocket
+}
+
+/** The inputs of `DreamverseProjects.createProject()`. */
+export interface ProjectInit extends ProjectOpenInit {
   /** The complete `project_init_v1` message. */
   payload: Record<string, unknown>
-  socket: ProjectSocket
 }
 
 /** Reference assets retained for one queued action, in selection order. */
@@ -74,6 +84,8 @@ export interface ProjectServices {
   resolveUserAction(actionType: string): UserActionHandler | undefined
   /** Writes one project log entry; a write failure only warns. */
   logProjectEvent(projectId: string, event: string, payload?: Record<string, unknown>): Promise<void>
+  /** Holds every project's record and segment files. */
+  store: ProjectStore
 }
 
 /** Admission state reported to the browser: generation-changing commands wait until `idle` or `failed`. */
@@ -91,7 +103,7 @@ const BROWSER_GENERATION_COMMANDS: ReadonlySet<unknown> = new Set(['append_promp
 /** Browser settings commands admitted under the same round rules as generation commands. */
 const BROWSER_SETTING_COMMANDS: ReadonlySet<unknown> = new Set(['set_enhancement'])
 
-/** Settings that `Project.create()` resolves from `project_init_v1` before constructing the project. */
+/** Settings that `Project.create()` resolves from `project_init_v1`, or `Project.open()` reads from the store. */
 interface ProjectCreationFields {
   modelFacts: ModelFacts
   videoGenerationSettings: CreationConfig
@@ -99,6 +111,30 @@ interface ProjectCreationFields {
   promptSequenceLabel: string
   promptEnhancementEnabled: boolean
   promptEnhancementModel: string
+  title: string
+  createdAt: string
+}
+
+/** The most code points of the first prompt that a project title keeps. */
+const TITLE_PROMPT_LENGTH = 60
+
+/**
+ * Name a project: its preset label, else its first prompt cut to `TITLE_PROMPT_LENGTH` code points.
+ * @param presetLabel - the stripped `preset_label`.
+ * @param firstPrompt - the stripped instruction, or the first curated prompt.
+ * @returns the title, or `Untitled project` when both are empty.
+ */
+function projectTitle(presetLabel: string, firstPrompt: string): string {
+  if (presetLabel) return presetLabel
+  if (firstPrompt) return Array.from(firstPrompt).slice(0, TITLE_PROMPT_LENGTH).join('')
+  return 'Untitled project'
+}
+
+const SEGMENT_SOURCES: readonly SegmentSource[] = ['preset', 'user', 'automatic']
+
+/** Whether a stored `source` names a segment source. */
+function isSegmentSource(value: string): value is SegmentSource {
+  return (SEGMENT_SOURCES as readonly string[]).includes(value)
 }
 
 /** FIFO of admitted actions with one consumer, the project's generation loop. */
@@ -157,6 +193,10 @@ export class Project {
   promptEnhancementEnabled: boolean
   /** The startup rewrite model that browser events and project log events report as `rewrite_model`. */
   readonly promptEnhancementModel: string
+  /** The project name that the project list shows. */
+  readonly title: string
+  /** ISO-8601 UTC creation time. */
+  readonly createdAt: string
   autoContinueAfterGeneration = false
   activeGenerationPlan: GenerationPlan | null = null
   generationRoundStatus: GenerationRoundStatus = 'idle'
@@ -167,8 +207,8 @@ export class Project {
   /** Settles after `processQueuedGenerationActions()` finishes its closure cleanup; null while it is not running. */
   private generationLoop: Promise<void> | null = null
 
-  /** Assign the settings that `create()` resolved; `create()` is the only caller. */
-  private constructor(init: ProjectInit, services: ProjectServices, fields: ProjectCreationFields) {
+  /** Assign the settings that `create()` resolved or `open()` read; those two are the only callers. */
+  private constructor(init: ProjectOpenInit, services: ProjectServices, fields: ProjectCreationFields) {
     this.projectId = init.projectId
     this.socket = init.socket
     this.services = services
@@ -180,6 +220,8 @@ export class Project {
     this.promptSequenceLabel = fields.promptSequenceLabel
     this.promptEnhancementEnabled = fields.promptEnhancementEnabled
     this.promptEnhancementModel = fields.promptEnhancementModel
+    this.title = fields.title
+    this.createdAt = fields.createdAt
     this.generationPlanController = new GenerationPlanController(this)
   }
 
@@ -188,7 +230,8 @@ export class Project {
    * order follow the reference `Project.__init__`.
    * @param init - the project ID, the `project_init_v1` message, and the browser socket.
    * @param services - the generation client, asset library, prompt enhancer, user-action registry, and project log.
-   * @returns the project, with its initial action queued when the message supplies prompts or an instruction.
+   * @returns the project, stored, with its initial action queued when the message supplies prompts or an
+   *   instruction; the queued action's reference assets are registered as the project's references.
    * @throws {ProjectValidationError} for rejected creation choices, Auto Extension choices, or reference assets.
    * @throws Error that is not a `DreamverseValueError` when the generation backend cannot report its model facts.
    */
@@ -208,7 +251,8 @@ export class Project {
     const videoGenerationSettings = validateProjectCreation(payload, modelFacts)
     const project = new Project(init, services, {
       modelFacts, videoGenerationSettings, promptSequenceId, promptSequenceLabel, promptEnhancementEnabled,
-      promptEnhancementModel,
+      promptEnhancementModel, title: projectTitle(promptSequenceLabel, rawInstruction || (prompts[0] ?? '')),
+      createdAt: new Date().toISOString(),
     })
     const autoExtensionEnabled = payloadGet(payload, 'auto_extension_enabled', false)
     if (typeof autoExtensionEnabled !== 'boolean') {
@@ -234,10 +278,54 @@ export class Project {
       throw new ProjectValidationError(error.message, 'Invalid reference assets')
     }
     if (rawInstruction || prompts.length > 0) {
+      project.registerReferenceAssets(referenceAssets)
       project.generationRoundStatus = 'preparing'
       project.queuedGenerationActions.put({ payload: action, referenceAssets })
     } else {
       project.releaseReferenceAssets(referenceAssets)
+    }
+    project.persist()
+    return project
+  }
+
+  /**
+   * Rebuild a stored project for a new browser socket. Completed segments get their last frames back from the
+   * store; segments that were pending or generating when the previous socket closed become `cancelled`. The last
+   * segment of the last completed sequence becomes the plan controller's last completed segment, so the project can
+   * continue that sequence. The project starts idle without Auto Extension.
+   * @param init - the project ID and the browser socket.
+   * @param services - the generation client, asset library, prompt enhancer, user-action registry, project log, and
+   *   project store.
+   * @returns the project.
+   * @throws {ProjectValidationError} with reason `Project not found` when the store holds no such project, `Model
+   *   unavailable` when the project's model is not the served model, and `Invalid reference asset` when one of its
+   *   reference assets is unavailable.
+   * @throws Error when the stored record is invalid or the generation backend cannot report its model facts.
+   */
+  static async open(init: ProjectOpenInit, services: ProjectServices): Promise<Project> {
+    const record = services.store.read(init.projectId)
+    if (record === undefined) throw new ProjectValidationError('Project not found.', 'Project not found')
+    const modelFacts = await services.generation.model()
+    const config = record.creation_config
+    if (config.model_id !== modelFacts.modelId) {
+      throw new ProjectValidationError(
+        `This project was created with ${config.model_id}; this server serves ${modelFacts.modelId}.`, 'Model unavailable')
+    }
+    const project = new Project(init, services, {
+      modelFacts, videoGenerationSettings: config, promptSequenceId: record.prompt_sequence_id,
+      promptSequenceLabel: record.prompt_sequence_label, promptEnhancementEnabled: record.prompt_enhancement_enabled,
+      promptEnhancementModel: services.promptEnhancer.rewriteModel(), title: record.title, createdAt: record.created_at,
+    })
+    for (const stored of record.segments) project.videoSegmentsById.set(stored.segment_id, project.restoreSegment(stored))
+    for (const sequence of record.completed_sequences) {
+      if (sequence.some(segmentId => !project.videoSegmentsById.has(segmentId))) {
+        throw new Error(`Project ${init.projectId} records a completed sequence with an unknown segment.`)
+      }
+      project.completedSequenceHistory.push(sequence)
+    }
+    const lastSegmentId = project.completedSequenceSegmentIds.at(-1)
+    if (lastSegmentId !== undefined && project.videoSegmentsById.get(lastSegmentId)?.status === 'completed') {
+      project.generationPlanController.lastCompletedSegmentId = lastSegmentId
     }
     return project
   }
@@ -327,6 +415,7 @@ export class Project {
       this.generationLoop = null
       try {
         this.releaseQueuedActionReferenceAssets()
+        this.persist()
       } finally {
         finishLoop()
       }
@@ -335,7 +424,8 @@ export class Project {
 
   /**
    * Stop prompt waits and future submissions, abandon the segment in progress, wait for the generation loop to
-   * finish its closure cleanup, and release the reference assets of actions that closure prevents from running.
+   * finish its closure cleanup, release the reference assets of actions that closure prevents from running, and
+   * store the project's final record.
    */
   async closeAndWaitForGeneration(): Promise<void> {
     this.isClosed = true
@@ -345,6 +435,7 @@ export class Project {
       if (this.generationLoop !== null) await this.generationLoop
     } finally {
       this.releaseQueuedActionReferenceAssets()
+      this.persist()
     }
   }
 
@@ -393,6 +484,21 @@ export class Project {
    */
   recordCompletedSequence(sequenceIds: readonly string[]): void {
     this.completedSequenceHistory.push(sequenceIds)
+    this.persist()
+  }
+
+  /** Write the project's record to the store; callers write a segment's files before the record that names them. */
+  persist(): void {
+    this.services.store.write(this.persistedRecord())
+  }
+
+  /**
+   * @param segmentId - one of the project's segment IDs.
+   * @param kind - the segment's video or last frame.
+   * @returns where the store keeps that file.
+   */
+  segmentFilePath(segmentId: string, kind: SegmentFileKind): string {
+    return this.services.store.segmentFilePath(this.projectId, segmentId, kind)
   }
 
   /**
@@ -519,6 +625,7 @@ export class Project {
       await this.sendBrowserEvent({ type: 'error', prompt_id: promptId, message: error.message })
       return
     }
+    this.registerReferenceAssets(referenceAssets)
     this.autoContinueAfterGeneration = autoExtensionEnabled
     this.generationRoundStatus = 'preparing'
     this.queuedGenerationActions.put({ payload, referenceAssets })
@@ -589,6 +696,7 @@ export class Project {
     }
     this.activeGenerationPlan = null
     this.generationRoundStatus = 'failed'
+    this.persist()
     await this.logProjectEvent('generation_round_failed', { action: payloadGet(payload, 'type'), error: message })
     if (error instanceof DreamverseValueError) {
       await this.sendBrowserEvent({ type: 'error', message, prompt_id: payloadGet(payload, 'prompt_id') })
@@ -652,5 +760,82 @@ export class Project {
    */
   private releaseReferenceAssets(referenceAssets: readonly AssetRecord[]): void {
     if (referenceAssets.length > 0) this.services.assets.release(referenceAssets.map(asset => asset.assetId))
+  }
+
+  /**
+   * Record an accepted action's reference assets as references of this project, so the asset library refuses to
+   * delete them while the project is stored; an empty selection makes no asset library call.
+   * @param referenceAssets - the accepted action's assets.
+   */
+  private registerReferenceAssets(referenceAssets: readonly AssetRecord[]): void {
+    if (referenceAssets.length > 0) {
+      this.services.assets.addProjectReferences(this.projectId, referenceAssets.map(asset => asset.assetId))
+    }
+  }
+
+  /**
+   * Rebuild one stored segment. A completed segment reads its last frame file when one exists; a pending or
+   * generating segment becomes `cancelled`, since the socket that ran it has closed.
+   * @param stored - the segment record.
+   * @returns the segment with its outcome.
+   * @throws {ProjectValidationError} with reason `Invalid reference asset` when a reference asset is unavailable.
+   * @throws Error for a stored source that names no segment source.
+   */
+  private restoreSegment(stored: PersistedSegment): VideoSegment {
+    if (!isSegmentSource(stored.source)) throw new Error(`Stored segment ${stored.segment_id} has unknown source ${stored.source}.`)
+    let referenceAssets: AssetRecord[]
+    try {
+      referenceAssets = stored.reference_asset_ids.map(assetId => this.services.assets.get(assetId))
+    } catch (error) {
+      if (!(error instanceof Error && error.name === 'AssetNotFoundError')) throw error
+      throw new ProjectValidationError(error.message, 'Invalid reference asset')
+    }
+    const segment = new VideoSegment({
+      prompt: stored.prompt, creationConfig: this.videoGenerationSettings, source: stored.source,
+      instruction: stored.instruction && { requestId: stored.instruction.request_id, text: stored.instruction.text },
+      enhanced: stored.enhanced, sequenceIndex: stored.sequence_index, segmentId: stored.segment_id,
+      referenceSegmentId: stored.reference_segment_id, referenceAssets, createdAt: stored.created_at,
+    })
+    segment.mime = stored.mime
+    segment.error = stored.error
+    const status: SegmentStatus = stored.status === 'completed' || stored.status === 'failed' ? stored.status : 'cancelled'
+    segment.status = status
+    if (status === 'completed') {
+      const framePath = this.segmentFilePath(segment.segmentId, 'frame')
+      segment.lastFrame = existsSync(framePath) ? readFileSync(framePath) : null
+    } else if (status === 'cancelled' && stored.status !== 'cancelled') {
+      segment.error = 'Project disconnected.'
+    }
+    return segment
+  }
+
+  /** @returns the project's complete record in `project.json` form, stamped with the current time. */
+  private persistedRecord(): PersistedProject {
+    return {
+      schema_version: PROJECT_SCHEMA_VERSION,
+      project_id: this.projectId,
+      title: this.title,
+      created_at: this.createdAt,
+      updated_at: new Date().toISOString(),
+      creation_config: this.videoGenerationSettings,
+      prompt_enhancement_enabled: this.promptEnhancementEnabled,
+      prompt_sequence_id: this.promptSequenceId ?? null,
+      prompt_sequence_label: this.promptSequenceLabel,
+      segments: [...this.videoSegmentsById.values()].map(segment => ({
+        segment_id: segment.segmentId,
+        prompt: segment.prompt,
+        source: segment.source,
+        instruction: segment.instruction && { request_id: segment.instruction.requestId, text: segment.instruction.text },
+        enhanced: segment.enhanced,
+        sequence_index: segment.sequenceIndex,
+        reference_segment_id: segment.referenceSegmentId,
+        reference_asset_ids: segment.referenceAssets.map(asset => asset.assetId),
+        status: segment.status,
+        error: segment.error,
+        mime: segment.mime,
+        created_at: segment.createdAt,
+      })),
+      completed_sequences: this.completedSequenceHistory.map(sequence => [...sequence]),
+    }
   }
 }

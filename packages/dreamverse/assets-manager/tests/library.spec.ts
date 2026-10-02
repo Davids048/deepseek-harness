@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { AssetLibrary, AssetNotFoundError } from '../src/library.ts'
+import { AssetInUseError, AssetLibrary, AssetNotFoundError } from '../src/library.ts'
 import { MediaValidationError, UploadTooLargeError } from '../src/media.ts'
 import {
   animatedImageBytes, fixturePath, imageBytes, temporaryDirectory, type TemporaryDirectory,
@@ -138,6 +138,27 @@ describe('AssetLibrary retention', () => {
     library.close()
     expect(fs.existsSync(asset.filePath)).toBe(true)
     library = new AssetLibrary(root)
+    expect(library.list()).toEqual([])
+    expect(fs.existsSync(asset.filePath)).toBe(false)
+  })
+})
+
+describe('AssetLibrary project references', () => {
+  it('refuses to delete an asset while stored projects use it, across a restart', async () => {
+    const asset = await library.add(await imageBytes('png'), 'portrait.png', 'image/png')
+    library.addProjectReferences('project-a', [asset.assetId])
+    library.addProjectReferences('project-b', [asset.assetId])
+    library.addProjectReferences('project-a', [asset.assetId])
+    expect(() => { library.delete(asset.assetId) }).toThrow(new AssetInUseError(2))
+    expect(new AssetInUseError(2).message).toBe('This image is used by 2 project(s). Delete those projects first.')
+    library.close()
+    library = new AssetLibrary(root)
+    library.removeProjectReferences('project-a')
+    expect(() => { library.delete(asset.assetId) }).toThrow(new AssetInUseError(1))
+    expect(library.list()).toEqual([asset])
+    expect(fs.existsSync(asset.filePath)).toBe(true)
+    library.removeProjectReferences('project-b')
+    library.delete(asset.assetId)
     expect(library.list()).toEqual([])
     expect(fs.existsSync(asset.filePath)).toBe(false)
   })

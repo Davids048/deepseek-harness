@@ -9,7 +9,9 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import DreamverseAssetsManager, { AssetNotFoundError, MediaValidationError, UploadTooLargeError, type AssetRecord } from '../src/index.ts'
+import DreamverseAssetsManager, {
+  AssetInUseError, AssetNotFoundError, MediaValidationError, UploadTooLargeError, type AssetRecord,
+} from '../src/index.ts'
 import { assetsRouteHandler, type AssetRoutesLibrary } from '../src/asset-routes.ts'
 import { shellFileResponder } from '../src/shell-files.ts'
 import { temporaryDirectory, type TemporaryDirectory } from './support.ts'
@@ -26,6 +28,8 @@ class FakeAssets implements AssetRoutesLibrary {
   readonly added: Array<{ content: Buffer; name: string; mimeType: string }> = []
   readonly retentions: string[] = []
   readonly releases: string[] = []
+  /** The number of stored projects that use each asset. */
+  readonly projectCounts = new Map<string, number>()
   addFailure: Error | undefined
 
   /** Publish a file under the temporary directory as one asset. */
@@ -61,6 +65,8 @@ class FakeAssets implements AssetRoutesLibrary {
 
   delete(assetId: string): void {
     this.get(assetId)
+    const projectCount = this.projectCounts.get(assetId) ?? 0
+    if (projectCount > 0) throw new AssetInUseError(projectCount)
     this.records.delete(assetId)
   }
 
@@ -313,5 +319,16 @@ describe('/assets', () => {
     expect(await callJson('DELETE', '/assets/a1')).toMatchObject({
       status: 404, json: { detail: 'Asset \'a1\' is unavailable. Select an asset from the library.' },
     })
+  })
+
+  it('answers 409 with the project count for an asset that stored projects use', async () => {
+    const assets = new FakeAssets()
+    assets.put('a1', 'portrait.png', Buffer.from('x'), 'image/png')
+    assets.projectCounts.set('a1', 2)
+    await startAssetRoutes(assets)
+    expect(await callJson('DELETE', '/assets/a1')).toMatchObject({
+      status: 409, json: { detail: 'This image is used by 2 project(s). Delete those projects first.' },
+    })
+    expect(assets.records.has('a1')).toBe(true)
   })
 })

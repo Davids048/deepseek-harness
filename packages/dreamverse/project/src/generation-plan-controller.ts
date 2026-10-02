@@ -2,11 +2,13 @@
  * Execute a fixed generation plan and stream every segment as its output arrives.
  *
  * User actions prepare plans; this controller only submits ready segments and records outcomes, including each
- * segment's last frame, which a later segment starts from.
+ * segment's last frame, which a later segment starts from. Each settled segment is stored: a completed segment's video
+ * and last frame files are written before the project record that names it completed.
  *
  * @module @dreamverse/project/generation-plan-controller
  */
 
+import { writeFileSync } from 'node:fs'
 import { segmentRequestImages } from './conditioning.ts'
 import { ProjectClosedError, errorMessage } from './errors.ts'
 import { segmentRecord, type GenerationPlan } from './generation-plan.ts'
@@ -56,6 +58,7 @@ export class GenerationPlanController {
           segment.error = errorMessage(error) || 'Project disconnected.'
         }
       }
+      project.persist()
       throw error
     }
   }
@@ -77,7 +80,7 @@ export class GenerationPlanController {
 
   /**
    * Publish segment origin, submit its input to the generation backend, and retain its output statistics and last
-   * frame.
+   * frame, storing the video and last frame files before the project record.
    * @param segment - the ready segment.
    * @param segmentIdx - the segment's one-based position in the plan's display sequence.
    */
@@ -107,10 +110,13 @@ export class GenerationPlanController {
       // A later round can continue any completed segment of a model that continues segments.
       returnLastFrame: project.modelFacts.usesPreviousFrame,
       signal: project.generationSignal,
-    })
+    }, project.segmentFilePath(segment.segmentId, 'video'))
     segment.deliveryStats = streamed.deliveryStats
     segment.lastFrame = streamed.lastFrame
+    segment.mime = streamed.mime
+    if (streamed.lastFrame !== null) writeFileSync(project.segmentFilePath(segment.segmentId, 'frame'), streamed.lastFrame)
     segment.status = 'completed'
+    project.persist()
     const totalMs = performance.now() - startedAt
     const workerMs = segment.deliveryStats.timings['e2e_latency_ms'] || 0
     const latency = {

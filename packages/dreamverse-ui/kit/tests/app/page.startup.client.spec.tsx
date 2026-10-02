@@ -10,20 +10,16 @@ import userEvent from '@testing-library/user-event'
 import { Server } from 'mock-socket'
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
 
-const projectStorageMockState = vi.hoisted(() => ({
-  saveProject: vi.fn(),
-  saveProjectMetadata: vi.fn(),
+const projectsMockState = vi.hoisted(() => ({
   listProjects: vi.fn(async () => []),
-  loadProjectClips: vi.fn(async () => []),
+  getProject: vi.fn(),
   deleteProject: vi.fn(async () => {}),
-  pruneOldProjects: vi.fn(async () => {}),
+  fetchSegmentVideo: vi.fn(),
   reset() {
-    this.saveProject.mockReset()
-    this.saveProjectMetadata.mockReset()
     this.listProjects.mockClear()
-    this.loadProjectClips.mockClear()
+    this.getProject.mockReset()
     this.deleteProject.mockClear()
-    this.pruneOldProjects.mockClear()
+    this.fetchSegmentVideo.mockReset()
   },
 }))
 
@@ -37,13 +33,11 @@ vi.mock('@dreamverse/project-controller/client/storyPresetsData.ts', () => ({
   ],
 }))
 
-vi.mock('@dreamverse/project-controller/client/projectStorage.ts', () => ({
-  saveProject: projectStorageMockState.saveProject,
-  saveProjectMetadata: projectStorageMockState.saveProjectMetadata,
-  listProjects: projectStorageMockState.listProjects,
-  loadProjectClips: projectStorageMockState.loadProjectClips,
-  deleteProject: projectStorageMockState.deleteProject,
-  pruneOldProjects: projectStorageMockState.pruneOldProjects,
+vi.mock('@dreamverse/project-controller/client/projects.ts', () => ({
+  listProjects: projectsMockState.listProjects,
+  getProject: projectsMockState.getProject,
+  deleteProject: projectsMockState.deleteProject,
+  fetchSegmentVideo: projectsMockState.fetchSegmentVideo,
 }))
 
 vi.mock('../../src/client/media/avPipeline.ts', () => ({
@@ -105,7 +99,7 @@ describe('Page startup readiness UX', () => {
 
   /** Own browser persistence, response gates, and a complete in-process socket if admission unexpectedly occurs. */
   beforeEach(() => {
-    projectStorageMockState.reset()
+    projectsMockState.reset()
     storageSnapshot = Array.from({ length: localStorage.length }, (_, index) => {
       const key = localStorage.key(index)
       const value = key === null ? null : localStorage.getItem(key)
@@ -303,7 +297,6 @@ describe('Page startup readiness UX', () => {
       expect(prompt).toHaveValue('Keep this draft')
       expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/creation-capabilities'])
       expect(outbound).toEqual([])
-      expect(projectStorageMockState.saveProject).not.toHaveBeenCalled()
     },
   )
 

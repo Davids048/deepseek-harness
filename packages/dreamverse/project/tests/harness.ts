@@ -1,6 +1,6 @@
 /**
  * Mounts `dreamverseProjects` with fake generation, asset, and prompt-enhancer services, optional user-action plugins,
- * and a temporary project log root, then runs projects against fake sockets.
+ * and temporary project log and project store roots, then runs projects against fake sockets.
  */
 
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
@@ -46,7 +46,7 @@ export interface FakeServices {
   enhancer?: FakePromptEnhancer
 }
 
-/** A mounted `dreamverseProjects` service with its fakes and log root. */
+/** A mounted `dreamverseProjects` service with its fakes, log root, and project store root. */
 export class ProjectsHarness {
   private readonly runs: ProjectRun[] = []
 
@@ -56,6 +56,7 @@ export class ProjectsHarness {
     readonly assets: FakeAssets,
     readonly enhancer: FakePromptEnhancer,
     readonly logRoot: string,
+    readonly projectRoot: string,
   ) {}
 
   get service(): DreamverseProjects {
@@ -66,10 +67,25 @@ export class ProjectsHarness {
    * Create a project and start serving its queued actions.
    * @param payload - the `project_init_v1` message.
    * @param socket - the browser socket fake.
+   * @param projectId - the new project's ID.
    * @returns the running project.
    */
-  async start(payload: Record<string, unknown>, socket = new FakeSocket()): Promise<ProjectRun> {
-    const project = await this.service.createProject({ projectId: 'project', payload, socket })
+  async start(payload: Record<string, unknown>, socket = new FakeSocket(), projectId = 'project'): Promise<ProjectRun> {
+    return this.serve(await this.service.createProject({ projectId, payload, socket }), socket)
+  }
+
+  /**
+   * Open a stored project and start serving its queued actions.
+   * @param projectId - the stored project's ID.
+   * @param socket - the browser socket fake.
+   * @returns the running project.
+   */
+  async open(projectId: string, socket = new FakeSocket()): Promise<ProjectRun> {
+    return this.serve(await this.service.openProject({ projectId, socket }), socket)
+  }
+
+  /** Start the generation loop of a created or opened project and track it for disposal. */
+  private serve(project: Project, socket: FakeSocket): ProjectRun {
     const loop = project.processQueuedGenerationActions()
     const outcome = loop.then(() => null, (error: unknown) => error)
     const run = { project, socket, generation: this.generation, loop, outcome }
@@ -100,7 +116,7 @@ export class ProjectsHarness {
     return this.logEntries().filter(entry => entry['event'] === event).map(({ ts: _ts, ...entry }) => entry)
   }
 
-  /** Close every started project, dispose the service, and remove the log root and the asset library. */
+  /** Close every started project, dispose the service, and remove the log and project roots and the asset library. */
   async dispose(): Promise<void> {
     for (const run of this.runs) {
       const closing = run.project.closeAndWaitForGeneration()
@@ -110,6 +126,7 @@ export class ProjectsHarness {
     }
     await this.ctx.fiber.dispose()
     rmSync(this.logRoot, { recursive: true, force: true })
+    rmSync(this.projectRoot, { recursive: true, force: true })
     this.assets.dispose()
   }
 }
@@ -124,10 +141,11 @@ export async function openProjects(plugins: Plugin[] = [], services: FakeService
   const { generation = new FakeGeneration(), assets = new FakeAssets(), enhancer = new FakePromptEnhancer() } = services
   const ctx = new Context()
   const logRoot = mkdtempSync(join(tmpdir(), 'dreamverse-project-'))
+  const projectRoot = mkdtempSync(join(tmpdir(), 'dreamverse-project-store-'))
   ctx.provide('dreamverseGeneration', generation)
   ctx.provide('dreamverseAssetsManager', assets)
   ctx.provide('dreamversePromptEnhancer', enhancer)
-  await ctx.plugin(DreamverseProjects, { projectLogRoot: logRoot })
+  await ctx.plugin(DreamverseProjects, { projectLogRoot: logRoot, projectRoot })
   for (const plugin of plugins) await ctx.plugin(plugin)
-  return new ProjectsHarness(ctx, generation, assets, enhancer, logRoot)
+  return new ProjectsHarness(ctx, generation, assets, enhancer, logRoot, projectRoot)
 }

@@ -1,7 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react'
 import ReferencePicker from './assets/ReferencePicker.tsx'
 import type { MentionOption } from '@dreamverse/project-controller/client/creationConfig.ts'
-import { ArrowUp, X, Loader2, ArrowLeft } from 'lucide-react'
+import { ArrowUp, X, Loader2 } from 'lucide-react'
 import { Button } from '@dreamverse/ui-kit/components/ui/button.tsx'
 import LeaveProjectModal, { shouldShowLeaveWarning } from './LeaveProjectModal.tsx'
 import AutoExtensionPill from './creation/AutoExtensionPill.tsx'
@@ -38,7 +38,6 @@ export default function ChatBar({
   connectionClosed = false,
   projectNotice = '',
   projectResetPending = false,
-  viewingReadOnly = false,
   onPresetGenerate = () => {},
   onContinuationInput = () => {},
   onContinuationKeydown = () => {},
@@ -46,7 +45,7 @@ export default function ChatBar({
   onSubmitContinuation = () => {},
   onLeave,
   onStartNewProject = () => {},
-  onBackFromViewing = () => {},
+  onReconnect,
   projectCreationConfig = null,
   configPillsReadOnly = false,
   onProjectModelChange,
@@ -138,38 +137,21 @@ export default function ChatBar({
     ],
   )
 
-  if (viewingReadOnly) {
-    return (
-      <section className="mx-auto flex w-full max-w-2xl shrink-0 flex-col gap-4">
-        <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-card/80 px-6 py-4 text-center shadow-md backdrop-blur-sm">
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-semibold text-foreground">View-only project</p>
-            <p className="max-w-md text-xs text-muted-foreground">Your saved clips stay available here. Start a new project to keep creating.</p>
-          </div>
-          <div className="mt-1 flex items-center gap-2">
-            <Button onClick={onBackFromViewing} variant="outline" size="sm" className="gap-1.5 rounded-full px-4">
-              <ArrowLeft className="size-3.5" />
-              Back
-            </Button>
-            <Button onClick={onStartNewProject} size="sm" className="rounded-full px-5">
-              New project
-            </Button>
-          </div>
-        </div>
-      </section>
-    )
-  }
-
   if (connectionClosed) {
     return (
       <section className="mx-auto flex w-full max-w-2xl shrink-0 flex-col gap-4">
         <div className="flex flex-col items-center gap-3 rounded-2xl border border-border bg-card/80 px-8 py-5 text-center shadow-md backdrop-blur-sm">
           <div className="flex flex-col gap-1">
             <p className="text-sm font-semibold text-foreground">Project disconnected</p>
-            <p className="max-w-xs text-xs text-muted-foreground">{projectNotice || 'Start a new project to continue.'}</p>
+            <p className="max-w-xs text-xs text-muted-foreground">{projectNotice || (onReconnect ? 'Reconnect to continue this project.' : 'Start a new project to continue.')}</p>
           </div>
           <div className="mt-1 flex items-center gap-2">
-            <Button onClick={onStartNewProject} size="sm" className="rounded-full px-5">
+            {onReconnect && (
+              <Button onClick={onReconnect} size="sm" className="rounded-full px-5">
+                Reconnect
+              </Button>
+            )}
+            <Button onClick={onStartNewProject} variant={onReconnect ? 'outline' : 'default'} size="sm" className="rounded-full px-5">
               New Project
             </Button>
             <a href="https://docs.google.com/forms/d/e/1FAIpQLSe5zpO1iD8Ds-Ih-fOLm64qd7YZVvuvAyHuJaAfw1hkRHTe_A/viewform?usp=publish-editor" target="_blank" rel="noopener noreferrer">

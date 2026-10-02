@@ -2,6 +2,7 @@
  * Port of the reference `dreamverse/routes/assets.py`: `GET /assets`, multipart `POST /assets`, seekable
  * `GET /assets/{asset_id}/content`, and `DELETE /assets/{asset_id}` against the asset library, with FastAPI's status
  * codes and `{"detail": ...}` bodies. The service registers them as one `/assets` prefix route on the DSH web server.
+ * A delete of an asset that stored projects use answers 409.
  *
  * @module @dreamverse/assets-manager/asset-routes
  */
@@ -10,7 +11,7 @@ import { Readable } from 'node:stream'
 import type { Logger } from '@deepseek-ai/cordis'
 import { requestPath, sendInternalServerError, sendJson, serveRoutes, type Route, type ValidationIssue } from '@dreamverse/http-routes'
 import { sendFile } from './file-response.ts'
-import { AssetNotFoundError, type AssetRecord } from './library.ts'
+import { AssetInUseError, AssetNotFoundError, type AssetRecord } from './library.ts'
 import { MediaValidationError, UploadTooLargeError } from './media.ts'
 
 /** The asset library members that the asset routes call; the `dreamverseAssetsManager` service implements them. */
@@ -22,7 +23,7 @@ export interface AssetRoutesLibrary {
   /** Throws `AssetNotFoundError` for the first unavailable ID without retaining any file. */
   retain(assetIds: readonly string[]): AssetRecord[]
   release(assetIds: readonly string[]): void
-  /** Throws `AssetNotFoundError` when the asset is absent or already deleted. */
+  /** Throws `AssetNotFoundError` when the asset is absent or already deleted, `AssetInUseError` when projects use it. */
   delete(assetId: string): void
 }
 
@@ -160,7 +161,8 @@ async function readAssetContent(
 }
 
 /**
- * Serve `DELETE /assets/{asset_id}` with 204, or 404 for an absent or deleted asset.
+ * Serve `DELETE /assets/{asset_id}` with 204, 404 for an absent or deleted asset, or 409 for an asset that stored
+ * projects use.
  * @param response - the browser response.
  * @param assets - the asset library.
  * @param assetId - the decoded path parameter.
@@ -169,8 +171,9 @@ function deleteAsset(response: ServerResponse, assets: AssetRoutesLibrary, asset
   try {
     assets.delete(assetId)
   } catch (error) {
-    if (!(error instanceof AssetNotFoundError)) throw error
-    sendJson(response, 404, { detail: error.message })
+    if (error instanceof AssetInUseError) sendJson(response, 409, { detail: error.message })
+    else if (error instanceof AssetNotFoundError) sendJson(response, 404, { detail: error.message })
+    else throw error
     return
   }
   response.writeHead(204)

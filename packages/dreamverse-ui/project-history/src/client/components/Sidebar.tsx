@@ -5,15 +5,7 @@ import { Plus, Trash2, Clock, Film } from 'lucide-react'
 import { Button } from '@dreamverse/ui-kit/components/ui/button.tsx'
 import { Badge } from '@dreamverse/ui-kit/components/ui/badge.tsx'
 import { cn } from '@dreamverse/ui-kit/utils.ts'
-import type { StoredProject } from '@dreamverse/project-controller/client/projectStorage.ts'
 import type { SidebarProps } from '@dreamverse/ui-kit/contracts.ts'
-
-/** Title a saved project by its original label, or else by its newest user rewrite. */
-function resolveProjectTitle(project: StoredProject): string {
-  if (project.originalLabel) return project.originalLabel
-  const lastEdit = project.promptEvents.findLast(event => event.source === 'user_rewrite' && Boolean(event.text?.trim()))
-  return lastEdit?.text?.trim() || 'Untitled project'
-}
 
 /** Format a past timestamp as elapsed time, or as a date after one week. */
 function formatRelativeTime(timestamp: number): string {
@@ -29,7 +21,7 @@ function formatRelativeTime(timestamp: number): string {
   return new Date(timestamp).toLocaleDateString()
 }
 
-/** Show the current project and saved projects with their selection and departure actions. */
+/** Show the current project and the harness project list with their selection and departure actions. */
 export default function Sidebar({
   open = false,
   currentProjectId = '',
@@ -37,17 +29,15 @@ export default function Sidebar({
   hasCurrentProject = false,
   connectionClosed = false,
   projectResetPending = false,
-  savedProjects = [],
-  viewingProjectId = null,
-  isViewingPastProject = false,
+  projects = [],
+  notice = '',
   onClose = () => {},
   onSelectProject = () => {},
-  onSelectCurrentProject = () => {},
   onDeleteProject = () => {},
   onNewProject = () => {},
   onOpenAssets = () => {},
 }: SidebarProps) {
-  const previousProjects = currentProjectId ? savedProjects.filter(p => p.id !== currentProjectId) : savedProjects
+  const previousProjects = currentProjectId ? projects.filter(p => p.project_id !== currentProjectId) : projects
 
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -119,17 +109,12 @@ export default function Sidebar({
         </div>
 
         <Button variant="outline" className="mx-4 mb-3" onClick={onOpenAssets}>Assets</Button>
+        {notice && <p role="alert" className="mx-4 mb-3 text-xs text-destructive">{notice}</p>}
         <nav className="flex-1 overflow-y-auto px-3 pb-4">
           {hasCurrentProject && (
             <div className="mb-3">
               <p className="mb-1.5 px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Current</p>
-              <div
-                className={cn('rounded-xl px-3 py-2.5', isViewingPastProject ? 'cursor-pointer bg-accent/40 hover:bg-accent/60 transition-colors' : 'bg-accent/80')}
-                onClick={isViewingPastProject ? onSelectCurrentProject : undefined}
-                role={isViewingPastProject ? 'button' : undefined}
-                tabIndex={isViewingPastProject ? 0 : undefined}
-                onKeyDown={isViewingPastProject ? (e) => { if (e.key === 'Enter') onSelectCurrentProject() } : undefined}
-              >
+              <div className="rounded-xl bg-accent/80 px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <Film className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{currentProjectLabel || 'Untitled project'}</span>
@@ -154,33 +139,32 @@ export default function Sidebar({
               <p className="mb-1.5 px-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Previous</p>
               <div className="flex flex-col gap-1">
                 {previousProjects.map((project) => {
-                  const isViewing = viewingProjectId === project.id
                   return (
                     <div
-                      key={project.id}
-                      className={cn('group flex items-start gap-2 rounded-xl px-3 py-2.5 transition-colors cursor-pointer', isViewing ? 'bg-accent/60' : 'hover:bg-accent/40')}
-                      onClick={() => { onSelectProject(project) }}
+                      key={project.project_id}
+                      className="group flex items-start gap-2 rounded-xl px-3 py-2.5 transition-colors cursor-pointer hover:bg-accent/40"
+                      onClick={() => { onSelectProject(project.project_id) }}
                       role="button"
                       tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === 'Enter') onSelectProject(project) }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') onSelectProject(project.project_id) }}
                     >
-                      {project.lastThumbnail ? (
-                        <img src={project.lastThumbnail} alt="" className="mt-0.5 h-8 w-auto shrink-0 rounded border border-border object-cover" />
+                      {project.thumbnail_url ? (
+                        <img src={project.thumbnail_url} alt="" className="mt-0.5 h-8 w-auto shrink-0 rounded border border-border object-cover" />
                       ) : (
                         <Film className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                       )}
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-medium text-foreground">{resolveProjectTitle(project)}</p>
+                        <p className="truncate text-[13px] font-medium text-foreground">{project.title || 'Untitled project'}</p>
                         <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
                           <Clock className="size-3" />
-                          <span>{formatRelativeTime(project.createdAt)}</span>
+                          <span>{formatRelativeTime(Date.parse(project.updated_at))}</span>
                         </div>
                       </div>
-                      {pendingDeleteId === project.id ? (
+                      {pendingDeleteId === project.project_id ? (
                         <button
                           type="button"
                           className="mt-0.5 shrink-0 rounded bg-destructive/15 px-1.5 py-0.5 !text-xs !font-medium text-destructive transition-colors hover:bg-destructive/25"
-                          onClick={(e) => { handleDeleteClick(e, project.id) }}
+                          onClick={(e) => { handleDeleteClick(e, project.project_id) }}
                           aria-label="Confirm delete project"
                         >
                           Delete?
@@ -189,7 +173,7 @@ export default function Sidebar({
                         <button
                           type="button"
                           className="mt-0.5 shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                          onClick={(e) => { handleDeleteClick(e, project.id) }}
+                          onClick={(e) => { handleDeleteClick(e, project.project_id) }}
                           aria-label="Delete project"
                         >
                           <Trash2 className="size-3.5" />

@@ -10,7 +10,7 @@ import type {
   AspectRatioId, CreationModeId, CreationModelId, MentionOption, ResolutionId,
 } from '@dreamverse/project-controller/client/creationConfig.ts'
 import type { LobbyCreationCapabilities, LobbySelection } from '@dreamverse/project-controller/client/creationCapabilities.ts'
-import type { StoredProject } from '@dreamverse/project-controller/client/projectStorage.ts'
+import type { ProjectSummary } from '@dreamverse/project-controller/client/projects.ts'
 import type { PromptEvent } from '@dreamverse/project-controller/client/promptEvents.ts'
 import type { CompletedClip } from '@dreamverse/project-controller/client/stores/stream.ts'
 import type { AssetRecord, AssetUploadPolicy, ReferenceDraft } from '@dreamverse/assets-manager/client/assets.ts'
@@ -47,7 +47,7 @@ export interface ReferencePickerProps {
   maxBytes: number
 }
 
-/** Owner props of `dreamverse.chatbar`: the live directing composer and read-only viewing controls. */
+/** Owner props of `dreamverse.chatbar`: the live directing composer and the reconnect controls of a closed socket. */
 export interface ChatBarProps {
   /** Place generation options below the prompt inside the composer. */
   children?: ReactNode
@@ -72,7 +72,6 @@ export interface ChatBarProps {
   connectionClosed?: boolean
   projectNotice?: string
   projectResetPending?: boolean
-  viewingReadOnly?: boolean
   onPresetGenerate?: (presetId: string) => void
   /** The prompt text after each edit, including a mention the composer inserts. */
   onContinuationInput?: (value: string) => void
@@ -81,7 +80,8 @@ export interface ChatBarProps {
   onSubmitContinuation?: () => void
   onLeave?: () => void
   onStartNewProject?: () => void
-  onBackFromViewing?: () => void
+  /** Reopens the disconnected project; the disconnected notice offers Reconnect only when this is set. */
+  onReconnect?: (() => void) | undefined
   projectCreationConfig?: ProjectCreationConfig | null
   configPillsReadOnly?: boolean
   onProjectModelChange?: (modelId: CreationModelId) => void
@@ -147,20 +147,22 @@ export interface WorkspaceProps {
   originalClipId?: string
 }
 
-/** Owner props of `dreamverse.sidebar`: the saved project history. */
+/** Owner props of `dreamverse.sidebar`: the project history that the harness lists. */
 export interface SidebarProps {
   open?: boolean
+  /** Harness ID of the current project; the history omits it because the Current entry shows it. */
   currentProjectId?: string
   currentProjectLabel?: string
   hasCurrentProject?: boolean
   connectionClosed?: boolean
   projectResetPending?: boolean
-  savedProjects?: StoredProject[]
-  viewingProjectId?: string | null
-  isViewingPastProject?: boolean
+  /** The harness project list, newest update first. */
+  projects?: ProjectSummary[]
+  /** The failure of the last history action, such as a deletion that the harness refused. */
+  notice?: string
   onClose?: () => void
-  onSelectProject?: (project: StoredProject) => void
-  onSelectCurrentProject?: () => void
+  /** Opens a listed project by its harness ID. */
+  onSelectProject?: (projectId: string) => void
   onDeleteProject?: (projectId: string) => void
   onNewProject?: () => void
   onOpenAssets?: () => void
@@ -210,7 +212,7 @@ export type DreamverseSlotRenderer = <K extends DreamverseSlot>(name: K, props: 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /**
-     * Saved project history sidebar, declared by the kit's `root` registration. The component receives
+     * Project history sidebar, declared by the kit's `root` registration. The component receives
      * {@link SidebarProps}; `@dreamverse/ui-project-history` registers it, and without an occupant the page has no
      * project history.
      */
@@ -240,7 +242,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'dreamverse.creation-studio': { kind: 'single'; scope: 'root'; owner: CreationStudioProps }
     /**
-     * Directing composer of a started project and the read-only controls of an archived one, declared by the kit's
+     * Directing composer of a started project and the reconnect controls of a disconnected one, declared by the kit's
      * `root` registration. The component receives {@link ChatBarProps}; `@dreamverse/ui-creation` registers it, and
      * without an occupant a project accepts no follow-up prompt.
      */

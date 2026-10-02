@@ -18,12 +18,13 @@ import { AssetLibrary, type AssetRecord } from './library.ts'
 import { uploadPolicy } from './media.ts'
 import { shellFileResponder } from './shell-files.ts'
 
-export { AssetNotFoundError, type AssetRecord } from './library.ts'
+export { sendFile, type FileDelivery } from './file-response.ts'
+export { AssetInUseError, AssetNotFoundError, type AssetRecord } from './library.ts'
 export { MediaValidationError, UploadTooLargeError, type MediaType } from './media.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** DreamVerse asset files, their SQLite index, upload validation, and file retention. */
+    /** DreamVerse asset files, their SQLite index, upload validation, file retention, and project references. */
     dreamverseAssetsManager: DreamverseAssetsManager
   }
 }
@@ -43,7 +44,8 @@ export const Config = z.object({
  * The `dreamverseAssetsManager` service: one `AssetLibrary` for the plugin's lifetime.
  *
  * `add` accepts HTTP uploads; `retain` and `release` bracket each accepted generation request and each content
- * response, and `delete` defers file removal until the last retention is released.
+ * response, and `delete` defers file removal until the last retention is released. `addProjectReferences` and
+ * `removeProjectReferences` record which stored projects use which assets; `delete` refuses an asset in use.
  */
 export default class DreamverseAssetsManager extends Service {
   static Config = Config
@@ -123,11 +125,28 @@ export default class DreamverseAssetsManager extends Service {
 
   /**
    * Hide an asset immediately and remove its file once no retention holds it; throws `AssetNotFoundError` when the
-   * asset is absent or already deleted.
+   * asset is absent or already deleted, and `AssetInUseError` when a stored project uses it.
    * @param assetId - the asset ID.
    */
   delete(assetId: string): void {
     this.library.delete(assetId)
+  }
+
+  /**
+   * Record that a stored project uses assets; the record survives restarts until `removeProjectReferences`.
+   * @param projectId - the project ID.
+   * @param assetIds - the asset IDs that the project uses.
+   */
+  addProjectReferences(projectId: string, assetIds: readonly string[]): void {
+    this.library.addProjectReferences(projectId, assetIds)
+  }
+
+  /**
+   * Remove every asset reference of a project, when the project is deleted.
+   * @param projectId - the project ID.
+   */
+  removeProjectReferences(projectId: string): void {
+    this.library.removeProjectReferences(projectId)
   }
 
   /**

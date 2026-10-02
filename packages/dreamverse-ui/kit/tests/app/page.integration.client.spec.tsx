@@ -8,7 +8,6 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { type Client, Server } from 'mock-socket'
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest'
-import type { StoredClip, StoredProject } from '@dreamverse/project-controller/client/projectStorage.ts'
 import type { ArchivedAvSegment, AvPipeline, createAvPipeline as createRealAvPipeline } from '../../src/client/media/avPipeline.ts'
 
 /** A received media chunk as Page passes it to `enqueueChunk`. */
@@ -32,63 +31,12 @@ const avPipelineMockState = vi.hoisted(() => ({
   useNativePlaybackFallback: false,
 }))
 
-const projectStorageMockState = vi.hoisted(() => {
-  const state = {
-    projects: [] as StoredProject[],
-    clips: [] as StoredClip[],
-    commitSave: async (project: StoredProject, clips: StoredClip[]) => {
-      state.projects = [
-        project,
-        ...state.projects.filter(entry => entry.id !== project.id),
-      ]
-      state.clips = [
-        ...state.clips.filter(clip => clip.projectId !== project.id),
-        ...clips.map(clip => ({ ...clip })),
-      ]
-    },
-    saveProject: vi.fn(async (project: StoredProject, clips: StoredClip[]) => {
-      await state.commitSave(project, clips)
-    }),
-    saveProjectMetadata: vi.fn(async (project: StoredProject) => {
-      state.projects = [
-        project,
-        ...state.projects.filter(entry => entry.id !== project.id),
-      ]
-    }),
-    listProjects: vi.fn(async () => [...state.projects]),
-    loadProjectClips: vi.fn(async (projectId: string) =>
-      state.clips
-        .filter(clip => clip.projectId === projectId)
-        .map(clip => ({ ...clip })),
-    ),
-    deleteProject: vi.fn(async (projectId: string) => {
-      state.projects = state.projects.filter(project => project.id !== projectId)
-      state.clips = state.clips.filter(clip => clip.projectId !== projectId)
-    }),
-    pruneOldProjects: vi.fn(async () => {}),
-    reset() {
-      state.projects = []
-      state.clips = []
-      state.saveProject.mockReset()
-      state.saveProject.mockImplementation(async (project: StoredProject, clips: StoredClip[]) => {
-        await state.commitSave(project, clips)
-      })
-      state.saveProjectMetadata.mockReset()
-      state.saveProjectMetadata.mockImplementation(async (project: StoredProject) => {
-        state.projects = [
-          project,
-          ...state.projects.filter(entry => entry.id !== project.id),
-        ]
-      })
-      state.listProjects.mockClear()
-      state.loadProjectClips.mockClear()
-      state.deleteProject.mockClear()
-      state.pruneOldProjects.mockClear()
-    },
-  }
-
-  return state
-})
+const projectsMockState = vi.hoisted(() => ({
+  listProjects: vi.fn(async () => []),
+  reset() {
+    this.listProjects.mockClear()
+  },
+}))
 
 vi.mock('@dreamverse/project-controller/client/storyPresetsData.ts', () => ({
   default: [
@@ -249,13 +197,11 @@ vi.mock('../../src/client/media/avPipeline.ts', () => ({
   }),
 }))
 
-vi.mock('@dreamverse/project-controller/client/projectStorage.ts', () => ({
-  saveProject: projectStorageMockState.saveProject,
-  saveProjectMetadata: projectStorageMockState.saveProjectMetadata,
-  listProjects: projectStorageMockState.listProjects,
-  loadProjectClips: projectStorageMockState.loadProjectClips,
-  deleteProject: projectStorageMockState.deleteProject,
-  pruneOldProjects: projectStorageMockState.pruneOldProjects,
+vi.mock('@dreamverse/project-controller/client/projects.ts', () => ({
+  listProjects: projectsMockState.listProjects,
+  getProject: vi.fn(),
+  deleteProject: vi.fn(),
+  fetchSegmentVideo: vi.fn(),
 }))
 
 import { DreamverseApp } from '../../src/client/app/DreamverseApp.tsx'
@@ -279,7 +225,7 @@ describe.skip('App websocket integration', () => {
 
   beforeEach(() => {
     avPipelineMockState.useNativePlaybackFallback = false
-    projectStorageMockState.reset()
+    projectsMockState.reset()
     window.history.pushState({}, '', '/')
     server = new Server(getWsUrl())
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -382,190 +328,6 @@ describe.skip('App websocket integration', () => {
       expect(screen.getByRole('heading', { name: 'History' })).toBeInTheDocument()
       expect(screen.getByRole('button', { name: 'Collapse history sidebar' })).toBeInTheDocument()
     })
-  })
-
-  it('keeps the session timer visible and pauses session playback while viewing a saved project', async () => {
-    projectStorageMockState.projects = [
-      {
-        id: 'saved_project_1',
-        label: 'Saved Project',
-        originalLabel: 'Saved History Project',
-        presetId: 'saved_preset',
-        createdAt: Date.now() - 60_000,
-        lastThumbnail: null,
-        promptEvents: [],
-      },
-    ]
-    projectStorageMockState.clips = [
-      {
-        id: 'saved_clip_1',
-        projectId: 'saved_project_1',
-        label: 'Saved Clip',
-        prompt: 'saved prompt',
-        mime: 'video/mp4',
-        blob: new Blob([new Uint8Array([9, 9, 9])], { type: 'video/mp4' }),
-        createdAt: Date.now() - 60_000,
-      },
-    ]
-
-    let clientSocket: Client | undefined
-    server.on('connection', (socket) => {
-      clientSocket = socket
-    })
-
-    const user = userEvent.setup()
-    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
-
-    await user.click(await screen.findByRole('button', { name: 'Generate' }))
-
-    await waitFor(() => {
-      expect(clientSocket).toBeTruthy()
-    })
-
-    connectedSocket(clientSocket).send(JSON.stringify({
-      type: 'gpu_assigned',
-      gpu_id: 0,
-    }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/Time left:/i)).toBeInTheDocument()
-    })
-
-    const sessionVideos = Array.from(container.querySelectorAll('video'))
-    const liveSessionVideo = sessionVideos[1]
-    expect(liveSessionVideo).toBeTruthy()
-    if (!liveSessionVideo) throw new Error('Expected the live session video')
-
-    const playbackState = { paused: false }
-    Object.defineProperty(liveSessionVideo, 'paused', {
-      configurable: true,
-      get: () => playbackState.paused,
-    })
-    Object.defineProperty(liveSessionVideo, 'ended', {
-      configurable: true,
-      get: () => false,
-    })
-    Object.defineProperty(liveSessionVideo, 'readyState', {
-      configurable: true,
-      get: () => 4,
-    })
-
-    const pauseSpy = vi.spyOn(liveSessionVideo, 'pause').mockImplementation(() => {
-      playbackState.paused = true
-    })
-    const playSpy = vi.spyOn(liveSessionVideo, 'play').mockImplementation(async () => {
-      playbackState.paused = false
-    })
-
-    await user.click(screen.getByRole('button', { name: 'Toggle sidebar' }))
-    await user.click(await screen.findByRole('button', { name: 'Saved History Project' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('View-only project')).toBeInTheDocument()
-    })
-
-    expect(screen.getByText(/Time left:/i)).toBeInTheDocument()
-    expect(pauseSpy).toHaveBeenCalledTimes(1)
-    expect(playbackState.paused).toBe(true)
-
-    playSpy.mockClear()
-
-    await user.click(screen.getByRole('button', { name: 'Back' }))
-
-    await waitFor(() => {
-      expect(screen.queryByText('View-only project')).not.toBeInTheDocument()
-    })
-
-    expect(playSpy).toHaveBeenCalledTimes(1)
-    expect(playbackState.paused).toBe(false)
-  })
-
-  it('does not resume session playback after leaving a saved project if it was already paused', async () => {
-    projectStorageMockState.projects = [
-      {
-        id: 'saved_project_1',
-        label: 'Saved Project',
-        originalLabel: 'Saved History Project',
-        presetId: 'saved_preset',
-        createdAt: Date.now() - 60_000,
-        lastThumbnail: null,
-        promptEvents: [],
-      },
-    ]
-    projectStorageMockState.clips = [
-      {
-        id: 'saved_clip_1',
-        projectId: 'saved_project_1',
-        label: 'Saved Clip',
-        prompt: 'saved prompt',
-        mime: 'video/mp4',
-        blob: new Blob([new Uint8Array([9, 9, 9])], { type: 'video/mp4' }),
-        createdAt: Date.now() - 60_000,
-      },
-    ]
-
-    let clientSocket: Client | undefined
-    server.on('connection', (socket) => {
-      clientSocket = socket
-    })
-
-    const user = userEvent.setup()
-    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
-
-    await user.click(await screen.findByRole('button', { name: 'Generate' }))
-
-    await waitFor(() => {
-      expect(clientSocket).toBeTruthy()
-    })
-
-    connectedSocket(clientSocket).send(JSON.stringify({
-      type: 'gpu_assigned',
-      gpu_id: 0,
-    }))
-
-    const sessionVideos = Array.from(container.querySelectorAll('video'))
-    const liveSessionVideo = sessionVideos[1]
-    expect(liveSessionVideo).toBeTruthy()
-    if (!liveSessionVideo) throw new Error('Expected the live session video')
-
-    const playbackState = { paused: true }
-    Object.defineProperty(liveSessionVideo, 'paused', {
-      configurable: true,
-      get: () => playbackState.paused,
-    })
-    Object.defineProperty(liveSessionVideo, 'ended', {
-      configurable: true,
-      get: () => false,
-    })
-    Object.defineProperty(liveSessionVideo, 'readyState', {
-      configurable: true,
-      get: () => 4,
-    })
-
-    const pauseSpy = vi.spyOn(liveSessionVideo, 'pause').mockImplementation(() => {
-      playbackState.paused = true
-    })
-    const playSpy = vi.spyOn(liveSessionVideo, 'play').mockImplementation(async () => {
-      playbackState.paused = false
-    })
-
-    await user.click(screen.getByRole('button', { name: 'Toggle sidebar' }))
-    await user.click(await screen.findByRole('button', { name: 'Saved History Project' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('View-only project')).toBeInTheDocument()
-    })
-
-    expect(pauseSpy).not.toHaveBeenCalled()
-
-    await user.click(screen.getByRole('button', { name: 'Back' }))
-
-    await waitFor(() => {
-      expect(screen.queryByText('View-only project')).not.toBeInTheDocument()
-    })
-
-    expect(playSpy).not.toHaveBeenCalled()
-    expect(playbackState.paused).toBe(true)
   })
 
   it('keeps the active prompt window collapsed by default and expands it on toggle', async () => {
@@ -1625,165 +1387,6 @@ describe.skip('App websocket integration', () => {
       expect(container.querySelector('.gallery-card.is-active')).not.toBeNull()
     })
     expect(container.querySelector('.stage-copy h2')?.textContent).toBe('Test Preset')
-  })
-
-  it('saves the first completed clip when the user leaves the session without edits', async () => {
-    let clientSocket: Client | undefined
-    server.on('connection', (socket) => {
-      clientSocket = socket
-    })
-
-    const user = userEvent.setup()
-    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
-
-    await user.click(await screen.findByRole('button', { name: /Test Preset/i }))
-
-    await waitFor(() => {
-      expect(clientSocket).toBeTruthy()
-    })
-
-    connectedSocket(clientSocket).send(JSON.stringify({
-      type: 'ltx2_segment_start',
-      segment_idx: 1,
-      total_segments: 1,
-      prompt: 'segment one',
-      source: 'curated',
-      seed_prompt_index: 0,
-    }))
-    connectedSocket(clientSocket).send(new Uint8Array([1, 2, 3]).buffer)
-    connectedSocket(clientSocket).send(JSON.stringify({ type: 'media_segment_complete', segment_idx: 1 }))
-    connectedSocket(clientSocket).send(JSON.stringify({ type: 'ltx2_stream_complete' }))
-
-    await waitFor(() => {
-      expect(container.querySelectorAll('.gallery-card')).toHaveLength(1)
-    })
-
-    await user.click(screen.getByLabelText('Leave'))
-
-    await waitFor(() => {
-      expect(projectStorageMockState.saveProject).toHaveBeenCalled()
-    })
-
-    expect(projectStorageMockState.projects).toHaveLength(1)
-    expect(projectStorageMockState.clips).toHaveLength(1)
-    expect(projectStorageMockState.clips[0]?.projectId).toBe(projectStorageMockState.projects[0]?.id)
-    expect(projectStorageMockState.clips[0]?.blob).toBeInstanceOf(Blob)
-    expect(projectStorageMockState.clips[0]?.label).toBe('Test Preset')
-  })
-
-  it('prunes older archives and retries when project save hits storage pressure', async () => {
-    projectStorageMockState.projects = [
-      { id: 'old-1', label: 'Old 1', presetId: '', originalLabel: 'Old 1', createdAt: 400, lastThumbnail: null, promptEvents: [] },
-      { id: 'old-2', label: 'Old 2', presetId: '', originalLabel: 'Old 2', createdAt: 300, lastThumbnail: null, promptEvents: [] },
-      { id: 'old-3', label: 'Old 3', presetId: '', originalLabel: 'Old 3', createdAt: 200, lastThumbnail: null, promptEvents: [] },
-      { id: 'old-4', label: 'Old 4', presetId: '', originalLabel: 'Old 4', createdAt: 100, lastThumbnail: null, promptEvents: [] },
-    ]
-    projectStorageMockState.clips = projectStorageMockState.projects.map((project, index) => ({
-      id: `clip-${index + 1}`,
-      projectId: project.id,
-      label: project.label,
-      prompt: project.label,
-      mime: 'video/mp4',
-      blob: new Blob([String(index + 1)], { type: 'video/mp4' }),
-      createdAt: project.createdAt,
-    }))
-
-    let failedOnce = false
-    projectStorageMockState.saveProject.mockImplementation(async (project: StoredProject, clips: StoredClip[]) => {
-      if (!failedOnce) {
-        failedOnce = true
-        throw new DOMException('Quota exceeded', 'QuotaExceededError')
-      }
-      await projectStorageMockState.commitSave(project, clips)
-    })
-
-    let clientSocket: Client | undefined
-    server.on('connection', (socket) => {
-      clientSocket = socket
-    })
-
-    const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
-
-    await user.click(await screen.findByRole('button', { name: /Test Preset/i }))
-
-    await waitFor(() => {
-      expect(clientSocket).toBeTruthy()
-    })
-
-    connectedSocket(clientSocket).send(JSON.stringify({
-      type: 'ltx2_segment_start',
-      segment_idx: 1,
-      total_segments: 1,
-      prompt: 'segment one',
-      source: 'curated',
-      seed_prompt_index: 0,
-    }))
-    connectedSocket(clientSocket).send(new Uint8Array([7, 8, 9]).buffer)
-    connectedSocket(clientSocket).send(JSON.stringify({ type: 'media_segment_complete', segment_idx: 1 }))
-    connectedSocket(clientSocket).send(JSON.stringify({ type: 'ltx2_stream_complete' }))
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Leave')).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByLabelText('Leave'))
-
-    await waitFor(() => {
-      expect(projectStorageMockState.saveProject).toHaveBeenCalledTimes(2)
-    })
-
-    expect(projectStorageMockState.deleteProject).toHaveBeenCalled()
-    expect(projectStorageMockState.projects.some(project => project.id === 'old-4')).toBe(false)
-    expect(projectStorageMockState.projects.some(project => project.label === 'Test Preset')).toBe(true)
-  })
-
-  it('preserves the existing archive when later saves fall back to metadata only', async () => {
-    let clientSocket: Client | undefined
-    server.on('connection', (socket) => {
-      clientSocket = socket
-    })
-
-    const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
-
-    await user.click(await screen.findByRole('button', { name: /Test Preset/i }))
-
-    await waitFor(() => {
-      expect(clientSocket).toBeTruthy()
-    })
-
-    connectedSocket(clientSocket).send(JSON.stringify({
-      type: 'ltx2_segment_start',
-      segment_idx: 1,
-      total_segments: 1,
-      prompt: 'segment one',
-      source: 'curated',
-      seed_prompt_index: 0,
-    }))
-    connectedSocket(clientSocket).send(new Uint8Array([1, 2, 3]).buffer)
-    connectedSocket(clientSocket).send(JSON.stringify({ type: 'media_segment_complete', segment_idx: 1 }))
-    connectedSocket(clientSocket).send(JSON.stringify({ type: 'ltx2_stream_complete' }))
-
-    await waitFor(() => {
-      expect(projectStorageMockState.projects).toHaveLength(1)
-      expect(projectStorageMockState.clips).toHaveLength(1)
-    })
-
-    const projectId = projectStorageMockState.projects[0]?.id
-    projectStorageMockState.saveProject.mockImplementation(async () => {
-      throw new DOMException('Quota exceeded', 'QuotaExceededError')
-    })
-
-    await user.click(screen.getByLabelText('Leave'))
-
-    await waitFor(() => {
-      expect(projectStorageMockState.saveProjectMetadata).toHaveBeenCalled()
-    })
-
-    expect(projectStorageMockState.projects).toHaveLength(1)
-    expect(projectStorageMockState.projects[0]?.id).toBe(projectId)
-    expect(projectStorageMockState.clips.filter(clip => clip.projectId === projectId)).toHaveLength(1)
   })
 
 })

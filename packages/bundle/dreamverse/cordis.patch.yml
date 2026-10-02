@@ -39,6 +39,7 @@
 
     # The reference `load_application_settings` project log root: FASTVIDEO_PROJECT_LOG_ROOT, else
     # <FASTVIDEO_DREAMVERSE_HOME or $XDG_STATE_HOME/fastvideo/dreamverse or ~/.local/state/fastvideo/dreamverse>/outputs/project_logs.
+    # The stored projects live in <the same state root>/projects.
     - id: dreamverse-project
       name: '@dreamverse/project'
       config:
@@ -48,6 +49,12 @@
           process.env.XDG_STATE_HOME || process.getBuiltinModule('node:path').join(
           process.getBuiltinModule('node:os').homedir(), '.local/state'), 'fastvideo/dreamverse'),
           'outputs/project_logs')).trim()
+        projectRoot: !!js >-
+          process.getBuiltinModule('node:path').join(
+          process.env.FASTVIDEO_DREAMVERSE_HOME || process.getBuiltinModule('node:path').join(
+          process.env.XDG_STATE_HOME || process.getBuiltinModule('node:path').join(
+          process.getBuiltinModule('node:os').homedir(), '.local/state'), 'fastvideo/dreamverse'),
+          'projects')
 
     - id: dreamverse-action-generate-video-sequence
       name: '@dreamverse/user-actions/generate-video-sequence'

@@ -1,5 +1,8 @@
 import { Buffer } from 'node:buffer'
-import { describe, expect, it } from 'vitest'
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   DreamverseValueError,
   GenerationSegmentError,
@@ -102,6 +105,21 @@ function request(index: number, fields: { signal?: AbortSignal; returnLastFrame?
   }
 }
 
+/** The directory that receives the current test's segment videos. */
+let videoDirectory = ''
+beforeEach(() => { videoDirectory = mkdtempSync(join(tmpdir(), 'dreamverse-video-stream-')) })
+afterEach(() => { rmSync(videoDirectory, { recursive: true, force: true }) })
+
+/** The stored video path of the segment at a one-based display position. */
+function videoPath(segmentIdx: number): string {
+  return join(videoDirectory, `segment-${segmentIdx}.mp4`)
+}
+
+/** @returns the names of the files that the deliveries left in the video directory. */
+function storedFiles(): string[] {
+  return readdirSync(videoDirectory).sort()
+}
+
 /** The stream ID of the browser event at `index`. */
 function streamIdAt(target: MediaTarget, index: number): unknown {
   return (target.emitted[index] as Record<string, unknown>)['stream_id']
@@ -112,12 +130,15 @@ describe('streamSegmentToBrowser', () => {
     const generation = new ScriptedGeneration()
     const target = new MediaTarget(generation)
     const requests = [request(1, { returnLastFrame: true }), request(2)]
-    expect(await streamSegmentToBrowser(target, 1, requests[0]!)).toEqual({
+    expect(await streamSegmentToBrowser(target, 1, requests[0]!, videoPath(1))).toEqual({
       deliveryStats: { timings: { e2e_latency_ms: 12 }, chunkCount: 1, byteCount: 5 }, lastFrame: Buffer.from('frame of scene-1'),
+      mime: 'video/mp4',
     })
-    expect(await streamSegmentToBrowser(target, 2, requests[1]!)).toEqual({
-      deliveryStats: { timings: { e2e_latency_ms: 12 }, chunkCount: 1, byteCount: 5 }, lastFrame: null,
+    expect(await streamSegmentToBrowser(target, 2, requests[1]!, videoPath(2))).toEqual({
+      deliveryStats: { timings: { e2e_latency_ms: 12 }, chunkCount: 1, byteCount: 5 }, lastFrame: null, mime: 'video/mp4',
     })
+    expect(storedFiles()).toEqual(['segment-1.mp4', 'segment-2.mp4'])
+    expect(readFileSync(videoPath(1), 'utf8')).toBe('video')
     expect(generation.requests).toEqual(requests)
     expect(generation.requests[0]).toBe(requests[0])
     const streamId: unknown = expect.stringMatching(/^seg00[12]-[0-9a-f]{8}$/)
@@ -140,17 +161,21 @@ describe('streamSegmentToBrowser', () => {
       { kind: 'video_start', mime: 'video/mp4' }, { kind: 'chunk', bytes: Buffer.from('first') }, outcome,
     ]).holdFinish()
     const target = new MediaTarget(generation)
-    const delivery = streamSegmentToBrowser(target, 1, request(1))
+    const delivery = streamSegmentToBrowser(target, 1, request(1), videoPath(1))
     const settled = delivery.then(() => 'resolved', () => 'rejected')
     await within(generation.terminalWait.promise)
     expect(target.emitted.at(-1)).toBe('first')
     generation.finish.resolve()
     if (successful) {
-      expect(await delivery).toEqual({ deliveryStats: { timings: { generation_ms: 2 }, chunkCount: 1, byteCount: 5 }, lastFrame: null })
+      expect(await delivery).toEqual({
+        deliveryStats: { timings: { generation_ms: 2 }, chunkCount: 1, byteCount: 5 }, lastFrame: null, mime: 'video/mp4',
+      })
       expect(target.emitted.at(-1)).toEqual({ type: 'media_segment_complete', segment_idx: 1, stream_id: streamIdAt(target, 0) })
+      expect(storedFiles()).toEqual(['segment-1.mp4'])
     } else {
       await expect(delivery).rejects.toThrow('worker failed after media')
       expect(target.emitted.at(-1)).toBe('first')
+      expect(storedFiles()).toEqual([])
     }
     expect(await settled).toBe(successful ? 'resolved' : 'rejected')
   })
@@ -167,8 +192,9 @@ describe('streamSegmentToBrowser', () => {
     if (missing === 'successful reply') script.splice(-1, 1)
     const generation = new ScriptedGeneration(script)
     const target = new MediaTarget(generation)
-    await expect(streamSegmentToBrowser(target, 1, request(1, { returnLastFrame }))).rejects.toThrow(new Error(message))
+    await expect(streamSegmentToBrowser(target, 1, request(1, { returnLastFrame }), videoPath(1))).rejects.toThrow(new Error(message))
     expect(generation.closed).toBe(true)
+    expect(storedFiles()).toEqual([])
     expect(target.emitted.some(event => typeof event === 'object' && event['type'] === 'media_segment_complete')).toBe(false)
   })
 
@@ -177,7 +203,8 @@ describe('streamSegmentToBrowser', () => {
     [new GenerationSegmentError('fake GPU step failed', 'generation_failed', false), Error],
   ])('converts backend failure %s to the reference error kind', async (failure, kind) => {
     const generation = new ScriptedGeneration([{ kind: 'video_start', mime: 'video/mp4' }, failure])
-    const error = await streamSegmentToBrowser(new MediaTarget(generation), 1, request(1)).then(() => null, (reason: unknown) => reason)
+    const error = await streamSegmentToBrowser(new MediaTarget(generation), 1, request(1), videoPath(1))
+      .then(() => null, (reason: unknown) => reason)
     expect(error).toBeInstanceOf(kind)
     expect(error).not.toBeInstanceOf(GenerationSegmentError)
     expect(error instanceof DreamverseValueError).toBe(kind === DreamverseValueError)
@@ -191,8 +218,8 @@ describe('streamSegmentToBrowser', () => {
     if (ending === 'abort') target.holdBinary = new Deferred()
     else target.rejectMedia = true
     const deliverTwo = async (): Promise<void> => {
-      await streamSegmentToBrowser(target, 1, request(1, { signal: abort.signal }))
-      await streamSegmentToBrowser(target, 2, request(2, { signal: abort.signal }))
+      await streamSegmentToBrowser(target, 1, request(1, { signal: abort.signal }), videoPath(1))
+      await streamSegmentToBrowser(target, 2, request(2, { signal: abort.signal }), videoPath(2))
     }
     const settled = deliverTwo().then(() => null, (reason: unknown) => reason)
     await within(target.receivedChunk.promise)
@@ -207,6 +234,7 @@ describe('streamSegmentToBrowser', () => {
     expect([generation.closed, generation.finish.settled]).toEqual([true, false])
     expect(generation.requests).toHaveLength(1)
     expect(target.emitted.some(event => typeof event === 'object' && event['type'] === 'media_segment_complete')).toBe(false)
+    expect(storedFiles()).toEqual([])
   })
 
   it('counts only non-empty chunks after their socket write finishes', async () => {
@@ -216,11 +244,12 @@ describe('streamSegmentToBrowser', () => {
     ])
     const target = new MediaTarget(generation)
     target.holdBinary = new Deferred()
-    const delivery = streamSegmentToBrowser(target, 1, request(1))
+    const delivery = streamSegmentToBrowser(target, 1, request(1), videoPath(1))
     await within(target.receivedChunk.promise)
     expect(target.emitted).toEqual([{ type: 'media_init', segment_idx: 1, mime: 'video/mp4', stream_id: streamIdAt(target, 0) }])
     target.holdBinary.resolve()
     expect((await within(delivery)).deliveryStats).toEqual({ timings: {}, chunkCount: 2, byteCount: 5 })
     expect(target.emitted.filter(event => typeof event === 'string')).toEqual(['ab', 'cde'])
+    expect(readFileSync(videoPath(1), 'utf8')).toBe('abcde')
   })
 })

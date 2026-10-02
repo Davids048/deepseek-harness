@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Download, Share2 } from 'lucide-react'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { resolveReferenceAssetIds, type AssetRecord, type ReferenceDraft } from '@dreamverse/assets-manager/client/assets.ts'
 import { buildMentionOptions } from '@dreamverse/project-controller/client/creationConfig.ts'
 import { toGenerationMode } from '@dreamverse/project-controller/client/generationMode.ts'
 import Header from '../components/Header.tsx'
-import { saveProject, saveProjectMetadata, listProjects, loadProjectClips, deleteProject, pruneOldProjects, type StoredProject, type StoredClip } from '@dreamverse/project-controller/client/projectStorage.ts'
+import { deleteProject, fetchSegmentVideo, getProject, listProjects, type ProjectRound, type ProjectSummary } from '@dreamverse/project-controller/client/projects.ts'
 import { useStore } from '../hooks/useStore.ts'
 import { createAvPipeline, DEFAULT_AV_MIME } from '../media/avPipeline.ts'
 import { remuxArchivedFmp4Segments } from '../media/fmp4Remux.ts'
@@ -35,17 +34,14 @@ import { applyNormalizedSocketEvent } from '@dreamverse/project-controller/clien
 import { createPromptWindowStore } from '@dreamverse/project-controller/client/stores/promptWindow.ts'
 import { createRewriteStore } from '@dreamverse/project-controller/client/stores/rewrite.ts'
 import { createProjectControlsStore } from '@dreamverse/project-controller/client/stores/projectControls.ts'
-import { createStreamStore, type ArchivedSegment, type LiveClip } from '@dreamverse/project-controller/client/stores/stream.ts'
+import { createStreamStore, type ArchivedSegment, type CompletedClip, type LiveClip } from '@dreamverse/project-controller/client/stores/stream.ts'
 import { isJsonObject, type JsonObject } from '@dreamverse/project-controller/client/json.ts'
 import type { PromptEvent } from '@dreamverse/project-controller/client/promptEvents.ts'
 import { createUiStore } from '@dreamverse/project-controller/client/stores/ui.ts'
-import { Button } from '../components/ui/button.tsx'
 import type { DreamverseSlotRenderer, ProjectCreationConfig, ReferencePickerProps } from '../contracts.ts'
 
 const FIXED_REWRITE_MODEL = 'gpt-oss-120b'
 const DEFAULT_CURATED_PROMPT_LIMIT = 2
-const MAX_ARCHIVED_PROJECTS = 10
-const STORAGE_RECOVERY_PREVIOUS_PROJECT_COUNTS = [6, 3, 1, 0]
 const BACKEND_PROBE_TIMEOUT_MS = 4000
 
 interface PageStores {
@@ -69,15 +65,17 @@ interface BackendReadinessProbe {
   notice: string
 }
 
+/** The first socket message that opens a stored harness project. */
+interface ProjectOpenMessage {
+  type: 'project_open_v1'
+  project_id: string
+}
+
 type LobbyCreationState = { selection: LobbySelection } & (
 	| { status: 'loading' }
 	| { status: 'failed'; message: string }
 	| { status: 'available'; capabilities: LobbyCreationCapabilities }
 )
-
-interface SavedProjectSelection {
-  projectId: string
-}
 
 function yieldToEventLoop(): Promise<void> {
   return new Promise(r => setTimeout(r, 0))
@@ -107,7 +105,7 @@ export interface DreamverseAppProps {
   renderSlot: DreamverseSlotRenderer
 }
 
-/** Render project creation, live directing, and saved-video playback. */
+/** Render project creation, live directing, and the playback of projects that the harness stores. */
 export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   const storesRef = useRef<PageStores | null>(null)
   if (!storesRef.current) {
@@ -236,24 +234,18 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   })
 
   const thumbnailCaptureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** A fresh token per project socket session; asynchronous media work compares it to drop results of an ended session. */
   const currentProjectIdRef = useRef('')
-  const currentProjectCreatedAtRef = useRef(0)
-  const [savedProjects, setSavedProjects] = useState<StoredProject[]>([])
-  const [viewingProject, setViewingProject] = useState<{
-    project: StoredProject
-    clips: { id: string; label: string; prompt: string; mime: string; objectUrl: string; blob: Blob; createdAt: number }[]
-  } | null>(null)
-  const viewingProjectRef = useRef(viewingProject)
-  const savedProjectSelectionRef = useRef<SavedProjectSelection | null>(null)
-  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  /** The harness project ID of the current project, from `gpu_assigned` or from the opened project. */
+  const harnessProjectIdRef = useRef('')
+  /** The harness title of an opened project; a project created on this page derives its title from its preset. */
+  const [openedProjectTitle, setOpenedProjectTitle] = useState<string | null>(null)
+  const [projectSummaries, setProjectSummaries] = useState<ProjectSummary[]>([])
+  const [projectListNotice, setProjectListNotice] = useState('')
   const downloadInFlightRef = useRef(false)
   const wsMessageQueueRef = useRef<Promise<void>>(Promise.resolve())
   const clipArchiveQueueRef = useRef<Promise<void>>(Promise.resolve())
-  const [isMobileShareCapable, setIsMobileShareCapable] = useState(false)
   const [videoMuted, setVideoMuted] = useState(true)
-  useEffect(() => {
-    setIsMobileShareCapable(typeof navigator.canShare === 'function' && window.matchMedia('(pointer: coarse)').matches)
-  }, [])
 
   const mentionOptions = useMemo(() => buildMentionOptions(storyPresets), [storyPresets])
 
@@ -269,14 +261,6 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
 
   const videoElRef = useRef<HTMLVideoElement | null>(null)
   const archivedPlaybackElRef = useRef<HTMLVideoElement | null>(null)
-  const viewingModePlaybackStateRef = useRef<{
-    liveWasPlaying: boolean
-    archivedWasPlaying: boolean
-  }>({
-    liveWasPlaying: false,
-    archivedWasPlaying: false,
-  })
-  const previousViewingModeRef = useRef(false)
 
   const avPipelineRef = useRef(
     createAvPipeline({
@@ -309,17 +293,18 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   const currentClipLabel = getCurrentClipLabel()
 
   const currentProjectTitle = useMemo(() => {
+    if (openedProjectTitle) return openedProjectTitle
     const presetLabel = selectedPreset?.label
     if (presetLabel) return presetLabel
     const lastEdit = promptEvents.findLast(event => isUserRewriteWithText(event))
     return lastEdit?.text?.trim() || 'Untitled project'
-  }, [selectedPreset, promptEvents])
+  }, [openedProjectTitle, selectedPreset, promptEvents])
 
   const generationRoundBusy = generationRoundStatus === 'preparing' || generationRoundStatus === 'generating'
   const canSubmitContinuation = projectStarted && connected && gpuAssigned && !projectResetPending
 		&& !generationRoundBusy && !autoExtensionEnabled && Boolean((livePromptDraft).trim())
   const canChooseAutoExtension = !generationRoundBusy && !autoExtensionEnabled && !connecting
-		&& !projectResetPending && !viewingProject && (!projectStarted || (connected && gpuAssigned))
+		&& !projectResetPending && (!projectStarted || (connected && gpuAssigned))
 
   const showLivePlayback = !activeClip
   const canDownloadVideo = useMemo(() => {
@@ -331,19 +316,6 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     () => projectStarted && promptEvents.some(event => isUserRewriteWithText(event)),
     [projectStarted, promptEvents],
   )
-
-  // Viewing mode: track which clip is selected (defaults to last clip)
-  const [viewingSelectedClipId, setViewingSelectedClipId] = useState<string>('')
-  const viewingSelectedClip = useMemo(() => {
-    if (!viewingProject) return null
-    const lastClip = viewingProject.clips[viewingProject.clips.length - 1] ?? null
-    if (viewingSelectedClipId) {
-      return viewingProject.clips.find(c => c.id === viewingSelectedClipId) ?? lastClip
-    }
-    return lastClip
-  }, [viewingProject, viewingSelectedClipId])
-
-  const isViewingMode = Boolean(viewingProject)
 
   /** Attach the selected completed clip; archive storage owns the borrowed URL. */
   useEffect(() => {
@@ -359,45 +331,13 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     } catch (_) {
       /* The browser can reject seeking before metadata is available. */
     }
-    if (!viewingProjectRef.current) videoEl.play().catch(ignoreRefusedPlayback)
+    videoEl.play().catch(ignoreRefusedPlayback)
     return () => {
       videoEl.pause()
       videoEl.removeAttribute('src')
       videoEl.load()
     }
   }, [activeClip, activePlaybackStartTime, projectResetPending])
-
-  useLayoutEffect(() => {
-    const wasViewingMode = previousViewingModeRef.current
-    const liveEl = videoElRef.current
-    const archivedEl = archivedPlaybackElRef.current
-
-    if (!wasViewingMode && isViewingMode) {
-      viewingModePlaybackStateRef.current = {
-        liveWasPlaying: Boolean(liveEl && !liveEl.paused && !liveEl.ended),
-        archivedWasPlaying: Boolean(archivedEl && !archivedEl.paused && !archivedEl.ended),
-      }
-      if (liveEl && !liveEl.paused) {
-        liveEl.pause()
-      }
-      if (archivedEl && !archivedEl.paused) {
-        archivedEl.pause()
-      }
-    } else if (wasViewingMode && !isViewingMode) {
-      const { liveWasPlaying, archivedWasPlaying } = viewingModePlaybackStateRef.current
-      const activeEl = showLivePlayback ? videoElRef.current : archivedPlaybackElRef.current
-      const shouldResume = showLivePlayback ? liveWasPlaying : archivedWasPlaying
-      if (shouldResume && activeEl && activeEl.paused && activeEl.readyState >= 2) {
-        activeEl.play().catch(ignoreRefusedPlayback)
-      }
-      viewingModePlaybackStateRef.current = {
-        liveWasPlaying: false,
-        archivedWasPlaying: false,
-      }
-    }
-
-    previousViewingModeRef.current = isViewingMode
-  }, [isViewingMode, showLivePlayback])
 
   // --- Initialization ---
 
@@ -458,56 +398,31 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     if (!runtimeReady || initializedRef.current) return
     initializedRef.current = true
 
-    if (!uiStore.get().devtoolsMode) {
-      void restoreSavedProject()
-    }
+    void refreshProjectList()
   }, [runtimeReady, uiStore])
 
-  // --- Save project on page unload ---
+  // The harness list changes while the sidebar is closed; opening it shows the current list.
+  useEffect(() => {
+    if (sidebarOpen) void refreshProjectList()
+  }, [sidebarOpen])
+
+  // --- Resume playback when the page becomes visible ---
 
   useEffect(() => {
-    function triggerSaveIfActive() {
-      if (currentProjectIdRef.current && projectControlsStore.get().projectStarted) {
-        void saveCurrentProject()
-      }
-    }
-    function handleBeforeUnload() {
-      triggerSaveIfActive()
-    }
     function handleVisibilityChange() {
-      if (document.visibilityState === 'hidden') {
-        triggerSaveIfActive()
-      } else {
-        if (viewingProjectRef.current) {
-          return
-        }
-        // Mobile browsers pause <video> when the page is backgrounded.
-        // Resume playback on the active video element when returning.
-        const hasActiveClip = Boolean(streamStore.get().activeClipId)
-        const activeEl = hasActiveClip ? archivedPlaybackElRef.current : videoElRef.current
-        if (activeEl && activeEl.paused && activeEl.readyState >= 2) {
-          activeEl.play().catch(ignoreRefusedPlayback)
-        }
+      if (document.visibilityState === 'hidden') return
+      // Mobile browsers pause <video> when the page is backgrounded.
+      // Resume playback on the active video element when returning.
+      const hasActiveClip = Boolean(streamStore.get().activeClipId)
+      const activeEl = hasActiveClip ? archivedPlaybackElRef.current : videoElRef.current
+      if (activeEl && activeEl.paused && activeEl.readyState >= 2) {
+        activeEl.play().catch(ignoreRefusedPlayback)
       }
     }
-    window.addEventListener('beforeunload', handleBeforeUnload)
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [])
-
-  // --- Periodic auto-save as safety net ---
-
-  useEffect(() => {
-    const AUTO_SAVE_INTERVAL_MS = 30_000
-    const interval = setInterval(() => {
-      if (currentProjectIdRef.current && projectControlsStore.get().projectStarted) {
-        void saveCurrentProject()
-      }
-    }, AUTO_SAVE_INTERVAL_MS)
-    return () => { clearInterval(interval) }
   }, [])
 
   // --- Cleanup on unmount ---
@@ -515,7 +430,6 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   useEffect(() => {
     return () => {
 
-      savedProjectSelectionRef.current = null
       clearTtffInterval()
       connectionAttemptRef.current += 1
       if (wsRef.current) {
@@ -524,7 +438,6 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       }
       resetPlaybackState()
       revokeCompletedClipUrls()
-      releaseViewingProjectUrls()
     }
   }, [])
 
@@ -638,8 +551,8 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   function clearPendingProjectPointers() {
     clearProjectArchivedClips()
     currentProjectIdRef.current = ''
-    currentProjectCreatedAtRef.current = 0
-    markActiveProjectId(null)
+    harnessProjectIdRef.current = ''
+    setOpenedProjectTitle(null)
     streamStore.patch({ currentThumbnail: null })
   }
 
@@ -706,7 +619,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     return selectedPresetLabel || promptWindowStore.get().customPresetLabel.trim() || 'Current rollout'
   }
 
-  /** Resolve the displayed clip label from the same owners used by project saves. */
+  /** Resolve the displayed clip label from the selected, pending, and live clips, then from the creation preset. */
   function getCurrentClipLabel(): string {
     const stream = streamStore.get()
     if (stream.activeClip?.label) return stream.activeClip.label
@@ -788,7 +701,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     const projectId = currentProjectIdRef.current
     const video = videoElRef.current
     const liveClip = streamStore.get().liveClip
-    if (!projectId || !video || !liveClip || streamStore.get().activeClip || viewingProjectRef.current
+    if (!projectId || !video || !liveClip || streamStore.get().activeClip
 			|| projectControlsStore.get().projectResetPending) return
     const sourceUrl = video.src
     const sourceObject = video.srcObject
@@ -797,7 +710,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       if (currentProjectIdRef.current !== projectId || videoElRef.current !== video
 				|| streamStore.get().liveClip?.id !== liveClip.id
 				|| video.src !== sourceUrl || video.srcObject !== sourceObject
-				|| streamStore.get().activeClip || viewingProjectRef.current
+				|| streamStore.get().activeClip
 				|| projectControlsStore.get().projectResetPending) return
       const thumb = captureVideoThumbnail(video)
       if (thumb) {
@@ -806,7 +719,6 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
         if (originEvent && (!originEvent.clipId || originEvent.clipId === liveClip.id)) {
           rewriteStore.trackPromptEvent(originEvent.promptId, { resultThumbnail: thumb })
         }
-        void saveCurrentProject()
       }
     }, 500)
   }
@@ -996,14 +908,10 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
         activeClipId: '',
         activePlaybackStartTime: 0,
       })
-      const archive = archiveCompletedClip().then(() => {
-        if (currentProjectIdRef.current !== projectId) return
-        void saveCurrentProject({ refreshList: true })
-      })
+      const archive = archiveCompletedClip()
       clipArchiveQueueRef.current = Promise.all([clipArchiveQueueRef.current, archive]).then(() => {})
     }
     console.log('Received stream media finalized')
-    void saveCurrentProject({ refreshList: true })
   }
 
   function setSeedPrompts(nextPrompts: string[]) {
@@ -1112,7 +1020,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     const ws = wsRef.current
     const controls = projectControlsStore.get()
     if (!ws || ws.readyState !== WebSocket.OPEN || !controls.autoExtensionEnabled
-			|| controls.projectResetPending || viewingProjectRef.current) return
+			|| controls.projectResetPending) return
     ws.send(JSON.stringify({ type: 'stop_auto_extension' }))
   }
 
@@ -1288,6 +1196,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     const normalizedEvent = normalizeSocketMessage(decoded.data)
     if (normalizedEvent.type === 'session/gpu_assigned') {
       applyEchoedCreationConfig(normalizedEvent.payload)
+      if (typeof normalizedEvent.payload.project_id === 'string') harnessProjectIdRef.current = normalizedEvent.payload.project_id
     }
     await applyNormalizedSocketEvent(normalizedEvent, {
       projectControlsStore,
@@ -1310,8 +1219,11 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     })
   }
 
-  /** Open the project's sole socket; retain received media on close without reconnecting. */
-  function connectWebSocket(payload: ReturnType<typeof buildProjectInitPayload>) {
+  /**
+	 * Open the project's socket with its first message: `project_init_v1` creates a project, `project_open_v1` opens a
+	 * stored one. A closed socket keeps the received media; the user reopens the project to continue.
+	 */
+  function connectWebSocket(payload: ReturnType<typeof buildProjectInitPayload> | ProjectOpenMessage) {
     wsMessageQueueRef.current = Promise.resolve()
     projectControlsStore.patch({ connecting: true, connected: false })
     try {
@@ -1370,7 +1282,6 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
               connectionClosed: true,
               autoExtensionEnabled: false, autoExtensionRequested: false,
             })
-            await saveCurrentProject({ refreshList: true })
           })
         },
       })
@@ -1401,8 +1312,8 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     setVideoMuted(false)
     clearProjectArchivedClips()
     currentProjectIdRef.current = makePromptId()
-    currentProjectCreatedAtRef.current = Date.now()
-    markActiveProjectId(currentProjectIdRef.current)
+    harnessProjectIdRef.current = ''
+    setOpenedProjectTitle(null)
     streamStore.patch({ currentThumbnail: null })
     const initialPrompt = payload.initial_rollout_prompt
     initialPromptRef.current = { promptId: payload.initial_prompt_id, rawPrompt: initialPrompt }
@@ -1475,7 +1386,6 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       handleLobbySelectionChange({ segmentCount: creationConfig.segmentCount })
     }
     const payload = buildProjectInitPayload(creationConfig)
-    closeViewingProject()
     showProjectStartNotice('')
     streamStore.patch({ loadingAnimation: true })
     projectControlsStore.patch({ connecting: true })
@@ -1503,317 +1413,134 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     connectWebSocket(payload)
   }
 
-  /** Capture project metadata and clips before joining the persistence queue. */
-  async function saveCurrentProject({ refreshList = false } = {}) {
-    if (!currentProjectIdRef.current) return
-    const pw = promptWindowStore.get()
-    const stream = streamStore.get()
-    const project: StoredProject = {
-      id: currentProjectIdRef.current,
-      label: getCurrentClipLabel(),
-      presetId: pw.selectedPresetId || '',
-      originalLabel: initialPromptRef.current.rawPrompt || pw.selectedPreset?.label || '',
-      createdAt: currentProjectCreatedAtRef.current || Date.now(),
-      lastThumbnail: stream.currentThumbnail,
-      promptEvents: [...rewriteStore.get().promptEvents],
-    }
-    const clips: StoredClip[] = stream.completedClips
-      .filter(clip => clip.blob instanceof Blob)
-      .map(clip => ({
-        id: clip.id,
-        projectId: project.id,
-        label: clip.label || '',
-        prompt: clip.prompt || '',
-        mime: clip.mime || '',
-        blob: clip.blob,
-        createdAt: clip.createdAt || Date.now(),
-      }))
-    const persistSnapshot = async () => {
-      try {
-        await saveProjectWithRecovery(project, clips, refreshList)
-      } catch (error) {
-        console.error('Failed to save project:', error)
-      }
-    }
-    const queuedSave = saveQueueRef.current.then(persistSnapshot, persistSnapshot)
-    saveQueueRef.current = queuedSave.catch(() => {})
-    await queuedSave
-  }
-
-  function markActiveProjectId(id: string | null) {
+  /** Replace the sidebar's project list with the harness list; a failed read keeps the shown list. */
+  async function refreshProjectList() {
     try {
-      if (id) {
-        localStorage.setItem('fastvideo-active-project', id)
-      } else {
-        localStorage.removeItem('fastvideo-active-project')
-      }
-    } catch (_) {
-      /* private browsing */
-    }
-  }
-
-  function isLikelyProjectStoragePressure(error: unknown): boolean {
-    if (error instanceof DOMException) {
-      return [
-        'QuotaExceededError',
-        'AbortError',
-        'UnknownError',
-        'InvalidStateError',
-      ].includes(error.name)
-    }
-
-    const rawMessage = errorProperty(error, 'message')
-    const message = (typeof rawMessage === 'string' && rawMessage ? rawMessage : typeof error === 'string' ? error : '')
-      .toLowerCase()
-    return (
-      message.includes('quota')
-			|| message.includes('storage')
-			|| message.includes('space')
-			|| message.includes('indexeddb')
-			|| message.includes('backing store')
-			|| message.includes('transaction failed')
-			|| message.includes('transaction was aborted')
-    )
-  }
-
-  async function pruneProjectsForStorageRecovery(currentProjectId: string, retainPreviousCount: number): Promise<number> {
-    const projects = await listProjects()
-    let keptPrevious = 0
-    let deletedCount = 0
-
-    for (const project of projects) {
-      if (project.id === currentProjectId) {
-        continue
-      }
-      if (keptPrevious < retainPreviousCount) {
-        keptPrevious += 1
-        continue
-      }
-      await deleteProject(project.id)
-      deletedCount += 1
-    }
-
-    return deletedCount
-  }
-
-  async function saveProjectWithRecovery(
-    project: StoredProject,
-    clips: StoredClip[],
-    refreshList: boolean,
-  ): Promise<void> {
-    try {
-      await saveProject(project, clips)
+      setProjectSummaries(await listProjects())
     } catch (error) {
-      if (!isLikelyProjectStoragePressure(error)) {
-        throw error
-      }
-
-      let hasExistingSnapshot = false
-      try {
-        const existingProjects = await listProjects()
-        hasExistingSnapshot = existingProjects.some(
-          existingProject => existingProject.id === project.id,
-        )
-      } catch (snapshotError) {
-        if (!isLikelyProjectStoragePressure(snapshotError)) {
-          throw snapshotError
-        }
-        console.warn(
-          'Unable to inspect existing project snapshots before retrying save.',
-          {
-            projectId: project.id,
-            error: snapshotError,
-          },
-        )
-      }
-      let lastError: unknown = error
-      for (const retainPreviousCount of STORAGE_RECOVERY_PREVIOUS_PROJECT_COUNTS) {
-        let deletedCount = 0
-        try {
-          deletedCount = await pruneProjectsForStorageRecovery(
-            project.id,
-            retainPreviousCount,
-          )
-        } catch (pruneError) {
-          lastError = pruneError
-          if (!isLikelyProjectStoragePressure(pruneError)) {
-            throw pruneError
-          }
-          continue
-        }
-        if (deletedCount === 0 && retainPreviousCount !== 0) {
-          continue
-        }
-
-        try {
-          await saveProject(project, clips)
-          console.warn(
-            'Recovered project save after pruning older archives.',
-            {
-              projectId: project.id,
-              deletedCount,
-              retainPreviousCount,
-            },
-          )
-          lastError = null
-          break
-        } catch (retryError) {
-          lastError = retryError
-          if (!isLikelyProjectStoragePressure(retryError)) {
-            throw retryError
-          }
-        }
-      }
-
-      if (lastError && !hasExistingSnapshot && clips.length > 1) {
-        try {
-          await saveProject(project, clips.slice(-1))
-          console.warn(
-            'Recovered project save with only the latest archived clip.',
-            {
-              projectId: project.id,
-              savedClipCount: 1,
-              originalClipCount: clips.length,
-            },
-          )
-          lastError = null
-        } catch (retryError) {
-          lastError = retryError
-          if (!isLikelyProjectStoragePressure(retryError)) {
-            throw retryError
-          }
-        }
-      }
-
-      if (lastError) {
-        try {
-          await saveProjectMetadata(project)
-          console.warn(
-            hasExistingSnapshot
-              ? 'Recovered project save by preserving the existing archive and updating metadata only.'
-              : 'Recovered project save by storing project metadata without archived clips.',
-            {
-              projectId: project.id,
-              originalClipCount: clips.length,
-              hadExistingSnapshot: hasExistingSnapshot,
-            },
-          )
-          lastError = null
-        } catch (metadataError) {
-          lastError = metadataError
-          if (!isLikelyProjectStoragePressure(metadataError)) {
-            throw metadataError
-          }
-        }
-      }
-
-      if (lastError) {
-        throw lastError instanceof Error ? lastError : new Error('Failed to save the project.', { cause: lastError })
-      }
-    }
-
-    try {
-      await pruneOldProjects(MAX_ARCHIVED_PROJECTS)
-    } catch (pruneError) {
-      console.warn('Failed to prune older archived projects after save.', {
-        projectId: project.id,
-        error: pruneError,
-      })
-    }
-    if (refreshList) {
-      await refreshSavedProjects()
+      console.error('Failed to load projects:', error)
     }
   }
 
-  async function refreshSavedProjects(): Promise<StoredProject[] | undefined> {
-    try {
-      const projects = await listProjects()
-      setSavedProjects(projects)
-      return projects
-    } catch (error) {
-      console.error('Failed to load saved projects:', error)
-    }
-  }
-
-  /** Restore the saved project named by the startup marker while that selection remains active. */
-  async function restoreSavedProject() {
-    let projectId: string | null
-    try {
-      projectId = localStorage.getItem('fastvideo-active-project')
-      if (projectId) localStorage.removeItem('fastvideo-active-project')
-    } catch (_) {
-      projectId = null
-    }
-    const selection = projectId ? { projectId } : null
-    if (selection) savedProjectSelectionRef.current = selection
-    const projects = await refreshSavedProjects()
-    if (!selection || savedProjectSelectionRef.current !== selection) return
-    const project = projects?.find(project => project.id === selection.projectId)
-    if (project) await viewSavedProject(project, selection)
-  }
-
-  /** Remove a deleted archive immediately while preserving another pending selection. */
+  /** Delete a harness project, showing the harness's reason in the sidebar when it refuses. */
   async function handleDeleteProject(projectId: string) {
     try {
       await deleteProject(projectId)
-      if (savedProjectSelectionRef.current?.projectId === projectId) {
-        savedProjectSelectionRef.current = null
-      }
-      if (viewingProjectRef.current?.project.id === projectId) {
-        releaseViewingProjectUrls()
-        setViewingProject(null)
-      }
-      setSavedProjects(projects => projects.filter(project => project.id !== projectId))
-      await refreshSavedProjects()
+      setProjectListNotice('')
     } catch (error) {
-      console.error('Failed to delete project:', error)
+      setProjectListNotice(error instanceof Error ? error.message : 'Failed to delete the project.')
+    }
+    await refreshProjectList()
+  }
+
+  /**
+   * Build one completed clip from a stored round: download its segment videos in order and remux them into one MP4,
+   * keeping the concatenated fMP4 when remuxing fails. The clip lives only in page memory.
+   */
+  async function buildStoredRoundClip(round: ProjectRound, label: string): Promise<CompletedClip | null> {
+    const segmentBytes = await Promise.all(round.segments.map(segment => fetchSegmentVideo(segment.video_url)))
+    const archivedSegments: ArchivedSegment[] = round.segments.map((segment, index) => ({
+      key: `${index + 1}:${segment.segment_id}`,
+      segmentIdx: index + 1,
+      streamId: segment.segment_id,
+      mime: segment.mime || DEFAULT_AV_MIME,
+      completed: true,
+      chunks: [segmentBytes[index] ?? new ArrayBuffer(0)],
+    }))
+    const chunks = archivedSegments.flatMap(segment => segment.chunks)
+    if (chunks.length === 0) return null
+    const remuxedBlob = await remuxArchivedSegmentsBestEffort(archivedSegments, label)
+    const remuxed = remuxedBlob instanceof Blob && remuxedBlob.size > 0
+    const blob = remuxed ? remuxedBlob : new Blob(chunks, { type: archivedSegments[0]?.mime ?? DEFAULT_AV_MIME })
+    const prompts = round.segments.map(segment => segment.prompt)
+    return {
+      id: makePromptId(),
+      originPromptId: null,
+      label,
+      prompt: round.instruction?.trim() || summarizePresetPrompt(prompts),
+      promptWindowPrompts: prompts,
+      mime: blob.type || DEFAULT_AV_MIME,
+      blob,
+      objectUrl: URL.createObjectURL(blob),
+      chunks: chunks.map(chunk => chunk.slice(0)),
+      archivedSegments,
+      remuxed,
+      createdAt: Date.now(),
     }
   }
 
-  function selectSavedProject(project: StoredProject) {
-    const selection = { projectId: project.id }
-    savedProjectSelectionRef.current = selection
-    void viewSavedProject(project, selection)
-  }
-
-  /** Discard superseded archive reads before creating playback URLs and replacing the view. */
-  async function viewSavedProject(project: StoredProject, selection: SavedProjectSelection) {
+  /**
+   * Open a harness project: leave the current project, rebuild the stored rounds as completed clips, fill the prompt
+   * window with the last round's prompts, then attach a socket with `project_open_v1`. The project becomes active when
+   * `gpu_assigned` arrives. A later open, leave, or start supersedes an unfinished open.
+   * @param projectId - the harness project ID.
+   */
+  async function openProject(projectId: string) {
+    const controls = projectControlsStore.get()
+    if (controls.connecting || controls.projectResetPending) return
+    setSidebarOpen(false)
+    if (controls.projectStarted || controls.connectionClosed) await leaveProject()
+    const connectionAttempt = ++connectionAttemptRef.current
+    projectControlsStore.patch({ projectStarted: true, connecting: true, projectNotice: '', generationRoundStatus: 'idle' })
+    streamStore.patch({ loadingAnimation: true })
+    const clips: CompletedClip[] = []
+    let title: string
+    let creationConfig: ProjectCreationConfig | null
+    let lastRoundPrompts: string[]
     try {
-      const clips = await loadProjectClips(project.id)
-      if (savedProjectSelectionRef.current !== selection) return
-      const hydratedClips = clips.map(clip => ({
-        id: clip.id,
-        label: clip.label,
-        prompt: clip.prompt,
-        mime: clip.mime,
-        objectUrl: URL.createObjectURL(clip.blob),
-        blob: clip.blob,
-        createdAt: clip.createdAt,
-      }))
-      releaseViewingProjectUrls()
-      const savedProjectView = { project, clips: hydratedClips }
-      viewingProjectRef.current = savedProjectView
-      setViewingProject(savedProjectView)
-      setViewingSelectedClipId('')
-      setSidebarOpen(false)
+      const project = await getProject(projectId)
+      title = project.title
+      creationConfig = parseEchoedCreationConfig({ creation_config: project.creation_config })
+      lastRoundPrompts = project.rounds.at(-1)?.segments.map(segment => segment.prompt) ?? []
+      for (const round of project.rounds) {
+        // The first round carries the project's title, as a live first round carries its preset label.
+        const clip = await buildStoredRoundClip(round, clips.length === 0 ? project.title : `Cuts ${clips.length + 1}`)
+        if (clip) clips.push(clip)
+        if (connectionAttemptRef.current !== connectionAttempt) break
+      }
     } catch (error) {
-      console.error('Failed to load project:', error)
+      clips.forEach((clip) => { URL.revokeObjectURL(clip.objectUrl) })
+      if (connectionAttemptRef.current !== connectionAttempt) return
+      resetToLobbyState()
+      showProjectStartNotice(error instanceof Error ? error.message : 'Failed to open the project.')
+      return
     }
+    if (connectionAttemptRef.current !== connectionAttempt) {
+      clips.forEach((clip) => { URL.revokeObjectURL(clip.objectUrl) })
+      return
+    }
+    currentProjectIdRef.current = makePromptId()
+    harnessProjectIdRef.current = projectId
+    setOpenedProjectTitle(title)
+    setProjectCreationConfig(creationConfig)
+    rewriteStore.resetProjectActivity()
+    setSeedPrompts(lastRoundPrompts)
+    const lastClip = clips.at(-1) ?? null
+    // The last clip stays the live clip, as after a live round, so a continuation round prepends its media.
+    streamStore.patch({
+      completedClips: clips,
+      liveClip: lastClip ? {
+        id: lastClip.id,
+        originPromptId: null,
+        label: lastClip.label,
+        prompt: lastClip.prompt,
+        promptWindowPrompts: [...lastClip.promptWindowPrompts],
+        continuationClipId: null,
+      } : null,
+      pendingInitialClip: null,
+      loadingAnimation: false,
+    })
+    if (lastClip) streamStore.selectClip(lastClip.id, 0)
+    connectWebSocket({ type: 'project_open_v1', project_id: projectId })
   }
 
-  /** Release the committed view's URLs without depending on a completed React render. */
-  function releaseViewingProjectUrls() {
-    viewingProjectRef.current?.clips.forEach((clip) => { URL.revokeObjectURL(clip.objectUrl) })
-    viewingProjectRef.current = null
+  /** Reopen the disconnected project by its harness ID. */
+  function reconnectProject() {
+    const projectId = harnessProjectIdRef.current
+    if (projectId) void openProject(projectId)
   }
 
-  function closeViewingProject() {
-    savedProjectSelectionRef.current = null
-    releaseViewingProjectUrls()
-    setViewingProject(null)
-  }
-
-  /** Close the project's connection and persist received clips before returning to the lobby. */
+  /** Close the project's connection and finish archiving received media before returning to the lobby. */
   async function leaveProject() {
     if (projectControlsStore.get().projectResetPending) return
     clearThumbnailCaptureTimer()
@@ -1826,7 +1553,6 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     await wsMessageQueueRef.current
     await finalizeStreamCompletion()
     await clipArchiveQueueRef.current
-    await saveCurrentProject({ refreshList: true })
     clearPendingProjectPointers()
     // Explicit departure clears references; failed-start recovery keeps them for retry.
     setReferenceDraft([])
@@ -1835,7 +1561,6 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
 
   async function handleStartNewProject() {
     setSidebarOpen(false)
-    closeViewingProject()
     await leaveProject()
   }
 
@@ -1907,21 +1632,12 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     }
   }
 
-  async function handleDownloadViewingVideo() {
-    if (!viewingSelectedClip) return
-    await triggerBlobDownload(viewingSelectedClip.blob, viewingSelectedClip.prompt)
-  }
-
   // --- Render ---
 
   if (!runtimeReady) {
     return null
   }
 
-  const viewingEvents = viewingProject?.project.promptEvents ?? []
-  const viewingHasEdits = viewingEvents.some(event => isUserRewriteWithText(event))
-  const viewingLastClip = viewingProject?.clips[viewingProject.clips.length - 1] ?? null
-  const viewingFirstClip = viewingProject?.clips[0] ?? null
   const showActiveProject = (projectStarted) || (connectionClosed)
 
   return (
@@ -1930,20 +1646,15 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       {renderSlot('dreamverse.sidebar', {
         onOpenAssets: () => { setSidebarOpen(false); setAssetsOpen(true) },
         open: sidebarOpen,
-        currentProjectId: currentProjectIdRef.current,
+        currentProjectId: harnessProjectIdRef.current,
         currentProjectLabel: currentProjectTitle,
         hasCurrentProject: showActiveProject,
         connectionClosed: connectionClosed,
         projectResetPending: projectResetPending,
-        savedProjects: savedProjects,
-        viewingProjectId: viewingProject?.project.id ?? null,
-        isViewingPastProject: isViewingMode,
+        projects: projectSummaries,
+        notice: projectListNotice,
         onClose: () => { setSidebarOpen(false) },
-        onSelectProject: selectSavedProject,
-        onSelectCurrentProject: () => {
-          closeViewingProject()
-          setSidebarOpen(false)
-        },
+        onSelectProject: (projectId) => { void openProject(projectId) },
         onDeleteProject: (projectId) => { void handleDeleteProject(projectId) },
         onNewProject: () => {
           setSidebarOpen(false)
@@ -1952,57 +1663,8 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       })}
       <Header onToggleSidebar={() => { setSidebarOpen(prev => !prev) }} />
 
-      <div className={cn('relative flex flex-1 min-h-0 flex-col', showActiveProject || isViewingMode ? 'justify-center px-4 pb-2 sm:px-6 sm:pb-12' : 'overflow-hidden')}>
-        {isViewingMode && (
-          <>
-            {viewingSelectedClip && (
-              <div className="relative z-30 w-full shrink-0">
-                <div className="relative mx-auto aspect-video w-full max-w-3xl overflow-hidden rounded-2xl border border-border bg-black">
-                  <video key={viewingSelectedClip.id} src={viewingSelectedClip.objectUrl} className="h-full w-full object-contain" autoPlay loop playsInline controls />
-                  <Button
-                    onClick={() => { void handleDownloadViewingVideo() }}
-                    aria-label={isMobileShareCapable ? 'Share video' : 'Download video'}
-                    size="icon"
-                    variant="outline"
-                    className="absolute top-3 right-3 z-10 bg-slate-900/60 backdrop-blur-md text-white hover:bg-slate-800/85 border-white/25"
-                  >
-                    {isMobileShareCapable ? <Share2 className="size-5" /> : <Download className="size-5" />}
-                  </Button>
-                </div>
-              </div>
-            )}
-            <section className={cn('mx-auto w-full max-w-2xl', viewingHasEdits && 'flex-1 min-h-0 overflow-y-auto')}>
-              {renderSlot('dreamverse.workspace', {
-                promptEvents: viewingEvents,
-                originalLabel: viewingProject?.project.originalLabel || '',
-                projectStarted: true,
-                originalClipId: viewingFirstClip?.id || '',
-                selectedClipId: viewingSelectedClip?.id || '',
-                onSelectOriginal: () => {
-                  if (viewingFirstClip) setViewingSelectedClipId(viewingFirstClip.id)
-                },
-                onSelectEvent: (event) => {
-                  const clip = viewingProject?.clips.find(c => c.id === event.clipId)
-                  if (clip) setViewingSelectedClipId(clip.id)
-                },
-                onSelectCurrent: () => {
-                  if (viewingLastClip) setViewingSelectedClipId(viewingLastClip.id)
-                },
-              })}
-            </section>
-            <motion.div layout="position" className="mx-auto w-full max-w-2xl shrink-0" transition={{ type: 'spring', stiffness: 200, damping: 25 }}>
-              {renderSlot('dreamverse.chatbar', {
-                projectStarted: false,
-                viewingReadOnly: true,
-                onStartNewProject: () => { void handleStartNewProject() },
-                onBackFromViewing: closeViewingProject,
-              })}
-            </motion.div>
-          </>
-        )}
-
-        {/* Keep the active project mounted (hidden when viewing past project) so the video pipeline stays alive */}
-        <div className={isViewingMode ? 'hidden' : 'contents'}>
+      <div className={cn('relative flex flex-1 min-h-0 flex-col', showActiveProject ? 'justify-center px-4 pb-2 sm:px-6 sm:pb-12' : 'overflow-hidden')}>
+        <div className="contents">
           <AnimatePresence>
             {showActiveProject && (
               <motion.div
@@ -2047,7 +1709,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
           <section className={cn('mx-auto w-full max-w-2xl', hasEdits && 'flex-1 min-h-0 overflow-y-auto')}>
             {renderSlot('dreamverse.workspace', {
               promptEvents,
-              originalLabel: initialPromptRef.current.rawPrompt || selectedPreset?.label || '',
+              originalLabel: openedProjectTitle || initialPromptRef.current.rawPrompt || selectedPreset?.label || '',
               projectStarted,
               originalClipId: completedClips[0]?.id || '',
               selectedClipId: activeClipId || '',
@@ -2119,6 +1781,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
                 onSubmitContinuation: () => { void submitLivePrompt() },
                 onLeave: () => { void leaveProject() },
                 onStartNewProject: () => { void handleStartNewProject() },
+                onReconnect: harnessProjectIdRef.current ? reconnectProject : undefined,
               })}
             </motion.div>
           )}

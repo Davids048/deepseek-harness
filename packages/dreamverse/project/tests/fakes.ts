@@ -353,6 +353,8 @@ export class FakeAssets implements DreamverseAssetsManager {
   readonly releaseRequests: string[][] = []
   /** Fails the next release request. */
   releaseError: Error | null = null
+  /** Asset IDs that each project registered as its references. */
+  readonly projectReferences = new Map<string, Set<string>>()
   private readonly records = new Map<string, AssetRecord>()
   private readonly retentions = new Map<string, number>()
   private readonly deleted = new Set<string>()
@@ -383,6 +385,25 @@ export class FakeAssets implements DreamverseAssetsManager {
       this.retentions.set(assetId, this.retainedCount(assetId) - 1)
       if (this.retainedCount(assetId) === 0 && this.deleted.has(assetId)) rmSync(this.filePath(assetId))
     }
+  }
+
+  /** Resolve one published asset, like the reference `AssetLibrary.get`. */
+  get(assetId: string): AssetRecord {
+    const record = this.records.get(assetId)
+    if (record === undefined || this.deleted.has(assetId)) {
+      throw new AssetNotFoundError(`Asset '${assetId}' is unavailable. Select an asset from the library.`)
+    }
+    return record
+  }
+
+  addProjectReferences(projectId: string, assetIds: readonly string[]): void {
+    const references = this.projectReferences.get(projectId) ?? new Set<string>()
+    for (const assetId of assetIds) references.add(assetId)
+    this.projectReferences.set(projectId, references)
+  }
+
+  removeProjectReferences(projectId: string): void {
+    this.projectReferences.delete(projectId)
   }
 
   /**

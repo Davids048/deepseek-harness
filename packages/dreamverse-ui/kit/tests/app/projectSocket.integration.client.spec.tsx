@@ -11,7 +11,6 @@ import { Server } from 'mock-socket'
 import type { Client } from 'mock-socket'
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest'
 import type { CreationInitPayload } from '@dreamverse/project-controller/client/creationPayload.ts'
-import type { StoredClip, StoredProject, saveProject } from '@dreamverse/project-controller/client/projectStorage.ts'
 import type { createWebSocketConnection } from '@dreamverse/project-controller/client/ws/client.ts'
 import type { AvPipeline, createAvPipeline } from '../../src/client/media/avPipeline.ts'
 import type { remuxArchivedFmp4Segments } from '../../src/client/media/fmp4Remux.ts'
@@ -37,12 +36,17 @@ interface OutboundMessage {
   auto_extension_enabled?: boolean
 }
 
+/** One object URL that Page allocated, with what it names and whether Page has revoked it. */
+interface TrackedObjectUrl {
+  url: string
+  blob: Blob | MediaSource
+  revoked: boolean
+}
+
 const fixtures = vi.hoisted(() => ({
-  projects: [] as StoredProject[],
-  clips: [] as StoredClip[],
+  objectUrls: [] as TrackedObjectUrl[],
   connections: [] as ProjectConnection[],
   buildCreation: vi.fn<(input: CreationInput) => CreationInitPayload>(),
-  save: vi.fn<typeof saveProject>(),
   remux: vi.fn<typeof remuxArchivedFmp4Segments>(),
   completeSegment: vi.fn<AvPipeline['noteSegmentComplete']>(),
 }))
@@ -69,13 +73,11 @@ vi.mock('@dreamverse/project-controller/client/ws/client.ts', async (importOrigi
   }
 })
 vi.mock('../../src/client/media/fmp4Remux.ts', () => ({ remuxArchivedFmp4Segments: fixtures.remux }))
-vi.mock('@dreamverse/project-controller/client/projectStorage.ts', () => ({
-  saveProject: fixtures.save,
-  saveProjectMetadata: vi.fn(),
-  listProjects: async () => [...fixtures.projects],
-  loadProjectClips: async (id: string) => fixtures.clips.filter(clip => clip.projectId === id),
+vi.mock('@dreamverse/project-controller/client/projects.ts', () => ({
+  listProjects: async () => [],
+  getProject: vi.fn(),
   deleteProject: vi.fn(),
-  pruneOldProjects: vi.fn(),
+  fetchSegmentVideo: vi.fn(),
 }))
 vi.mock('../../src/client/media/avPipeline.ts', () => ({
   DEFAULT_AV_MIME: 'video/mp4',
@@ -114,10 +116,24 @@ vi.mock('../../src/client/media/avPipeline.ts', () => ({
 import { DreamverseApp } from '../../src/client/app/DreamverseApp.tsx'
 import { renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
 
-/** Commit a project snapshot without discarding archives owned by other projects. */
-async function commitArchive(project: StoredProject, clips: StoredClip[]) {
-  fixtures.projects = [project, ...fixtures.projects.filter(saved => saved.id !== project.id)]
-  fixtures.clips = [...fixtures.clips.filter(clip => clip.projectId !== project.id), ...clips]
+/** Record one object URL that Page allocated; each `URL.createObjectURL` spy returns the URL through this function. */
+function trackObjectUrl(blob: Blob | MediaSource, url: string): string {
+  fixtures.objectUrls.push({ url, blob, revoked: false })
+  return url
+}
+
+/** Mark one allocated object URL as revoked. */
+function trackRevokedUrl(url: string) {
+  for (const entry of fixtures.objectUrls) if (entry.url === url) entry.revoked = true
+}
+
+/**
+ * The completed clips that Page holds in memory: each archived clip owns a live object URL for its video Blob, while an
+ * export revokes its URL at once and a departed project's clips are revoked when Page clears them.
+ */
+function archivedClips(): { blob: Blob }[] {
+  return fixtures.objectUrls.flatMap(entry => !entry.revoked && entry.blob instanceof Blob
+    && entry.blob.type.startsWith('video/') ? [{ blob: entry.blob }] : [])
 }
 
 /** Return one project WebSocket that Page opened, failing the case when Page has not opened it. */
@@ -127,10 +143,10 @@ function projectConnection(index: number): ProjectConnection {
   return connection
 }
 
-/** Return one clip that Page saved, failing the case when Page has not saved it. */
-function storedClip(index: number): StoredClip {
-  const clip = fixtures.clips[index]
-  if (!clip) throw new Error(`Page has not saved clip ${index}`)
+/** Return one clip that Page archived in memory, failing the case when Page has not archived it. */
+function archivedClip(index: number): { blob: Blob } {
+  const clip = archivedClips()[index]
+  if (!clip) throw new Error(`Page has not archived clip ${index}`)
   return clip
 }
 
@@ -151,12 +167,10 @@ describe('Project WebSocket lifecycle', () => {
 
   /** Provide complete served metadata and own the socket/media resources used by every lifecycle scenario. */
   beforeEach(async () => {
-    fixtures.projects = []
-    fixtures.clips = []
+    fixtures.objectUrls = []
     fixtures.connections = []
     fixtures.completeSegment.mockReset()
     fixtures.buildCreation.mockReset().mockImplementation((await vi.importActual<typeof import('@dreamverse/project-controller/client/creationPayload.ts')>('@dreamverse/project-controller/client/creationPayload.ts')).buildCreationInitPayload)
-    fixtures.save.mockReset().mockImplementation(commitArchive)
     fixtures.remux.mockReset().mockImplementation(async segments =>
       new Blob(segments.flatMap(segment => segment.chunks), { type: 'video/mp4' }),
     )
@@ -192,6 +206,8 @@ describe('Project WebSocket lifecycle', () => {
       }
       throw new Error(`Unexpected fetch in project socket test: ${url}`)
     }))
+    vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => trackObjectUrl(blob, `blob:project-${fixtures.objectUrls.length + 1}`))
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url) => { trackRevokedUrl(url) })
     vi.spyOn(console, 'log').mockImplementation(() => {})
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     vi.spyOn(console, 'error').mockImplementation(() => {})
@@ -232,11 +248,11 @@ describe('Project WebSocket lifecycle', () => {
     expect(sentMessage(index, 0).initial_prompt_id).toEqual(expect.any(String))
   }
 
-  /** Emit enough media to create one locally persisted clip. */
+  /** Emit enough media to create one archived clip in the project that the harness assigned as `project-<index>`. */
   function completeClip(index: number, bytes: number[], autoExtensionEnabled = false) {
     const socket = serverSocket(index)
     const initialRequest = sentMessage(index, 0)
-    socket.send(JSON.stringify({ type: 'gpu_assigned' }))
+    socket.send(JSON.stringify({ type: 'gpu_assigned', project_id: `project-${index}` }))
     if (initialRequest.initial_prompt_id) {
       socket.send(JSON.stringify({ type: 'rewrite_seed_prompts_complete', prompt_id: initialRequest.initial_prompt_id }))
     }
@@ -285,12 +301,12 @@ describe('Project WebSocket lifecycle', () => {
       pendingResponses = []
       allocatedUrls = []
       revokedUrls = []
-      vi.spyOn(URL, 'createObjectURL').mockImplementation(() => {
+      vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
         const url = `blob:admitted-reference-${allocatedUrls.length + 1}`
         allocatedUrls.push(url)
-        return url
+        return trackObjectUrl(blob, url)
       })
-      vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url) => { revokedUrls.push(url) })
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url) => { revokedUrls.push(url); trackRevokedUrl(url) })
       vi.stubGlobal('IntersectionObserver', class {
         observe() {}
         disconnect() {}
@@ -574,7 +590,7 @@ describe('Project WebSocket lifecycle', () => {
       await screen.findByText('FastLTX 2.3')
       await generate(user, 0)
       completeClip(0, [1])
-      await waitFor(() => { expect(fixtures.clips).toHaveLength(1) })
+      await waitFor(() => { expect(archivedClips()).toHaveLength(1) })
       await user.click(screen.getByRole('button', { name: 'New project' }))
       await screen.findByLabelText('Initial prompt')
       screen.getByRole('button', { name: 'Text to video' }).focus()
@@ -673,8 +689,8 @@ describe('Project WebSocket lifecycle', () => {
       await screen.findByText('FastLTX 2.3')
       await generate(user, 0)
       completeClip(0, [1, 2])
-      await waitFor(() => { expect(fixtures.clips).toHaveLength(1) })
-      const original = fixtures.clips[0]
+      await waitFor(() => { expect(archivedClips()).toHaveLength(1) })
+      const original = archivedClip(0)
       const prompt = screen.getByRole('textbox', { name: 'Continuation prompt' })
       for (const [index, bytes] of [[2, [3, 4]], [3, [5, 6]]] as const) {
         if (index === 3) await new Promise(resolve => setTimeout(resolve, 1100))
@@ -693,18 +709,18 @@ describe('Project WebSocket lifecycle', () => {
         serverSocket(0).send(new Uint8Array(bytes).buffer)
         serverSocket(0).send(JSON.stringify({ type: 'media_segment_complete', segment_idx: index }))
         await waitFor(() => { expect(fixtures.completeSegment).toHaveBeenLastCalledWith({ segmentIdx: index, streamId: '' }) })
-        expect(fixtures.clips).toHaveLength(index - 1)
+        expect(archivedClips()).toHaveLength(index - 1)
         serverSocket(0).send(JSON.stringify({ type: 'ltx2_stream_complete' }))
         serverSocket(0).send(JSON.stringify({ type: 'generation_round_status', auto_extension_enabled: false, status: 'idle' }))
-        await waitFor(() => { expect(fixtures.clips).toHaveLength(index) })
+        await waitFor(() => { expect(archivedClips()).toHaveLength(index) })
         const composedSegments = fixtures.remux.mock.lastCall?.[0]
         expect(composedSegments?.flatMap(segment => segment.chunks.flatMap(
           (chunk: ArrayBuffer) => [...new Uint8Array(chunk)],
         ))).toEqual(index === 2 ? [1, 2, 3, 4] : [1, 2, 3, 4, 5, 6])
-        expect(fixtures.clips[index - 1]?.blob.size).toBe(index * 2)
+        expect(archivedClip(index - 1).blob.size).toBe(index * 2)
         expect(container.querySelector('video[preload="auto"]')).toHaveAttribute('src', expect.stringContaining('blob:'))
-        expect(fixtures.clips[0]).toEqual(original)
-        expect(original?.blob.size).toBe(2)
+        expect(archivedClip(0).blob).toBe(original.blob)
+        expect(original.blob.size).toBe(2)
       }
     })
 
@@ -794,8 +810,8 @@ describe('Project WebSocket lifecycle', () => {
       await user.click(await screen.findByRole('checkbox', { name: 'Auto extension' }))
       await generate(user, 0)
       completeClip(0, [1, 2], true)
-      await waitFor(() => { expect(fixtures.clips).toHaveLength(1) })
-      const original = fixtures.clips[0]
+      await waitFor(() => { expect(archivedClips()).toHaveLength(1) })
+      const original = archivedClip(0)
       const prompt = screen.getByRole('textbox', { name: 'Continuation prompt' })
       const acceptedPrompts = ['A river']
       for (const index of [2, 3]) {
@@ -815,14 +831,13 @@ describe('Project WebSocket lifecycle', () => {
           expect(prompt).toBeDisabled()
         }
         serverSocket(0).send(JSON.stringify({ type: 'ltx2_stream_complete' }))
-        await waitFor(() => { expect(fixtures.clips).toHaveLength(index) })
+        await waitFor(() => { expect(archivedClips()).toHaveLength(index) })
         expect(prompt).toBeDisabled()
-        expect(fixtures.clips[index - 1]?.blob.size).toBe(index * 2)
+        expect(archivedClip(index - 1).blob.size).toBe(index * 2)
         if (index === 2) serverSocket(0).send(JSON.stringify({ type: 'generation_round_status', status: 'preparing', auto_extension_enabled: true }))
       }
-      expect(fixtures.clips[0]).toEqual(original)
+      expect(archivedClip(0).blob).toBe(original.blob)
       expect(sentMessages(0).map(message => message.type)).toEqual(['project_init_v1', 'stop_auto_extension'])
-      expect(fixtures.projects[0]?.promptEvents.every(event => event.promptId === sentMessage(0, 0).initial_prompt_id)).toBe(true)
       serverSocket(0).send(JSON.stringify({ type: 'generation_round_status', status: 'idle', auto_extension_enabled: false }))
       await waitFor(() => expect(prompt).toBeEnabled())
       await user.click(screen.getByRole('checkbox', { name: 'Auto extension' }))
@@ -973,7 +988,7 @@ describe('Project WebSocket lifecycle', () => {
       await generate(user, 0)
       expect(fixtures.buildCreation).toHaveBeenCalledWith(expect.objectContaining({ modelId: 'fast-h3' }))
       completeClip(0, [1, 2, 3])
-      await waitFor(() => { expect(fixtures.clips).toHaveLength(1) })
+      await waitFor(() => { expect(archivedClips()).toHaveLength(1) })
       const prompt = screen.getByRole('textbox', { name: 'Continuation prompt' }) as HTMLTextAreaElement
       expect(prompt).toBeEnabled()
       const actionButton = screen.getByRole('button', { name: actionLabel })
@@ -994,7 +1009,7 @@ describe('Project WebSocket lifecycle', () => {
       }
       serverSocket(0).send(JSON.stringify({ type: 'generation_round_status', auto_extension_enabled: false, status: 'idle' }))
       await waitFor(() => expect(actionButton).toBeEnabled())
-      expect(fixtures.clips).toHaveLength(1)
+      expect(archivedClips()).toHaveLength(1)
       const composing = new KeyboardEvent('keydown', {
         key: 'Enter', code: 'Enter', isComposing: true, bubbles: true, cancelable: true,
       })
@@ -1029,17 +1044,12 @@ describe('Project WebSocket lifecycle', () => {
     }
   })
 
-  it('closes the first socket before resetting and keeps both project archives', async () => {
+  it('closes the first socket before resetting and starts the next project without its clips', async () => {
     const user = userEvent.setup()
     render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
     await generate(user, 0)
     let releaseRemux = (_blob: Blob) => {}
     fixtures.remux.mockImplementationOnce(() => new Promise((resolve) => { releaseRemux = resolve }))
-    let releaseSave = () => {}
-    fixtures.save.mockImplementationOnce(async (project, clips) => {
-      await new Promise<void>((resolve) => { releaseSave = resolve })
-      await commitArchive(project, clips)
-    })
     completeClip(0, [1, 2, 3])
     await waitFor(() => { expect(fixtures.remux).toHaveBeenCalled() })
     await user.click(screen.getByRole('button', { name: 'New project' }))
@@ -1047,32 +1057,31 @@ describe('Project WebSocket lifecycle', () => {
     expect(sockets).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Starting new project...' })).toBeDisabled()
     await act(async () => { releaseRemux(new Blob([new Uint8Array([1, 2, 3])], { type: 'video/mp4' })) })
-    await waitFor(() => { expect(fixtures.save).toHaveBeenCalled() })
-    await act(async () => { releaseSave() })
     await generate(user, 1)
     expect(projectConnection(1).ws).not.toBe(projectConnection(0).ws)
-    completeClip(1, [4, 5, 6])
-    await waitFor(() => { expect(fixtures.clips).toHaveLength(2) })
+    completeClip(1, [4, 5])
+    await waitFor(() => { expect(archivedClips()).toHaveLength(1) })
+    expect(archivedClip(0).blob.size).toBe(2)
     await user.click(screen.getByRole('button', { name: 'New project' }))
     await screen.findByLabelText('Initial prompt')
-    expect(new Set(fixtures.projects.map(project => project.id)).size).toBe(2)
-    expect(new Set(fixtures.clips.map(clip => clip.projectId)).size).toBe(2)
+    expect(archivedClips()).toHaveLength(0)
     expect(outbound.map(messages => messages.map(message => message.type))).toEqual([
       ['project_init_v1'], ['project_init_v1'],
     ])
     expect(screen.queryByText(/Time left:/)).not.toBeInTheDocument()
   })
 
-  it('shows an unexpected disconnect and preserves the clip without reconnecting', async () => {
+  it('shows an unexpected disconnect, keeps the clip, and offers Reconnect without reconnecting', async () => {
     const user = userEvent.setup()
     render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
     await generate(user, 0)
     completeClip(0, [1, 2, 3])
-    await waitFor(() => { expect(fixtures.clips).toHaveLength(1) })
+    await waitFor(() => { expect(archivedClips()).toHaveLength(1) })
     serverSocket(0).close()
     expect(await screen.findByText('Project disconnected')).toBeInTheDocument()
-    expect(screen.getByText('Start a new project to continue.')).toBeInTheDocument()
-    expect(fixtures.clips[0]?.blob.size).toBe(3)
+    expect(screen.getByText('Reconnect to continue this project.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Reconnect' })).toBeEnabled()
+    expect(archivedClip(0).blob.size).toBe(3)
     expect(fixtures.connections).toHaveLength(1)
     expect(screen.queryByText(/5 minutes/)).not.toBeInTheDocument()
   })
@@ -1101,8 +1110,8 @@ describe('Project WebSocket lifecycle', () => {
       }))
     })
     completeClip(1, [4, 5])
-    await waitFor(() => { expect(fixtures.clips).toHaveLength(1) })
-    expect(fixtures.clips[0]?.blob.size).toBe(2)
+    await waitFor(() => { expect(archivedClips()).toHaveLength(1) })
+    expect(archivedClip(0).blob.size).toBe(2)
     expect(screen.queryByText('Stale project error')).not.toBeInTheDocument()
     expect(screen.queryByText('Project disconnected')).not.toBeInTheDocument()
     expect(projectConnection(1).ws.readyState).toBe(WebSocket.OPEN)
@@ -1130,9 +1139,9 @@ describe('Project WebSocket lifecycle', () => {
       vi.spyOn(URL, 'createObjectURL').mockImplementation((blob) => {
         const url = `blob:active-export-${allocations.length + 1}`
         allocations.push({ blob, url })
-        return url
+        return trackObjectUrl(blob, url)
       })
-      revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+      revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url) => { trackRevokedUrl(url) })
       vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
         downloads.push({ url: this.href, filename: this.download })
       })
@@ -1222,8 +1231,8 @@ describe('Project WebSocket lifecycle', () => {
       sendSegment(2, 'A-2', [3, 4])
       serverSocket(0).send(JSON.stringify({ type: 'ltx2_stream_complete' }))
       serverSocket(0).send(JSON.stringify({ type: 'generation_round_status', auto_extension_enabled: false, status: 'idle' }))
-      await waitFor(() => { expect(fixtures.clips).toHaveLength(1) })
-      const completedBlob = storedClip(0).blob
+      await waitFor(() => { expect(archivedClips()).toHaveLength(1) })
+      const completedBlob = archivedClip(0).blob
       const completedUrl = findAllocation(entry => entry.blob === completedBlob).url
       expect(await readBlobBytes(completedBlob)).toEqual([1, 2, 3, 4])
       return { completedBlob, completedUrl }
@@ -1341,10 +1350,8 @@ describe('Project WebSocket lifecycle', () => {
         sendSegment(2, 'Meadow-2', [7, 8])
         serverSocket(0).send(JSON.stringify({ type: 'ltx2_stream_complete' }))
         serverSocket(0).send(JSON.stringify({ type: 'generation_round_status', auto_extension_enabled: false, status: 'idle' }))
-        await waitFor(() => { expect(fixtures.clips).toHaveLength(2) })
-        const historyClip = storedClip(1)
-        expect(fixtures.projects[0]?.promptEvents.find(event => event.text === 'A meadow at dawn'))
-          .toMatchObject({ clipId: historyClip.id })
+        await waitFor(() => { expect(archivedClips()).toHaveLength(2) })
+        const historyClip = archivedClip(1)
         const playbackUrl = findAllocation(entry => entry.blob === historyClip.blob).url
         // A second user edit observes the real one-second submission cooldown.
         await new Promise(resolve => setTimeout(resolve, 1000))
@@ -1389,7 +1396,7 @@ describe('Project WebSocket lifecycle', () => {
         expect(await readBlobBytes(download.blob)).toEqual([8, 9])
         expect(download.filename).toBe('A_forest_in_rain.mp4')
         expect(fixtures.remux).toHaveBeenCalledOnce()
-        expect(fixtures.clips).toHaveLength(1)
+        expect(archivedClips()).toHaveLength(1)
         expect(container.querySelector('video:not([preload])')).toBeVisible()
       } finally {
         unmount()
@@ -1410,7 +1417,7 @@ describe('Project WebSocket lifecycle', () => {
         expect(await readBlobBytes(download.blob)).toEqual([1, 2, 3, 4])
         expect(download.filename).toBe('A_river.mp4')
         expect(fixtures.remux).not.toHaveBeenCalled()
-        expect(fixtures.clips).toHaveLength(1)
+        expect(archivedClips()).toHaveLength(1)
       } finally {
         unmount()
       }
