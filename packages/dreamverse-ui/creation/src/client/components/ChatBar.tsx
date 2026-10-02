@@ -5,6 +5,7 @@ import { ArrowUp, X, Loader2 } from 'lucide-react'
 import { Button } from '@dreamverse/ui-kit/components/ui/button.tsx'
 import LeaveProjectModal, { shouldShowLeaveWarning } from './LeaveProjectModal.tsx'
 import AutoExtensionPill from './creation/AutoExtensionPill.tsx'
+import LivePromptModePill from './creation/LivePromptModePill.tsx'
 import PresetQuickLaunchRail from './creation/PresetQuickLaunchRail.tsx'
 import ProjectCreationConfigPills from './creation/ProjectCreationConfigPills.tsx'
 import type { ChatBarProps } from '@dreamverse/ui-kit/contracts.ts'
@@ -24,6 +25,7 @@ export default function ChatBar({
   allowEmptyPrompt = false,
   projectStarted = false,
   rewriteMode = true,
+  onRewriteModeChange,
   generationRoundBusy = false,
   autoExtensionEnabled = false,
   autoExtensionRequested = false,
@@ -59,6 +61,7 @@ export default function ChatBar({
   // A parent supplying its own control row owns the opt-in pill, so ChatBar only
   // renders it beside the project pills that ChatBar lays out itself.
   const showAutoExtensionPill = Boolean(onAutoExtensionRequestChange) && !isBusy && !children
+  const showLivePromptModePill = projectStarted && Boolean(onRewriteModeChange)
   const messagePlaceholder = projectResetPending
     ? 'Starting new project\u2026'
     : isBusy
@@ -207,7 +210,7 @@ export default function ChatBar({
         {generationRoundBusy && !autoExtensionEnabled && (
           <p className="pr-3 text-xs text-muted-foreground">Generation finishes before the next prompt.</p>
         )}
-        {(showAutoExtensionPill || (projectStarted && projectCreationConfig)) && (
+        {(showAutoExtensionPill || showLivePromptModePill || (projectStarted && projectCreationConfig)) && (
           <div className="flex flex-wrap items-center gap-1.5">
             {projectStarted && projectCreationConfig && (
               <ProjectCreationConfigPills
@@ -219,6 +222,9 @@ export default function ChatBar({
                 onAspectRatioChange={onProjectAspectRatioChange}
                 onResolutionChange={onProjectResolutionChange}
               />
+            )}
+            {showLivePromptModePill && onRewriteModeChange && (
+              <LivePromptModePill rewrite={rewriteMode} disabled={isBusy} onChange={onRewriteModeChange} />
             )}
             {showAutoExtensionPill && (
               <AutoExtensionPill requested={autoExtensionRequested}

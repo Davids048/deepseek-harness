@@ -20,6 +20,7 @@ export interface ProjectControlsState {
   /** Shared by the initial-prompt and active continuation inputs. */
   livePromptDraft: string
   projectNotice: string
+  /** Whether a submitted live prompt rewrites the prompt window; false continues from the last segment. */
   livePromptRewriteMode: boolean
   /** An opened project socket closed; received clips remain available. */
   connectionClosed: boolean

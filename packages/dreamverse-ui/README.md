@@ -50,6 +50,7 @@ The repository's `vitest` run includes these `*.client.spec.{ts,tsx}` files, and
 ## Differences from the FastVideo frontend
 
 - The page omits the developer tools (`NEXT_PUBLIC_INCLUDE_DEVTOOLS`), the rewrite inspector, the monitor page, the LoRA controls, and voice input (the microphone button). Demo mode (`?demo=1`) works as in the frontend.
+- The live composer has a **Prompt action** selection: **Rewrite** (the default) sends `rewrite_seed_prompts`, and **Continue from the last segment** sends `append_prompt`. The choice is `projectControlsStore.livePromptRewriteMode`; demo mode hides the selection and always continues. The frontend exposes this choice only in its developer tools.
 - The harness owns every project. The page stores no project in the browser: the project history lists `GET /projects`, and selecting a project opens it, which rebuilds its stored rounds from `GET /projects/<project_id>` and the segment videos, then attaches it with the `/ws` message `project_open_v1`. A closed project socket shows **Reconnect**, which opens the same project again. The frontend saves projects to IndexedDB and shows saved projects read-only.
 - The first visit opens the `dsh web:` token URL that the harness prints at startup; the page then sets a cookie. That visit redirects to `/` without the other query parameters, so demo mode needs a second visit to `/?demo=1`.
 - Images are plain `<img>` elements, so the K2 logo shows the original PNG instead of the Next.js image optimizer's downsampled copy.

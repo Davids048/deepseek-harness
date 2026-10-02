@@ -767,6 +767,29 @@ describe('Project WebSocket lifecycle', () => {
       })
     })
 
+    /** The prompt action selection defaults to rewrite, switches the next live prompt to a continuation, and is absent in demo mode. */
+    it.each([false, true])('selects rewrite or continuation for the next live prompt (demo=%s)', async (demo) => {
+      window.history.replaceState({}, '', demo ? '/?demo=1' : '/')
+      const user = userEvent.setup()
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      await generate(user, 0)
+      completeClip(0, [1, 2])
+      const prompt = screen.getByRole('textbox', { name: 'Continuation prompt' })
+      await waitFor(() => expect(prompt).toBeEnabled())
+      if (demo) {
+        expect(screen.queryByRole('button', { name: 'Prompt action' })).not.toBeInTheDocument()
+      } else {
+        expect(screen.getByRole('button', { name: 'Prompt action' })).toHaveTextContent('Rewrite')
+        await user.click(screen.getByRole('button', { name: 'Prompt action' }))
+        await user.click(await screen.findByRole('menuitem', { name: /Continue from the last segment/ }))
+        expect(screen.getByRole('button', { name: 'Prompt action' })).toHaveTextContent('Continue from the last segment')
+      }
+      await user.type(prompt, 'Follow the river')
+      await user.click(screen.getByRole('button', { name: 'Continue video' }))
+      await waitFor(() => { expect(outbound[0]).toHaveLength(2) })
+      expect(sentMessage(0, 1)).toMatchObject({ type: 'append_prompt', prompt: 'Follow the river' })
+    })
+
     /** Selecting auto_extension while idle changes only the next explicit generation request. */
     it.each([false, true])('keeps idle opt-in local until submission (demo=%s)', async (demo) => {
       window.history.replaceState({}, '', demo ? '/?demo=1' : '/')

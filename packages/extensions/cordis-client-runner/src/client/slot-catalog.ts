@@ -1757,7 +1757,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.asset-library\', () => ctx.slots.register(\n      { name: \'dreamverse.asset-library\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:225',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:228',
   },
   {
     key: 'dreamverse.chatbar',
@@ -1767,7 +1767,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'Directing composer of a started project and the reconnect controls of a disconnected one, declared by the kit\'s\n`root` registration. The component receives ChatBarProps; `@dreamverse/ui-creation` registers it, and\nwithout an occupant a project accepts no follow-up prompt.',
     registerOptions: [],
     ownerProps: [
-      '/** Owner props of `dreamverse.chatbar`: the live directing composer and the reconnect controls of a closed socket. */\nexport interface ChatBarProps {\n  /** Place generation options below the prompt inside the composer. */\n  children?: ReactNode\n  referencePicker?: ReferencePickerProps | undefined\n  mentionOptions?: MentionOption[]\n  promptLabel?: string\n  promptDisabled?: boolean\n  allowEmptyPrompt?: boolean\n  projectStarted?: boolean\n  rewriteMode?: boolean\n  generationRoundBusy?: boolean\n  autoExtensionEnabled?: boolean\n  autoExtensionRequested?: boolean\n  canChooseAutoExtension?: boolean\n  onAutoExtensionRequestChange?: (enabled: boolean) => void\n  onStopGeneration?: () => void\n  isGenerating?: boolean\n  storyPresets?: StoryPresetLike[]\n  continuationDraft?: string\n  canStartProject?: boolean\n  canSubmitContinuation?: boolean\n  connectionClosed?: boolean\n  projectNotice?: string\n  projectResetPending?: boolean\n  onPresetGenerate?: (presetId: string) => void\n  /** The prompt text after each edit, including a mention the composer inserts. */\n  onContinuationInput?: (value: string) => void\n  onContinuationKeydown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void\n  onGenerate?: ()  /* …truncated — full shape in source */',
+      '/** Owner props of `dreamverse.chatbar`: the live directing composer and the reconnect controls of a closed socket. */\nexport interface ChatBarProps {\n  /** Place generation options below the prompt inside the composer. */\n  children?: ReactNode\n  referencePicker?: ReferencePickerProps | undefined\n  mentionOptions?: MentionOption[]\n  promptLabel?: string\n  promptDisabled?: boolean\n  allowEmptyPrompt?: boolean\n  projectStarted?: boolean\n  rewriteMode?: boolean\n  /** Selects whether a submitted prompt rewrites the prompt window (true) or continues from the last segment; the\n   * composer shows the selection only when this is set. */\n  onRewriteModeChange?: ((rewrite: boolean) => void) | undefined\n  generationRoundBusy?: boolean\n  autoExtensionEnabled?: boolean\n  autoExtensionRequested?: boolean\n  canChooseAutoExtension?: boolean\n  onAutoExtensionRequestChange?: (enabled: boolean) => void\n  onStopGeneration?: () => void\n  isGenerating?: boolean\n  storyPresets?: StoryPresetLike[]\n  continuationDraft?: string\n  canStartProject?: boolean\n  canSubmitContinuation?: boolean\n  connectionClosed?: boolean\n  projectNotice?: string\n  projectResetPending?: boolean\n  onPresetGenerate?: (presetId:  /* …truncated — full shape in source */',
     ],
     ownerPropsReferences: [
       'AspectRatioId',
@@ -1797,7 +1797,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.chatbar\', () => ctx.slots.register(\n      { name: \'dreamverse.chatbar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:249',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:252',
   },
   {
     key: 'dreamverse.creation-studio',
@@ -1835,7 +1835,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.creation-studio\', () => ctx.slots.register(\n      { name: \'dreamverse.creation-studio\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:243',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:246',
   },
   {
     key: 'dreamverse.player',
@@ -1868,7 +1868,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.player\', () => ctx.slots.register(\n      { name: \'dreamverse.player\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:231',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:234',
   },
   {
     key: 'dreamverse.sidebar',
@@ -1901,7 +1901,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.sidebar\', () => ctx.slots.register(\n      { name: \'dreamverse.sidebar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:219',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:222',
   },
   {
     key: 'dreamverse.workspace',
@@ -1934,7 +1934,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.workspace\', () => ctx.slots.register(\n      { name: \'dreamverse.workspace\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:237',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:240',
   },
   {
     key: 'main',

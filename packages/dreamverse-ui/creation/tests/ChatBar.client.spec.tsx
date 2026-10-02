@@ -82,3 +82,21 @@ it('offers Reconnect for a disconnected project that the owner can reopen', asyn
   await user.click(screen.getByRole('button', { name: 'New Project' }))
   expect(startNew).toHaveBeenCalledTimes(1)
 })
+
+/** The prompt action selection appears only when the owner can change it, and it reports the chosen action. */
+it('selects whether a live prompt rewrites the prompt window or continues from the last segment', async () => {
+  const change = vi.fn()
+  const user = userEvent.setup()
+  const props = { projectStarted: true, continuationDraft: 'Follow the river', canSubmitContinuation: true }
+  const { rerender } = render(<ChatBar {...props} />)
+  expect(screen.queryByRole('button', { name: 'Prompt action' })).not.toBeInTheDocument()
+  rerender(<ChatBar {...props} onRewriteModeChange={change} />)
+  expect(screen.getByRole('button', { name: 'Prompt action' })).toHaveTextContent('Rewrite')
+  expect(screen.getByRole('button', { name: 'Rewrite rollout' })).toBeEnabled()
+  await user.click(screen.getByRole('button', { name: 'Prompt action' }))
+  await user.click(await screen.findByRole('menuitem', { name: /Continue from the last segment/ }))
+  expect(change).toHaveBeenLastCalledWith(false)
+  rerender(<ChatBar {...props} rewriteMode={false} onRewriteModeChange={change} />)
+  expect(screen.getByRole('button', { name: 'Prompt action' })).toHaveTextContent('Continue from the last segment')
+  expect(screen.getByRole('button', { name: 'Continue video' })).toBeEnabled()
+})

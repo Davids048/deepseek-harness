@@ -58,6 +58,9 @@ export interface ChatBarProps {
   allowEmptyPrompt?: boolean
   projectStarted?: boolean
   rewriteMode?: boolean
+  /** Selects whether a submitted prompt rewrites the prompt window (true) or continues from the last segment; the
+   * composer shows the selection only when this is set. */
+  onRewriteModeChange?: ((rewrite: boolean) => void) | undefined
   generationRoundBusy?: boolean
   autoExtensionEnabled?: boolean
   autoExtensionRequested?: boolean

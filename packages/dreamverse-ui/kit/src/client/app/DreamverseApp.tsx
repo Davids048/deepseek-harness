@@ -1004,10 +1004,9 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     }
   }
 
-  /** Resolve the live prompt operation from application mode and the developer preference. */
+  /** Resolve the live prompt operation: demo mode always continues; otherwise the composer's selection decides. */
   function shouldRewriteLivePrompt(): boolean {
-    const ui = uiStore.get()
-    return !ui.demoMode && (!ui.devtoolsMode || projectControlsStore.get().livePromptRewriteMode)
+    return !uiStore.get().demoMode && projectControlsStore.get().livePromptRewriteMode
   }
 
   /** Choose auto_extension for the next submitted request without sending a command. */
@@ -1764,6 +1763,9 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
                 onAutoExtensionRequestChange: setAutoExtensionRequested,
                 onStopGeneration: stopGeneration,
                 rewriteMode: shouldRewriteLivePrompt(),
+                onRewriteModeChange: uiStore.get().demoMode
+                  ? undefined
+                  : (rewrite: boolean) => { projectControlsStore.patch({ livePromptRewriteMode: rewrite }) },
                 isGenerating: loadingAnimation,
                 storyPresets,
                 continuationDraft: livePromptDraft,
