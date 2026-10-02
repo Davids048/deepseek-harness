@@ -469,13 +469,13 @@ describe('Project reference assets', () => {
     expect(harness!.logEvents('generation_round_start')[0]).toMatchObject({ reference_asset_ids: ['image'] })
   })
 
-  it('starts a later ref2va segment from its predecessor last frame, sent before the reference images', async () => {
+  it('starts a later ref2va segment from its predecessor last frame, sent after the reference images', async () => {
     await openRef2va()
     const run = await harness!.start(projectPayload({ ...REF2VA, reference_asset_ids: ['image'], curated_prompts: ['A wave', 'A shore'] }))
     const first = await run.generation.nextCall()
     first.finish.resolve()
     const second = await run.generation.nextCall()
-    expect(second.request.referenceImages).toEqual([lastFrameBytes(1), referenceImage('image')])
+    expect(second.request.referenceImages).toEqual([referenceImage('image'), lastFrameBytes(1)])
     second.finish.resolve()
     await run.socket.waitForStatus('idle')
     expect(harness!.logEvents('segment_start')[1]).toMatchObject({ reference_asset_ids: ['image'] })

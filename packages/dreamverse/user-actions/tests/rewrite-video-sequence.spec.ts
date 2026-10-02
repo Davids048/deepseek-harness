@@ -102,7 +102,7 @@ describe('rewrite_seed_prompts', () => {
       promptsToRewrite: ['Archived beach', 'Archived sunset'], presetId: 'accepted-sequence',
       presetLabel: 'Accepted sequence', rewriteInstruction: 'Add rain', timeoutMs: 20000, generationMode: mode,
       referenceLabels: assetIds.map(() => 'Picture 1'), segmentCount: 1, segmentDurationSec: 5,
-      continuedSegmentLabels: mode === 'ref2va' ? { referenceLabels: ['Picture 2'], firstFrameLabel: 'Picture 1' } : null,
+      continuedSegmentLabels: mode === 'ref2va' ? { referenceLabels: ['Picture 1'], firstFrameLabel: 'Picture 2' } : null,
       signal: run.project.generationSignal,
     }]])
     expect([run.project.promptSequenceId, run.project.promptSequenceLabel]).toEqual(['rewritten-sequence', 'Rewritten sequence'])

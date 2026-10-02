@@ -66,9 +66,9 @@ describe('append_prompt', () => {
         })
         const call = await run.generation.nextCall()
         const prompt = enhance ? 'Following scene' : 'Follow the fox'
-        // The appended segment starts from its predecessor's last frame, sent before any reference image.
+        // The appended segment starts from its predecessor's last frame, sent after any reference image.
         expect(call.request).toMatchObject({
-          prompt, referenceImages: [lastFrameBytes(1), ...assetIds.map(id => referenceImage(id))],
+          prompt, referenceImages: [...assetIds.map(id => referenceImage(id)), lastFrameBytes(1)],
         })
         expect(run.project.completedSequenceHistory).toEqual([[preceding]])
         call.finish.resolve()
@@ -93,9 +93,10 @@ describe('append_prompt', () => {
         if (enhance) {
           expect(harness!.enhancer.continueVideo.mock.calls).toEqual([['Follow the fox', {
             lockedSegments: ['Accepted scene'], nextSegmentIdx: 2, timeoutMs: 20000,
-            // Only the reference-image model labels its images: the last frame is Picture 1.
-            generationMode: mode, segmentDurationSec: duration, referenceLabels: assetIds.map(() => 'Picture 2'),
-            firstFrameLabel: mode === 'ref2va' ? 'Picture 1' : null, signal: run.project.generationSignal,
+            // Only the reference-image model labels its images: the selected image keeps Picture 1 and the last
+            // frame follows it as Picture 2.
+            generationMode: mode, segmentDurationSec: duration, referenceLabels: assetIds.map(() => 'Picture 1'),
+            firstFrameLabel: mode === 'ref2va' ? 'Picture 2' : null, signal: run.project.generationSignal,
           }]])
           expect(harness!.logEvents('rewrite_done')).toEqual([logEntry('rewrite_done', {
             kind: 'enhance_prompt', latency_ms: 3.46, response: 'Following scene', error: null,
@@ -394,9 +395,9 @@ describe('append_prompt', () => {
     })
     await finishRound(run, ['Following scene'])
     expect(run.project.completedSequenceSegments[1]!.referenceAssets).toEqual([side, front])
-    // The appended segment starts from the accepted segment's last frame, which takes Picture 1.
+    // The selected images keep Picture 1 and 2; the accepted segment's last frame follows them as Picture 3.
     expect(harness!.enhancer.continueVideo.mock.calls[0]![1]).toMatchObject({
-      referenceLabels: ['Picture 2', 'Picture 3'], firstFrameLabel: 'Picture 1',
+      referenceLabels: ['Picture 1', 'Picture 2'], firstFrameLabel: 'Picture 3',
     })
   })
 })

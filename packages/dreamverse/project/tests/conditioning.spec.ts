@@ -21,12 +21,12 @@ describe('segment conditioning', () => {
     expect(continuesPreviousSegment(facts, 'ref2va', { append: true, index: 1, referenceCount: 1 })).toBe(false)
   })
 
-  it('labels a continued segment last frame Picture 1 and shifts its reference labels by one', () => {
+  it('keeps the selected images Picture 1 to K and labels a continued segment last frame after them', () => {
     expect(segmentImageLabels(ref2vaFacts(), 'ref2va', 2, false)).toEqual({
       referenceLabels: ['Picture 1', 'Picture 2'], firstFrameLabel: null,
     })
     expect(segmentImageLabels(ref2vaFacts(), 'ref2va', 2, true)).toEqual({
-      referenceLabels: ['Picture 2', 'Picture 3'], firstFrameLabel: 'Picture 1',
+      referenceLabels: ['Picture 1', 'Picture 2'], firstFrameLabel: 'Picture 3',
     })
   })
 

@@ -69,9 +69,9 @@ describe('generate_video_sequence', () => {
       promptsToRewrite: [], presetId: null, presetLabel: '', rewriteInstruction: 'Explore a forest', timeoutMs: 20000,
       generationMode: mode,
       // Only the reference-image model numbers its images; first-frame models have no image labels. Each later
-      // ref2va segment starts from its predecessor's last frame, Picture 1, so its reference label shifts by one.
+      // ref2va segment keeps the selected image as Picture 1 and starts from its predecessor's last frame, Picture 2.
       referenceLabels: mode === 'ref2va' ? ['Picture 1'] : [], segmentCount: 4, segmentDurationSec: 5,
-      continuedSegmentLabels: mode === 'ref2va' ? { referenceLabels: ['Picture 2'], firstFrameLabel: 'Picture 1' } : null,
+      continuedSegmentLabels: mode === 'ref2va' ? { referenceLabels: ['Picture 1'], firstFrameLabel: 'Picture 2' } : null,
       signal: run.project.generationSignal,
     }]])
     const segments = run.project.completedSequenceSegments
@@ -230,13 +230,13 @@ describe('generate_video_sequence', () => {
     }))
     await finishRound(run, kind === 'seed' ? ['Scene 1', 'Scene 2'] : ['A lake', 'A forest'])
     for (const segment of run.project.completedSequenceSegments) expect(segment.referenceAssets).toEqual([side, front])
-    // The second request starts from the first segment's last frame, then carries the ordered images.
+    // The second request carries the ordered images, then the first segment's last frame that it starts from.
     const images = [referenceImage('side'), referenceImage('front')]
-    expect(run.generation.calls.map(call => call.request.referenceImages)).toEqual([images, [lastFrameBytes(1), ...images]])
+    expect(run.generation.calls.map(call => call.request.referenceImages)).toEqual([images, [...images, lastFrameBytes(1)]])
     if (kind === 'seed') {
       expect(harness.enhancer.rewriteRollout.mock.calls[0]![1]).toMatchObject({
         referenceLabels: ['Picture 1', 'Picture 2'],
-        continuedSegmentLabels: { referenceLabels: ['Picture 2', 'Picture 3'], firstFrameLabel: 'Picture 1' },
+        continuedSegmentLabels: { referenceLabels: ['Picture 1', 'Picture 2'], firstFrameLabel: 'Picture 3' },
       })
     }
   })
@@ -254,7 +254,7 @@ describe('generate_video_sequence', () => {
     expect(assets.fileExists('first-person')).toBe(true)
     first.finish.resolve()
     const second = await run.generation.nextCall()
-    expect(second.request.referenceImages).toEqual([lastFrameBytes(1), referenceImage('first-person')])
+    expect(second.request.referenceImages).toEqual([referenceImage('first-person'), lastFrameBytes(1)])
     expect(assets.fileExists('first-person')).toBe(true)
     second.finish.resolve()
     await run.socket.waitForStatus('idle')
@@ -268,7 +268,7 @@ describe('generate_video_sequence', () => {
       const after = run.socket.entries.length
       await run.project.processBrowserCommand({ ...command, reference_asset_ids: ['second-person'] })
       const call = await run.generation.nextCall()
-      expect(call.request.referenceImages).toEqual([...predecessorImages, referenceImage('second-person')])
+      expect(call.request.referenceImages).toEqual([referenceImage('second-person'), ...predecessorImages])
       call.finish.resolve()
       await run.socket.waitForStatus('idle', after)
     }

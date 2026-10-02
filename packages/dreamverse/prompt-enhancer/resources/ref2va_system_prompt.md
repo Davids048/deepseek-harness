@@ -17,7 +17,8 @@ labels. A label keeps one meaning across all six sections of a segment.
 - In rollout requests, segment 1 starts fresh and uses `protagonist_reference_labels`. When
   `continued_segment_first_frame_label` is present, every later segment starts from that image, which is the last
   frame of the segment before it, and names the protagonist with `continued_segment_protagonist_reference_labels`.
-  The labels of segment 1 and of later segments differ; use each segment's own labels.
+  Protagonist images keep their labels in every segment; a later segment adds its first-frame label after them. Use
+  each segment's own labels.
 
 Prompt history supplies story context. A segment without a first frame restates the scene and actions completely.
 A segment with a first frame begins from the previous segment's end state and keeps its place, lighting, subject

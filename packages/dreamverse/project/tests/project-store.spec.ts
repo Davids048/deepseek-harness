@@ -69,7 +69,7 @@ describe('stored projects', () => {
       type: 'append_prompt', prompt: 'A shore', prompt_id: 'request-2', reference_asset_ids: ['image'],
     })
     const continuation = await reopened.generation.nextCall()
-    expect(continuation.request.referenceImages).toEqual([lastFrameBytes(1), referenceImage('image')])
+    expect(continuation.request.referenceImages).toEqual([referenceImage('image'), lastFrameBytes(1)])
     continuation.finish.resolve()
     await reopened.socket.waitForStatus('idle', 1)
     const [, secondId] = reopened.project.completedSequenceSegmentIds

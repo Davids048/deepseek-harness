@@ -402,11 +402,11 @@ describe('Auto Extension', () => {
     ;(await run.generation.nextCall()).finish.resolve()
     await within(provider.entered.promise)
     expect(harness!.enhancer.continueVideo.mock.calls[0]![1]).toMatchObject({
-      referenceLabels: ['Picture 2', 'Picture 3'], firstFrameLabel: 'Picture 1',
+      referenceLabels: ['Picture 1', 'Picture 2'], firstFrameLabel: 'Picture 3',
     })
     provider.release.resolve()
     const automatic = await run.generation.nextCall()
-    expect(automatic.request.referenceImages).toEqual([lastFrameBytes(2), referenceImage('side'), referenceImage('front')])
+    expect(automatic.request.referenceImages).toEqual([referenceImage('side'), referenceImage('front'), lastFrameBytes(2)])
     assets.deleteAsset('front')
     expect(assets.fileExists('front')).toBe(true)
     automatic.finish.resolve()
