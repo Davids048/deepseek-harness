@@ -233,7 +233,9 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/dreamverse-ui/kit': { kind: 'indirect', reason: 'Browser-side page kit; dreamverse-project turns page prompts and settings into model requests.' },
   'packages/dreamverse-ui/assets': { kind: 'indirect', reason: 'Browser-side asset dialog; dreamverse-segment-generation sends the selected images to the video model.' },
   'packages/dreamverse-ui/creation': { kind: 'indirect', reason: 'Browser-side creation components; dreamverse-user-actions turns submitted prompts into model requests.' },
+  'packages/dreamverse-ui/multiverse': { kind: 'indirect', reason: 'Browser-side multiverse page; dreamverse-multiverse turns chosen branches into model requests.' },
   'packages/bundle/dreamverse': { kind: 'indirect', reason: 'The bundle mounts and configures DreamVerse packages, which own every model request.' },
+  'packages/bundle/dreamverse-multiverse': { kind: 'indirect', reason: 'The bundle mounts the multiverse packages and selects the branch-proposal model; the packages own every model request.' },
 }
 
 interface Failure {

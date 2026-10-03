@@ -1,5 +1,5 @@
 ---
-description: "dreamverse-ui 包组：以 DSH 浏览器插件形式实现的 DreamVerse 页面，供选择或浏览该包族的读者使用。"
+description: "dreamverse-ui 包组：以 DSH 浏览器插件形式实现的 DreamVerse 页面以及 Multiverse 页面，供选择或浏览该包族的读者使用。"
 kind: "package-group"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-这些包在浏览器中绘制 DreamVerse 页面：创作工作室、实时编辑器、视频播放器、提示词时间线、素材库和项目历史。它们把 FastVideo DreamVerse Next.js 前端移植为 DSH 浏览器插件，并保留其组件、Tailwind 主题和布局；每个包为自己渲染的文案注册中文和英文 locale 词典。页面通过 [`../dreamverse/`](../dreamverse/README.zh.md) 的 `/ws` 协议和 HTTP 路由与 harness 通信。
+这些包在浏览器中绘制 DreamVerse 页面：创作工作室、实时编辑器、视频播放器、提示词时间线、素材库和项目历史。它们把 FastVideo DreamVerse Next.js 前端移植为 DSH 浏览器插件，并保留其组件、Tailwind 主题和布局；每个包为自己渲染的文案注册中文和英文 locale 词典。页面通过 [`../dreamverse/`](../dreamverse/README.zh.md) 的 `/ws` 协议和 HTTP 路由与 harness 通信。Multiverse 页面复用创作工作室和素材库。
 
 ## 目录
 
@@ -32,6 +32,7 @@ kind: "package-group"
 | [`directing`](directing/README.zh.md) | `dreamverse.workspace` | 当前显示项目的提示词事件时间线 |
 | [`assets`](assets/README.zh.md) | `dreamverse.asset-library` | 素材库对话框 |
 | [`project-history`](project-history/README.zh.md) | `dreamverse.sidebar` | 已存储项目列表 |
+| [`multiverse`](multiverse/README.zh.md) | `root` | Multiverse 页面：分支故事的玩家模式与开发模式 |
 
 <a id="related-documentation"></a>
 ## 相关文档

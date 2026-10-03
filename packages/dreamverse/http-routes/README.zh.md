@@ -27,7 +27,7 @@ kind: "package-library"
 
 ### 何时使用
 
-`@dreamverse/assets-manager`、`@dreamverse/project-store/routes` 和 `@dreamverse/project-controller` 在它们用 `ctx.webServer.register()` 注册的处理器内导入本库。每个插件注册自己的路径；本库只在单个插件的路由表内匹配请求。
+`@dreamverse/assets-manager`、`@dreamverse/project-store/routes`、`@dreamverse/project-controller` 和 `@dreamverse/multiverse/controller` 在它们用 `ctx.webServer.register()` 注册的处理器内导入本库。每个插件注册自己的路径；本库只在单个插件的路由表内匹配请求。
 
 ### 入口
 

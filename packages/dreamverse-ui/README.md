@@ -1,5 +1,5 @@
 ---
-description: "The dreamverse-ui package group: the DreamVerse page as DSH browser plugins, for readers choosing or navigating the family."
+description: "The dreamverse-ui package group: the DreamVerse page as DSH browser plugins and the Multiverse page, for readers choosing or navigating the family."
 kind: "package-group"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-These packages draw the DreamVerse page in the browser: the creation studio, the live composer, the video player, the prompt timeline, the asset library, and the project history. They port the FastVideo DreamVerse Next.js frontend to DSH browser plugins and keep its components, Tailwind theme, and layout; each package registers Chinese and English locale dictionaries for the copy that it renders. The page talks to the harness through the `/ws` protocol and the HTTP routes of [`../dreamverse/`](../dreamverse/README.md).
+These packages draw the DreamVerse page in the browser: the creation studio, the live composer, the video player, the prompt timeline, the asset library, and the project history. They port the FastVideo DreamVerse Next.js frontend to DSH browser plugins and keep its components, Tailwind theme, and layout; each package registers Chinese and English locale dictionaries for the copy that it renders. The page talks to the harness through the `/ws` protocol and the HTTP routes of [`../dreamverse/`](../dreamverse/README.md). The Multiverse page reuses the creation studio and the asset library.
 
 ## Table of Contents
 
@@ -32,6 +32,7 @@ These packages draw the DreamVerse page in the browser: the creation studio, the
 | [`directing`](directing/README.md) | `dreamverse.workspace` | The prompt event timeline of the shown project |
 | [`assets`](assets/README.md) | `dreamverse.asset-library` | The asset library dialog |
 | [`project-history`](project-history/README.md) | `dreamverse.sidebar` | The stored project list |
+| [`multiverse`](multiverse/README.md) | `root` | The Multiverse page: player mode and dev mode over a branching story |
 
 <a id="related-documentation"></a>
 ## Related documentation

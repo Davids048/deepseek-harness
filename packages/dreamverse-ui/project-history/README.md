@@ -77,7 +77,7 @@ None; the sidebar adds nothing to a model request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **DreamVerse projects only** — the list holds projects of kind `dreamverse` and omits projects of every other kind.
+- **DreamVerse projects only** — the list holds projects of kind `dreamverse`; multiverses do not appear.
 - **No package tests** — the package has no `tests/` directory; the kit's page tests render the sidebar as the real `dreamverse.sidebar` occupant.
 
 <a id="dev-note"></a>

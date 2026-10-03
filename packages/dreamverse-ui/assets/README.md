@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package draws the DreamVerse asset library dialog. The user browses the library, uploads images, video, and audio within the harness's upload policy, previews and deletes files, and selects an image as a reference for the next generation. The dialog works on library files only; files that belong to projects stay out of it.
+This package draws the DreamVerse asset library dialog. The user browses the library, uploads images, video, and audio within the harness's upload policy, previews and deletes files, and selects an image as a reference for the next generation. The DreamVerse and Multiverse pages both use it. The dialog works on library files only; files that belong to projects stay out of it.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ This package draws the DreamVerse asset library dialog. The user browses the lib
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin with `@dreamverse/ui-kit`, which declares its slot on the DreamVerse page.
+Mount the plugin with a page that declares its slot: `@dreamverse/ui-kit` or `@dreamverse/ui-multiverse`.
 
 ### Minimal configuration
 

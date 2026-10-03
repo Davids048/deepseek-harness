@@ -78,7 +78,7 @@ kind: "package-reference"
 - [DreamVerse 子系统](../../../docs/subsystems/dreamverse.zh.md)——共享项目层与生成后端。
 - [`@dreamverse/generation-client`](../generation-client/README.zh.md)——`generate` 发送的后端请求。
 - [`@dreamverse/assets-manager`](../assets-manager/README.zh.md)——保存片段文件的文件存储。
-- [`@dreamverse/project`](../project/README.zh.md)——调用 `generate` 的 DreamVerse 工作负载。
+- [`@dreamverse/project`](../project/README.zh.md) 与 [`@dreamverse/multiverse`](../multiverse/README.zh.md)——调用 `generate` 的工作负载。
 
 -----
 

@@ -25,7 +25,7 @@ Use this package to turn a short user idea into a complete video prompt. It expa
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the service with the provider settings; the DreamVerse workload injects `dreamversePromptEnhancer`.
+Mount the service with the provider settings; the DreamVerse and Multiverse workloads inject `dreamversePromptEnhancer`.
 
 ### Minimal configuration
 
@@ -96,6 +96,7 @@ The `tests/` directory covers settings, templates, features, the race, the vendo
 
 - [DreamVerse subsystem](../../../docs/subsystems/dreamverse.md) — where prompt enhancement sits in the process layout.
 - [`@dreamverse/user-actions`](../user-actions/README.md) — the DreamVerse actions that call each operation.
+- [`@dreamverse/multiverse`](../multiverse/README.md) — expands and continues Multiverse scenes.
 
 -----
 
@@ -148,7 +149,7 @@ Independent request per call with a byte-stable system prefix per template and m
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **No request log** — the package writes `[ENHANCE]` diagnostics to its logger but records neither the rendered user message nor the provider reply. Callers record the inputs and results; DreamVerse records them in its project log.
+- **No request log** — the package writes `[ENHANCE]` diagnostics to its logger but records neither the rendered user message nor the provider reply. Callers record the inputs and results: the DreamVerse project log and the Multiverse log.
 - **Fixed sampling and deadlines** — temperature 1.0, the 3000-token completion budget, and the race's stage deadlines are reference values in code; no `Config` field changes them.
 - **No `ref2va` template override** — the `ref2va` template always loads from the package; no path field replaces it.
 

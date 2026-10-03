@@ -27,7 +27,7 @@ dsh --profile dreamverse  (Node, one instance per user)
 fastvideo serve with a streaming_v2 config  (Python, on the GPU machine)
 ```
 
-Python keeps only the work that needs GPUs, torch, or FastVideo. Everything that stays the same when the generation provider changes belongs to the harness.
+Python keeps only the work that needs GPUs, torch, or FastVideo. Everything that stays the same when the generation provider changes belongs to the harness. The `dreamverse-multiverse` profile replaces the DreamVerse workload rows with the Multiverse rows and keeps the same shared rows.
 
 ## Shared project layer
 
@@ -44,7 +44,7 @@ The layer uses these terms:
 | Term | Meaning |
 | --- | --- |
 | Project | One unit of user work with an ID, a title, a thumbnail, and workload data. The harness owns every project; the page keeps no project content. |
-| Kind | The workload that owns a project, such as `dreamverse`. A project has exactly one kind, fixed at creation. |
+| Kind | The workload that owns a project, such as `dreamverse` or `multiverse`. A project has exactly one kind, fixed at creation. |
 | Workload data | The workload's own JSON value and its schema version. The project store keeps it without interpreting it. |
 | File owner | `library` for a user upload, or `project:<project_id>` for a file of one project. Every file has exactly one owner. Deleting a project deletes its files. |
 | Reference copy | The project's own copy of a library image that it uses. Deleting the library image leaves the project unchanged. |
@@ -56,6 +56,7 @@ The layer uses these terms:
 A workload is a set of packages that gives projects of one kind their behavior and their page.
 
 - **DreamVerse** (`dreamverse`): [`@dreamverse/project`](../../packages/dreamverse/project/README.md) holds the project state and its log, [`@dreamverse/user-actions`](../../packages/dreamverse/user-actions/README.md) runs the user actions, [`@dreamverse/project-controller`](../../packages/dreamverse/project-controller/README.md) serves the `/ws` protocol, and the [`dreamverse-ui`](../../packages/dreamverse-ui/README.md) packages draw the page. The [`@dreamverse/bundle`](../../packages/bundle/dreamverse/README.md) patch mounts them.
+- **Multiverse** (`multiverse`): [`@dreamverse/multiverse`](../../packages/dreamverse/multiverse/README.md) grows a branching story as a tree of segments, and [`@dreamverse/ui-multiverse`](../../packages/dreamverse-ui/multiverse/README.md) draws it. The [`@dreamverse/multiverse-bundle`](../../packages/bundle/dreamverse-multiverse/README.md) patch mounts them.
 
 ## Generation backend
 

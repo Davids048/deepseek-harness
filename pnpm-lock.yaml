@@ -2186,6 +2186,60 @@ importers:
         specifier: workspace:*
         version: link:../../dreamverse/user-actions
 
+  packages/bundle/dreamverse-multiverse:
+    dependencies:
+      '@deepseek-ai/dsh-api-remotes':
+        specifier: workspace:*
+        version: link:../../api/remotes
+      '@deepseek-ai/dsh-client-connection':
+        specifier: workspace:*
+        version: link:../../client/connection
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:*
+        version: link:../../client/locale
+      '@deepseek-ai/dsh-client-modules':
+        specifier: workspace:*
+        version: link:../../client/modules
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:*
+        version: link:../../client/ui-renderer
+      '@deepseek-ai/dsh-client-ui-settings':
+        specifier: workspace:*
+        version: link:../../client/ui-settings
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
+      '@deepseek-ai/dsh-web-app':
+        specifier: workspace:*
+        version: link:../web-app
+      '@dreamverse/assets-manager':
+        specifier: workspace:*
+        version: link:../../dreamverse/assets-manager
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../../dreamverse/generation-client
+      '@dreamverse/multiverse':
+        specifier: workspace:*
+        version: link:../../dreamverse/multiverse
+      '@dreamverse/project-store':
+        specifier: workspace:*
+        version: link:../../dreamverse/project-store
+      '@dreamverse/prompt-enhancer':
+        specifier: workspace:*
+        version: link:../../dreamverse/prompt-enhancer
+      '@dreamverse/segment-generation':
+        specifier: workspace:*
+        version: link:../../dreamverse/segment-generation
+      '@dreamverse/ui-assets':
+        specifier: workspace:*
+        version: link:../../dreamverse-ui/assets
+      '@dreamverse/ui-creation':
+        specifier: workspace:*
+        version: link:../../dreamverse-ui/creation
+      '@dreamverse/ui-multiverse':
+        specifier: workspace:*
+        version: link:../../dreamverse-ui/multiverse
+
   packages/bundle/headless:
     dependencies:
       '@deepseek-ai/dsh-brand':
@@ -7186,6 +7240,63 @@ importers:
         specifier: ^4.2.1
         version: 4.3.3
 
+  packages/dreamverse-ui/multiverse:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:*
+        version: link:../../client/locale
+      '@deepseek-ai/dsh-client-test-runtime':
+        specifier: workspace:*
+        version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:*
+        version: link:../../client/ui-renderer
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:*
+        version: link:../../client/ui-slots
+      '@deepseek-ai/dsh-util-crypto':
+        specifier: workspace:*
+        version: link:../../util/crypto
+      '@dreamverse/assets-manager':
+        specifier: workspace:~
+        version: link:../../dreamverse/assets-manager
+      '@dreamverse/project-controller':
+        specifier: workspace:~
+        version: link:../../dreamverse/project-controller
+      '@dreamverse/ui-kit':
+        specifier: workspace:~
+        version: link:../kit
+      '@testing-library/jest-dom':
+        specifier: ^6.9.1
+        version: 6.10.0(@testing-library/dom@10.4.2)
+      '@testing-library/react':
+        specifier: ^16.3.0
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@testing-library/user-event':
+        specifier: ^14.6.1
+        version: 14.6.7(@testing-library/dom@10.4.2)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ~18.3.1
+        version: 18.3.7(@types/react@18.3.31)
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+
   packages/dreamverse-ui/player:
     devDependencies:
       '@carbon/icons-react':
@@ -7298,6 +7409,49 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/dreamverse/multiverse:
+    dependencies:
+      '@deepseek-ai/dsh-agent-default-model':
+        specifier: workspace:*
+        version: link:../../core/agent-default-model
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:*
+        version: link:../../llm/llm
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@dreamverse/assets-manager':
+        specifier: workspace:*
+        version: link:../assets-manager
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../generation-client
+      '@dreamverse/http-routes':
+        specifier: workspace:*
+        version: link:../http-routes
+      '@dreamverse/project-store':
+        specifier: workspace:*
+        version: link:../project-store
+      '@dreamverse/prompt-enhancer':
+        specifier: workspace:*
+        version: link:../prompt-enhancer
+      '@dreamverse/segment-generation':
+        specifier: workspace:*
+        version: link:../segment-generation
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.0

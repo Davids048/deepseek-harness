@@ -17,8 +17,8 @@ export interface WorkloadData {
 }
 
 /**
- * The ID of one stored project, which names its directory under the store root. The page's `ProjectId` in
- * `@dreamverse/project-controller/client/ids.ts` uses the same brand label.
+ * The ID of one stored project, which names its directory under the store root; a multiverse ID is a project ID. The
+ * page's `ProjectId` in `@dreamverse/project-controller/client/ids.ts` uses the same brand label.
  */
 export type ProjectId = Branded<'DreamverseProjectId'>
 

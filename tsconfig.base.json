@@ -325,10 +325,13 @@
       "@deepseek-ai/dsh-compaction-image-offload/projection": ["./packages/compaction/compaction-image-offload/src/projection.ts"],
       "@deepseek-ai/dsh-session-format-catalog/message-projections": ["./packages/session/session-format-catalog/src/message-projections.ts"],
       "@deepseek-ai/dsh-native-command/types": ["./packages/util/native-command/src/types.ts"],
-      // DreamVerse plugin entries that the dreamverse bundle mounts, mapped to source so the tsx source launch resolves
-      // them without probing node_modules.
+      // DreamVerse plugin entries that the dreamverse and dreamverse-multiverse bundles mount, mapped to source so the
+      // tsx source launch resolves them without probing node_modules.
       "@dreamverse/assets-manager": ["./packages/dreamverse/assets-manager/src/index.ts"],
       "@dreamverse/generation-client": ["./packages/dreamverse/generation-client/src/index.ts"],
+      "@dreamverse/multiverse/controller": ["./packages/dreamverse/multiverse/src/controller.ts"],
+      "@dreamverse/multiverse/director": ["./packages/dreamverse/multiverse/src/director.ts"],
+      "@dreamverse/multiverse/tree": ["./packages/dreamverse/multiverse/src/tree.ts"],
       "@dreamverse/project": ["./packages/dreamverse/project/src/index.ts"],
       "@dreamverse/project-controller": ["./packages/dreamverse/project-controller/src/index.ts"],
       "@dreamverse/project-store": ["./packages/dreamverse/project-store/src/index.ts"],
@@ -339,6 +342,7 @@
       "@dreamverse/ui-creation": ["./packages/dreamverse-ui/creation/src/index.ts"],
       "@dreamverse/ui-directing": ["./packages/dreamverse-ui/directing/src/index.ts"],
       "@dreamverse/ui-kit": ["./packages/dreamverse-ui/kit/src/index.ts"],
+      "@dreamverse/ui-multiverse": ["./packages/dreamverse-ui/multiverse/src/index.ts"],
       "@dreamverse/ui-player": ["./packages/dreamverse-ui/player/src/index.ts"],
       "@dreamverse/ui-project-history": ["./packages/dreamverse-ui/project-history/src/index.ts"],
       "@dreamverse/user-actions/continue-video": ["./packages/dreamverse/user-actions/src/continue-video.ts"],

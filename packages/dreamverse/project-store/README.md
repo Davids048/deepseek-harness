@@ -44,7 +44,7 @@ Mount the store service and, on a harness with a web server, its routes plugin. 
 
 ### Projects and workload data
 
-`create` stores a project with a `kind`, a title, and workload data `{schemaVersion, data}`, where `data` is any JSON value. The kind names the owning workload, such as `dreamverse`, and never changes. `list({kind})` returns projects most recently updated first; `get` reads one. The store keeps workload data without interpreting it, and the project's files are file store assets owned by `projectOwner(projectId)`. Project IDs are `ProjectId`, a branded string: the store brands the IDs that it creates or finds under its root, and a caller that reads a project ID from a request brands it with `brandString` from `@deepseek-ai/dsh-brand`.
+`create` stores a project with a `kind`, a title, and workload data `{schemaVersion, data}`, where `data` is any JSON value. The kind names the owning workload, such as `dreamverse` or `multiverse`, and never changes. `list({kind})` returns projects most recently updated first; `get` reads one. The store keeps workload data without interpreting it, and the project's files are file store assets owned by `projectOwner(projectId)`. Project IDs are `ProjectId`, a branded string: the store brands the IDs that it creates or finds under its root, and a caller that reads a project ID from a request brands it with `brandString` from `@deepseek-ai/dsh-brand`.
 
 ### Leases
 
@@ -92,6 +92,7 @@ The `tests/` directory covers records, leases, deletion, migration hooks, and th
 - [DreamVerse subsystem](../../../docs/subsystems/dreamverse.md) — projects, kinds, and leases in the shared project layer.
 - [`@dreamverse/assets-manager`](../assets-manager/README.md) — the file store that holds project files.
 - [`@dreamverse/project`](../project/README.md) — the DreamVerse workload data and its migration.
+- [`@dreamverse/multiverse`](../multiverse/README.md) — the Multiverse workload data.
 
 -----
 
@@ -108,7 +109,7 @@ None; the store adds nothing to a model request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Leases inside one process** — two harness processes over the same `root` do not see each other's leases. One process can delete or overwrite a project while the other process writes it.
+- **Leases inside one process** — two harness processes over the same `root`, such as the `dreamverse` and `dreamverse-multiverse` profiles, do not see each other's leases. One process can delete or overwrite a project while the other process writes it.
 - **No paging or search** — `GET /projects` returns every project of the requested kind in one response.
 
 <a id="dev-note"></a>

@@ -52,7 +52,7 @@
         autoSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_AUTO_SYSTEM_PROMPT_PATH
         rewriteAllSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_REWRITE_ALL_SYSTEM_PROMPT_PATH
         rewriteUserSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_REWRITE_USER_SYSTEM_PROMPT_PATH
-        # Deadline of one prompt operation, in milliseconds.
+        # Deadline of one prompt operation, in milliseconds; DreamVerse and Multiverse both use it.
         timeoutMs: 20000
 
     # The reference `load_application_settings` project log root: FASTVIDEO_PROJECT_LOG_ROOT, else

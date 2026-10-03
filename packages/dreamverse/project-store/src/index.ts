@@ -1,7 +1,7 @@
 /**
  * The shared project layer as the `dreamverseProjectStore` Cordis service.
  *
- * Every workload, such as DreamVerse, keeps its projects here. A project is one directory under the
+ * Every workload (DreamVerse, Multiverse, and later ones) keeps its projects here. A project is one directory under the
  * configured root:
  *
  * ```

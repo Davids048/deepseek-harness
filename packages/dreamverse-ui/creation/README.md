@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package draws the two places where a DreamVerse user writes prompts. The creation studio starts a project: the user types an idea or picks a story preset, chooses among the creation settings that the served model offers, attaches reference images, and turns Auto Extension on or off. The live composer directs a running project: each prompt either rewrites the sequence or continues from the last segment.
+This package draws the two places where a DreamVerse user writes prompts. The creation studio starts a project: the user types an idea or picks a story preset, chooses among the creation settings that the served model offers, attaches reference images, and turns Auto Extension on or off. The live composer directs a running project: each prompt either rewrites the sequence or continues from the last segment. The Multiverse page reuses the creation studio to start a multiverse.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ This package draws the two places where a DreamVerse user writes prompts. The cr
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin with `@dreamverse/ui-kit`, which declares its slots on the DreamVerse page.
+Mount the plugin with a page that declares its slots: `@dreamverse/ui-kit` on the DreamVerse page, or `@dreamverse/ui-multiverse` on the Multiverse page.
 
 ### Minimal configuration
 

@@ -36,7 +36,7 @@ kind: "package-reference"
 
 浏览器部分注册 `root`，并带有子 slot `dreamverse.sidebar`、`dreamverse.asset-library`、`dreamverse.player`、`dreamverse.workspace`、`dreamverse.creation-studio` 和 `dreamverse.chatbar`（`src/client/contracts.ts` 中的 `DREAMVERSE_SLOTS`）。`DreamverseApp` 是前端 `app/page.tsx` 的移植，它用 `DreamverseSlotOwners` 中的 props 通过 `renderSlot(name, props)` 渲染每个子 slot。浏览器部分还设置文档标题和 favicon，应用已存储的深色主题，并安装一个绑定始终缺席的 `session` scope 适配器，因为渲染器把 `root` 包在 `session-maybe` scope 中，而 DreamVerse 没有 DSH 会话。
 
-浏览器部分注入 `slots` 和 `locale`。它向 locale 服务注册 `src/client/locales.ts` 中的 `dreamverse.kit` 词典，并以 `locale: 'dreamverse.kit'` 声明 `root`，因此 `DreamverseRoot` 获得 `t` 席位并把它传给 `DreamverseApp`；`DreamverseApp` 用它翻译页头、页面提示、后端就绪提示以及默认的片段与项目标签。`src/client/problemText.ts` 通过调用方的翻译函数，把 `@dreamverse/project-controller` 和 `@dreamverse/assets-manager` 以代码报告的选择问题和请求失败转为文本；kit 和 `@dreamverse/ui-assets` 在各自的词典中定义它的键。共享组件 `Header`、`ThemeToggle` 和 `AssetPreview` 不拥有任何文案：每个渲染位置从自己的命名空间传入它们的 `labels`。其他每个 DreamVerse 页面包为自己渲染的文案注册各自的命名空间。
+浏览器部分注入 `slots` 和 `locale`。它向 locale 服务注册 `src/client/locales.ts` 中的 `dreamverse.kit` 词典，并以 `locale: 'dreamverse.kit'` 声明 `root`，因此 `DreamverseRoot` 获得 `t` 席位并把它传给 `DreamverseApp`；`DreamverseApp` 用它翻译页头、页面提示、后端就绪提示以及默认的片段与项目标签。`src/client/problemText.ts` 通过调用方的翻译函数，把 `@dreamverse/project-controller` 和 `@dreamverse/assets-manager` 以代码报告的选择问题和请求失败转为文本；kit、`@dreamverse/ui-assets` 和 `@dreamverse/ui-multiverse` 在各自的词典中定义它的键。共享组件 `Header`、`ThemeToggle` 和 `AssetPreview` 不拥有任何文案：每个渲染位置从自己的命名空间传入它们的 `labels`。其他每个 DreamVerse 页面包为自己渲染的文案注册各自的命名空间。
 
 在有 DSH web 服务器可用期间，Host 部分从 `public/` 提供 `/logo.svg`、`/k2.png` 和 `/icon-simple.svg`。
 

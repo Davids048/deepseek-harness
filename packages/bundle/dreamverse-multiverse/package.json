@@ -1,0 +1,34 @@
+{
+  "name": "@dreamverse/multiverse-bundle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-api-remotes": "workspace:*",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-client-locale": "workspace:*",
+    "@deepseek-ai/dsh-client-modules": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-settings": "workspace:*",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-web-app": "workspace:*",
+    "@dreamverse/assets-manager": "workspace:*",
+    "@dreamverse/generation-client": "workspace:*",
+    "@dreamverse/multiverse": "workspace:*",
+    "@dreamverse/project-store": "workspace:*",
+    "@dreamverse/prompt-enhancer": "workspace:*",
+    "@dreamverse/segment-generation": "workspace:*",
+    "@dreamverse/ui-assets": "workspace:*",
+    "@dreamverse/ui-creation": "workspace:*",
+    "@dreamverse/ui-multiverse": "workspace:*"
+  }
+}

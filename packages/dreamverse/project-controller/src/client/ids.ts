@@ -6,7 +6,7 @@
  */
 import type { Branded } from '@deepseek-ai/dsh-brand'
 
-/** The harness ID of one stored project. */
+/** The harness ID of one stored project; a multiverse ID is a project ID. */
 export type ProjectId = Branded<'DreamverseProjectId'>
 
 /** The harness ID of one segment of a DreamVerse project. */

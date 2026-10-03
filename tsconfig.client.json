@@ -136,6 +136,7 @@
     { "path": "./packages/dreamverse-ui/directing" },
     { "path": "./packages/dreamverse-ui/assets" },
     { "path": "./packages/dreamverse-ui/project-history" },
+    { "path": "./packages/dreamverse-ui/multiverse" },
     { "path": "./apps/web" }
   ]
 }

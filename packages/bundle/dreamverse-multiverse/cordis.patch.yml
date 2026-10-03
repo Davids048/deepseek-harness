@@ -1,0 +1,159 @@
+# The DreamVerse multiverse bundle patch: mounts the multiverse plugins and their page over dsh-base. Every row reads its
+# configuration from the environment that scripts/dreamverse/launch-multiverse.sh prepares. A missing required variable
+# fails its plugin at load with the schema's message. Branch proposals use dsh-base's `llm` service with the
+# `agent-default-model` selection, which the rows at the end point at Groq through `llm-pi-ai`.
+
+- insert:
+    # DREAMVERSE_GENERATION_URL is the HTTP base URL of the generation backend (launch-generation.sh).
+    - id: multiverse-generation-client
+      name: '@dreamverse/generation-client'
+      config:
+        baseUrl: !!js process.env.DREAMVERSE_GENERATION_URL
+
+    # The DreamVerse asset root, shared with the dreamverse profile: <FASTVIDEO_DREAMVERSE_HOME or
+    # $XDG_STATE_HOME/fastvideo/dreamverse or ~/.local/state/fastvideo/dreamverse>/assets.
+    - id: multiverse-assets-manager
+      name: '@dreamverse/assets-manager'
+      config:
+        root: !!js >-
+          process.getBuiltinModule('node:path').join(
+          process.env.FASTVIDEO_DREAMVERSE_HOME || process.getBuiltinModule('node:path').join(
+          process.env.XDG_STATE_HOME || process.getBuiltinModule('node:path').join(
+          process.getBuiltinModule('node:os').homedir(), '.local/state'), 'fastvideo/dreamverse'),
+          'assets')
+
+    # The project store under the same DreamVerse state root: <state root>/projects. Each multiverse is a project of
+    # kind `multiverse`.
+    - id: multiverse-project-store
+      name: '@dreamverse/project-store'
+      config:
+        root: !!js >-
+          process.getBuiltinModule('node:path').join(
+          process.env.FASTVIDEO_DREAMVERSE_HOME || process.getBuiltinModule('node:path').join(
+          process.env.XDG_STATE_HOME || process.getBuiltinModule('node:path').join(
+          process.getBuiltinModule('node:os').homedir(), '.local/state'), 'fastvideo/dreamverse'),
+          'projects')
+
+    # Generates one video segment and stores its video and last frame as project files.
+    - id: multiverse-segment-generation
+      name: '@dreamverse/segment-generation'
+
+    # The DreamVerse prompt-enhancement variables.
+    - id: multiverse-prompt-enhancer
+      name: '@dreamverse/prompt-enhancer'
+      config:
+        cerebrasApiKey: !!js process.env.CEREBRAS_API_KEY
+        groqApiKey: !!js process.env.GROQ_API_KEY
+        model: !!js process.env.FASTVIDEO_PROMPT_MODEL
+        cerebrasModel: !!js process.env.FASTVIDEO_PROMPT_CEREBRAS_MODEL
+        groqModel: !!js process.env.FASTVIDEO_PROMPT_GROQ_MODEL
+        groqApiBaseUrl: !!js process.env.FASTVIDEO_PROMPT_GROQ_API_BASE_URL
+        cerebrasBaseUrl: !!js process.env.CEREBRAS_BASE_URL
+        enhanceSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_ENHANCE_SYSTEM_PROMPT_PATH
+        autoSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_AUTO_SYSTEM_PROMPT_PATH
+        rewriteAllSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_REWRITE_ALL_SYSTEM_PROMPT_PATH
+        rewriteUserSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_REWRITE_USER_SYSTEM_PROMPT_PATH
+        # Deadline of one prompt operation, in milliseconds; DreamVerse and Multiverse both use it.
+        timeoutMs: 20000
+
+    # The multiverse trees, the director that generates scenes and proposes branches, and the page's HTTP API.
+    - id: multiverse-tree
+      name: '@dreamverse/multiverse/tree'
+
+    # The multiverse log root, where the director records every prompt-enhancement and branch-proposal request and
+    # reply: FASTVIDEO_MULTIVERSE_LOG_ROOT, else <state root>/outputs/multiverse_logs.
+    - id: multiverse-director
+      name: '@dreamverse/multiverse/director'
+      config:
+        logRoot: !!js >-
+          (process.env.FASTVIDEO_MULTIVERSE_LOG_ROOT ?? process.getBuiltinModule('node:path').join(
+          process.env.FASTVIDEO_DREAMVERSE_HOME || process.getBuiltinModule('node:path').join(
+          process.env.XDG_STATE_HOME || process.getBuiltinModule('node:path').join(
+          process.getBuiltinModule('node:os').homedir(), '.local/state'), 'fastvideo/dreamverse'),
+          'outputs/multiverse_logs')).trim()
+        # Output cap, in tokens, of one branch-proposal call.
+        proposalMaxTokens: 800
+
+    - id: multiverse-controller
+      name: '@dreamverse/multiverse/controller'
+      config:
+        # Interval, in milliseconds, of the comment lines that keep idle event streams open through proxies.
+        keepaliveMs: 15000
+
+    # The DSH web server on MULTIVERSE_BROWSER_PORT: the multiverse page and the /multiverse/api, /assets, and /projects
+    # routes.
+    - id: multiverse-webserver
+      name: '@deepseek-ai/dsh-host-webserver'
+      config:
+        host: !!js process.env.MULTIVERSE_BROWSER_HOST || '127.0.0.1'
+        port: !!js process.env.MULTIVERSE_BROWSER_PORT && Number(process.env.MULTIVERSE_BROWSER_PORT)
+        compression: none
+
+    # The /projects routes: list, read, and delete projects of every workload.
+    - id: multiverse-project-routes
+      name: '@dreamverse/project-store/routes'
+
+    # Serves the DSH page shell as the web server's fallback and prints the token URL that opens the page.
+    - id: multiverse-web-runtime
+      name: '@deepseek-ai/dsh-web-app'
+      config:
+        openBrowser: false
+        printUrl: true
+        surfaceContext: false
+        trustedHosts: []
+
+    # Builds the page's plugin list and serves each browser plugin's code under /plugins.
+    - id: multiverse-client-modules
+      name: '@deepseek-ai/dsh-client-modules'
+
+    # Page authorization (token and cookie) and the /api browser connection.
+    - id: multiverse-client-connection
+      name: '@deepseek-ai/dsh-client-connection'
+      inject: [webRuntime]
+      config:
+        trustedHosts: !!js ctx.webRuntime.trustedHosts
+
+    # The application event source that the browser connection subscribes to.
+    - id: multiverse-api-remotes
+      name: '@deepseek-ai/dsh-api-remotes'
+
+    # The `configForms` service that the locale row below requires.
+    - id: multiverse-ui-settings
+      name: '@deepseek-ai/dsh-client-ui-settings'
+
+    # The page language: the dreamverse-ui rows register their dictionaries with this locale service, and the page shows
+    # the browser's language when it is Chinese or English, otherwise English.
+    - id: multiverse-locale
+      name: '@deepseek-ai/dsh-client-locale'
+
+    # Mounts the page's React tree from the `root` slot.
+    - id: multiverse-ui-renderer
+      name: '@deepseek-ai/dsh-client-ui-renderer'
+
+    # The multiverse page: fills the `root` slot and declares the two DreamVerse page slots below.
+    - id: multiverse-ui
+      name: '@dreamverse/ui-multiverse'
+
+    # The DreamVerse creation studio that starts a multiverse: `dreamverse.creation-studio`.
+    - id: multiverse-ui-creation
+      name: '@dreamverse/ui-creation'
+
+    # The DreamVerse asset library dialog for reference images: `dreamverse.asset-library`.
+    - id: multiverse-ui-assets
+      name: '@dreamverse/ui-assets'
+
+# Branch proposals run on Groq (openai/gpt-oss-120b); dsh-base's default selection is DeepSeek. Both pi-ai routes
+# resolve their keys per request from the environment; switching the selection to `cerebras` / `gpt-oss-120b` uses
+# the Cerebras route instead.
+- id: llm-pi-ai
+  config:
+    providers:
+      cerebras:
+        apiKeyEnv: CEREBRAS_API_KEY
+      groq:
+        apiKeyEnv: GROQ_API_KEY
+
+- id: agent-default-model
+  config:
+    provider: groq
+    model: openai/gpt-oss-120b

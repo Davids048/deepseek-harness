@@ -1,5 +1,5 @@
 ---
-description: "dreamverse 包组：DreamVerse 的 harness 包、共享项目层以及生成后端客户端，供选择或浏览该包族的读者使用。"
+description: "dreamverse 包组：DreamVerse 与 Multiverse 的 harness 包、共享项目层以及生成后端客户端，供选择或浏览该包族的读者使用。"
 kind: "package-group"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-这些包在 DeepSeek Harness 内运行交互式视频故事应用 DreamVerse。用户用一段提示词和若干参考图创建项目，逐个片段地导演它，之后还能重新打开；harness 负责增强提示词、向 FastVideo 后端请求每个视频片段，并存储每个项目和文件。共享项目层（文件存储、项目存储、片段生成）对各种工作负载（workload）类型通用，DreamVerse 使用它。页面位于 [`../dreamverse-ui/`](../dreamverse-ui/README.zh.md)。
+这些包在 DeepSeek Harness 内运行交互式视频故事应用 DreamVerse。用户用一段提示词和若干参考图创建项目，逐个片段地导演它，之后还能重新打开；harness 负责增强提示词、向 FastVideo 后端请求每个视频片段，并存储每个项目和文件。共享项目层（文件存储、项目存储、片段生成）服务所有工作负载（workload），Multiverse 原型复用它来生成分支故事。页面位于 [`../dreamverse-ui/`](../dreamverse-ui/README.zh.md)。
 
 ## 目录
 
@@ -34,14 +34,16 @@ kind: "package-group"
 | [`project`](project/README.zh.md) | DreamVerse 项目：状态、操作准入、生成计划以及项目日志 |
 | [`user-actions`](user-actions/README.zh.md) | 每个 DreamVerse 用户操作一个插件 |
 | [`project-controller`](project-controller/README.zh.md) | `/ws` 项目协议、健康与能力路由，以及页面的协议模块 |
+| [`multiverse`](multiverse/README.zh.md) | Multiverse 原型：以类型为 `multiverse` 的项目保存的分支故事 |
 | [`http-routes`](http-routes/README.zh.md) | 供 DreamVerse HTTP 路由使用的 Starlette 兼容响应与路由分发 |
 
 <a id="related-documentation"></a>
 ## 相关文档
 
 - [DreamVerse 子系统](../../docs/subsystems/dreamverse.zh.md)——进程布局、共享项目层、工作负载，以及与 Python 参考实现的差异。
-- [`dreamverse-ui/`](../dreamverse-ui/README.zh.md)——DreamVerse 页面。
+- [`dreamverse-ui/`](../dreamverse-ui/README.zh.md)——DreamVerse 与 Multiverse 页面。
 - [`@dreamverse/bundle`](../bundle/dreamverse/README.zh.md)——`dreamverse` profile 层。
+- [`@dreamverse/multiverse-bundle`](../bundle/dreamverse-multiverse/README.zh.md)——`dreamverse-multiverse` profile 层。
 
 <a id="dev-note"></a>
 ## 开发备注

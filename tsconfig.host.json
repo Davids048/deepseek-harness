@@ -457,6 +457,7 @@
     { "path": "./packages/dreamverse/user-actions" },
     { "path": "./packages/dreamverse/http-routes" },
     { "path": "./packages/dreamverse/project-controller/tsconfig.host.json" },
+    { "path": "./packages/dreamverse/multiverse" },
     { "path": "./packages/dreamverse/project-store" },
     { "path": "./packages/dreamverse/segment-generation" },
     { "path": "./apps/cli" },

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包绘制 DreamVerse 用户书写提示词的两个位置。创作工作室用于开始项目：用户输入想法或挑选故事预设，在所服务模型提供的创建设置中做出选择，附加参考图，并开启或关闭 Auto Extension。实时编辑器用于导演运行中的项目：每条提示词要么改写序列，要么从最后一个片段继续。
+本包绘制 DreamVerse 用户书写提示词的两个位置。创作工作室用于开始项目：用户输入想法或挑选故事预设，在所服务模型提供的创建设置中做出选择，附加参考图，并开启或关闭 Auto Extension。实时编辑器用于导演运行中的项目：每条提示词要么改写序列，要么从最后一个片段继续。Multiverse 页面复用创作工作室来开始一个 multiverse。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-与在 DreamVerse 页面上声明其 slot 的 `@dreamverse/ui-kit` 一起挂载该插件。
+与声明其 slot 的页面一起挂载该插件：DreamVerse 页面上是 `@dreamverse/ui-kit`，Multiverse 页面上是 `@dreamverse/ui-multiverse`。
 
 ### 最小配置
 

@@ -27,7 +27,7 @@ Use this library when a DreamVerse plugin serves HTTP routes that must answer ex
 
 ### When to use it
 
-`@dreamverse/assets-manager`, `@dreamverse/project-store/routes`, and `@dreamverse/project-controller` import this library inside the handler that they register with `ctx.webServer.register()`. Each plugin registers its own paths; this library only matches a request within one plugin's route table.
+`@dreamverse/assets-manager`, `@dreamverse/project-store/routes`, `@dreamverse/project-controller`, and `@dreamverse/multiverse/controller` import this library inside the handler that they register with `ctx.webServer.register()`. Each plugin registers its own paths; this library only matches a request within one plugin's route table.
 
 ### Entry point
 

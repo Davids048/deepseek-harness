@@ -112,7 +112,7 @@ DSH 页面外壳从 `./assets/` 加载自己的脚本和样式，因此 `/assets
 <a id="known-limitations-and-deferred-work"></a>
 
 - **固定的上传上限**——上传策略使用代码中的参考值：图片最大 15 MiB、16,777,216 像素；视频最大 100 MiB、8,294,400 像素、30 秒；音频最大 100 MiB、30 秒、2 个声道。没有 `Config` 字段可以修改它们。
-- **保留按进程计数**——`retain` 计数只存在于一个 harness 进程中。在同一个 `root` 上运行的两个 harness 进程看不到对方的保留，因此一个进程中的删除可能移除另一个进程已保留的文件。
+- **保留按进程计数**——`retain` 计数只存在于一个 harness 进程中。在同一个 `root` 上运行的两个 harness 进程（例如 `dreamverse` 与 `dreamverse-multiverse` profile）看不到对方的保留，因此一个进程中的删除可能移除另一个进程已保留的文件。
 - **从 `PATH` 查找 `ffprobe`**——当 `PATH` 上没有 `ffprobe` 可执行文件时，视频和音频上传以 `MediaValidationError` 失败。
 
 <a id="dev-note"></a>

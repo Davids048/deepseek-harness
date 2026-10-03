@@ -78,7 +78,7 @@ The `tests/` directory covers generation, conditioning, creation settings, and c
 - [DreamVerse subsystem](../../../docs/subsystems/dreamverse.md) — the shared project layer and the generation backend.
 - [`@dreamverse/generation-client`](../generation-client/README.md) — the backend request that `generate` sends.
 - [`@dreamverse/assets-manager`](../assets-manager/README.md) — the file store that keeps the segment files.
-- [`@dreamverse/project`](../project/README.md) — the DreamVerse workload, which calls `generate`.
+- [`@dreamverse/project`](../project/README.md) and [`@dreamverse/multiverse`](../multiverse/README.md) — the workloads that call `generate`.
 
 -----
 

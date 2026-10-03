@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-用提供方设置挂载该服务；DreamVerse 工作负载（workload）注入 `dreamversePromptEnhancer`。
+用提供方设置挂载该服务；DreamVerse 与 Multiverse 工作负载（workload）注入 `dreamversePromptEnhancer`。
 
 ### 最小配置
 
@@ -96,6 +96,7 @@ kind: "package-reference"
 
 - [DreamVerse 子系统](../../../docs/subsystems/dreamverse.zh.md)——提示词增强在进程布局中的位置。
 - [`@dreamverse/user-actions`](../user-actions/README.zh.md)——调用各个操作的 DreamVerse 用户操作。
+- [`@dreamverse/multiverse`](../multiverse/README.zh.md)——扩写并续写 Multiverse 场景。
 
 -----
 
@@ -148,7 +149,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **没有请求日志**——本包把 `[ENHANCE]` 诊断写入其 logger，但既不记录渲染后的用户消息，也不记录提供方回复。由调用方记录输入和结果；DreamVerse 把它们记录在其项目日志中。
+- **没有请求日志**——本包把 `[ENHANCE]` 诊断写入其 logger，但既不记录渲染后的用户消息，也不记录提供方回复。由调用方记录输入和结果：DreamVerse 项目日志与 Multiverse 日志。
 - **固定的采样与截止时间**——温度 1.0、3000 token 的补全预算以及竞速的阶段截止时间都是代码中的参考值；没有 `Config` 字段可以修改它们。
 - **没有 `ref2va` 模板覆盖**——`ref2va` 模板总是从包内加载；没有路径字段可以替换它。
 

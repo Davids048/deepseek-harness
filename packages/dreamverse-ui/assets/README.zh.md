@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包绘制 DreamVerse 素材库对话框。用户浏览素材库，在 harness 上传策略允许的范围内上传图片、视频和音频，预览和删除文件，并选择一张图片作为下一次生成的参考图。对话框只处理素材库文件；属于项目的文件不会出现在其中。
+本包绘制 DreamVerse 素材库对话框。用户浏览素材库，在 harness 上传策略允许的范围内上传图片、视频和音频，预览和删除文件，并选择一张图片作为下一次生成的参考图。DreamVerse 和 Multiverse 页面都使用它。对话框只处理素材库文件；属于项目的文件不会出现在其中。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-与在 DreamVerse 页面上声明其 slot 的 `@dreamverse/ui-kit` 一起挂载该插件。
+与声明其 slot 的页面一起挂载该插件：`@dreamverse/ui-kit` 或 `@dreamverse/ui-multiverse`。
 
 ### 最小配置
 

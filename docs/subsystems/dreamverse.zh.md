@@ -27,7 +27,7 @@ dsh --profile dreamverse  (Node, one instance per user)
 fastvideo serve with a streaming_v2 config  (Python, on the GPU machine)
 ```
 
-Python 只保留需要 GPU、torch 或 FastVideo 的工作。生成提供方更换时保持不变的一切都属于 harness。
+Python 只保留需要 GPU、torch 或 FastVideo 的工作。生成提供方更换时保持不变的一切都属于 harness。`dreamverse-multiverse` profile 用 Multiverse 的行替换 DreamVerse 工作负载的行，并保留相同的共享行。
 
 ## 共享项目层
 
@@ -44,7 +44,7 @@ Python 只保留需要 GPU、torch 或 FastVideo 的工作。生成提供方更�
 | 术语 | 含义 |
 | --- | --- |
 | 项目 | 一个用户工作单元，带有 ID、标题、缩略图和工作负载数据。harness 拥有每个项目；页面不保存项目内容。 |
-| 类型（kind） | 拥有项目的工作负载，例如 `dreamverse`。一个项目恰好有一种类型，创建时固定。 |
+| 类型（kind） | 拥有项目的工作负载，例如 `dreamverse` 或 `multiverse`。一个项目恰好有一种类型，创建时固定。 |
 | 工作负载数据 | 工作负载自己的 JSON 值及其 schema 版本。项目存储保存它但不解释它。 |
 | 文件所有者 | 用户上传的文件为 `library`，某个项目的文件为 `project:<project_id>`。每个文件恰好有一个所有者。删除项目会删除其文件。 |
 | 参考图副本 | 项目使用的素材库图片在项目中的自有副本。删除素材库图片不会改变该项目。 |
@@ -56,6 +56,7 @@ Python 只保留需要 GPU、torch 或 FastVideo 的工作。生成提供方更�
 工作负载是一组包，为某一类型的项目提供行为和页面。
 
 - **DreamVerse**（`dreamverse`）：[`@dreamverse/project`](../../packages/dreamverse/project/README.zh.md) 保存项目状态及其日志，[`@dreamverse/user-actions`](../../packages/dreamverse/user-actions/README.zh.md) 执行用户操作，[`@dreamverse/project-controller`](../../packages/dreamverse/project-controller/README.zh.md) 提供 `/ws` 协议，[`dreamverse-ui`](../../packages/dreamverse-ui/README.zh.md) 各包绘制页面。[`@dreamverse/bundle`](../../packages/bundle/dreamverse/README.zh.md) 补丁挂载它们。
+- **Multiverse**（`multiverse`）：[`@dreamverse/multiverse`](../../packages/dreamverse/multiverse/README.zh.md) 把分支故事作为片段树来生长，[`@dreamverse/ui-multiverse`](../../packages/dreamverse-ui/multiverse/README.zh.md) 绘制它。[`@dreamverse/multiverse-bundle`](../../packages/bundle/dreamverse-multiverse/README.zh.md) 补丁挂载它们。
 
 ## 生成后端
 

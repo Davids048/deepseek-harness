@@ -66,6 +66,7 @@ The file store uses `<state root>/assets` and the project store uses `<state roo
 ## Further Exploration
 
 - [DreamVerse subsystem](../../../docs/subsystems/dreamverse.md) — the process layout that this layer composes.
+- [`@dreamverse/multiverse-bundle`](../dreamverse-multiverse/README.md) — the Multiverse profile layer over the same state root.
 - [Bundle package group](../README.md) — the other profile layers.
 
 -----
@@ -83,7 +84,7 @@ None; the layer adds nothing to a model request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Shared state root without shared leases** — every harness process that runs the `dreamverse` profile uses `<state root>/assets` and `<state root>/projects`. Project leases and file retentions exist inside one harness process, so two processes that run at the same time over one state root can delete files or projects that the other process is using.
+- **Shared state root without shared leases** — the `dreamverse-multiverse` profile uses the same `<state root>/assets` and `<state root>/projects` directories. Project leases and file retentions exist inside one harness process, so two profiles that run at the same time over one state root can delete files or projects that the other profile is using.
 - **No compression** — the web server sends the page bundles uncompressed.
 
 <a id="dev-note"></a>

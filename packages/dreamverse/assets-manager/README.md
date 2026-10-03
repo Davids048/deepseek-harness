@@ -112,7 +112,7 @@ None; the file store adds nothing to a model request and keeps no state that a m
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Fixed upload limits** — the upload policy uses the reference values in code: images up to 15 MiB and 16,777,216 pixels; video up to 100 MiB, 8,294,400 pixels, and 30 seconds; audio up to 100 MiB, 30 seconds, and 2 channels. No `Config` field changes them.
-- **Retention is per process** — `retain` counts live in one harness process. Two harness processes over the same `root` do not see each other's retentions, so a deletion in one process can remove a file that the other process retained.
+- **Retention is per process** — `retain` counts live in one harness process. Two harness processes over the same `root`, such as the `dreamverse` and `dreamverse-multiverse` profiles, do not see each other's retentions, so a deletion in one process can remove a file that the other process retained.
 - **`ffprobe` from `PATH`** — video and audio uploads fail with `MediaValidationError` when no `ffprobe` executable is on `PATH`.
 
 <a id="dev-note"></a>

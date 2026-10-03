@@ -66,6 +66,7 @@ kind: "package-bundle"
 ## 进一步探索
 
 - [DreamVerse 子系统](../../../docs/subsystems/dreamverse.zh.md)——本层组合出的进程布局。
+- [`@dreamverse/multiverse-bundle`](../dreamverse-multiverse/README.zh.md)——使用同一状态根目录的 Multiverse profile 层。
 - [Bundle 包组](../README.zh.md)——其他 profile 层。
 
 -----
@@ -83,7 +84,7 @@ kind: "package-bundle"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **共享状态根目录但不共享租约**——运行 `dreamverse` profile 的每个 harness 进程都使用 `<state root>/assets` 和 `<state root>/projects` 目录。项目租约和文件保留只存在于单个 harness 进程内，因此在同一状态根目录上同时运行的两个进程可能删除对方正在使用的文件或项目。
+- **共享状态根目录但不共享租约**——`dreamverse-multiverse` profile 使用相同的 `<state root>/assets` 和 `<state root>/projects` 目录。项目租约和文件保留只存在于单个 harness 进程内，因此在同一状态根目录上同时运行的两个 profile 可能删除对方正在使用的文件或项目。
 - **没有压缩**——web 服务器以未压缩形式发送页面 bundle。
 
 <a id="dev-note"></a>

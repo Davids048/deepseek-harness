@@ -1,0 +1,32 @@
+{
+  "name": "@dreamverse/multiverse",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./tree": "./src/tree.ts",
+    "./director": "./src/director.ts",
+    "./controller": "./src/controller.ts"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-agent-default-model": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@dreamverse/assets-manager": "workspace:*",
+    "@dreamverse/generation-client": "workspace:*",
+    "@dreamverse/http-routes": "workspace:*",
+    "@dreamverse/project-store": "workspace:*",
+    "@dreamverse/prompt-enhancer": "workspace:*",
+    "@dreamverse/segment-generation": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/schemastery": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@types/node": "^22.20.0"
+  }
+}

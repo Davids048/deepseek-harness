@@ -44,7 +44,7 @@ kind: "package-reference"
 
 ### 项目与工作负载数据
 
-`create` 用一个 `kind`、一个标题和工作负载数据 `{schemaVersion, data}` 存储项目，其中 `data` 可以是任意 JSON 值。类型指明所属工作负载，例如 `dreamverse`，且永不改变。`list({kind})` 按最近更新在前返回项目；`get` 读取单个项目。存储保存工作负载数据但不解释它，项目的文件是归 `projectOwner(projectId)` 所有的文件存储素材。项目 ID 是带品牌的字符串 `ProjectId`：存储为它创建的或在根目录下找到的 ID 加上品牌，从请求读取项目 ID 的调用方用 `@deepseek-ai/dsh-brand` 的 `brandString` 为其加上品牌。
+`create` 用一个 `kind`、一个标题和工作负载数据 `{schemaVersion, data}` 存储项目，其中 `data` 可以是任意 JSON 值。类型指明所属工作负载，例如 `dreamverse` 或 `multiverse`，且永不改变。`list({kind})` 按最近更新在前返回项目；`get` 读取单个项目。存储保存工作负载数据但不解释它，项目的文件是归 `projectOwner(projectId)` 所有的文件存储素材。项目 ID 是带品牌的字符串 `ProjectId`：存储为它创建的或在根目录下找到的 ID 加上品牌，从请求读取项目 ID 的调用方用 `@deepseek-ai/dsh-brand` 的 `brandString` 为其加上品牌。
 
 ### 租约
 
@@ -92,6 +92,7 @@ kind: "package-reference"
 - [DreamVerse 子系统](../../../docs/subsystems/dreamverse.zh.md)——共享项目层中的项目、类型与租约。
 - [`@dreamverse/assets-manager`](../assets-manager/README.zh.md)——保存项目文件的文件存储。
 - [`@dreamverse/project`](../project/README.zh.md)——DreamVerse 工作负载数据及其迁移。
+- [`@dreamverse/multiverse`](../multiverse/README.zh.md)——Multiverse 工作负载数据。
 
 -----
 
@@ -108,7 +109,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **租约只在单个进程内**——在同一个 `root` 上运行的两个 harness 进程看不到对方的租约。一个进程可能在另一个进程写入某个项目时删除或覆盖该项目。
+- **租约只在单个进程内**——在同一个 `root` 上运行的两个 harness 进程（例如 `dreamverse` 与 `dreamverse-multiverse` profile）看不到对方的租约。一个进程可能在另一个进程写入某个项目时删除或覆盖该项目。
 - **没有分页或搜索**——`GET /projects` 在一个响应中返回所请求类型的全部项目。
 
 <a id="dev-note"></a>

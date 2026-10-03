@@ -77,7 +77,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **只有 DreamVerse 项目**——列表包含类型为 `dreamverse` 的项目，并省略其他所有类型的项目。
+- **只有 DreamVerse 项目**——列表包含类型为 `dreamverse` 的项目；multiverse 不会出现。
 - **没有包内测试**——本包没有 `tests/` 目录；kit 的页面测试把侧边栏作为真实的 `dreamverse.sidebar` 占用者渲染。
 
 <a id="dev-note"></a>
