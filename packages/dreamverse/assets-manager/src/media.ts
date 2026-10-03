@@ -2,7 +2,9 @@
  * Upload limits and content inspection for the image, video, and audio library.
  *
  * A port of `apps/dreamverse/dreamverse/assets/media.py`. Images decode through `sharp`; video and audio are probed
- * with the `ffprobe` executable found on `PATH`, using the reference argument list.
+ * with the `ffprobe` executable found on `PATH`, using the reference argument list. `inspectMedia` validates uploads
+ * against the upload policy; `describeMedia` reads the same facts from files that the harness writes, without the
+ * upload limits.
  *
  * @module @dreamverse/assets-manager/media
  */
@@ -88,6 +90,48 @@ export function mediaTypeForMime(mimeType: string): MediaType {
     if (policy[mediaType].mime_types.includes(mimeType)) return mediaType
   }
   throw new MediaValidationError('Unsupported media type. Select an image, video, or audio format listed in Assets.')
+}
+
+/**
+ * Classify a MIME type by its top-level type, for files that the harness writes rather than uploads.
+ * @param mimeType - the MIME type, possibly with parameters such as `codecs`.
+ * @returns `image`, `video`, or `audio` for the matching `type/` prefix.
+ * @throws {MediaValidationError} for any other top-level type.
+ */
+export function mediaTypeForMimePrefix(mimeType: string): MediaType {
+  for (const mediaType of ['image', 'video', 'audio'] as const) {
+    if (mimeType.startsWith(`${mediaType}/`)) return mediaType
+  }
+  throw new MediaValidationError(`Files must have an image, video, or audio MIME type; got ${JSON.stringify(mimeType)}.`)
+}
+
+/**
+ * Read the facts of a file that the harness writes: frame size for images and videos, duration for videos and audio.
+ * Upload limits (byte size, pixels, duration, channels, accepted formats) do not apply.
+ * @param filePath - the file on local disk.
+ * @param mimeType - the file's MIME type, stored unchanged; its top-level type selects the media type.
+ * @returns the media metadata stored with the file.
+ * @throws {MediaValidationError} when the MIME type is not an image, video, or audio type, the file is empty, or the
+ *   content does not decode as that media type.
+ */
+export async function describeMedia(filePath: string, mimeType: string): Promise<MediaMetadata> {
+  const mediaType = mediaTypeForMimePrefix(mimeType)
+  if ((await stat(filePath)).size === 0) throw new MediaValidationError('The file is empty.')
+  if (mediaType === 'image') {
+    try {
+      const { width, height } = await sharp(filePath, IMAGE_DECODE_OPTIONS).metadata()
+      return { mediaType, mimeType, width, height, durationSec: null }
+    } catch (error) {
+      throw new MediaValidationError('The image could not be decoded.', { cause: error })
+    }
+  }
+  const inspection = await probeMedia(filePath)
+  const firstStream = inspection.streams?.find(stream => stream.codec_type === mediaType)
+  if (firstStream === undefined) throw new MediaValidationError(`The file contains no ${mediaType} stream.`)
+  const duration = Number(inspection.format?.duration ?? Number.NaN)
+  const durationSec = Number.isFinite(duration) ? duration : null
+  if (mediaType === 'audio') return { mediaType, mimeType, width: null, height: null, durationSec }
+  return { mediaType, mimeType, width: firstStream.width ?? null, height: firstStream.height ?? null, durationSec }
 }
 
 /**
@@ -187,6 +231,25 @@ interface FfprobeInspection {
 const execFileAsync = promisify(execFile)
 
 /**
+ * Run `ffprobe` on a local container file and parse its JSON report.
+ * @param filePath - the file on local disk.
+ * @returns the format and stream fields that the inspections read.
+ * @throws {MediaValidationError} when `ffprobe` fails or prints no JSON.
+ */
+async function probeMedia(filePath: string): Promise<FfprobeInspection> {
+  try {
+    // `subprocess.run(timeout=15)` kills the child with SIGKILL when the timeout expires.
+    const { stdout } = await execFileAsync('ffprobe', [...FFPROBE_ARGUMENTS, filePath], {
+      timeout: 15_000, killSignal: 'SIGKILL',
+    })
+    return JSON.parse(stdout) as FfprobeInspection
+  } catch (error) {
+    const message = 'The media file could not be decoded. Check its format and try again.'
+    throw new MediaValidationError(message, { cause: error })
+  }
+}
+
+/**
  * Probe local containers while excluding playlists and network input protocols.
  * @param filePath - the uploaded file.
  * @param mediaType - the declared media type; the file needs at least one stream of this type.
@@ -197,17 +260,7 @@ async function inspectVideoOrAudio(
   filePath: string, mediaType: 'video' | 'audio', mimeType: string,
 ): Promise<MediaMetadata> {
   const policy = uploadPolicy()
-  let inspection: FfprobeInspection
-  try {
-    // `subprocess.run(timeout=15)` kills the child with SIGKILL when the timeout expires.
-    const { stdout } = await execFileAsync('ffprobe', [...FFPROBE_ARGUMENTS, filePath], {
-      timeout: 15_000, killSignal: 'SIGKILL',
-    })
-    inspection = JSON.parse(stdout) as FfprobeInspection
-  } catch (error) {
-    const message = 'The media file could not be decoded. Check its format and try again.'
-    throw new MediaValidationError(message, { cause: error })
-  }
+  const inspection = await probeMedia(filePath)
   const formats = (inspection.format?.format_name ?? '').split(',')
   if (!formats.some(formatName => MEDIA_FORMAT_NAMES.has(formatName))) {
     throw new MediaValidationError('Upload a media file rather than a playlist or external reference.')

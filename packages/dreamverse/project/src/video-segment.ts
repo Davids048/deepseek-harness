@@ -5,8 +5,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import type { CreationConfig } from '@dreamverse/segment-generation'
 import type { AssetRecord } from './dependencies.ts'
-import type { CreationConfig } from './project-creation.ts'
 import { textOr } from './python-values.ts'
 
 /** Original browser instruction and its request identity, shared by the segments it produces. */
@@ -58,10 +58,10 @@ export interface VideoSegmentInit {
  * One version of a video segment, from complete prompt input through delivered output.
  *
  * The prompt and the project's creation config are the segment's model input. `referenceSegmentId` names the
- * preceding video that the segment continues; null starts independent video. `lastFrame` is the PNG of the
- * segment's last decoded frame, which a later segment starts from; `conditioning.ts` decides which images a request
- * carries. Reference assets record the action's ordered selection; file retention belongs to the executing action
- * and ends after its generation finishes. `mime` is the video's MIME type with codecs once the video starts.
+ * preceding video that the segment continues; null starts independent video. A completed segment names its stored
+ * video and last frame in the file store; a later segment starts from that last frame, and
+ * `@dreamverse/segment-generation` decides which images a request carries. Reference assets are the action's ordered
+ * selection as copies that the project owns. `mime` is the video's MIME type with codecs once the video starts.
  */
 export class VideoSegment {
   readonly prompt: string
@@ -76,7 +76,10 @@ export class VideoSegment {
   referenceSegmentId: string | null
   status: SegmentStatus = 'pending'
   deliveryStats: SegmentDeliveryStats | null = null
-  lastFrame: Buffer | null = null
+  /** The file store ID of the segment's fragmented MP4, once the segment completes. */
+  videoAssetId: string | null = null
+  /** The file store ID of the segment's last frame PNG, once the segment completes. */
+  lastFrameAssetId: string | null = null
   mime: string | null = null
   error: string | null = null
 

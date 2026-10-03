@@ -1,5 +1,6 @@
+import type { CreationConfig } from '@dreamverse/segment-generation'
 import { describe, expect, it } from 'vitest'
-import { DreamverseValueError, GenerationPlan, VideoSegment, type CreationConfig, type VideoSegmentInit } from '../src/index.ts'
+import { DreamverseValueError, GenerationPlan, VideoSegment, type VideoSegmentInit } from '../src/index.ts'
 
 const creationConfig: CreationConfig = {
   model_id: 'fast-ltx23', generation_mode: 't2va', aspect_ratio: '16:9', resolution: '720p',

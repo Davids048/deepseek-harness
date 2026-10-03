@@ -14,6 +14,7 @@ import {
   finishRound,
   logEntry,
   openUserActions,
+  projectCopies,
   projectPayload,
   REF2VA,
   rolloutText,
@@ -300,7 +301,7 @@ describe('rewrite_seed_prompts', () => {
       reference_asset_ids: ['side', 'front'],
     })
     await finishRound(run, ['Scene 1'])
-    expect(run.project.completedSequenceSegments[0]!.referenceAssets).toEqual([side, front])
+    expect(run.project.completedSequenceSegments[0]!.referenceAssets).toEqual(projectCopies(run, [side, front]))
     expect(harness!.enhancer.rewriteRollout.mock.calls[0]![1].referenceLabels).toEqual(['Picture 1', 'Picture 2'])
   })
 

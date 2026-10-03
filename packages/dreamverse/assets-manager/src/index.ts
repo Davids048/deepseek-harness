@@ -1,11 +1,12 @@
 /**
- * DreamVerse asset library as the `dreamverseAssetsManager` Cordis service.
+ * The DreamVerse file store as the `dreamverseAssetsManager` Cordis service: every file that DreamVerse workloads use,
+ * owned either by the user's library or by one project.
  *
- * A port of `apps/dreamverse/dreamverse/assets/`: `AssetLibrary`, `inspect_media`, and `upload_policy_as_dict` with
- * the reference messages, plus the reference `/assets` HTTP routes. The service opens the library under the configured
- * root when the plugin starts and closes it when the plugin unloads. While the DSH web server (`webServer`) is
- * available, the service registers the `/assets` routes on it; other GET and HEAD requests under `/assets` serve the
- * DSH page shell's files, which the shell loads from `./assets/`.
+ * Library uploads follow `apps/dreamverse/dreamverse/assets/` (`inspect_media`, `upload_policy_as_dict`, and the
+ * reference messages); files that the harness writes or copies for a project skip the upload limits. The service opens
+ * the store under the configured root when the plugin starts and closes it when the plugin unloads. While the DSH web
+ * server (`webServer`) is available, the service registers the `/assets` routes on it; other GET and HEAD requests
+ * under `/assets` serve the DSH page shell's files, which the shell loads from `./assets/`.
  *
  * @module @dreamverse/assets-manager
  */
@@ -14,24 +15,26 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
 
 import { assetsRouteHandler } from './asset-routes.ts'
-import { AssetLibrary, type AssetRecord } from './library.ts'
+import { AssetLibrary, type AssetOwner, type AssetRecord, type AssetWriteOptions, type AssetWriter } from './library.ts'
 import { uploadPolicy } from './media.ts'
 import { shellFileResponder } from './shell-files.ts'
 
 export { sendFile, type FileDelivery } from './file-response.ts'
-export { AssetInUseError, AssetNotFoundError, type AssetRecord } from './library.ts'
+export {
+  AssetNotFoundError, SCHEMA_VERSION, projectOwner, type AssetOwner, type AssetRecord, type AssetWriteOptions, type AssetWriter,
+} from './library.ts'
 export { MediaValidationError, UploadTooLargeError, type MediaType } from './media.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** DreamVerse asset files, their SQLite index, upload validation, file retention, and project references. */
+    /** DreamVerse files of the library and of projects, their SQLite index, upload validation, and file retention. */
     dreamverseAssetsManager: DreamverseAssetsManager
   }
 }
 
 /** The library location. */
 export interface Config {
-  /** The reference `<state root>/assets` directory holding `files/<asset_id>` and `index.sqlite3`. */
+  /** The `<state root>/assets` directory holding `files/<asset_id>` and `index.sqlite3`. */
   root: string
 }
 
@@ -43,9 +46,9 @@ export const Config = z.object({
 /**
  * The `dreamverseAssetsManager` service: one `AssetLibrary` for the plugin's lifetime.
  *
- * `add` accepts HTTP uploads; `retain` and `release` bracket each accepted generation request and each content
- * response, and `delete` defers file removal until the last retention is released. `addProjectReferences` and
- * `removeProjectReferences` record which stored projects use which assets; `delete` refuses an asset in use.
+ * `add` accepts library uploads; `createWriter`, `addBytes`, and `copy` publish files for any owner. `retain` and
+ * `release` bracket each accepted generation request and each content response, and `delete` and `deleteOwnedBy`
+ * defer file removal until the last retention is released.
  */
 export default class DreamverseAssetsManager extends Service {
   static Config = Config
@@ -87,11 +90,44 @@ export default class DreamverseAssetsManager extends Service {
   }
 
   /**
-   * List the published assets.
-   * @returns every asset that is not deleted, most recently added first.
+   * Start writing one file in pieces; `commit` reads its facts without upload limits and publishes it, and any failure
+   * or `abort` leaves no file. Throws `MediaValidationError` when the MIME type is not an image, video, or audio type.
+   * @param options - the file's owner, display name, and MIME type.
+   * @returns the writer.
    */
-  list(): AssetRecord[] {
-    return this.library.list()
+  createWriter(options: AssetWriteOptions): AssetWriter {
+    return this.library.createWriter(options)
+  }
+
+  /**
+   * Publish one complete file, such as a last-frame PNG; rejects with `MediaValidationError` for content that is not
+   * a decodable image, video, or audio file, leaving no file.
+   * @param options - the file's owner, display name, and MIME type.
+   * @param bytes - the file content.
+   * @returns the published record.
+   */
+  addBytes(options: AssetWriteOptions, bytes: Uint8Array): Promise<AssetRecord> {
+    return this.library.addBytes(options, bytes)
+  }
+
+  /**
+   * Copy a published file for another owner, for example a library image that a project starts to use; rejects with
+   * `AssetNotFoundError` when the source is absent or deleted.
+   * @param assetId - the source file.
+   * @param owner - the owner of the copy.
+   * @returns the copy's record, with a new asset ID.
+   */
+  copy(assetId: string, owner: AssetOwner): Promise<AssetRecord> {
+    return this.library.copy(assetId, owner)
+  }
+
+  /**
+   * List one owner's published files.
+   * @param owner - the owner; the user's library by default.
+   * @returns every file of the owner that is not deleted, most recently added first.
+   */
+  list(owner: AssetOwner = 'library'): AssetRecord[] {
+    return this.library.list(owner)
   }
 
   /**
@@ -124,8 +160,8 @@ export default class DreamverseAssetsManager extends Service {
   }
 
   /**
-   * Hide an asset immediately and remove its file once no retention holds it; throws `AssetNotFoundError` when the
-   * asset is absent or already deleted, and `AssetInUseError` when a stored project uses it.
+   * Hide a file immediately and remove it once no retention holds it; throws `AssetNotFoundError` when the file is
+   * absent or already deleted.
    * @param assetId - the asset ID.
    */
   delete(assetId: string): void {
@@ -133,20 +169,12 @@ export default class DreamverseAssetsManager extends Service {
   }
 
   /**
-   * Record that a stored project uses assets; the record survives restarts until `removeProjectReferences`.
-   * @param projectId - the project ID.
-   * @param assetIds - the asset IDs that the project uses.
+   * Delete every file of one owner, for example when its project is deleted. The caller ensures that no writer for
+   * this owner is still open.
+   * @param owner - the owner whose files to delete.
    */
-  addProjectReferences(projectId: string, assetIds: readonly string[]): void {
-    this.library.addProjectReferences(projectId, assetIds)
-  }
-
-  /**
-   * Remove every asset reference of a project, when the project is deleted.
-   * @param projectId - the project ID.
-   */
-  removeProjectReferences(projectId: string): void {
-    this.library.removeProjectReferences(projectId)
+  deleteOwnedBy(owner: AssetOwner): void {
+    this.library.deleteOwnedBy(owner)
   }
 
   /**

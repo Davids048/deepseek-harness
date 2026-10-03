@@ -1,39 +1,47 @@
 /**
- * Own asset files, their SQLite index, file retention for accepted generation requests, and the stored projects'
- * asset references.
+ * Own every DreamVerse file (user uploads to the library and files that projects own), their SQLite index, and file
+ * retention for accepted generation requests.
  *
- * A port of `apps/dreamverse/dreamverse/assets/library.py`. The directory layout and the `assets` table match the
- * reference, so the harness and the Python server can open the same `<state root>/assets` directory. The harness adds
- * the `asset_references` table, which records the assets that each stored project uses.
+ * The upload rules and the `files/<asset_id>` layout come from `apps/dreamverse/dreamverse/assets/library.py`. The
+ * index carries `SCHEMA_VERSION` in `PRAGMA user_version`; opening a version 0 index (the reference layout, possibly
+ * with the `asset_references` table of earlier harness builds) migrates it to the current version.
  *
  * @module @dreamverse/assets-manager/library
  */
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, rmSync } from 'node:fs'
-import { rm, writeFile } from 'node:fs/promises'
+import { constants, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { copyFile, open, rename, rm, writeFile, type FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
 
-import { UploadTooLargeError, inspectMedia, mediaTypeForMime, uploadPolicy, type MediaType } from './media.ts'
+import {
+  UploadTooLargeError, describeMedia, inspectMedia, mediaTypeForMime, mediaTypeForMimePrefix, uploadPolicy, type MediaType,
+} from './media.ts'
+
+/** The index schema version that this build reads and writes, stored in `PRAGMA user_version`. */
+export const SCHEMA_VERSION = 1
 
 /** The requested asset is absent or deleted from the library; the reference `AssetNotFoundError(LookupError)`. */
 export class AssetNotFoundError extends Error {
   override name = 'AssetNotFoundError'
 }
 
-/** A delete names an asset that stored projects still use. */
-export class AssetInUseError extends Error {
-  override name = 'AssetInUseError'
+/** The party that owns a file: the user's library, or one project. Every file has exactly one owner. */
+export type AssetOwner = 'library' | `project:${string}`
 
-  /** @param projectCount - the number of stored projects that use the asset. */
-  constructor(readonly projectCount: number) {
-    super(`This image is used by ${projectCount} project(s). Delete those projects first.`)
-  }
+/**
+ * The owner of the files of one project.
+ * @param projectId - the project ID.
+ * @returns `project:<projectId>`.
+ */
+export function projectOwner(projectId: string): AssetOwner {
+  return `project:${projectId}`
 }
 
-/** One published asset; `filePath` is `<root>/files/<assetId>`. */
+/** One published file; `filePath` is `<root>/files/<assetId>`. */
 export interface AssetRecord {
   readonly assetId: string
+  readonly owner: AssetOwner
   readonly name: string
   readonly mediaType: MediaType
   readonly mimeType: string
@@ -42,6 +50,27 @@ export interface AssetRecord {
   readonly width: number | null
   readonly height: number | null
   readonly durationSec: number | null
+  /** ISO-8601 UTC time at which the file was complete. */
+  readonly createdAt: string
+}
+
+/** The owner, display name, and MIME type of a file that the harness writes. */
+export interface AssetWriteOptions {
+  owner: AssetOwner
+  name: string
+  /** An `image/`, `video/`, or `audio/` MIME type, possibly with parameters such as `codecs`; stored unchanged. */
+  mimeType: string
+}
+
+/** One file written in pieces: `<root>/files/<assetId>.partial` until `commit` publishes it. */
+export interface AssetWriter {
+  readonly assetId: string
+  /** Append bytes; rejects after `commit` or `abort`. */
+  write(chunk: Uint8Array): Promise<void>
+  /** Inspect the written bytes, rename the partial file, and index it; any failure removes the file. */
+  commit(): Promise<AssetRecord>
+  /** Remove the partial file. Idempotent; a no-op after `commit`. */
+  abort(): Promise<void>
 }
 
 /** The characters for which Python `str.isspace()` is true. */
@@ -64,25 +93,24 @@ export class AssetLibrary {
   private closed = false
 
   /**
-   * Open the index and finish deletions left by a stopped application.
+   * Open and migrate the index, remove partial files left by a stopped application, and finish its deletions.
    * @param root - the directory holding `files/` and `index.sqlite3`; it is created when missing.
+   * @throws {Error} when the index has a schema version newer than `SCHEMA_VERSION`.
    */
   constructor(root: string) {
     this.filesDirectory = path.join(root, 'files')
     mkdirSync(this.filesDirectory, { recursive: true })
-    this.database = new DatabaseSync(path.join(root, 'index.sqlite3'))
-    this.database.exec(
-      `CREATE TABLE IF NOT EXISTS assets (
-                    asset_id TEXT PRIMARY KEY, name TEXT NOT NULL, media_type TEXT NOT NULL,
-                    mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, width INTEGER,
-                    height INTEGER, duration_sec REAL, deleted INTEGER NOT NULL DEFAULT 0
-                )`,
-    )
-    this.database.exec(
-      `CREATE TABLE IF NOT EXISTS asset_references (
-                    asset_id TEXT NOT NULL, project_id TEXT NOT NULL, PRIMARY KEY (asset_id, project_id)
-                )`,
-    )
+    const indexPath = path.join(root, 'index.sqlite3')
+    this.database = new DatabaseSync(indexPath)
+    try {
+      migrateIndex(this.database, indexPath, this.filesDirectory)
+    } catch (error) {
+      this.database.close()
+      throw error
+    }
+    for (const name of readdirSync(this.filesDirectory)) {
+      if (name.endsWith(PARTIAL_SUFFIX)) rmSync(path.join(this.filesDirectory, name), { force: true })
+    }
     for (const row of this.database.prepare('SELECT asset_id FROM assets WHERE deleted = 1').all()) {
       this.removeDeletedFile(String(row.asset_id))
     }
@@ -104,17 +132,12 @@ export class AssetLibrary {
     if (content.byteLength > maxBytes) {
       throw new UploadTooLargeError(`The ${mediaType} exceeds the ${maxBytes} byte upload limit.`)
     }
-    const assetId = randomUUID().replaceAll('-', '')
+    const assetId = newAssetId()
     const filePath = path.join(this.filesDirectory, assetId)
     try {
       await writeFile(filePath, content, { flag: 'wx' })
       const metadata = await inspectMedia(filePath, mimeType)
-      this.database.prepare(
-        `INSERT INTO assets
-                    (asset_id, name, media_type, mime_type, size_bytes, width, height, duration_sec)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(assetId, displayName(name), metadata.mediaType, metadata.mimeType, content.byteLength,
-        metadata.width, metadata.height, metadata.durationSec)
+      this.insert({ assetId, owner: 'library', name: displayName(name), sizeBytes: content.byteLength, ...metadata })
       return this.get(assetId)
     } catch (error) {
       await rm(filePath, { force: true })
@@ -123,11 +146,78 @@ export class AssetLibrary {
   }
 
   /**
-   * List the published assets.
-   * @returns every asset that is not deleted, most recently added first.
+   * Start writing one file in pieces. The writer creates `<root>/files/<assetId>.partial` on its first write; `commit`
+   * reads the file's facts without upload limits, renames it to `<assetId>`, and indexes it.
+   * @param options - the file's owner, display name (sanitized like an upload name), and MIME type.
+   * @returns the writer.
+   * @throws {MediaValidationError} when the MIME type is not an image, video, or audio type.
    */
-  list(): AssetRecord[] {
-    const rows = this.database.prepare('SELECT * FROM assets WHERE deleted = 0 ORDER BY rowid DESC').all()
+  createWriter(options: AssetWriteOptions): AssetWriter {
+    mediaTypeForMimePrefix(options.mimeType)
+    return new PartialFileWriter(newAssetId(), this.filesDirectory, async (assetId, sizeBytes, filePath) => {
+      const metadata = await describeMedia(filePath, options.mimeType)
+      await rename(filePath, path.join(this.filesDirectory, assetId))
+      try {
+        this.insert({ assetId, owner: options.owner, name: displayName(options.name), sizeBytes, ...metadata })
+      } catch (error) {
+        await rm(path.join(this.filesDirectory, assetId), { force: true })
+        throw error
+      }
+      return this.get(assetId)
+    })
+  }
+
+  /**
+   * Write one complete file, such as a last-frame PNG.
+   * @param options - the file's owner, display name, and MIME type.
+   * @param bytes - the file content.
+   * @returns the published record.
+   * @throws {MediaValidationError} when the MIME type or the content is not a decodable image, video, or audio file;
+   *   no file remains then.
+   */
+  async addBytes(options: AssetWriteOptions, bytes: Uint8Array): Promise<AssetRecord> {
+    const writer = this.createWriter(options)
+    try {
+      await writer.write(bytes)
+      return await writer.commit()
+    } catch (error) {
+      await writer.abort()
+      throw error
+    }
+  }
+
+  /**
+   * Copy a published file for another owner. The copy has a new ID, the source's facts, and its own lifetime: deleting
+   * either file leaves the other. The source stays retained while its bytes are copied.
+   * @param assetId - the source file.
+   * @param owner - the owner of the copy.
+   * @returns the copy's record.
+   * @throws {AssetNotFoundError} when the source is absent or deleted.
+   */
+  async copy(assetId: string, owner: AssetOwner): Promise<AssetRecord> {
+    const [source] = this.retain([assetId])
+    if (source === undefined) throw new Error(`Retaining asset ${assetId} returned no record.`)
+    const copyId = newAssetId()
+    const copyPath = path.join(this.filesDirectory, copyId)
+    try {
+      await copyFile(source.filePath, copyPath, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE)
+      this.insert({ ...source, assetId: copyId, owner })
+      return this.get(copyId)
+    } catch (error) {
+      await rm(copyPath, { force: true })
+      throw error
+    } finally {
+      this.release([assetId])
+    }
+  }
+
+  /**
+   * List one owner's published files.
+   * @param owner - the owner; the user's library by default.
+   * @returns every file of the owner that is not deleted, most recently added first.
+   */
+  list(owner: AssetOwner = 'library'): AssetRecord[] {
+    const rows = this.database.prepare('SELECT * FROM assets WHERE deleted = 0 AND owner = ? ORDER BY rowid DESC').all(owner)
     return rows.map(row => this.record(row))
   }
 
@@ -180,36 +270,24 @@ export class AssetLibrary {
   }
 
   /**
-   * Hide an asset immediately; preserve its file while generation uses it.
+   * Hide a file immediately; preserve it on disk while a retention holds it.
    * @param assetId - the asset ID.
    * @throws {AssetNotFoundError} when the asset is absent or already deleted.
-   * @throws {AssetInUseError} when a stored project uses the asset; nothing changes then.
    */
   delete(assetId: string): void {
     this.get(assetId)
-    const references = this.database.prepare('SELECT COUNT(*) AS count FROM asset_references WHERE asset_id = ?').get(assetId)
-    const projectCount = Number(references?.count ?? 0)
-    if (projectCount > 0) throw new AssetInUseError(projectCount)
     this.database.prepare('UPDATE assets SET deleted = 1 WHERE asset_id = ?').run(assetId)
     if (!this.retained.get(assetId)) this.removeDeletedFile(assetId)
   }
 
   /**
-   * Record that a stored project uses assets; recording an existing reference again changes nothing.
-   * @param projectId - the project ID.
-   * @param assetIds - the asset IDs that the project uses.
+   * Delete every published file of one owner, as `delete` does for each. The caller ensures that no writer for this
+   * owner is still open: a later commit would publish a file for an owner that no longer exists.
+   * @param owner - the owner whose files to delete.
    */
-  addProjectReferences(projectId: string, assetIds: readonly string[]): void {
-    const insert = this.database.prepare('INSERT OR IGNORE INTO asset_references (asset_id, project_id) VALUES (?, ?)')
-    for (const assetId of assetIds) insert.run(assetId, projectId)
-  }
-
-  /**
-   * Remove every asset reference of a project.
-   * @param projectId - the project ID.
-   */
-  removeProjectReferences(projectId: string): void {
-    this.database.prepare('DELETE FROM asset_references WHERE project_id = ?').run(projectId)
+  deleteOwnedBy(owner: AssetOwner): void {
+    const rows = this.database.prepare('SELECT asset_id FROM assets WHERE deleted = 0 AND owner = ?').all(owner)
+    for (const row of rows) this.delete(String(row.asset_id))
   }
 
   /** Close the index after the application has drained accepted generation requests; later calls do nothing. */
@@ -228,11 +306,22 @@ export class AssetLibrary {
     }
   }
 
+  /** Index one complete file under `files/<assetId>`, stamped with the current time. */
+  private insert(fields: Omit<AssetRecord, 'filePath' | 'createdAt'>): void {
+    this.database.prepare(
+      `INSERT INTO assets
+                    (asset_id, owner, name, media_type, mime_type, size_bytes, width, height, duration_sec, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(fields.assetId, fields.owner, fields.name, fields.mediaType, fields.mimeType, fields.sizeBytes,
+      fields.width, fields.height, fields.durationSec, new Date().toISOString())
+  }
+
   /** Convert one `SELECT *` row of the `assets` table; the `deleted` column is dropped. */
   private record(row: Record<string, SQLOutputValue>): AssetRecord {
     const assetId = String(row.asset_id)
     return {
       assetId,
+      owner: parseOwner(row.owner),
       name: String(row.name),
       mediaType: row.media_type as MediaType,
       mimeType: String(row.mime_type),
@@ -241,7 +330,142 @@ export class AssetLibrary {
       width: row.width as number | null,
       height: row.height as number | null,
       durationSec: row.duration_sec as number | null,
+      createdAt: String(row.created_at),
     }
+  }
+}
+
+/** The suffix of a file that a writer has not committed. */
+const PARTIAL_SUFFIX = '.partial'
+
+/** A new asset ID: 32 lowercase hexadecimal digits. */
+function newAssetId(): string {
+  return randomUUID().replaceAll('-', '')
+}
+
+/**
+ * Read an owner column value; the index is a durable file, so an unknown value is an error.
+ * @param value - the stored `owner` value.
+ * @returns the owner.
+ * @throws {Error} for a value that is neither `library` nor `project:<project_id>`.
+ */
+function parseOwner(value: SQLOutputValue | undefined): AssetOwner {
+  if (value === 'library') return 'library'
+  if (typeof value === 'string' && value.startsWith('project:') && value.length > 'project:'.length) {
+    return projectOwner(value.slice('project:'.length))
+  }
+  throw new Error(`The asset index holds an unknown owner ${JSON.stringify(value)}.`)
+}
+
+/**
+ * Bring an index to `SCHEMA_VERSION` in one transaction. Version 0 is the unversioned layout: the reference `assets`
+ * table, possibly with the `asset_references` table. Version 1 adds `owner` (existing files belong to the library)
+ * and `created_at` (taken from each file's modification time), indexes `owner`, and drops `asset_references`.
+ * @param database - the open index.
+ * @param indexPath - the index file, named in errors.
+ * @param filesDirectory - the `files/` directory, for the modification times.
+ * @throws {Error} when the index has a newer schema version than this build.
+ */
+function migrateIndex(database: DatabaseSync, indexPath: string, filesDirectory: string): void {
+  const version = Number(database.prepare('PRAGMA user_version').get()?.user_version ?? 0)
+  if (version > SCHEMA_VERSION) {
+    throw new Error(`The asset index ${indexPath} has schema version ${version}; this build reads version ${SCHEMA_VERSION}.`)
+  }
+  if (version === SCHEMA_VERSION) return
+  database.exec('BEGIN')
+  try {
+    database.exec(
+      `CREATE TABLE IF NOT EXISTS assets (
+                    asset_id TEXT PRIMARY KEY, name TEXT NOT NULL, media_type TEXT NOT NULL,
+                    mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, width INTEGER,
+                    height INTEGER, duration_sec REAL, deleted INTEGER NOT NULL DEFAULT 0
+                )`,
+    )
+    database.exec('ALTER TABLE assets ADD COLUMN owner TEXT NOT NULL DEFAULT \'library\'')
+    database.exec('ALTER TABLE assets ADD COLUMN created_at TEXT')
+    const stamp = database.prepare('UPDATE assets SET created_at = ? WHERE asset_id = ?')
+    for (const row of database.prepare('SELECT asset_id FROM assets').all()) {
+      const assetId = String(row.asset_id)
+      stamp.run(fileTime(path.join(filesDirectory, assetId)), assetId)
+    }
+    database.exec('CREATE INDEX assets_owner ON assets (owner)')
+    database.exec('DROP TABLE IF EXISTS asset_references')
+    database.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`)
+    database.exec('COMMIT')
+  } catch (error) {
+    database.exec('ROLLBACK')
+    throw error
+  }
+}
+
+/**
+ * The modification time of a file as ISO-8601 UTC; a file that is already gone (a pending deletion) gets the current
+ * time.
+ * @param filePath - the file.
+ * @returns the time.
+ */
+function fileTime(filePath: string): string {
+  try {
+    return statSync(filePath).mtime.toISOString()
+  } catch {
+    // ENOENT: the file of a tombstoned row may already be removed; its row is deleted when the library opens.
+    return new Date().toISOString()
+  }
+}
+
+/**
+ * Write one file to `<assetId>.partial`, then hand it to `publish`. A failed or aborted write leaves no file.
+ */
+class PartialFileWriter implements AssetWriter {
+  private readonly partialPath: string
+  private handle: FileHandle | null = null
+  private sizeBytes = 0
+  private state: 'open' | 'committing' | 'committed' | 'aborted' = 'open'
+
+  /**
+   * @param assetId - the ID that the published file gets.
+   * @param filesDirectory - the `files/` directory.
+   * @param publish - reads the partial file's facts, renames it to `<assetId>`, indexes it, and returns its record.
+   */
+  constructor(
+    readonly assetId: string,
+    filesDirectory: string,
+    private readonly publish: (assetId: string, sizeBytes: number, partialPath: string) => Promise<AssetRecord>,
+  ) {
+    this.partialPath = path.join(filesDirectory, `${assetId}${PARTIAL_SUFFIX}`)
+  }
+
+  async write(chunk: Uint8Array): Promise<void> {
+    if (this.state !== 'open') throw new Error(`The writer of asset ${this.assetId} is ${this.state}.`)
+    this.handle ??= await open(this.partialPath, 'wx')
+    await this.handle.write(chunk)
+    this.sizeBytes += chunk.byteLength
+  }
+
+  async commit(): Promise<AssetRecord> {
+    if (this.state !== 'open') throw new Error(`The writer of asset ${this.assetId} is ${this.state}.`)
+    this.state = 'committing'
+    try {
+      this.handle ??= await open(this.partialPath, 'wx')
+      await this.handle.close()
+      this.handle = null
+      const record = await this.publish(this.assetId, this.sizeBytes, this.partialPath)
+      this.state = 'committed'
+      return record
+    } catch (error) {
+      this.state = 'open'
+      await this.abort()
+      throw error
+    }
+  }
+
+  async abort(): Promise<void> {
+    if (this.state === 'committed' || this.state === 'aborted') return
+    this.state = 'aborted'
+    const handle = this.handle
+    this.handle = null
+    await handle?.close()
+    await rm(this.partialPath, { force: true })
   }
 }
 

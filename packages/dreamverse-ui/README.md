@@ -1,62 +1,46 @@
+---
+description: "The dreamverse-ui package group: the DreamVerse page as DSH browser plugins, for readers choosing or navigating the family."
+kind: "package-group"
+---
+
 # dreamverse-ui/ — the DreamVerse page
 
-This package group is the DreamVerse page: a port of the FastVideo DreamVerse Next.js frontend (`apps/dreamverse/web/src/` in the FastVideo checkout) as DSH browser plugins. The harness serves the page on `DREAMVERSE_BROWSER_PORT`, and the page talks to the harness through the same `/ws` protocol and HTTP routes that the Next.js frontend used ([`../dreamverse/`](../dreamverse/README.md)). The page keeps the frontend's own components, Tailwind theme, and layout. It loads no DSH UI component package (`ui-primitives`, `ui-theme`, `ui-layout`) and no DSH agent chat UI.
+English | [中文](README.zh.md)
 
-## Page composition
+## Summary
 
-```
-DSH page shell (@deepseek-ai/dsh-web-app), loads /plugins/<id>/client.js through @deepseek-ai/dsh-client-modules
-  @deepseek-ai/dsh-client-ui-renderer    mounts the `root` slot
-    @dreamverse/ui-kit                   `root` occupant: DreamverseApp, Header, Toaster, stylesheet
-      dreamverse.sidebar          <- @dreamverse/ui-project-history   Sidebar
-      dreamverse.asset-library    <- @dreamverse/ui-assets            AssetLibrary
-      dreamverse.player           <- @dreamverse/ui-player            VideoPlayer
-      dreamverse.workspace        <- @dreamverse/ui-directing         Workspace
-      dreamverse.creation-studio  <- @dreamverse/ui-creation          CreationStudio
-      dreamverse.chatbar          <- @dreamverse/ui-creation          ChatBar
-```
+These packages draw the DreamVerse page in the browser: the creation studio, the live composer, the video player, the prompt timeline, the asset library, and the project history. They port the FastVideo DreamVerse Next.js frontend to DSH browser plugins and keep its components, Tailwind theme, and layout. The page talks to the harness through the `/ws` protocol and the HTTP routes of [`../dreamverse/`](../dreamverse/README.md).
 
-`@dreamverse/ui-kit` registers `root` with six child slots (`DREAMVERSE_SLOTS` in `kit/src/client/contracts.ts`). `DreamverseApp` (the port of `app/page.tsx`) renders each child through `renderSlot(name, props)` with the props that the frontend's page passed to that component (`DreamverseSlotOwners`). Each occupant package registers its component into its slot while the kit declares that slot (`ctx.slots.inject`). The renderer wraps `root` in a `session-maybe` scope, so the kit installs a `session` scope adapter whose binding is always absent; DreamVerse has no DSH Sessions.
+## Table of Contents
 
-The page's protocol and state code are the frontend's React-free modules in `packages/dreamverse/project-controller/src/client/` (`ws/`, `stores/`, creation configuration) plus the harness project client `projects.ts`, and `packages/dreamverse/assets-manager/src/client/assets.ts`. The page imports them as `@dreamverse/project-controller/client/<path>.ts` and `@dreamverse/assets-manager/client/assets.ts`.
+- [Packages](#packages)
+- [Related documentation](#related-documentation)
+- [Dev Note](#dev-note)
 
+-----
+
+<a id="packages"></a>
 ## Packages
 
-| Package           | Slots                                              | Port of (FastVideo `apps/dreamverse/web/src/`)                                                                                                                                                               |
-| ----------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `kit`             | `root`                                             | `app/page.tsx`, the page settings of `app/layout.tsx`, `app/globals.css`, `components/ui/`, `components/Header.tsx`, `components/assets/AssetPreview.tsx`, `hooks/useStore.ts`, `lib/media/`, `lib/utils.ts` |
-| `creation`        | `dreamverse.creation-studio`, `dreamverse.chatbar` | `components/creation/`, `components/ChatBar.tsx`, `HeroTagline.tsx`, `LeaveProjectModal.tsx`, `components/assets/{ReferencePicker,ReferenceImageGrid,AssetPreviewDialog}.tsx`                                |
-| `player`          | `dreamverse.player`                                | `components/VideoPlayer.tsx`                                                                                                                                                                                 |
-| `directing`       | `dreamverse.workspace`                             | `components/Workspace.tsx`                                                                                                                                                                                   |
-| `assets`          | `dreamverse.asset-library`                         | `components/assets/AssetLibrary.tsx`                                                                                                                                                                         |
-| `project-history` | `dreamverse.sidebar`                               | `components/Sidebar.tsx`                                                                                                                                                                                     |
+`@dreamverse/ui-kit` fills the shell's `root` slot and declares the page's child slots; each other package fills one or two of them.
 
-The Host half of `@dreamverse/ui-kit` (`kit/src/index.ts`) serves the frontend's `/logo.svg`, `/k2.png`, and `/icon-simple.svg` from `kit/public/` on the DSH web server. The bundle patch `packages/bundle/dreamverse/cordis.patch.yml` mounts all six packages.
+| Package | Slots | Role |
+| --- | --- | --- |
+| [`kit`](kit/README.md) | `root` | The page frame, its shared components, its stylesheet, and its static images |
+| [`creation`](creation/README.md) | `dreamverse.creation-studio`, `dreamverse.chatbar` | Project creation and the live directing composer |
+| [`player`](player/README.md) | `dreamverse.player` | Live and archived playback |
+| [`directing`](directing/README.md) | `dreamverse.workspace` | The prompt event timeline of the shown project |
+| [`assets`](assets/README.md) | `dreamverse.asset-library` | The asset library dialog |
+| [`project-history`](project-history/README.md) | `dreamverse.sidebar` | The stored project list |
 
-## Build
+<a id="related-documentation"></a>
+## Related documentation
 
-`pnpm run build:lib:client` builds every browser bundle (`tsc -b tsconfig.client.json`, then `tsdown`) through `clientBundle` in `packages/client/tsdown.client.ts`. Restart the harness to serve rebuilt bundles. Before bundling, `kit/tsdown.config.ts` runs Tailwind CSS 4 (`@tailwindcss/postcss`) over `kit/src/client/styles/app.css` and writes the git-ignored `app.generated.css` that the kit bundle imports. Tailwind generates utilities for the class names in every `packages/dreamverse-ui/*/src/client/` file.
+- [DreamVerse subsystem](../../docs/subsystems/dreamverse.md) — process layout, workloads, and the differences from the FastVideo frontend.
+- [`dreamverse/`](../dreamverse/README.md) — the harness packages that the page talks to.
+- [Slots subsystem](../../docs/subsystems/slots.md) — how slot owners and occupants compose the page.
 
-The packages follow the repository's compiler options and lint rules; the port matches the frontend in behavior, not in source text. `scripts/verify-client-ui-i18n.ts` skips this group because the page keeps the frontend's English copy.
+<a id="dev-note"></a>
+## Dev Note
 
-## Test
-
-```sh
-node node_modules/vitest/vitest.mjs run packages/dreamverse-ui
-```
-
-The repository's `vitest` run includes these `*.client.spec.{ts,tsx}` files, and `tsconfig.client.json` typechecks them. Each spec runs in jsdom and first imports `kit/tests/support/setup.client.ts`, the port of the frontend's test setup. The tests are ports of the frontend's component tests and page tests (`kit/tests/app/`) without the cases of the features that the page omits. Page tests render `DreamverseApp` with `kit/tests/support/renderDreamverseSlot.client.tsx`, which renders each slot with its real occupant component.
-
-## Differences from the FastVideo frontend
-
-- The page omits the developer tools (`NEXT_PUBLIC_INCLUDE_DEVTOOLS`), the rewrite inspector, the monitor page, the LoRA controls, and voice input (the microphone button). Demo mode (`?demo=1`) works as in the frontend.
-- The live composer has a **Prompt action** selection: **Rewrite** (the default) sends `rewrite_seed_prompts`, and **Continue from the last segment** sends `append_prompt`. The choice is `projectControlsStore.livePromptRewriteMode`; demo mode hides the selection and always continues. The frontend exposes this choice only in its developer tools.
-- The harness owns every project. The page stores no project in the browser: the project history lists `GET /projects`, and selecting a project opens it, which rebuilds its stored rounds from `GET /projects/<project_id>` and the segment videos, then attaches it with the `/ws` message `project_open_v1`. A closed project socket shows **Reconnect**, which opens the same project again. The frontend saves projects to IndexedDB and shows saved projects read-only.
-- The first visit opens the `dsh web:` token URL that the harness prints at startup; the page then sets a cookie. That visit redirects to `/` without the other query parameters, so demo mode needs a second visit to `/?demo=1`.
-- Images are plain `<img>` elements, so the K2 logo shows the original PNG instead of the Next.js image optimizer's downsampled copy.
-- The frontend's stylesheet imports IBM Plex from Google Fonts after the `@font-face` rules of `next/font`, so browsers ignore that import and render system fonts. The page omits the import and renders the same system fonts.
-
-## Known Limitations and Deferred Work
-
-- Each package bundles its own copy of the libraries it imports; only React and Cordis are shared through the DSH platform modules. `@carbon/icons-react` is not tree-shaken, so every bundle that imports a Carbon icon holds the whole icon library (`@dreamverse/ui-player` is 3.9 MB), and the web server sends bundles uncompressed (`compression: none`).
-- The project stores in `packages/dreamverse/project-controller/src/client/stores/` keep the frontend's developer-tools state and operations (editable prompt drafts, curated prompt limits, prompt editor flags), which the page never enables.
+None.

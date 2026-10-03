@@ -1,6 +1,10 @@
 /** Creation validation ported from the reference `tests/test_project_creation.py`, driven by served model facts. */
+import { DreamverseValueError, ProjectValidationError } from '@dreamverse/generation-client'
 import { describe, expect, it } from 'vitest'
-import { DreamverseValueError, parseProjectCreationConfig, pythonFormatG, pythonRepr } from '../src/index.ts'
+import {
+  parseProjectCreationConfig, parseReferenceAssetIds, validateProjectCreation, validateReferenceAssets,
+} from '../src/index.ts'
+import { pythonRepr } from '../src/python-values.ts'
 import { ltxFacts, ref2vaFacts } from './fakes.ts'
 
 /**
@@ -112,8 +116,37 @@ describe('Python message formatting', () => {
   ])('repr(%j) is %s', (text, expected) => {
     expect(pythonRepr(text)).toBe(expected)
   })
+})
 
-  it.each([[4, '4'], [2.5, '2.5'], [4 / 3, '1.33333'], [123456.7, '123457']])('format(%d, "g") is %s', (value, expected) => {
-    expect(pythonFormatG(value)).toBe(expected)
+describe('validateProjectCreation', () => {
+  it('reports a rejected creation choice as a validation error for the creation config', () => {
+    expect(() => validateProjectCreation({ segment_duration_sec: 99 }, ref2vaFacts()))
+      .toThrow(new ProjectValidationError('segment_duration_sec must be from 5 to 15 for h3-ref2va.', 'Invalid creation config'))
+  })
+})
+
+describe('reference selections', () => {
+  it('accepts an ordered list of library IDs', () => {
+    expect(parseReferenceAssetIds({ reference_asset_ids: ['b', 'a'] })).toEqual(['b', 'a'])
+    expect(parseReferenceAssetIds({})).toEqual([])
+  })
+
+  it.each([
+    [{ initial_image: 'data' }, 'Upload references through /assets and supply reference_asset_ids.'],
+    [{ reference_asset_ids: 'a' }, 'reference_asset_ids must be a list of nonempty asset IDs.'],
+    [{ reference_asset_ids: [' '] }, 'reference_asset_ids must be a list of nonempty asset IDs.'],
+    [{ reference_asset_ids: ['a', 'a'] }, 'reference_asset_ids must not contain duplicates.'],
+  ])('rejects the selection %j', (payload, message) => {
+    expect(() => parseReferenceAssetIds(payload)).toThrow(new DreamverseValueError(message))
+  })
+
+  it('keeps one ref2va request image for the last frame and refuses images in a text mode', () => {
+    expect(() => { validateReferenceAssets(ref2vaFacts(), 'ref2va', 8) }).not.toThrow()
+    expect(() => { validateReferenceAssets(ref2vaFacts(), 'ref2va', 9) })
+      .toThrow(new DreamverseValueError('ref2va requires 1 to 8 reference images.'))
+    expect(() => { validateReferenceAssets(ref2vaFacts(), 'ref2va', 0) })
+      .toThrow(new DreamverseValueError('ref2va requires 1 to 8 reference images.'))
+    expect(() => { validateReferenceAssets(ltxFacts(), 't2va', 1) })
+      .toThrow(new DreamverseValueError('Text-to-video mode does not accept reference images.'))
   })
 })

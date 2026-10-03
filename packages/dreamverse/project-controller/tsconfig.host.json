@@ -26,6 +26,12 @@
     },
     {
       "path": "../project"
+    },
+    {
+      "path": "../project-store"
+    },
+    {
+      "path": "../segment-generation"
     }
   ],
   "exclude": [

@@ -6,16 +6,14 @@
  * frame. One mapping, `segmentImages`, orders those sources and gives position N the label `Picture N`. The
  * selected reference images always come first in selection order, so the user's `Picture 1` to `Picture K` keep their
  * numbers whether or not the segment continues a predecessor; the predecessor's last frame follows them as
- * `Picture K+1`. User actions read the labels before they request prompts; the generation plan controller reads the
- * images when it builds the request. Both derive from the same mapping, so a prompt names the images that its request
- * carries.
+ * `Picture K+1`. Workloads read the labels before they request prompts; segment generation reads the images when it
+ * builds the request. Both derive from the same mapping, so a prompt names the images that its request carries.
  *
- * @module @dreamverse/project/conditioning
+ * @module @dreamverse/segment-generation/conditioning
  */
 
 import { readFile } from 'node:fs/promises'
-import type { ModelFacts } from './dependencies.ts'
-import type { VideoSegment } from './video-segment.ts'
+import type { AssetRecord, ModelFacts } from './dependencies.ts'
 
 /** Where a segment sits in its round; it decides whether the segment continues a predecessor. */
 export interface SegmentPosition {
@@ -121,30 +119,23 @@ export function segmentImageLabels(
 }
 
 /**
- * Read the images of one registered segment's request in the order that `segmentImages` assigns, which is the
- * order that `segmentImageLabels` names them.
+ * Read the images of one segment request in the order that `segmentImages` assigns, which is the order that
+ * `segmentImageLabels` names them.
  * @param modelFacts - the served model's facts.
- * @param segment - the segment to generate.
- * @param predecessor - the completed segment that it continues, or null for an independent segment.
+ * @param generationMode - the project's generation mode.
+ * @param referenceAssets - the segment's selected reference images, in selection order.
+ * @param previousLastFrame - the predecessor's last frame for a continued segment, or null for an independent segment.
  * @returns the sent reference images' bytes in selection order, then the predecessor's last frame for a continued
  *   segment.
- * @throws Error when the predecessor kept no last frame.
  */
 export async function segmentRequestImages(
   modelFacts: Pick<ModelFacts, 'generationModes'>,
-  segment: VideoSegment,
-  predecessor: VideoSegment | null,
+  generationMode: string,
+  referenceAssets: readonly AssetRecord[],
+  previousLastFrame: AssetRecord | null,
 ): Promise<Buffer[]> {
-  let lastFrame: Buffer | null = null
-  if (predecessor !== null) {
-    if (predecessor.lastFrame === null) {
-      throw new Error(`Video segment ${predecessor.segmentId} kept no last frame to continue from.`)
-    }
-    lastFrame = predecessor.lastFrame
-  }
-  const images = segmentImages(modelFacts, segment.creationConfig.generation_mode, segment.referenceAssets, lastFrame)
-  return await Promise.all(images.map(async image =>
-    image.kind === 'last_frame' ? image.source : await readFile(image.source.filePath)))
+  const images = segmentImages(modelFacts, generationMode, referenceAssets, previousLastFrame)
+  return await Promise.all(images.map(async image => await readFile(image.source.filePath)))
 }
 
 /**

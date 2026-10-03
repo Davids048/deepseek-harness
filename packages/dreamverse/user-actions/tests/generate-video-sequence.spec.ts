@@ -16,6 +16,7 @@ import {
   finishRound,
   logEntry,
   openUserActions,
+  projectCopies,
   projectPayload,
   REF2VA,
   rolloutText,
@@ -229,7 +230,7 @@ describe('generate_video_sequence', () => {
       ...(kind === 'seed' ? { initial_rollout_prompt: 'A protagonist walks' } : { curated_prompts: ['A lake', 'A forest'] }),
     }))
     await finishRound(run, kind === 'seed' ? ['Scene 1', 'Scene 2'] : ['A lake', 'A forest'])
-    for (const segment of run.project.completedSequenceSegments) expect(segment.referenceAssets).toEqual([side, front])
+    for (const segment of run.project.completedSequenceSegments) expect(segment.referenceAssets).toEqual(projectCopies(run, [side, front]))
     // The second request carries the ordered images, then the first segment's last frame that it starts from.
     const images = [referenceImage('side'), referenceImage('front')]
     expect(run.generation.calls.map(call => call.request.referenceImages)).toEqual([images, [...images, lastFrameBytes(1)]])

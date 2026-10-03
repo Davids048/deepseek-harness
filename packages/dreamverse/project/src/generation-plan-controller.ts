@@ -1,21 +1,30 @@
 /**
  * Execute a fixed generation plan and stream every segment as its output arrives.
  *
- * User actions prepare plans; this controller only submits ready segments and records outcomes, including each
- * segment's last frame, which a later segment starts from. Each settled segment is stored: a completed segment's video
- * and last frame files are written before the project record that names it completed.
+ * User actions prepare plans; this controller only submits ready segments to `dreamverseSegmentGeneration` and records
+ * outcomes, including each segment's last frame, which a later segment starts from. The service stores a completed
+ * segment's video and last frame in the file store before the project record names them.
  *
  * @module @dreamverse/project/generation-plan-controller
  */
 
-import { writeFileSync } from 'node:fs'
-import { segmentRequestImages } from './conditioning.ts'
+import { randomUUID } from 'node:crypto'
+import { projectOwner } from '@dreamverse/assets-manager'
+import type { AssetRecord } from './dependencies.ts'
 import { ProjectClosedError, errorMessage } from './errors.ts'
 import { segmentRecord, type GenerationPlan } from './generation-plan.ts'
 import type { Project } from './project.ts'
 import { round2 } from './python-values.ts'
 import type { VideoSegment } from './video-segment.ts'
-import { streamSegmentToBrowser } from './video-stream.ts'
+
+/**
+ * Build a browser stream ID in the reference `generate_stream_id` form, such as `seg007-abcd1234`.
+ * @param segmentIdx - the segment's one-based display position.
+ * @returns a new stream ID.
+ */
+function generateStreamId(segmentIdx: number): string {
+  return `seg${String(segmentIdx).padStart(3, '0')}-${randomUUID().replaceAll('-', '').slice(0, 8)}`
+}
 
 /** Submit dependency-ready segments and settle one finite round. */
 export class GenerationPlanController {
@@ -79,8 +88,9 @@ export class GenerationPlanController {
   }
 
   /**
-   * Publish segment origin, submit its input to the generation backend, and retain its output statistics and last
-   * frame, storing the video and last frame files before the project record.
+   * Publish segment origin, generate the segment through `dreamverseSegmentGeneration` while its video streams to the
+   * browser (`media_init`, the binary chunks, then `media_segment_complete` after the service stored the files), and
+   * record its stored files and delivery statistics.
    * @param segment - the ready segment.
    * @param segmentIdx - the segment's one-based position in the plan's display sequence.
    */
@@ -101,20 +111,30 @@ export class GenerationPlanController {
     const predecessorId = segment.referenceSegmentId
     const predecessor = predecessorId === null ? null : segmentRecord(project.videoSegmentsById, predecessorId)
     const { creationConfig } = segment
-    const streamed = await streamSegmentToBrowser(project, segmentIdx, {
+    let streamId: string | null = null
+    const generated = await project.segmentGeneration.generate({
       prompt: segment.prompt,
       frameWidth: creationConfig.frame_width,
       frameHeight: creationConfig.frame_height,
       numFrames: creationConfig.num_frames,
-      referenceImages: await segmentRequestImages(project.modelFacts, segment, predecessor),
-      // A later round can continue any completed segment of a model that continues segments.
-      returnLastFrame: project.modelFacts.usesPreviousFrame,
+      generationMode: creationConfig.generation_mode,
+      referenceAssets: segment.referenceAssets,
+      previousLastFrame: predecessor === null ? null : this.lastFrameOf(predecessor),
+      owner: projectOwner(project.projectId),
+      name: segment.segmentId,
       signal: project.generationSignal,
-    }, project.segmentFilePath(segment.segmentId, 'video'))
-    segment.deliveryStats = streamed.deliveryStats
-    segment.lastFrame = streamed.lastFrame
-    segment.mime = streamed.mime
-    if (streamed.lastFrame !== null) writeFileSync(project.segmentFilePath(segment.segmentId, 'frame'), streamed.lastFrame)
+    }, {
+      videoStart: async (mime) => {
+        streamId = generateStreamId(segmentIdx)
+        await project.sendBrowserEvent({ type: 'media_init', segment_idx: segmentIdx, mime, stream_id: streamId })
+      },
+      chunk: async (bytes) => { await project.socket.sendBytes(bytes) },
+    })
+    await project.sendBrowserEvent({ type: 'media_segment_complete', segment_idx: segmentIdx, stream_id: streamId })
+    segment.deliveryStats = { timings: generated.timings, chunkCount: generated.chunkCount, byteCount: generated.byteCount }
+    segment.videoAssetId = generated.video.assetId
+    segment.lastFrameAssetId = generated.lastFrame.assetId
+    segment.mime = generated.mime
     segment.status = 'completed'
     project.persist()
     const totalMs = performance.now() - startedAt
@@ -126,5 +146,17 @@ export class GenerationPlanController {
     await project.logProjectEvent('segment_complete', {
       segment_idx: segmentIdx, latency_ms: latency, data_size_bytes: segment.deliveryStats.byteCount,
     })
+  }
+
+  /**
+   * @param predecessor - the completed segment that the next segment continues.
+   * @returns the predecessor's stored last frame.
+   * @throws Error when the predecessor kept no last frame.
+   */
+  private lastFrameOf(predecessor: VideoSegment): AssetRecord {
+    if (predecessor.lastFrameAssetId === null) {
+      throw new Error(`Video segment ${predecessor.segmentId} kept no last frame to continue from.`)
+    }
+    return this.project.assetRecord(predecessor.lastFrameAssetId)
   }
 }

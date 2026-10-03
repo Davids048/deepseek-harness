@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { continuesPreviousSegment, referenceImageLimit, segmentImageLabels } from '../src/index.ts'
-import { ltxFacts, ref2vaFacts } from './fakes.ts'
+import { Buffer } from 'node:buffer'
+import { afterEach, describe, expect, it } from 'vitest'
+import { continuesPreviousSegment, referenceImageLimit, segmentImageLabels, segmentRequestImages } from '../src/index.ts'
+import { FakeAssets, ltxFacts, ref2vaFacts } from './fakes.ts'
+
+let assets: FakeAssets | undefined
+afterEach(() => { assets?.dispose() })
 
 describe('segment conditioning', () => {
   it.each([
@@ -37,5 +41,23 @@ describe('segment conditioning', () => {
   it('keeps one ref2va request image for the last frame and limits other modes to the model maximum', () => {
     expect(referenceImageLimit(ref2vaFacts(), 'ref2va')).toBe(8)
     expect(referenceImageLimit(ltxFacts(), 'i2v')).toBe(1)
+  })
+
+  it('reads the selected images in selection order, then the last frame of a continued ref2va segment', async () => {
+    assets = new FakeAssets()
+    const side = assets.put('project:p1', 'side.png', Buffer.from('side'))
+    const front = assets.put('project:p1', 'front.png', Buffer.from('front'))
+    const frame = assets.put('project:p1', 'segment-1.png', Buffer.from('last frame'))
+    expect((await segmentRequestImages(ref2vaFacts(), 'ref2va', [side, front], null)).map(String)).toEqual(['side', 'front'])
+    expect((await segmentRequestImages(ref2vaFacts(), 'ref2va', [side, front], frame)).map(String))
+      .toEqual(['side', 'front', 'last frame'])
+  })
+
+  it('starts a continued first-frame shot from the last frame alone', async () => {
+    assets = new FakeAssets()
+    const image = assets.put('project:p1', 'image.png', Buffer.from('image'))
+    const frame = assets.put('project:p1', 'segment-1.png', Buffer.from('last frame'))
+    expect((await segmentRequestImages(ltxFacts(), 'i2v', [image], null)).map(String)).toEqual(['image'])
+    expect((await segmentRequestImages(ltxFacts(), 'i2v', [image], frame)).map(String)).toEqual(['last frame'])
   })
 })

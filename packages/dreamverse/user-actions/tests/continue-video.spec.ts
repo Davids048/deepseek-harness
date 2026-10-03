@@ -16,6 +16,7 @@ import {
   finishRound,
   logEntry,
   openUserActions,
+  projectCopies,
   projectPayload,
   REF2VA,
   roundStatus,
@@ -250,7 +251,8 @@ describe('append_prompt', () => {
     // The chained segment sends only its predecessor's last frame.
     expect(run.generation.calls.map(call => call.request.referenceImages))
       .toEqual([[referenceImage('first')], [lastFrameBytes(1)]])
-    expect(run.project.completedSequenceSegments.map(segment => segment.referenceAssets)).toEqual([[first], [first]])
+    const firstCopy = projectCopies(run, [first])
+    expect(run.project.completedSequenceSegments.map(segment => segment.referenceAssets)).toEqual([firstCopy, firstCopy])
     const after = run.socket.entries.length
     await run.project.processBrowserCommand({ type: 'append_prompt', prompt: 'B', reference_asset_ids: ['second'] })
     const call = await run.generation.nextCall()
@@ -394,7 +396,7 @@ describe('append_prompt', () => {
       type: 'append_prompt', prompt_id: 'request', prompt: 'A protagonist walks', reference_asset_ids: ['side', 'front'],
     })
     await finishRound(run, ['Following scene'])
-    expect(run.project.completedSequenceSegments[1]!.referenceAssets).toEqual([side, front])
+    expect(run.project.completedSequenceSegments[1]!.referenceAssets).toEqual(projectCopies(run, [side, front]))
     // The selected images keep Picture 1 and 2; the accepted segment's last frame follows them as Picture 3.
     expect(harness!.enhancer.continueVideo.mock.calls[0]![1]).toMatchObject({
       referenceLabels: ['Picture 1', 'Picture 2'], firstFrameLabel: 'Picture 3',

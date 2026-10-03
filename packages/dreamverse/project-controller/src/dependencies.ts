@@ -1,11 +1,14 @@
 /**
- * Structural types for the services that the project controller consumes: the `dreamverseProjects` Project surface
- * and stored projects, the `dreamverseGeneration` model facts and readiness, and the `dreamverseAssetsManager` upload
- * policy. They restate
+ * Structural types for the services that the project controller consumes: the `dreamverseProjects` Project surface,
+ * the `dreamverseGeneration` model facts and readiness, and the `dreamverseAssetsManager` upload policy. They restate
  * the members that `packages/dreamverse/README.md` defines, so the project controller compiles and tests against fakes.
  *
  * @module @dreamverse/project-controller/dependencies
  */
+import type { ModelFacts } from '@dreamverse/generation-client'
+import type { ProjectHolder } from '@dreamverse/project-store'
+
+export type { ModelFacts, ProjectHolder }
 
 /** One browser socket; the implementation serializes `sendJson` and `sendBytes` through one lock. */
 export interface ProjectSocket {
@@ -13,14 +16,20 @@ export interface ProjectSocket {
   sendBytes(chunk: Buffer): Promise<void>
 }
 
-/** The inputs of `DreamverseProjects.openProject`. */
-export interface ProjectOpenInit {
-  projectId: string
+/** The browser socket of a project and the party that holds its lease in `dreamverseProjectStore`. */
+export interface ProjectConnectionInit {
   socket: ProjectSocket
+  /** Receives `revoke()` when another party acquires the project. */
+  holder: ProjectHolder
 }
 
-/** The inputs of `DreamverseProjects.createProject`. */
-export interface ProjectInit extends ProjectOpenInit {
+/** The inputs of `DreamverseProjects.openProject`. */
+export interface ProjectOpenInit extends ProjectConnectionInit {
+  projectId: string
+}
+
+/** The inputs of `DreamverseProjects.createProject`; the project store assigns the project ID. */
+export interface ProjectInit extends ProjectConnectionInit {
   /** The complete `project_init_v1` message. */
   payload: Record<string, unknown>
 }
@@ -42,63 +51,23 @@ export interface Project {
   processBrowserCommand(payload: Record<string, unknown>): Promise<void>
   /** Serves admitted rounds; rethrows failures that are not ValueError-kind, like the reference. */
   processQueuedGenerationActions(): Promise<void>
-  /** Stops future work, aborts in-flight generation, drains it, and releases retained assets. */
+  /** Stops future work, aborts in-flight generation, drains it, releases retained assets, and stores the project. */
   closeAndWaitForGeneration(): Promise<void>
-}
-
-/** The fields of one stored segment that the project routes report. */
-export interface PersistedSegment {
-  readonly segment_id: string
-  readonly prompt: string
-  /** `completed` for a segment whose video is stored. */
-  readonly status: string
-  readonly mime: string | null
-  readonly instruction: { readonly request_id: string; readonly text: string } | null
-}
-
-/** The fields of one stored project (`project.json`) that the project routes report. */
-export interface PersistedProject {
-  readonly project_id: string
-  readonly title: string
-  readonly created_at: string
-  readonly updated_at: string
-  readonly creation_config: CreationConfig
-  readonly segments: readonly PersistedSegment[]
-  /** Each completed round's display sequence of segment IDs, oldest first. */
-  readonly completed_sequences: readonly (readonly string[])[]
+  /** Gives up the project's lease after `closeAndWaitForGeneration`. */
+  releaseLease(): void
 }
 
 /** The `dreamverseProjects` members that the project controller calls. */
 export interface DreamverseProjects {
-  /** Rejects with `ProjectValidationError` for a rejected project. */
+  /** Stores a project and takes its lease; rejects with `ProjectValidationError` for a rejected project. */
   createProject(init: ProjectInit): Promise<Project>
-  /** Rejects with `ProjectValidationError` for a project that is not stored or cannot be opened. */
+  /**
+   * Takes a stored project's lease, revoking its current holder first; rejects with `ProjectValidationError` for a
+   * project that is not stored or cannot be opened.
+   */
   openProject(init: ProjectOpenInit): Promise<Project>
-  /** Every stored project, most recently updated first. */
-  listProjects(): readonly PersistedProject[]
-  /** One stored project, or undefined when it is not stored. */
-  readProject(projectId: string): PersistedProject | undefined
-  /** The path of a stored segment's video or last frame, or undefined when it does not exist. */
-  segmentFile(projectId: string, segmentId: string, kind: 'video' | 'frame'): string | undefined
-  /** Removes a stored project; false when it is not stored. The caller ensures that no socket serves it. */
-  deleteProject(projectId: string): boolean
   /** Writes one connection-level project log event; logging failures do not reject. */
   logProjectEvent(projectId: string, event: string, payload?: Record<string, unknown>): Promise<void>
-}
-
-/** The `ModelFacts` fields that `GET /creation-capabilities` reports. */
-export interface ModelFacts {
-  modelId: string
-  /** Generation mode ID to its conditioning input kind. */
-  generationModes: Record<string, string>
-  /** Generation mode ID to the message that rejects it. */
-  unsupportedGenerationModes: Record<string, string>
-  aspectRatios: string[]
-  resolutions: string[]
-  minSegmentDurationSec: number
-  maxSegmentDurationSec: number
-  maxReferenceImages: number
-  usesPreviousFrame: boolean
 }
 
 /** The `dreamverseGeneration` members that the project controller's HTTP routes call. */

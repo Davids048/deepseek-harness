@@ -80,7 +80,7 @@ function storeProject(projectId: string, title: string, bytes: [number[], number
   })
   return {
     project_id: projectId, title, created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-01T10:05:00Z',
-    thumbnail_url: segments[1]?.frame_url ?? null, round_count: 1,
+    thumbnail_url: segments[1]?.frame_url ?? null,
   }
 }
 

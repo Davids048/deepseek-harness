@@ -7,6 +7,8 @@ import { Buffer } from 'node:buffer'
 import { hostname } from 'node:os'
 import { expect } from 'vitest'
 import type { Plugin } from '@deepseek-ai/cordis'
+import { projectOwner } from '@dreamverse/assets-manager'
+import type { AssetRecord } from '@dreamverse/project'
 import type { BrowserEvent } from '../../project/tests/fakes.ts'
 import { openProjects, type FakeServices, type ProjectRun, type ProjectsHarness } from '../../project/tests/harness.ts'
 import * as ContinueVideo from '../src/continue-video.ts'
@@ -120,6 +122,19 @@ export function streamStart(originPromptId: string | null, originPrompt: string,
  */
 export function logEntry(event: string, payload: Record<string, unknown> = {}): BrowserEvent {
   return { event, hostname: hostname(), project_id: 'project', ...payload }
+}
+
+/**
+ * Match the copies that a project made of library images: the same facts under a new ID, owned by the project.
+ * @param run - the running project.
+ * @param libraryAssets - the library images in selection order.
+ * @returns one matcher per image.
+ */
+export function projectCopies(run: ProjectRun, libraryAssets: readonly AssetRecord[]): unknown[] {
+  return libraryAssets.map(asset => ({
+    ...asset, assetId: expect.stringMatching(/^file-\d+$/) as string, filePath: expect.any(String) as string,
+    owner: projectOwner(run.project.projectId),
+  }))
 }
 
 /** The raw rollout text of the fake prompt enhancer for `Scene 1..count`. */

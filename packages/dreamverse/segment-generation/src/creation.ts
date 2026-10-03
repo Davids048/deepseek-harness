@@ -1,14 +1,14 @@
 /**
- * Project creation choices and reference selections, validated against the served model's facts. Port of the
- * reference `project_creation.py` without prompt safety, together with the `ModelCapabilities` checks that it and
- * `Project` call.
+ * Creation choices and reference selections, validated against the served model's facts. Port of the reference
+ * `project_creation.py` without prompt safety, together with the `ModelCapabilities` checks that it calls. Every
+ * workload that generates segments resolves its creation settings here.
  *
- * @module @dreamverse/project/project-creation
+ * @module @dreamverse/segment-generation/creation
  */
 
+import { DreamverseValueError, ProjectValidationError } from '@dreamverse/generation-client'
 import { referenceImageLimit } from './conditioning.ts'
 import type { ModelFacts } from './dependencies.ts'
-import { DreamverseValueError, ProjectValidationError } from './errors.ts'
 import { payloadGet, pythonRepr, textOr, type ActionPayload } from './python-values.ts'
 
 /** Selectable numbers of segments in a project's first sequence. */

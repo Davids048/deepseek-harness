@@ -1,14 +1,14 @@
-/** Verify persistent media ownership, upload validation, and deferred deletion in `AssetLibrary`. */
+/** Verify file owners, index migration, writers and copies, upload validation, and deferred deletion in `AssetLibrary`. */
 import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { AssetInUseError, AssetLibrary, AssetNotFoundError } from '../src/library.ts'
+import { AssetLibrary, AssetNotFoundError, SCHEMA_VERSION, projectOwner } from '../src/library.ts'
 import { MediaValidationError, UploadTooLargeError } from '../src/media.ts'
 import {
-  animatedImageBytes, fixturePath, imageBytes, temporaryDirectory, type TemporaryDirectory,
+  FFPROBE_ON_PATH, animatedImageBytes, fixturePath, imageBytes, temporaryDirectory, type TemporaryDirectory,
 } from './support.ts'
 
 const DECODE_MESSAGE = 'The image could not be decoded. Use PNG, JPEG, or WebP.'
@@ -39,7 +39,10 @@ describe('AssetLibrary persistence', () => {
   it('persists metadata and content across a restart', async () => {
     const content = await imageBytes('png')
     const asset = await library.add(content, 'portrait.png', 'image/png')
-    expect(asset).toMatchObject({ mediaType: 'image', mimeType: 'image/png', width: 16, height: 12, durationSec: null })
+    expect(asset).toMatchObject({
+      owner: 'library', mediaType: 'image', mimeType: 'image/png', width: 16, height: 12, durationSec: null,
+    })
+    expect(Number.isNaN(Date.parse(asset.createdAt))).toBe(false)
     expect(asset.assetId).toMatch(/^[0-9a-f]{32}$/u)
     expect(asset.filePath).toBe(path.join(root, 'files', asset.assetId))
     expect(asset.sizeBytes).toBe(content.byteLength)
@@ -52,16 +55,21 @@ describe('AssetLibrary persistence', () => {
     reopened.close()
   })
 
-  it('creates the reference assets table', () => {
+  it('creates a version 1 index with the owner column, its index, and no reference table', () => {
     library.close()
     const index = new DatabaseSync(path.join(root, 'index.sqlite3'))
     const columns = index.prepare('PRAGMA table_info(assets)').all().map(column => [column.name, column.type])
+    const version = index.prepare('PRAGMA user_version').get()?.user_version
+    const tables = index.prepare('SELECT name FROM sqlite_master WHERE type IN (\'table\', \'index\') ORDER BY name').all()
     index.close()
     library = new AssetLibrary(root)
     expect(columns).toEqual([
       ['asset_id', 'TEXT'], ['name', 'TEXT'], ['media_type', 'TEXT'], ['mime_type', 'TEXT'], ['size_bytes', 'INTEGER'],
       ['width', 'INTEGER'], ['height', 'INTEGER'], ['duration_sec', 'REAL'], ['deleted', 'INTEGER'],
+      ['owner', 'TEXT'], ['created_at', 'TEXT'],
     ])
+    expect(version).toBe(SCHEMA_VERSION)
+    expect(tables.map(table => table.name)).toEqual(['assets', 'assets_owner', 'sqlite_autoindex_assets_1'])
   })
 
   it('lists assets newest first', async () => {
@@ -143,24 +151,152 @@ describe('AssetLibrary retention', () => {
   })
 })
 
-describe('AssetLibrary project references', () => {
-  it('refuses to delete an asset while stored projects use it, across a restart', async () => {
-    const asset = await library.add(await imageBytes('png'), 'portrait.png', 'image/png')
-    library.addProjectReferences('project-a', [asset.assetId])
-    library.addProjectReferences('project-b', [asset.assetId])
-    library.addProjectReferences('project-a', [asset.assetId])
-    expect(() => { library.delete(asset.assetId) }).toThrow(new AssetInUseError(2))
-    expect(new AssetInUseError(2).message).toBe('This image is used by 2 project(s). Delete those projects first.')
+describe('AssetLibrary index migration', () => {
+  it('migrates a version 0 index: files belong to the library, created_at is the file time, references are dropped', async () => {
     library.close()
+    fs.rmSync(root, { recursive: true, force: true })
+    fs.mkdirSync(path.join(root, 'files'), { recursive: true })
+    const content = await imageBytes('png')
+    fs.writeFileSync(path.join(root, 'files', 'old'), content)
+    const mtime = new Date('2026-09-01T12:00:00.000Z')
+    fs.utimesSync(path.join(root, 'files', 'old'), mtime, mtime)
+    const index = new DatabaseSync(path.join(root, 'index.sqlite3'))
+    index.exec(`CREATE TABLE assets (
+                    asset_id TEXT PRIMARY KEY, name TEXT NOT NULL, media_type TEXT NOT NULL,
+                    mime_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, width INTEGER,
+                    height INTEGER, duration_sec REAL, deleted INTEGER NOT NULL DEFAULT 0)`)
+    index.exec('CREATE TABLE asset_references (asset_id TEXT NOT NULL, project_id TEXT NOT NULL, PRIMARY KEY (asset_id, project_id))')
+    index.prepare('INSERT INTO assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)').run('old', 'old.png', 'image', 'image/png', content.length, 16, 12, null)
+    index.prepare('INSERT INTO asset_references VALUES (?, ?)').run('old', 'project-a')
+    index.close()
+
     library = new AssetLibrary(root)
-    library.removeProjectReferences('project-a')
-    expect(() => { library.delete(asset.assetId) }).toThrow(new AssetInUseError(1))
-    expect(library.list()).toEqual([asset])
-    expect(fs.existsSync(asset.filePath)).toBe(true)
-    library.removeProjectReferences('project-b')
-    library.delete(asset.assetId)
-    expect(library.list()).toEqual([])
-    expect(fs.existsSync(asset.filePath)).toBe(false)
+    expect(library.list()).toEqual([{
+      assetId: 'old', owner: 'library', name: 'old.png', mediaType: 'image', mimeType: 'image/png',
+      filePath: path.join(root, 'files', 'old'), sizeBytes: content.length, width: 16, height: 12, durationSec: null,
+      createdAt: mtime.toISOString(),
+    }])
+    library.delete('old')
+    expect(fs.existsSync(path.join(root, 'files', 'old'))).toBe(false)
+    library.close()
+    const migrated = new DatabaseSync(path.join(root, 'index.sqlite3'))
+    const tables = migrated.prepare('SELECT name FROM sqlite_master WHERE type = \'table\'').all().map(table => table.name)
+    const version = migrated.prepare('PRAGMA user_version').get()?.user_version
+    migrated.close()
+    library = new AssetLibrary(root)
+    expect([tables, version]).toEqual([['assets'], SCHEMA_VERSION])
+  })
+
+  it('refuses an index with a newer schema version and leaves it unchanged', () => {
+    library.close()
+    const indexPath = path.join(root, 'index.sqlite3')
+    const index = new DatabaseSync(indexPath)
+    index.exec(`PRAGMA user_version = ${SCHEMA_VERSION + 1}`)
+    index.close()
+    expect(() => new AssetLibrary(root)).toThrow(
+      `The asset index ${indexPath} has schema version ${SCHEMA_VERSION + 1}; this build reads version ${SCHEMA_VERSION}.`)
+    const reopened = new DatabaseSync(indexPath)
+    expect(reopened.prepare('PRAGMA user_version').get()?.user_version).toBe(SCHEMA_VERSION + 1)
+    reopened.close()
+    fs.rmSync(root, { recursive: true, force: true })
+    library = new AssetLibrary(root)
+  })
+
+  it('removes partial files left by a stopped application', () => {
+    library.close()
+    fs.writeFileSync(path.join(root, 'files', 'abc.partial'), 'unfinished')
+    library = new AssetLibrary(root)
+    expect(storedFiles()).toEqual([])
+  })
+})
+
+describe('AssetLibrary owners', () => {
+  it('lists each owner\'s files and deletes one owner\'s files, keeping a retained file until its release', async () => {
+    const content = await imageBytes('png')
+    const owner = projectOwner('p1')
+    const libraryImage = await library.add(content, 'portrait.png', 'image/png')
+    const first = await library.addBytes({ owner, name: 'frame-1.png', mimeType: 'image/png' }, content)
+    const second = await library.addBytes({ owner, name: 'frame-2.png', mimeType: 'image/png' }, content)
+    const other = await library.addBytes({ owner: projectOwner('p2'), name: 'frame.png', mimeType: 'image/png' }, content)
+    expect(owner).toBe('project:p1')
+    expect(library.list()).toEqual([libraryImage])
+    expect(library.list(owner)).toEqual([second, first])
+
+    library.retain([first.assetId])
+    library.deleteOwnedBy(owner)
+    expect(library.list(owner)).toEqual([])
+    expect(() => library.get(first.assetId)).toThrow(AssetNotFoundError)
+    expect([fs.existsSync(first.filePath), fs.existsSync(second.filePath)]).toEqual([true, false])
+    library.release([first.assetId])
+    expect(fs.existsSync(first.filePath)).toBe(false)
+    expect(library.list(projectOwner('p2'))).toEqual([other])
+    expect(library.list()).toEqual([libraryImage])
+  })
+
+  it('copies a file for another owner with a new ID, the same bytes and facts, and its own lifetime', async () => {
+    const content = await imageBytes('png')
+    const source = await library.add(content, 'portrait.png', 'image/png')
+    const copy = await library.copy(source.assetId, projectOwner('p1'))
+    expect(copy).toMatchObject({
+      owner: 'project:p1', name: 'portrait.png', mediaType: 'image', mimeType: 'image/png', sizeBytes: content.length,
+      width: 16, height: 12, durationSec: null,
+    })
+    expect(copy.assetId).not.toBe(source.assetId)
+    expect(fs.readFileSync(copy.filePath)).toEqual(content)
+    library.delete(source.assetId)
+    expect(library.get(copy.assetId)).toEqual(copy)
+    expect(fs.existsSync(copy.filePath)).toBe(true)
+    await expect(library.copy(source.assetId, projectOwner('p2'))).rejects.toThrow(AssetNotFoundError)
+  })
+})
+
+describe('AssetLibrary writers', () => {
+  it('publishes a file written in pieces and leaves no partial file', async () => {
+    const content = await imageBytes('png', 20, 10)
+    const writer = library.createWriter({ owner: projectOwner('p1'), name: 'last/frame.png', mimeType: 'image/png' })
+    await writer.write(content.subarray(0, 10))
+    expect(storedFiles()).toEqual([`${writer.assetId}.partial`])
+    await writer.write(content.subarray(10))
+    const asset = await writer.commit()
+    expect(asset).toMatchObject({
+      assetId: writer.assetId, owner: 'project:p1', name: 'last_frame.png', mediaType: 'image', mimeType: 'image/png',
+      sizeBytes: content.length, width: 20, height: 10, durationSec: null,
+    })
+    expect(storedFiles()).toEqual([writer.assetId])
+    expect(fs.readFileSync(asset.filePath)).toEqual(content)
+    await writer.abort()
+    expect(library.get(asset.assetId)).toEqual(asset)
+    await expect(writer.write(content)).rejects.toThrow(`The writer of asset ${writer.assetId} is committed.`)
+  })
+
+  it('removes the partial file when a writer is aborted', async () => {
+    const writer = library.createWriter({ owner: projectOwner('p1'), name: 'clip.mp4', mimeType: 'video/mp4' })
+    await writer.write(Buffer.from('partial video'))
+    await writer.abort()
+    await writer.abort()
+    expect(storedFiles()).toEqual([])
+    await expect(writer.commit()).rejects.toThrow(`The writer of asset ${writer.assetId} is aborted.`)
+    expect(library.list(projectOwner('p1'))).toEqual([])
+  })
+
+  it('leaves no file when the written content does not decode, and rejects other MIME types up front', async () => {
+    const writer = library.createWriter({ owner: projectOwner('p1'), name: 'frame.png', mimeType: 'image/png' })
+    await writer.write(Buffer.from('not an image'))
+    await expect(writer.commit()).rejects.toThrow(new MediaValidationError('The image could not be decoded.'))
+    await expect(library.addBytes({ owner: projectOwner('p1'), name: 'empty.png', mimeType: 'image/png' }, Buffer.alloc(0)))
+      .rejects.toThrow(new MediaValidationError('The file is empty.'))
+    expect(() => library.createWriter({ owner: projectOwner('p1'), name: 'notes.txt', mimeType: 'text/plain' }))
+      .toThrow(new MediaValidationError('Files must have an image, video, or audio MIME type; got "text/plain".'))
+    expect(storedFiles()).toEqual([])
+    expect(library.list(projectOwner('p1'))).toEqual([])
+  })
+
+  it.skipIf(!FFPROBE_ON_PATH)('reads a written video\'s facts without the upload limits and keeps its codecs MIME type', async () => {
+    const mimeType = 'video/mp4; codecs="avc1.42C028, mp4a.40.2"'
+    const content = fs.readFileSync(fixturePath('video-16x16-5.1.mp4'))
+    const asset = await library.addBytes({ owner: projectOwner('p1'), name: 'segment.mp4', mimeType }, content)
+    expect(asset).toMatchObject({ mediaType: 'video', mimeType, width: 16, height: 16, sizeBytes: content.length })
+    expect(asset.durationSec).toBeGreaterThan(0)
   })
 })
 

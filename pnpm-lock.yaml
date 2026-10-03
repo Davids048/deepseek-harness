@@ -2149,9 +2149,15 @@ importers:
       '@dreamverse/project-controller':
         specifier: workspace:*
         version: link:../../dreamverse/project-controller
+      '@dreamverse/project-store':
+        specifier: workspace:*
+        version: link:../../dreamverse/project-store
       '@dreamverse/prompt-enhancer':
         specifier: workspace:*
         version: link:../../dreamverse/prompt-enhancer
+      '@dreamverse/segment-generation':
+        specifier: workspace:*
+        version: link:../../dreamverse/segment-generation
       '@dreamverse/ui-assets':
         specifier: workspace:*
         version: link:../../dreamverse-ui/assets
@@ -7265,9 +7271,15 @@ importers:
       '@dreamverse/generation-client':
         specifier: workspace:*
         version: link:../generation-client
+      '@dreamverse/project-store':
+        specifier: workspace:*
+        version: link:../project-store
       '@dreamverse/prompt-enhancer':
         specifier: workspace:*
         version: link:../prompt-enhancer
+      '@dreamverse/segment-generation':
+        specifier: workspace:*
+        version: link:../segment-generation
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:~
@@ -7293,6 +7305,12 @@ importers:
       '@dreamverse/project':
         specifier: workspace:*
         version: link:../project
+      '@dreamverse/project-store':
+        specifier: workspace:*
+        version: link:../project-store
+      '@dreamverse/segment-generation':
+        specifier: workspace:*
+        version: link:../segment-generation
       ws:
         specifier: ^8.21.0
         version: 8.21.0
@@ -7310,6 +7328,28 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
 
+  packages/dreamverse/project-store:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@dreamverse/assets-manager':
+        specifier: workspace:*
+        version: link:../assets-manager
+      '@dreamverse/http-routes':
+        specifier: workspace:*
+        version: link:../http-routes
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
   packages/dreamverse/prompt-enhancer:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -7325,6 +7365,25 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+
+  packages/dreamverse/segment-generation:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@dreamverse/assets-manager':
+        specifier: workspace:*
+        version: link:../assets-manager
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../generation-client
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
 
   packages/dreamverse/user-actions:
     dependencies:

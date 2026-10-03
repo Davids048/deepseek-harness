@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { deleteAsset, resolveReferenceAssetIds, type ReferenceDraft } from '../../src/client/assets.ts'
+import { deleteAsset, listAssets, resolveReferenceAssetIds, type ReferenceDraft } from '../../src/client/assets.ts'
 import { imageAsset } from './assetFixtures.client.ts'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -25,6 +25,12 @@ describe('request attachment uploads', () => {
     const uploaded = vi.fn()
     await expect(resolveReferenceAssetIds(draft, uploaded)).rejects.toThrow('Video exceeds duration limit')
     expect(uploaded).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads library records that also carry the server\'s owner and creation time', async () => {
+    const record = { ...imageAsset('front.png'), owner: 'library', created_at: '2026-10-02T00:00:00.000Z' }
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ assets: [record] }))))
+    expect(await listAssets()).toEqual([imageAsset('front.png')])
   })
 
   it('deletes without reading a body from a 204 response', async () => {

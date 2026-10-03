@@ -1,7 +1,7 @@
 /**
  * `@dreamverse/project-controller`: the project surface that the DreamVerse browser UI talks to. It registers `/ws`
- * project sockets and the health, readiness, creation capability, and stored-project (`/projects`) routes on the DSH
- * web server (`webServer`).
+ * project sockets and the health, readiness, and creation capability routes on the DSH web server (`webServer`).
+ * `@dreamverse/project-store/routes` serves the stored projects.
  * Unloading the plugin removes the routes, terminates every project socket, and waits for the project connections to
  * finish their cleanup.
  *
@@ -39,13 +39,6 @@ export function apply(ctx: Context): void {
   for (const path of controller.routePaths) {
     ctx.effect(() => ctx.webServer.register({
       kind: 'exact',
-      path,
-      handler: (request, response) => { controller.serveHttp(request, response) },
-    }), `dreamverse ${path}`)
-  }
-  for (const path of controller.routePrefixes) {
-    ctx.effect(() => ctx.webServer.register({
-      kind: 'prefix',
       path,
       handler: (request, response) => { controller.serveHttp(request, response) },
     }), `dreamverse ${path}`)

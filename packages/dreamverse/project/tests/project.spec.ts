@@ -1,4 +1,5 @@
 import { hostname } from 'node:os'
+import { projectOwner } from '@dreamverse/assets-manager'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DreamverseValueError,
@@ -19,7 +20,7 @@ import {
   within,
   type BrowserEvent,
 } from './fakes.ts'
-import { openProjects, type ProjectsHarness } from './harness.ts'
+import { FakeHolder, openProjects, type ProjectsHarness } from './harness.ts'
 import { actionPlugin, generatePrompts } from './test-actions.ts'
 
 let harness: ProjectsHarness | undefined
@@ -118,7 +119,7 @@ describe('Project creation', () => {
     harness = await openProjects()
     harness.assets.addImage('image')
     const error = await rejection(harness.service.createProject({
-      projectId: 'project', socket: new FakeSocket(),
+      holder: new FakeHolder(), socket: new FakeSocket(),
       payload: projectPayload({ curated_prompts: ['A'], generation_mode: 'i2v', reference_asset_ids: ['image'], auto_extension_enabled: invalid }),
     }))
     expect(error).toBeInstanceOf(ProjectValidationError)
@@ -134,7 +135,7 @@ describe('Project creation', () => {
   ])('rejects creation choices %j', async (fields, message, reason) => {
     harness = await openProjects()
     const error = await rejection(harness.service.createProject({
-      projectId: 'project', socket: new FakeSocket(), payload: projectPayload(fields),
+      holder: new FakeHolder(), socket: new FakeSocket(), payload: projectPayload(fields),
     }))
     expect(error).toBeInstanceOf(ProjectValidationError)
     expect([error.message, (error as ProjectValidationError).reason]).toEqual([message, reason])
@@ -145,7 +146,7 @@ describe('Project creation', () => {
     harness = await openProjects()
     harness.assets.addImage('image')
     const error = await rejection(harness.service.createProject({
-      projectId: 'project', socket: new FakeSocket(),
+      holder: new FakeHolder(), socket: new FakeSocket(),
       payload: projectPayload({ curated_prompts: ['A'], generation_mode: 'i2v', resolution: '4k', reference_asset_ids: ['image'] }),
     }))
     expect(error).toBeInstanceOf(ProjectValidationError)
@@ -160,7 +161,7 @@ describe('Project creation', () => {
     generation.modelError = new TypeError('fetch failed')
     harness = await openProjects([], { generation })
     const error = await rejection(harness.service.createProject({
-      projectId: 'project', socket: new FakeSocket(), payload: projectPayload({ curated_prompts: ['A'] }),
+      holder: new FakeHolder(), socket: new FakeSocket(), payload: projectPayload({ curated_prompts: ['A'] }),
     }))
     expect(error).toBe(generation.modelError)
     expect(error).not.toBeInstanceOf(DreamverseValueError)
@@ -174,7 +175,7 @@ describe('Project creation', () => {
     harness = await openProjects()
     harness.assets.addImage('image')
     const error = await rejection(harness.service.createProject({
-      projectId: 'project', socket: new FakeSocket(),
+      holder: new FakeHolder(), socket: new FakeSocket(),
       payload: projectPayload({ curated_prompts: ['A'], generation_mode: 'i2v', preset_id: 'unused', ...fields }),
     }))
     expect(error).toBeInstanceOf(ProjectValidationError)
@@ -465,7 +466,10 @@ describe('Project reference assets', () => {
     await run.socket.waitForStatus('idle')
     expect(assets.fileExists('image')).toBe(false)
     expect(assets.releaseRequests).toEqual([['image']])
-    expect(harness!.logEvents('segment_start')[0]).toMatchObject({ reference_asset_ids: ['image'] })
+    // The round logs the selected library image; the segment logs the project's copy of it.
+    const [copy] = run.project.completedSequenceSegments[0]!.referenceAssets
+    expect(copy).toMatchObject({ owner: projectOwner(run.project.projectId), name: 'image' })
+    expect(harness!.logEvents('segment_start')[0]).toMatchObject({ reference_asset_ids: [copy!.assetId] })
     expect(harness!.logEvents('generation_round_start')[0]).toMatchObject({ reference_asset_ids: ['image'] })
   })
 
@@ -478,7 +482,8 @@ describe('Project reference assets', () => {
     expect(second.request.referenceImages).toEqual([referenceImage('image'), lastFrameBytes(1)])
     second.finish.resolve()
     await run.socket.waitForStatus('idle')
-    expect(harness!.logEvents('segment_start')[1]).toMatchObject({ reference_asset_ids: ['image'] })
+    const copyIds = run.project.completedSequenceSegments[0]!.referenceAssets.map(asset => asset.assetId)
+    expect(harness!.logEvents('segment_start')[1]).toMatchObject({ reference_asset_ids: copyIds })
   })
 
   it.each([
@@ -565,7 +570,7 @@ describe('Project reference assets', () => {
     const { assets } = await openRef2va([actionPlugin(['generate_video_sequence'], dispatched)])
     const socket = new FakeSocket()
     const project = await harness!.service.createProject({
-      projectId: 'project', socket,
+      holder: new FakeHolder(), socket,
       payload: projectPayload({ ...REF2VA, reference_asset_ids: ['image'], curated_prompts: ['A'] }),
     })
     expect(assets.retainedCount('image')).toBe(1)

@@ -7,9 +7,11 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@dreamverse/assets-manager": "workspace:*",
     "@dreamverse/generation-client": "workspace:*",
+    "@dreamverse/project-store": "workspace:*",
     "@dreamverse/prompt-enhancer": "workspace:*",
-    "@dreamverse/assets-manager": "workspace:*"
+    "@dreamverse/segment-generation": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
