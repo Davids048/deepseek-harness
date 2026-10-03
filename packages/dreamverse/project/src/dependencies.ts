@@ -1,38 +1,33 @@
 /**
- * Service members that the project package consumes. Generation types come from `@dreamverse/generation-client`.
- * The `dreamverseAssetsManager` and `dreamversePromptEnhancer` members restate what project and user-action code calls, as
- * the package README defines them, so both packages compile and test against fakes.
+ * Service members that the project package consumes. Generation types come from `@dreamverse/generation-client`, file
+ * store records from `@dreamverse/segment-generation`, the asset ID type from `@dreamverse/assets-manager`, and project
+ * store types from `@dreamverse/project-store`. The `dreamverseAssetsManager`, `dreamverseProjectStore`,
+ * `dreamverseSegmentGeneration`, and `dreamversePromptEnhancer` members restate what project and user-action code
+ * calls, as the package README defines them, so both packages compile and test against fakes.
  *
  * @module @dreamverse/project/dependencies
  */
 
+import type { AssetId } from '@dreamverse/assets-manager'
 import type { ModelFacts, SegmentOutput, SegmentRequest } from '@dreamverse/generation-client'
+import type { ProjectHolder, ProjectId, ProjectLease, ProjectRecord, UnrecognizedProject, WorkloadData } from '@dreamverse/project-store'
+import type {
+  AssetOwner,
+  AssetRecord,
+  AssetWriteOptions,
+  GeneratedSegment,
+  SegmentGenerationRequest,
+  SegmentSink,
+} from '@dreamverse/segment-generation'
 
 export type { ModelFacts, SegmentOutput, SegmentRequest }
+export type { AssetId, AssetOwner, AssetRecord, AssetWriteOptions, GeneratedSegment, SegmentGenerationRequest, SegmentSink }
+export type { ProjectHolder, ProjectId, ProjectLease, ProjectRecord, UnrecognizedProject, WorkloadData }
 
 /** The `dreamverseGeneration` members that project code calls. */
 export interface DreamverseGeneration {
   /** Rejects with a non-`DreamverseValueError` error when the backend is unreachable. */
   model(): Promise<ModelFacts>
-  /**
-   * Stream one segment. A backend failure rejects with `GenerationSegmentError`; aborting `request.signal` rejects
-   * with `signal.reason`.
-   */
-  generateSegment(request: SegmentRequest): AsyncIterable<SegmentOutput>
-}
-
-/** One asset library record, as `dreamverseAssetsManager` returns it. */
-export interface AssetRecord {
-  assetId: string
-  name: string
-  /** `image`, `video`, or `audio`. */
-  mediaType: string
-  mimeType: string
-  filePath: string
-  sizeBytes: number
-  width: number | null
-  height: number | null
-  durationSec: number | null
 }
 
 /** The `dreamverseAssetsManager` members that project code calls. */
@@ -41,18 +36,46 @@ export interface DreamverseAssetsManager {
    * Resolve every ID, then protect the files in request order until `release`.
    * @throws an error named `AssetNotFoundError` when an asset is absent or deleted; nothing is retained then.
    */
-  retain(assetIds: readonly string[]): AssetRecord[]
+  retain(assetIds: readonly AssetId[]): AssetRecord[]
   /** Release one accepted retention and remove deleted files that no retention protects any more. */
-  release(assetIds: readonly string[]): void
+  release(assetIds: readonly AssetId[]): void
   /**
-   * Resolve one published asset.
+   * Resolve one file of any owner.
    * @throws an error named `AssetNotFoundError` when the asset is absent or deleted.
    */
-  get(assetId: string): AssetRecord
-  /** Record that a stored project uses these assets; the library refuses to delete an asset that a project uses. */
-  addProjectReferences(projectId: string, assetIds: readonly string[]): void
-  /** Remove every reference that `addProjectReferences` recorded for the project. */
-  removeProjectReferences(projectId: string): void
+  get(assetId: AssetId): AssetRecord
+  /**
+   * Copy one file for another owner.
+   * @throws an error named `AssetNotFoundError` when the asset is absent or deleted.
+   */
+  copy(assetId: AssetId, owner: AssetOwner): Promise<AssetRecord>
+  /** Write one small file at once. */
+  addBytes(options: AssetWriteOptions, bytes: Uint8Array): Promise<AssetRecord>
+  /** Delete every file of an owner. */
+  deleteOwnedBy(owner: AssetOwner): void
+}
+
+/** The `dreamverseProjectStore` members that project code calls. */
+export interface DreamverseProjectStore {
+  create(init: { kind: string; title: string; workload: WorkloadData }): ProjectRecord
+  get(projectId: ProjectId): ProjectRecord | undefined
+  /** Rejects with `ProjectNotFoundError` when the project is not stored; revokes the current holder first. */
+  acquire(projectId: ProjectId, holder: ProjectHolder): Promise<ProjectLease>
+  release(lease: ProjectLease): void
+  updateWorkload(lease: ProjectLease, workload: WorkloadData): ProjectRecord
+  setThumbnail(lease: ProjectLease, assetId: AssetId | null): ProjectRecord
+  listUnrecognized(): UnrecognizedProject[]
+  migrate(projectId: ProjectId, init: { kind: string; title: string; createdAt: string; workload: WorkloadData }): ProjectRecord
+}
+
+/** The `dreamverseSegmentGeneration` members that project code calls. */
+export interface DreamverseSegmentGeneration {
+  /**
+   * Generate one segment and store its video and last frame with `request.owner`.
+   * @throws {DreamverseValueError} for a backend `invalid_request` failure; the abort reason once `request.signal`
+   *   aborts.
+   */
+  generate(request: SegmentGenerationRequest, sink?: SegmentSink): Promise<GeneratedSegment>
 }
 
 /** Reference `PromptResult`. */
@@ -82,7 +105,6 @@ export interface RolloutResult {
 /** Keyword arguments of `PromptEnhancer.expand_clip`, plus the abort signal that stops the provider race. */
 export interface ExpandClipOptions {
   segmentDurationSec: number
-  timeoutMs: number
   generationMode: string
   referenceLabels: string[]
   /** The project's generation signal; aborting it rejects the operation. */
@@ -114,7 +136,6 @@ export interface RewriteRolloutOptions {
   presetId: unknown
   presetLabel: unknown
   rewriteInstruction: string
-  timeoutMs: number
   generationMode: string
   /** Labels of the first segment's reference images. */
   referenceLabels: string[]
@@ -132,6 +153,3 @@ export interface DreamversePromptEnhancer {
   continueVideo(conditioningPrompt: string | null, options: ContinueVideoOptions): Promise<PromptResult>
   rewriteRollout(prompts: string[], options: RewriteRolloutOptions): Promise<RolloutResult>
 }
-
-/** Reference `PROMPT_TIMEOUT_MS` from `prompt_enhancement/settings.py`: the provider deadline for project prompts. */
-export const PROMPT_TIMEOUT_MS = 20000

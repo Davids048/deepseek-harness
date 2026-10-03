@@ -20,6 +20,7 @@ import {
   finishRound,
   logEntry,
   openUserActions,
+  projectCopies,
   projectPayload,
   REF2VA,
   roundStatus,
@@ -90,7 +91,7 @@ describe('generate_single_clip', () => {
         expect(segment!.instruction).toEqual({ requestId: 'clip', text: 'A fox' })
         if (enhance) {
           expect(harness.enhancer.expandClip.mock.calls).toEqual([['A fox', {
-            timeoutMs: 20000, generationMode: mode, segmentDurationSec: duration,
+            generationMode: mode, segmentDurationSec: duration,
             // Only the reference-image model numbers its images; first-frame models have no image labels.
             referenceLabels: mode === 'ref2va' ? ['Picture 1'] : [], signal: run.project.generationSignal,
           }]])
@@ -299,7 +300,7 @@ describe('generate_single_clip', () => {
     expect(call.request.referenceImages).toEqual([referenceImage('side'), referenceImage('front')])
     call.finish.resolve()
     await run.socket.waitForStatus('idle', 1)
-    expect(run.project.completedSequenceSegments[0]!.referenceAssets).toEqual([side, front])
+    expect(run.project.completedSequenceSegments[0]!.referenceAssets).toEqual(projectCopies(run, [side, front]))
     expect(harness.enhancer.expandClip.mock.calls[0]![1].referenceLabels).toEqual(['Picture 1', 'Picture 2'])
   })
 

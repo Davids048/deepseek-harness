@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clientSourceRoot, findUiI18nViolations, skipsUiI18nCheck } from './verify-client-ui-i18n.ts'
+import { clientSourceRoot, findUiI18nViolations } from './verify-client-ui-i18n.ts'
 
 function messages(source: string): string[] {
   return findUiI18nViolations('packages/client/ui-example/src/client/View.tsx', source)
@@ -41,12 +41,6 @@ describe('Client UI i18n source check', () => {
     expect(clientSourceRoot('packages\\extensions\\sample\\src\\client\\View.tsx'))
       .toBe('packages/extensions/sample/src/client')
     expect(clientSourceRoot('packages/extensions/sample/src/server/index.ts')).toBeUndefined()
-  })
-
-  it('skips only the DreamVerse UI port', () => {
-    expect(skipsUiI18nCheck('packages/dreamverse-ui/kit/src/client/app/DreamverseApp.tsx')).toBe(true)
-    expect(skipsUiI18nCheck('packages/dreamverse/project-controller/src/client/ws/client.ts')).toBe(false)
-    expect(skipsUiI18nCheck('packages/client/ui-chat/src/client/Chat.tsx')).toBe(false)
   })
 
   it('accepts translated copy, dynamic values, structural attributes, and language tokens', () => {

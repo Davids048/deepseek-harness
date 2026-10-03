@@ -6,10 +6,14 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { LobbyCreationCapabilities, LobbySelection } from '@dreamverse/project-controller/client/creationCapabilities.ts'
 import CreationComposer from '../src/client/components/creation/CreationComposer.tsx'
+import { en } from '../src/client/locales.ts'
 
 type ComposerProps = ComponentProps<typeof CreationComposer>
+
+const t = makeTranslate(en)
 
 const supportedCapabilities: LobbyCreationCapabilities = {
   model_id: 'fast-h3',
@@ -30,6 +34,7 @@ function ComposerWithDraft(props: Partial<ComposerProps>) {
   const [value, setValue] = useState(props.value ?? 'A river')
   const [selection, setSelection] = useState(props.selection ?? supportedSelection)
   return <CreationComposer
+    t={t}
     canSubmit
     capabilities={supportedCapabilities}
     capabilityNotice={null}

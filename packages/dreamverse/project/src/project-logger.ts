@@ -7,6 +7,7 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
+import type { ProjectId } from './dependencies.ts'
 
 /** Two-digit zero padding for date and time fields. */
 function pad2(value: number): string {
@@ -64,7 +65,7 @@ export class ProjectEventLogger {
    * @param projectId - the project that produced the event.
    * @param payload - fields appended after the entry header; payload keys that repeat a header key replace its value.
    */
-  writeEvent(event: string, projectId: string, payload?: Record<string, unknown>): void {
+  writeEvent(event: string, projectId: ProjectId, payload?: Record<string, unknown>): void {
     const entry = { ts: utcIsoTimestamp(), event, hostname: this.hostname, project_id: projectId, ...payload }
     appendFileSync(this.path, `${JSON.stringify(entry)}\n`, 'utf8')
   }

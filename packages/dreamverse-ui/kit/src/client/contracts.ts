@@ -10,10 +10,11 @@ import type {
   AspectRatioId, CreationModeId, CreationModelId, MentionOption, ResolutionId,
 } from '@dreamverse/project-controller/client/creationConfig.ts'
 import type { LobbyCreationCapabilities, LobbySelection } from '@dreamverse/project-controller/client/creationCapabilities.ts'
+import type { ProjectId } from '@dreamverse/project-controller/client/ids.ts'
 import type { ProjectSummary } from '@dreamverse/project-controller/client/projects.ts'
 import type { PromptEvent } from '@dreamverse/project-controller/client/promptEvents.ts'
 import type { CompletedClip } from '@dreamverse/project-controller/client/stores/stream.ts'
-import type { AssetRecord, AssetUploadPolicy, ReferenceDraft } from '@dreamverse/assets-manager/client/assets.ts'
+import type { AssetId, AssetRecord, AssetUploadPolicy, ReferenceDraft } from '@dreamverse/assets-manager/client/assets.ts'
 
 /** Creation settings of one project, shown as configuration pills. */
 export interface ProjectCreationConfig {
@@ -153,8 +154,8 @@ export interface WorkspaceProps {
 /** Owner props of `dreamverse.sidebar`: the project history that the harness lists. */
 export interface SidebarProps {
   open?: boolean
-  /** Harness ID of the current project; the history omits it because the Current entry shows it. */
-  currentProjectId?: string
+  /** Harness ID of the current project, or null when it has none; the history omits it because the Current entry shows it. */
+  currentProjectId?: ProjectId | null
   currentProjectLabel?: string
   hasCurrentProject?: boolean
   connectionClosed?: boolean
@@ -165,8 +166,8 @@ export interface SidebarProps {
   notice?: string
   onClose?: () => void
   /** Opens a listed project by its harness ID. */
-  onSelectProject?: (projectId: string) => void
-  onDeleteProject?: (projectId: string) => void
+  onSelectProject?: (projectId: ProjectId) => void
+  onDeleteProject?: (projectId: ProjectId) => void
   onNewProject?: () => void
   onOpenAssets?: () => void
 }
@@ -179,7 +180,7 @@ export interface AssetLibraryProps {
   uploadPolicy: AssetUploadPolicy | null
   onClose: () => void
   onSelect: (asset: AssetRecord) => void
-  onDeleted: (assetId: string) => void
+  onDeleted: (assetId: AssetId) => void
   canSelect: boolean
 }
 

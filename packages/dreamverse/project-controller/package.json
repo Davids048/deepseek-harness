@@ -8,11 +8,14 @@
     "./client/*": "./src/client/*"
   },
   "dependencies": {
-    "ws": "^8.21.0",
-    "@dreamverse/project": "workspace:*",
-    "@dreamverse/generation-client": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
     "@dreamverse/assets-manager": "workspace:*",
-    "@dreamverse/http-routes": "workspace:*"
+    "@dreamverse/generation-client": "workspace:*",
+    "@dreamverse/http-routes": "workspace:*",
+    "@dreamverse/project": "workspace:*",
+    "@dreamverse/project-store": "workspace:*",
+    "@dreamverse/segment-generation": "workspace:*",
+    "ws": "^8.21.0"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"

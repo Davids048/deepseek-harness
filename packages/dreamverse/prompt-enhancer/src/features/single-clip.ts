@@ -62,7 +62,6 @@ export async function expandClip(conditioningPrompt: unknown, options: ExpandCli
   try {
     const [provider, prompt] = await race.firstAccepted(request, acceptClip, {
       operationName: 'enhance_prompt',
-      timeoutMs: options.timeoutMs,
       signal: options.signal,
     })
     return { prompt, fallbackUsed: false, error: null, provider, model, latencyMs: elapsedMs(started) }

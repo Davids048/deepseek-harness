@@ -5,36 +5,52 @@
  * generation, round status, and reference-asset release. Automatic continuation queues one action after each
  * successful round until stopped; stop lets the accepted action finish.
  *
- * A `Project` object serves one browser socket. Its content lives in the project store: `create()` writes a new
- * project, `open()` rebuilds a stored one, and every settled segment, recorded sequence, failed round, and closure
- * writes the record again, so a later `open()` continues from the last completed sequence.
+ * A `Project` object serves one browser socket and holds the project's lease in `dreamverseProjectStore`, the only
+ * write right to the project. Its content is the `dreamverse` workload data (`project-data.ts`) and the files that the
+ * project owns in the file store: `create()` stores a new project, `open()` rebuilds a stored one, and every settled
+ * segment, recorded sequence, failed round, and closure writes the workload data again, so a later `open()` continues
+ * from the last completed sequence.
  *
  * @module @dreamverse/project/project
  */
 
 import type { Buffer } from 'node:buffer'
-import { existsSync, readFileSync } from 'node:fs'
+import { projectOwner } from '@dreamverse/assets-manager'
+import { ProjectNotFoundError } from '@dreamverse/project-store'
+import {
+  continuesPreviousSegment,
+  parseReferenceAssetIds,
+  segmentImageLabels,
+  validateProjectCreation,
+  validateReferenceAssets,
+  type CreationConfig,
+  type SegmentImageLabels,
+} from '@dreamverse/segment-generation'
 import type {
+  AssetId,
   AssetRecord,
   DreamverseAssetsManager,
   DreamverseGeneration,
+  DreamverseProjectStore,
   DreamversePromptEnhancer,
+  DreamverseSegmentGeneration,
   ModelFacts,
+  ProjectHolder,
+  ProjectId,
+  ProjectLease,
 } from './dependencies.ts'
-import { PROMPT_TIMEOUT_MS } from './dependencies.ts'
-import { continuesPreviousSegment, segmentImageLabels, type SegmentImageLabels } from './conditioning.ts'
 import { DreamverseValueError, ProjectClosedError, ProjectValidationError, errorMessage } from './errors.ts'
 import { GenerationPlan, segmentRecord } from './generation-plan.ts'
 import { GenerationPlanController } from './generation-plan-controller.ts'
 import {
-  parseReferenceAssetIds,
-  validateProjectCreation,
-  validateReferenceAssets,
-  type CreationConfig,
-} from './project-creation.ts'
-import { PROJECT_SCHEMA_VERSION, type PersistedProject, type PersistedSegment, type ProjectStore, type SegmentFileKind } from './project-store.ts'
+  DREAMVERSE_DATA_SCHEMA_VERSION,
+  DREAMVERSE_PROJECT_KIND,
+  parseProjectData,
+  type DreamverseProjectData,
+  type StoredSegment,
+} from './project-data.ts'
 import { type ActionPayload, isTruthy, payloadGet, pythonFormatG, pythonStr, textOr } from './python-values.ts'
-import { VideoSegment, type SegmentSource, type SegmentStatus, type UserInstruction } from './video-segment.ts'
+import { VideoSegment, type SegmentId, type SegmentSource, type SegmentStatus, type UserInstruction } from './video-segment.ts'
 
 /** One browser socket; the implementation serializes `sendJson` and `sendBytes` through one lock. */
 export interface ProjectSocket {
@@ -42,26 +58,32 @@ export interface ProjectSocket {
   sendBytes(chunk: Buffer): Promise<void>
 }
 
-/** The inputs of `DreamverseProjects.openProject()`. */
-export interface ProjectOpenInit {
-  projectId: string
+/** The browser socket of a project and the party that holds its lease. */
+export interface ProjectConnectionInit {
   socket: ProjectSocket
+  /** Receives `revoke()` when another party acquires the project; it must close the project and then resolve. */
+  holder: ProjectHolder
 }
 
-/** The inputs of `DreamverseProjects.createProject()`. */
-export interface ProjectInit extends ProjectOpenInit {
+/** The inputs of `DreamverseProjects.openProject()`. */
+export interface ProjectOpenInit extends ProjectConnectionInit {
+  projectId: ProjectId
+}
+
+/** The inputs of `DreamverseProjects.createProject()`; the project store assigns the new project's ID. */
+export interface ProjectInit extends ProjectConnectionInit {
   /** The complete `project_init_v1` message. */
   payload: Record<string, unknown>
 }
 
-/** Reference assets retained for one queued action, in selection order. */
+/** The project-owned copies of one queued action's reference images, in selection order. */
 export interface UserActionOptions {
   referenceAssets: readonly AssetRecord[]
 }
 
 /**
- * Runs one queued action from request through completion. The project releases the action's reference assets after
- * the handler settles.
+ * Runs one queued action from request through completion. The project releases the action's retained reference
+ * images after the handler settles.
  */
 export type UserActionHandler = (
   project: Project,
@@ -83,9 +105,11 @@ export interface ProjectServices {
   /** Finds the handler registered for an action type when the project dispatches it. */
   resolveUserAction(actionType: string): UserActionHandler | undefined
   /** Writes one project log entry; a write failure only warns. */
-  logProjectEvent(projectId: string, event: string, payload?: Record<string, unknown>): Promise<void>
-  /** Holds every project's record and segment files. */
-  store: ProjectStore
+  logProjectEvent(projectId: ProjectId, event: string, payload?: Record<string, unknown>): Promise<void>
+  /** Stores the project's record and workload data and grants its lease. */
+  store: DreamverseProjectStore
+  /** Generates segments and stores their files. */
+  segmentGeneration: DreamverseSegmentGeneration
 }
 
 /** Admission state reported to the browser: generation-changing commands wait until `idle` or `failed`. */
@@ -105,6 +129,8 @@ const BROWSER_SETTING_COMMANDS: ReadonlySet<unknown> = new Set(['set_enhancement
 
 /** Settings that `Project.create()` resolves from `project_init_v1`, or `Project.open()` reads from the store. */
 interface ProjectCreationFields {
+  projectId: ProjectId
+  lease: ProjectLease
   modelFacts: ModelFacts
   videoGenerationSettings: CreationConfig
   promptSequenceId: unknown
@@ -113,6 +139,9 @@ interface ProjectCreationFields {
   promptEnhancementModel: string
   title: string
   createdAt: string
+  /** Library asset ID to its project-owned copy. */
+  referenceCopies: Readonly<Record<AssetId, AssetId>>
+  thumbnailAssetId: AssetId | null
 }
 
 /** The most code points of the first prompt that a project title keeps. */
@@ -135,6 +164,74 @@ const SEGMENT_SOURCES: readonly SegmentSource[] = ['preset', 'user', 'automatic'
 /** Whether a stored `source` names a segment source. */
 function isSegmentSource(value: string): value is SegmentSource {
   return (SEGMENT_SOURCES as readonly string[]).includes(value)
+}
+
+/**
+ * Retain and validate the ordered reference images of one action before its asynchronous work starts; port of the
+ * reference `_retain_and_validate_action_reference_assets`. A library image that the project has already copied
+ * resolves to its copy, so deleting the library image never affects the project.
+ * @param assets - the file store.
+ * @param modelFacts - the served model's facts.
+ * @param generationMode - the project's generation mode.
+ * @param referenceCopies - each library asset ID that the project copied, mapped to its copy.
+ * @param payload - the action payload.
+ * @returns the retained assets in selection order: the project's copies, and the library images not yet copied.
+ * @throws {DreamverseValueError} for a rejected selection, including `ProjectValidationError` with reason
+ *   `Invalid reference asset` for an absent or deleted asset; nothing stays retained.
+ */
+function retainActionReferenceAssets(
+  assets: DreamverseAssetsManager,
+  modelFacts: ModelFacts,
+  generationMode: string,
+  referenceCopies: ReadonlyMap<AssetId, AssetId>,
+  payload: ActionPayload,
+): readonly AssetRecord[] {
+  const assetIds = parseReferenceAssetIds(payload).map(assetId => referenceCopies.get(assetId) ?? assetId)
+  validateReferenceAssets(modelFacts, generationMode, assetIds.length)
+  let records: AssetRecord[]
+  try {
+    records = assets.retain(assetIds)
+  } catch (error) {
+    if (!(error instanceof Error && error.name === 'AssetNotFoundError')) throw error
+    throw new ProjectValidationError(error.message, 'Invalid reference asset')
+  }
+  try {
+    const limit = modelFacts.maxReferenceAspectRatio
+    for (const record of records) {
+      if (record.mediaType !== 'image') throw new DreamverseValueError('This generation workflow accepts reference images only.')
+      // Library images always carry their pixel size.
+      const [width, height] = [record.width ?? 0, record.height ?? 0]
+      if (limit !== null && Math.max(width, height) / Math.min(width, height) > limit) {
+        const bound = pythonFormatG(limit)
+        throw new DreamverseValueError(`Reference image aspect ratio must be between 1:${bound} and ${bound}:1.`)
+      }
+    }
+  } catch (error) {
+    assets.release(assetIds)
+    throw error
+  }
+  return records
+}
+
+/**
+ * Release one action's retained reference assets; an empty selection makes no file store call.
+ * @param assets - the file store.
+ * @param referenceAssets - the assets to release.
+ */
+function releaseReferenceAssets(assets: DreamverseAssetsManager, referenceAssets: readonly AssetRecord[]): void {
+  if (referenceAssets.length > 0) assets.release(referenceAssets.map(asset => asset.assetId))
+}
+
+/**
+ * Copy the stored map from each library asset ID to the project's copy. A `for...in` loop over a record with a generic
+ * key type keeps the `AssetId` keys, which `Object.entries` would widen to `string`.
+ * @param copies - the `reference_copies` of the workload data.
+ * @returns a map with the same entries.
+ */
+function referenceCopyMap<K extends AssetId>(copies: Readonly<Record<K, AssetId>>): Map<K, AssetId> {
+  const map = new Map<K, AssetId>()
+  for (const libraryAssetId in copies) map.set(libraryAssetId, copies[libraryAssetId])
+  return map
 }
 
 /** FIFO of admitted actions with one consumer, the project's generation loop. */
@@ -176,18 +273,18 @@ class GenerationActionQueue {
 
 /** Segment records, completed sequences, and action admission for one browser project. */
 export class Project {
-  readonly projectId: string
+  readonly projectId: ProjectId
   readonly socket: ProjectSocket
   readonly generation: DreamverseGeneration
+  readonly segmentGeneration: DreamverseSegmentGeneration
   readonly promptEnhancer: DreamversePromptEnhancer
   readonly modelFacts: ModelFacts
   /** `ProjectCreationConfig.as_dict()` of the validated creation choices. */
   readonly videoGenerationSettings: CreationConfig
-  readonly promptEnhancementTimeoutMs = PROMPT_TIMEOUT_MS
-  readonly videoSegmentsById = new Map<string, VideoSegment>()
-  readonly completedSequenceHistory: (readonly string[])[] = []
+  readonly videoSegmentsById: Map<SegmentId, VideoSegment> = new Map()
+  readonly completedSequenceHistory: (readonly SegmentId[])[] = []
   readonly generationPlanController: GenerationPlanController
-  isClosed = false
+  isClosed: boolean = false
   promptSequenceId: unknown
   promptSequenceLabel: string
   promptEnhancementEnabled: boolean
@@ -197,10 +294,17 @@ export class Project {
   readonly title: string
   /** ISO-8601 UTC creation time. */
   readonly createdAt: string
-  autoContinueAfterGeneration = false
+  autoContinueAfterGeneration: boolean = false
   activeGenerationPlan: GenerationPlan | null = null
   generationRoundStatus: GenerationRoundStatus = 'idle'
   private readonly services: ProjectServices
+  private readonly lease: ProjectLease
+  /** True after `releaseLease()`; `persist()` then writes nothing. */
+  private leaseReleased = false
+  /** Library asset ID to its project-owned copy, so the project copies each library image once. */
+  private readonly referenceCopies: Map<AssetId, AssetId>
+  /** The stored thumbnail, the last frame of the last completed segment. */
+  private thumbnailAssetId: AssetId | null
   private readonly queuedGenerationActions = new GenerationActionQueue()
   /** Aborted by `closeAndWaitForGeneration()`; stands for cancelling the reference generation-loop task. */
   private readonly generationAbort = new AbortController()
@@ -208,12 +312,16 @@ export class Project {
   private generationLoop: Promise<void> | null = null
 
   /** Assign the settings that `create()` resolved or `open()` read; those two are the only callers. */
-  private constructor(init: ProjectOpenInit, services: ProjectServices, fields: ProjectCreationFields) {
-    this.projectId = init.projectId
+  private constructor(init: ProjectConnectionInit, services: ProjectServices, fields: ProjectCreationFields) {
+    this.projectId = fields.projectId
+    this.lease = fields.lease
     this.socket = init.socket
     this.services = services
     this.generation = services.generation
+    this.segmentGeneration = services.segmentGeneration
     this.promptEnhancer = services.promptEnhancer
+    this.referenceCopies = referenceCopyMap(fields.referenceCopies)
+    this.thumbnailAssetId = fields.thumbnailAssetId
     this.modelFacts = fields.modelFacts
     this.videoGenerationSettings = fields.videoGenerationSettings
     this.promptSequenceId = fields.promptSequenceId
@@ -226,12 +334,12 @@ export class Project {
   }
 
   /**
-   * Validate project choices and retain complete inputs before any generation work starts. The steps and their
-   * order follow the reference `Project.__init__`.
-   * @param init - the project ID, the `project_init_v1` message, and the browser socket.
-   * @param services - the generation client, asset library, prompt enhancer, user-action registry, and project log.
-   * @returns the project, stored, with its initial action queued when the message supplies prompts or an
-   *   instruction; the queued action's reference assets are registered as the project's references.
+   * Validate project choices and retain complete inputs before any generation work starts, then store the project and
+   * take its lease. The validation steps and their order follow the reference `Project.__init__`.
+   * @param init - the `project_init_v1` message, the browser socket, and the lease holder.
+   * @param services - the generation client, file store, prompt enhancer, user-action registry, project log, project
+   *   store, and segment generation.
+   * @returns the stored project, with its initial action queued when the message supplies prompts or an instruction.
    * @throws {ProjectValidationError} for rejected creation choices, Auto Extension choices, or reference assets.
    * @throws Error that is not a `DreamverseValueError` when the generation backend cannot report its model facts.
    */
@@ -249,75 +357,128 @@ export class Project {
         .map(prompt => prompt.trim())
       : []
     const videoGenerationSettings = validateProjectCreation(payload, modelFacts)
-    const project = new Project(init, services, {
-      modelFacts, videoGenerationSettings, promptSequenceId, promptSequenceLabel, promptEnhancementEnabled,
-      promptEnhancementModel, title: projectTitle(promptSequenceLabel, rawInstruction || (prompts[0] ?? '')),
-      createdAt: new Date().toISOString(),
-    })
     const autoExtensionEnabled = payloadGet(payload, 'auto_extension_enabled', false)
     if (typeof autoExtensionEnabled !== 'boolean') {
       throw new ProjectValidationError('auto_extension_enabled must be a boolean.', 'Invalid Auto extension')
     }
-    if (autoExtensionEnabled && !(rawInstruction || prompts.length > 0)) {
+    const hasGenerationRequest = rawInstruction !== '' || prompts.length > 0
+    if (autoExtensionEnabled && !hasGenerationRequest) {
       throw new ProjectValidationError('Auto extension must be selected with a generation request.',
         'Invalid Auto extension')
     }
-    project.autoContinueAfterGeneration = autoExtensionEnabled
     if (isTruthy(payload['loop_generation_enabled'])) {
       throw new ProjectValidationError('Sequence replay is not supported.', 'Unsupported sequence replay')
     }
-    const action: ActionPayload = {
-      type: 'generate_video_sequence', prompt: rawInstruction,
-      prompt_id: payloadGet(payload, 'initial_prompt_id'), prompts,
-    }
     let referenceAssets: readonly AssetRecord[]
     try {
-      referenceAssets = project.retainAndValidateActionReferenceAssets(payload)
+      referenceAssets = retainActionReferenceAssets(services.assets, modelFacts,
+        videoGenerationSettings.generation_mode, new Map(), payload)
     } catch (error) {
       if (!(error instanceof DreamverseValueError)) throw error
       throw new ProjectValidationError(error.message, 'Invalid reference assets')
     }
-    if (rawInstruction || prompts.length > 0) {
-      project.registerReferenceAssets(referenceAssets)
+    if (!hasGenerationRequest) {
+      releaseReferenceAssets(services.assets, referenceAssets)
+      referenceAssets = []
+    }
+    const title = projectTitle(promptSequenceLabel, rawInstruction || (prompts[0] ?? ''))
+    let project: Project
+    try {
+      const data: DreamverseProjectData = {
+        creation_config: videoGenerationSettings, prompt_enhancement_enabled: promptEnhancementEnabled,
+        prompt_sequence_id: promptSequenceId ?? null, prompt_sequence_label: promptSequenceLabel, segments: [],
+        completed_sequences: [], reference_copies: {},
+      }
+      const record = services.store.create({
+        kind: DREAMVERSE_PROJECT_KIND, title, workload: { schemaVersion: DREAMVERSE_DATA_SCHEMA_VERSION, data },
+      })
+      const lease = await services.store.acquire(record.projectId, init.holder)
+      project = new Project(init, services, {
+        projectId: record.projectId, lease, modelFacts, videoGenerationSettings, promptSequenceId, promptSequenceLabel,
+        promptEnhancementEnabled, promptEnhancementModel, title, createdAt: record.createdAt, referenceCopies: {},
+        thumbnailAssetId: null,
+      })
+    } catch (error) {
+      releaseReferenceAssets(services.assets, referenceAssets)
+      throw error
+    }
+    project.autoContinueAfterGeneration = autoExtensionEnabled
+    if (hasGenerationRequest) {
+      const action: ActionPayload = {
+        type: 'generate_video_sequence', prompt: rawInstruction,
+        prompt_id: payloadGet(payload, 'initial_prompt_id'), prompts,
+      }
       project.generationRoundStatus = 'preparing'
       project.queuedGenerationActions.put({ payload: action, referenceAssets })
-    } else {
-      project.releaseReferenceAssets(referenceAssets)
     }
-    project.persist()
     return project
   }
 
   /**
-   * Rebuild a stored project for a new browser socket. Completed segments get their last frames back from the
-   * store; segments that were pending or generating when the previous socket closed become `cancelled`. The last
-   * segment of the last completed sequence becomes the plan controller's last completed segment, so the project can
-   * continue that sequence. The project starts idle without Auto Extension.
-   * @param init - the project ID and the browser socket.
-   * @param services - the generation client, asset library, prompt enhancer, user-action registry, project log, and
-   *   project store.
-   * @returns the project.
-   * @throws {ProjectValidationError} with reason `Project not found` when the store holds no such project, `Model
-   *   unavailable` when the project's model is not the served model, and `Invalid reference asset` when one of its
-   *   reference assets is unavailable.
-   * @throws Error when the stored record is invalid or the generation backend cannot report its model facts.
+   * Take the lease of a stored project and rebuild it for a new browser socket. Segments that were pending or
+   * generating when the previous socket closed become `cancelled`. The last segment of the last completed sequence
+   * becomes the plan controller's last completed segment, so the project can continue that sequence. The project
+   * starts idle without Auto Extension.
+   * @param init - the project ID, the browser socket, and the lease holder; a socket that holds the project receives
+   *   `revoke()` first and closes it.
+   * @param services - the generation client, file store, prompt enhancer, user-action registry, project log, project
+   *   store, and segment generation.
+   * @returns the project, which holds the lease.
+   * @throws {ProjectValidationError} with reason `Project not found` when the store holds no `dreamverse` project with
+   *   this ID, `Model unavailable` when the project's model is not the served model, and `Invalid reference asset`
+   *   when one of its reference assets is unavailable; the lease is released.
+   * @throws Error when the stored workload data is invalid or the generation backend cannot report its model facts.
    */
   static async open(init: ProjectOpenInit, services: ProjectServices): Promise<Project> {
-    const record = services.store.read(init.projectId)
+    // Check the kind before acquiring, so a request for another workload's project never revokes that workload.
+    if (services.store.get(init.projectId)?.kind !== DREAMVERSE_PROJECT_KIND) {
+      throw new ProjectValidationError('Project not found.', 'Project not found')
+    }
+    let lease: ProjectLease
+    try {
+      lease = await services.store.acquire(init.projectId, init.holder)
+    } catch (error) {
+      if (!(error instanceof ProjectNotFoundError)) throw error
+      throw new ProjectValidationError('Project not found.', 'Project not found')
+    }
+    try {
+      return await Project.restore(init, services, lease)
+    } catch (error) {
+      services.store.release(lease)
+      throw error
+    }
+  }
+
+  /**
+   * Rebuild a stored project from the record that the lease's revoked holder wrote last.
+   * @param init - the project ID, the browser socket, and the lease holder.
+   * @param services - the project's services.
+   * @param lease - the project's lease.
+   * @returns the project.
+   */
+  private static async restore(init: ProjectOpenInit, services: ProjectServices, lease: ProjectLease): Promise<Project> {
+    const record = services.store.get(init.projectId)
     if (record === undefined) throw new ProjectValidationError('Project not found.', 'Project not found')
+    if (record.workload.schemaVersion !== DREAMVERSE_DATA_SCHEMA_VERSION) {
+      throw new Error(`Project ${init.projectId} has DreamVerse data schema ${record.workload.schemaVersion}; `
+        + `this server reads schema ${DREAMVERSE_DATA_SCHEMA_VERSION}.`)
+    }
+    const data = parseProjectData(record.workload.data)
     const modelFacts = await services.generation.model()
-    const config = record.creation_config
+    const config = data.creation_config
     if (config.model_id !== modelFacts.modelId) {
       throw new ProjectValidationError(
         `This project was created with ${config.model_id}; this server serves ${modelFacts.modelId}.`, 'Model unavailable')
     }
     const project = new Project(init, services, {
-      modelFacts, videoGenerationSettings: config, promptSequenceId: record.prompt_sequence_id,
-      promptSequenceLabel: record.prompt_sequence_label, promptEnhancementEnabled: record.prompt_enhancement_enabled,
-      promptEnhancementModel: services.promptEnhancer.rewriteModel(), title: record.title, createdAt: record.created_at,
+      projectId: record.projectId, lease, modelFacts, videoGenerationSettings: config,
+      promptSequenceId: data.prompt_sequence_id, promptSequenceLabel: data.prompt_sequence_label,
+      promptEnhancementEnabled: data.prompt_enhancement_enabled,
+      promptEnhancementModel: services.promptEnhancer.rewriteModel(), title: record.title, createdAt: record.createdAt,
+      referenceCopies: data.reference_copies, thumbnailAssetId: record.thumbnailAssetId,
     })
-    for (const stored of record.segments) project.videoSegmentsById.set(stored.segment_id, project.restoreSegment(stored))
-    for (const sequence of record.completed_sequences) {
+    for (const stored of data.segments) project.videoSegmentsById.set(stored.segment_id, project.restoreSegment(stored))
+    for (const sequence of data.completed_sequences) {
       if (sequence.some(segmentId => !project.videoSegmentsById.has(segmentId))) {
         throw new Error(`Project ${init.projectId} records a completed sequence with an unknown segment.`)
       }
@@ -331,7 +492,7 @@ export class Project {
   }
 
   /** The display order of the latest completed sequence, or an empty list before the first success. */
-  get completedSequenceSegmentIds(): readonly string[] {
+  get completedSequenceSegmentIds(): readonly SegmentId[] {
     return this.completedSequenceHistory.at(-1) ?? []
   }
 
@@ -425,12 +586,12 @@ export class Project {
   /**
    * Stop prompt waits and future submissions, abandon the segment in progress, wait for the generation loop to
    * finish its closure cleanup, release the reference assets of actions that closure prevents from running, and
-   * store the project's final record.
+   * store the project's final workload data. The project keeps its lease until `releaseLease()`.
    */
   async closeAndWaitForGeneration(): Promise<void> {
     this.isClosed = true
     this.autoContinueAfterGeneration = false
-    this.generationAbort.abort()
+    this.generationAbort.abort(new ProjectClosedError())
     try {
       if (this.generationLoop !== null) await this.generationLoop
     } finally {
@@ -482,23 +643,40 @@ export class Project {
    * Retain the display sequence that an action has finished generating.
    * @param sequenceIds - the plan's `sequenceIds`.
    */
-  recordCompletedSequence(sequenceIds: readonly string[]): void {
+  recordCompletedSequence(sequenceIds: readonly SegmentId[]): void {
     this.completedSequenceHistory.push(sequenceIds)
     this.persist()
   }
 
-  /** Write the project's record to the store; callers write a segment's files before the record that names them. */
+  /**
+   * Write the project's workload data to the store, and set the thumbnail to the last frame of the last segment of
+   * the last completed sequence; callers store a segment's files before the data that names them. After
+   * `releaseLease()` it writes nothing.
+   * @throws {StaleLeaseError} when another party has taken the project.
+   */
   persist(): void {
-    this.services.store.write(this.persistedRecord())
+    if (this.leaseReleased) return
+    this.services.store.updateWorkload(this.lease, { schemaVersion: DREAMVERSE_DATA_SCHEMA_VERSION, data: this.projectData() })
+    const thumbnailAssetId = this.completedSequenceSegments.at(-1)?.lastFrameAssetId ?? null
+    if (thumbnailAssetId !== this.thumbnailAssetId) {
+      this.services.store.setThumbnail(this.lease, thumbnailAssetId)
+      this.thumbnailAssetId = thumbnailAssetId
+    }
+  }
+
+  /** Give up the project's lease after `closeAndWaitForGeneration()`; the project writes nothing more. */
+  releaseLease(): void {
+    this.leaseReleased = true
+    this.services.store.release(this.lease)
   }
 
   /**
-   * @param segmentId - one of the project's segment IDs.
-   * @param kind - the segment's video or last frame.
-   * @returns where the store keeps that file.
+   * @param assetId - the ID of a file that the project uses, such as a segment's last frame.
+   * @returns the file's record.
+   * @throws Error `AssetNotFoundError` when the file is absent or deleted.
    */
-  segmentFilePath(segmentId: string, kind: SegmentFileKind): string {
-    return this.services.store.segmentFilePath(this.projectId, segmentId, kind)
+  assetRecord(assetId: AssetId): AssetRecord {
+    return this.services.assets.get(assetId)
   }
 
   /**
@@ -571,42 +749,6 @@ export class Project {
   }
 
   /**
-   * Retain and validate the ordered reference images of one action before its asynchronous work starts; port of the
-   * reference `_retain_and_validate_action_reference_assets`.
-   * @param payload - the action payload.
-   * @returns the retained assets in selection order.
-   * @throws {DreamverseValueError} for a rejected selection, including `ProjectValidationError` with reason
-   *   `Invalid reference asset` for an absent or deleted asset; nothing stays retained.
-   */
-  retainAndValidateActionReferenceAssets(payload: ActionPayload): readonly AssetRecord[] {
-    const assetIds = parseReferenceAssetIds(payload)
-    validateReferenceAssets(this.modelFacts, this.videoGenerationSettings.generation_mode, assetIds.length)
-    let records: AssetRecord[]
-    try {
-      records = this.services.assets.retain(assetIds)
-    } catch (error) {
-      if (!(error instanceof Error && error.name === 'AssetNotFoundError')) throw error
-      throw new ProjectValidationError(error.message, 'Invalid reference asset')
-    }
-    try {
-      const limit = this.modelFacts.maxReferenceAspectRatio
-      for (const record of records) {
-        if (record.mediaType !== 'image') throw new DreamverseValueError('This generation workflow accepts reference images only.')
-        // Library images always carry their pixel size.
-        const [width, height] = [record.width ?? 0, record.height ?? 0]
-        if (limit !== null && Math.max(width, height) / Math.min(width, height) > limit) {
-          const bound = pythonFormatG(limit)
-          throw new DreamverseValueError(`Reference image aspect ratio must be between 1:${bound} and ${bound}:1.`)
-        }
-      }
-    } catch (error) {
-      this.services.assets.release(assetIds)
-      throw error
-    }
-    return records
-  }
-
-  /**
    * Validate the Auto Extension choice, retain the command's reference assets, and queue it.
    * @param payload - a private copy of the browser command.
    */
@@ -619,20 +761,20 @@ export class Project {
     }
     let referenceAssets: readonly AssetRecord[]
     try {
-      referenceAssets = this.retainAndValidateActionReferenceAssets(payload)
+      referenceAssets = this.retainReferenceAssets(payload)
     } catch (error) {
       if (!(error instanceof DreamverseValueError)) throw error
       await this.sendBrowserEvent({ type: 'error', prompt_id: promptId, message: error.message })
       return
     }
-    this.registerReferenceAssets(referenceAssets)
     this.autoContinueAfterGeneration = autoExtensionEnabled
     this.generationRoundStatus = 'preparing'
     this.queuedGenerationActions.put({ payload, referenceAssets })
   }
 
   /**
-   * Run one action with shared status, failure reporting, and reference-asset release.
+   * Run one action with shared status, failure reporting, and reference-asset release. The handler receives the
+   * project-owned copies of the action's reference images.
    * @param action - the queued action and its retained reference assets.
    */
   private async executeQueuedGenerationAction(action: QueuedGenerationAction): Promise<void> {
@@ -647,11 +789,11 @@ export class Project {
         await this.logProjectEvent('generation_round_start', {
           action: payload['type'], reference_asset_ids: referenceAssets.map(asset => asset.assetId),
         })
-        await this.dispatchGenerationAction(payload, referenceAssets)
+        await this.dispatchGenerationAction(payload, await this.projectReferenceCopies(referenceAssets))
       } finally {
         // The action has finished its accepted video work before its reference assets are released.
         try {
-          this.releaseReferenceAssets(referenceAssets)
+          releaseReferenceAssets(this.services.assets, referenceAssets)
         } catch (error) {
           // A failed release prevents acceptance of this round's content.
           this.completedSequenceHistory.splice(completedSequenceCount)
@@ -708,7 +850,7 @@ export class Project {
   /**
    * Select the registered handler that owns the queued action from request through completion.
    * @param payload - the queued action.
-   * @param referenceAssets - the action's retained reference assets.
+   * @param referenceAssets - the project-owned copies of the action's reference images.
    * @throws {DreamverseValueError} when no user-action plugin serves the action type.
    */
   private async dispatchGenerationAction(payload: ActionPayload, referenceAssets: readonly AssetRecord[]): Promise<void> {
@@ -731,7 +873,7 @@ export class Project {
     if (latestSegment === undefined) throw new DreamverseValueError('Auto extension requires a completed video.')
     let referenceAssets: readonly AssetRecord[] = []
     if (this.modelFacts.generationModes[this.videoGenerationSettings.generation_mode] === 'reference_images') {
-      referenceAssets = this.retainAndValidateActionReferenceAssets({
+      referenceAssets = this.retainReferenceAssets({
         reference_asset_ids: latestSegment.referenceAssets.map(asset => asset.assetId),
       })
     }
@@ -750,38 +892,50 @@ export class Project {
   private releaseQueuedActionReferenceAssets(): void {
     for (let action = this.queuedGenerationActions.takeNext(); action !== undefined;
       action = this.queuedGenerationActions.takeNext()) {
-      this.releaseReferenceAssets(action.referenceAssets)
+      releaseReferenceAssets(this.services.assets, action.referenceAssets)
     }
   }
 
   /**
-   * Release one action's retained reference assets; an empty selection makes no asset library call.
-   * @param referenceAssets - the assets to release.
+   * @param payload - the action payload.
+   * @returns the action's retained reference images; see `retainActionReferenceAssets`.
    */
-  private releaseReferenceAssets(referenceAssets: readonly AssetRecord[]): void {
-    if (referenceAssets.length > 0) this.services.assets.release(referenceAssets.map(asset => asset.assetId))
+  private retainReferenceAssets(payload: ActionPayload): readonly AssetRecord[] {
+    return retainActionReferenceAssets(this.services.assets, this.modelFacts,
+      this.videoGenerationSettings.generation_mode, this.referenceCopies, payload)
   }
 
   /**
-   * Record an accepted action's reference assets as references of this project, so the asset library refuses to
-   * delete them while the project is stored; an empty selection makes no asset library call.
-   * @param referenceAssets - the accepted action's assets.
+   * Map an action's reference images to copies that this project owns. A library image is copied on its first use and
+   * its copy is reused afterwards; an image that the project already owns is used as it is.
+   * @param referenceAssets - the action's retained reference images, in selection order.
+   * @returns the project-owned copies in the same order.
    */
-  private registerReferenceAssets(referenceAssets: readonly AssetRecord[]): void {
-    if (referenceAssets.length > 0) {
-      this.services.assets.addProjectReferences(this.projectId, referenceAssets.map(asset => asset.assetId))
+  private async projectReferenceCopies(referenceAssets: readonly AssetRecord[]): Promise<AssetRecord[]> {
+    const owner = projectOwner(this.projectId)
+    const copies: AssetRecord[] = []
+    for (const asset of referenceAssets) {
+      const copyId = asset.owner === owner ? asset.assetId : this.referenceCopies.get(asset.assetId)
+      if (copyId !== undefined) {
+        copies.push(this.services.assets.get(copyId))
+        continue
+      }
+      const copy = await this.services.assets.copy(asset.assetId, owner)
+      this.referenceCopies.set(asset.assetId, copy.assetId)
+      copies.push(copy)
     }
+    return copies
   }
 
   /**
-   * Rebuild one stored segment. A completed segment reads its last frame file when one exists; a pending or
-   * generating segment becomes `cancelled`, since the socket that ran it has closed.
+   * Rebuild one stored segment. A pending or generating segment becomes `cancelled`, since the socket that ran it has
+   * closed.
    * @param stored - the segment record.
    * @returns the segment with its outcome.
    * @throws {ProjectValidationError} with reason `Invalid reference asset` when a reference asset is unavailable.
    * @throws Error for a stored source that names no segment source.
    */
-  private restoreSegment(stored: PersistedSegment): VideoSegment {
+  private restoreSegment(stored: StoredSegment): VideoSegment {
     if (!isSegmentSource(stored.source)) throw new Error(`Stored segment ${stored.segment_id} has unknown source ${stored.source}.`)
     let referenceAssets: AssetRecord[]
     try {
@@ -798,25 +952,17 @@ export class Project {
     })
     segment.mime = stored.mime
     segment.error = stored.error
+    segment.videoAssetId = stored.video_asset_id
+    segment.lastFrameAssetId = stored.last_frame_asset_id
     const status: SegmentStatus = stored.status === 'completed' || stored.status === 'failed' ? stored.status : 'cancelled'
     segment.status = status
-    if (status === 'completed') {
-      const framePath = this.segmentFilePath(segment.segmentId, 'frame')
-      segment.lastFrame = existsSync(framePath) ? readFileSync(framePath) : null
-    } else if (status === 'cancelled' && stored.status !== 'cancelled') {
-      segment.error = 'Project disconnected.'
-    }
+    if (status === 'cancelled' && stored.status !== 'cancelled') segment.error = 'Project disconnected.'
     return segment
   }
 
-  /** @returns the project's complete record in `project.json` form, stamped with the current time. */
-  private persistedRecord(): PersistedProject {
+  /** @returns the project's complete workload data. */
+  private projectData(): DreamverseProjectData {
     return {
-      schema_version: PROJECT_SCHEMA_VERSION,
-      project_id: this.projectId,
-      title: this.title,
-      created_at: this.createdAt,
-      updated_at: new Date().toISOString(),
       creation_config: this.videoGenerationSettings,
       prompt_enhancement_enabled: this.promptEnhancementEnabled,
       prompt_sequence_id: this.promptSequenceId ?? null,
@@ -830,12 +976,15 @@ export class Project {
         sequence_index: segment.sequenceIndex,
         reference_segment_id: segment.referenceSegmentId,
         reference_asset_ids: segment.referenceAssets.map(asset => asset.assetId),
+        video_asset_id: segment.videoAssetId,
+        last_frame_asset_id: segment.lastFrameAssetId,
         status: segment.status,
         error: segment.error,
         mime: segment.mime,
         created_at: segment.createdAt,
       })),
       completed_sequences: this.completedSequenceHistory.map(sequence => [...sequence]),
+      reference_copies: Object.fromEntries(this.referenceCopies),
     }
   }
 }

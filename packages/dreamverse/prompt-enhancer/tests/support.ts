@@ -46,7 +46,7 @@ export function textReply(text: string, rawResponse?: JsonObject): VendorReply {
 
 /** A single-stage race with test deadlines, like the reference test fixtures. */
 export function testRace(stages: VendorClient[][], diagnostics: PromptDiagnostics = recordingDiagnostics()): ProviderRace {
-  return new ProviderRace(stages, { initialStageTimeoutMs: 20, httpTimeoutMs: 1000, defaultTimeoutMs: 1000 }, diagnostics)
+  return new ProviderRace(stages, { initialStageTimeoutMs: 20, httpTimeoutMs: 1000, timeoutMs: 1000 }, diagnostics)
 }
 
 /** Request defaults used by the reference feature and enhancer tests. */

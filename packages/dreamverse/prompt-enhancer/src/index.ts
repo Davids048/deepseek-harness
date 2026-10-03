@@ -54,6 +54,8 @@ export interface Config {
   rewriteAllSystemPromptPath?: string | undefined
   /** `FASTVIDEO_PROMPT_REWRITE_USER_SYSTEM_PROMPT_PATH`. */
   rewriteUserSystemPromptPath?: string | undefined
+  /** Deadline of one prompt operation in milliseconds; every caller of the service uses it. */
+  timeoutMs: number
 }
 
 /** Loader validation and defaults; an absent environment variable reaches the schema as `undefined`. */
@@ -69,6 +71,7 @@ export const Config = z.object({
   autoSystemPromptPath: z.string(),
   rewriteAllSystemPromptPath: z.string(),
   rewriteUserSystemPromptPath: z.string(),
+  timeoutMs: z.natural().min(1).max(2_147_483_647).required(),
 })
 
 /**
@@ -95,7 +98,7 @@ export default class DreamversePromptEnhancer extends Service {
   /**
    * Expand a user idea into a standalone clip prompt.
    * @param conditioningPrompt - the user's idea.
-   * @param request - the duration, mode, labels, deadline, and abort signal.
+   * @param request - the duration, mode, labels, and abort signal.
    * @returns the accepted prompt, or an empty prompt with the failure.
    */
   expandClip(conditioningPrompt: string | null, request: ExpandClipRequest): Promise<PromptResult> {
@@ -105,7 +108,7 @@ export default class DreamversePromptEnhancer extends Service {
   /**
    * Continue locked segments from a user steer prompt or, for `null`, an inferred next beat.
    * @param conditioningPrompt - the user's direction, or `null` for automatic continuation.
-   * @param request - the duration, history, mode, labels, deadline, and abort signal.
+   * @param request - the duration, history, mode, labels, and abort signal.
    * @returns the accepted prompt, or an empty prompt with the failure.
    */
   continueVideo(conditioningPrompt: string | null, request: ContinueVideoRequest): Promise<PromptResult> {
@@ -115,7 +118,7 @@ export default class DreamversePromptEnhancer extends Service {
   /**
    * Select the source prompts and template, then request a complete rollout.
    * @param prompts - the project's stored prompts.
-   * @param request - the count, duration, browser window, metadata, mode, labels, deadline, and signal.
+   * @param request - the count, duration, browser window, metadata, mode, labels, and signal.
    * @returns the accepted rollout, or the source prompts with the failure.
    */
   rewriteRollout(prompts: readonly unknown[], request: RewriteRolloutRequest): Promise<RolloutResult> {

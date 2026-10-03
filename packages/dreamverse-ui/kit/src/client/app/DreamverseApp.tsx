@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
-import { resolveReferenceAssetIds, type AssetRecord, type ReferenceDraft } from '@dreamverse/assets-manager/client/assets.ts'
+import { resolveReferenceAssetIds, type AssetId, type AssetRecord, type ReferenceDraft } from '@dreamverse/assets-manager/client/assets.ts'
 import { buildMentionOptions } from '@dreamverse/project-controller/client/creationConfig.ts'
 import { toGenerationMode } from '@dreamverse/project-controller/client/generationMode.ts'
+import type { ProjectId, PromptId } from '@dreamverse/project-controller/client/ids.ts'
 import Header from '../components/Header.tsx'
 import { deleteProject, fetchSegmentVideo, getProject, listProjects, type ProjectRound, type ProjectSummary } from '@dreamverse/project-controller/client/projects.ts'
 import { useStore } from '../hooks/useStore.ts'
@@ -39,10 +42,14 @@ import { isJsonObject, type JsonObject } from '@dreamverse/project-controller/cl
 import type { PromptEvent } from '@dreamverse/project-controller/client/promptEvents.ts'
 import { createUiStore } from '@dreamverse/project-controller/client/stores/ui.ts'
 import type { DreamverseSlotRenderer, ProjectCreationConfig, ReferencePickerProps } from '../contracts.ts'
+import type {} from '../locales.ts'
+import { assetErrorText, creationProblemText, projectErrorText } from '../problemText.ts'
 
 const FIXED_REWRITE_MODEL = 'gpt-oss-120b'
 const DEFAULT_CURATED_PROMPT_LIMIT = 2
 const BACKEND_PROBE_TIMEOUT_MS = 4000
+/** The shell command that starts the Dreamverse backend, shown verbatim inside the unreachable-backend notice. */
+const BACKEND_START_COMMAND = 'PYTHONPATH="$(pwd)/apps/dreamverse:$(pwd)${PYTHONPATH:+:$PYTHONPATH}" python -m dreamverse.server_entry --preset fast-ltx23'
 
 interface PageStores {
   projectControlsStore: ReturnType<typeof createProjectControlsStore>
@@ -68,12 +75,12 @@ interface BackendReadinessProbe {
 /** The first socket message that opens a stored harness project. */
 interface ProjectOpenMessage {
   type: 'project_open_v1'
-  project_id: string
+  project_id: ProjectId
 }
 
 type LobbyCreationState = { selection: LobbySelection } & (
 	| { status: 'loading' }
-	| { status: 'failed'; message: string }
+	| { status: 'failed' }
 	| { status: 'available'; capabilities: LobbyCreationCapabilities }
 )
 
@@ -103,10 +110,12 @@ function errorProperty(error: unknown, key: 'name' | 'message'): unknown {
 export interface DreamverseAppProps {
   /** Renders the child slots whose occupants draw the page regions. */
   renderSlot: DreamverseSlotRenderer
+  /** Translates the page frame's `dreamverse.kit` copy into the active locale. */
+  t: TranslateNS<'dreamverse.kit'>
 }
 
 /** Render project creation, live directing, and the playback of projects that the harness stores. */
-export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
+export function DreamverseApp({ renderSlot, t }: DreamverseAppProps) {
   const storesRef = useRef<PageStores | null>(null)
   if (!storesRef.current) {
     const nextDemoMode = resolveDemoModeFromRuntime()
@@ -180,7 +189,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   const ttffStartAtMsRef = useRef<number | null>(null)
   const [, setTtffValueMs] = useState<number | null>(null)
   const ttffIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const initialPromptRef = useRef<{ promptId: string | null; rawPrompt: string }>({ promptId: null, rawPrompt: '' })
+  const initialPromptRef = useRef<{ promptId: PromptId | null; rawPrompt: string }>({ promptId: null, rawPrompt: '' })
   // Request order belongs to the attachment draft; library sorting never changes that order.
   const [referenceDraft, setReferenceDraft] = useState<ReferenceDraft[]>([])
   const [assets, setAssets] = useState<AssetRecord[]>([])
@@ -192,8 +201,8 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   })
   const lobbyCapabilities = lobbyCreation.status === 'available' ? lobbyCreation.capabilities : null
   const capabilityNotice = lobbyCreation.status === 'failed'
-    ? lobbyCreation.message
-    : lobbyCreation.status === 'loading' ? 'Loading model capabilities…' : null
+    ? t('capabilities.unavailable')
+    : lobbyCreation.status === 'loading' ? t('capabilities.loading') : null
   const [projectCreationConfig, setProjectCreationConfig] = useState<ProjectCreationConfig | null>(null)
   const referenceMode = projectCreationConfig?.modeId ?? lobbyCreation.selection.modeId
   const selectedReferences = referenceMode === 't2v' ? [] : referenceDraft
@@ -236,8 +245,8 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   const thumbnailCaptureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** A fresh token per project socket session; asynchronous media work compares it to drop results of an ended session. */
   const currentProjectIdRef = useRef('')
-  /** The harness project ID of the current project, from `gpu_assigned` or from the opened project. */
-  const harnessProjectIdRef = useRef('')
+  /** The harness project ID of the current project, from `gpu_assigned` or from the opened project; null without one. */
+  const harnessProjectIdRef = useRef<ProjectId | null>(null)
   /** The harness title of an opened project; a project created on this page derives its title from its preset. */
   const [openedProjectTitle, setOpenedProjectTitle] = useState<string | null>(null)
   const [projectSummaries, setProjectSummaries] = useState<ProjectSummary[]>([])
@@ -265,8 +274,8 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   const avPipelineRef = useRef(
     createAvPipeline({
       getVideoEl: () => videoElRef.current,
-      onAppendError: (message: string, error: unknown) => {
-        streamStore.patch({ mediaAppendError: message })
+      onAppendError: (failure, error: unknown) => {
+        streamStore.patch({ mediaAppendError: t(failure === 'chunk-append' ? 'media.appendFailed' : 'media.sourceBufferError') })
         console.error('media append failed:', error)
       },
       onPlaybackStarted: () => {
@@ -297,8 +306,8 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     const presetLabel = selectedPreset?.label
     if (presetLabel) return presetLabel
     const lastEdit = promptEvents.findLast(event => isUserRewriteWithText(event))
-    return lastEdit?.text?.trim() || 'Untitled project'
-  }, [openedProjectTitle, selectedPreset, promptEvents])
+    return lastEdit?.text?.trim() || t('project.untitled')
+  }, [openedProjectTitle, selectedPreset, promptEvents, t])
 
   const generationRoundBusy = generationRoundStatus === 'preparing' || generationRoundStatus === 'generating'
   const canSubmitContinuation = projectStarted && connected && gpuAssigned && !projectResetPending
@@ -383,11 +392,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       })
       .catch(() => {
         if (cancelled) return
-        setLobbyCreation(current => ({
-          status: 'failed',
-          message: 'Model capabilities are unavailable. Reload the page after the backend is available.',
-          selection: current.selection,
-        }))
+        setLobbyCreation(current => ({ status: 'failed', selection: current.selection }))
       })
     return () => {
       cancelled = true
@@ -474,7 +479,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       }
       const fallbackMessage = isJsonObject(payload) && typeof payload.detail === 'string'
         ? payload.detail
-        : `Request failed with status ${response.status}.`
+        : t('probe.requestFailed', { status: response.status })
       return {
         ok: response.ok,
         status: response.status,
@@ -483,7 +488,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       }
     } catch (error) {
       const message = errorProperty(error, 'name') === 'AbortError'
-        ? 'Backend probe timed out.'
+        ? t('probe.timedOut')
         : String(errorProperty(error, 'message') || error)
       return {
         ok: false,
@@ -499,7 +504,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   }
 
   function resolveBackendUnavailableNotice(): string {
-    return 'Dreamverse backend is not reachable. From the checkout root, run PYTHONPATH="$(pwd)/apps/dreamverse:$(pwd)${PYTHONPATH:+:$PYTHONPATH}" python -m dreamverse.server_entry --preset fast-ltx23 and wait for /readyz to return 200 before retrying.'
+    return t('backend.unreachable', { command: BACKEND_START_COMMAND })
   }
 
   function resolveBackendNotReadyNotice(detail: string, statusPayload: unknown): string {
@@ -507,18 +512,18 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     const totalGpus = Number(status.total_gpus)
     const warmupFailures = Number(status.warmup_failed_gpus)
     if (Number.isFinite(totalGpus) && totalGpus <= 0) {
-      return 'Dreamverse backend is running, but no GPUs were detected. Confirm that your local GPU is visible to FastVideo, then retry.'
+      return t('backend.noGpus')
     }
     if (Number.isFinite(warmupFailures) && warmupFailures > 0) {
-      return `Dreamverse backend is running, but GPU warmup failed on ${warmupFailures} worker${warmupFailures === 1 ? '' : 's'}. Check the backend logs and FastVideo/model runtime setup, then retry.`
+      return t(warmupFailures === 1 ? 'backend.warmupFailed.one' : 'backend.warmupFailed.other', { count: warmupFailures })
     }
     if (detail === 'Prompt enhancer not initialized.') {
-      return 'Dreamverse backend is still initializing prompt services. Wait for /readyz to return 200 and retry.'
+      return t('backend.promptServicesStarting')
     }
     if (detail === 'No ready GPU worker processes.') {
-      return 'Dreamverse backend is running, but GPU workers are not ready yet. Wait for startup warmup to finish and retry.'
+      return t('backend.gpuWorkersNotReady')
     }
-    return `Dreamverse backend is not ready yet: ${detail}`
+    return t('backend.notReady', { detail })
   }
 
   async function probeBackendReadiness(): Promise<BackendReadinessProbe> {
@@ -551,7 +556,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   function clearPendingProjectPointers() {
     clearProjectArchivedClips()
     currentProjectIdRef.current = ''
-    harnessProjectIdRef.current = ''
+    harnessProjectIdRef.current = null
     setOpenedProjectTitle(null)
     streamStore.patch({ currentThumbnail: null })
   }
@@ -613,10 +618,10 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
 
   function getInitialPresetLabel(prompt?: string): string {
     if (shouldStartFromCustomPrompt(prompt)) {
-      return promptWindowStore.get().customPresetLabel.trim() || 'Custom rollout'
+      return promptWindowStore.get().customPresetLabel.trim() || t('rollout.custom')
     }
     const selectedPresetLabel = promptWindowStore.get().selectedPreset?.label
-    return selectedPresetLabel || promptWindowStore.get().customPresetLabel.trim() || 'Current rollout'
+    return selectedPresetLabel || promptWindowStore.get().customPresetLabel.trim() || t('rollout.current')
   }
 
   /** Resolve the displayed clip label from the selected, pending, and live clips, then from the creation preset. */
@@ -627,7 +632,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     if (stream.liveClip?.label) return stream.liveClip.label
     const initialLabel = getInitialPresetLabel(initialPromptRef.current.rawPrompt || projectControlsStore.get().livePromptDraft)
     if (initialLabel) return initialLabel
-    return promptWindowStore.get().selectedPreset?.label || 'Video player'
+    return promptWindowStore.get().selectedPreset?.label || t('clip.player')
   }
 
   /** Use authored preset prompts in creation and retain the developer-selected prompt subset. */
@@ -639,8 +644,8 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
 
   // --- Playback & clip management ---
 
-  function makePromptId(): string {
-    return randomUUID()
+  function makePromptId(): PromptId {
+    return brandString<PromptId>(randomUUID())
   }
 
   function resetPlaybackState() {
@@ -800,7 +805,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       if (currentProjectIdRef.current !== projectId) return null
       const precedingClip = streamStore.get().completedClips.find(clip => clip.id === liveClip.continuationClipId)
       if (!precedingClip) {
-        projectControlsStore.patch({ projectNotice: 'The preceding video is unavailable for continuation playback.' })
+        projectControlsStore.patch({ projectNotice: t('continuation.precedingUnavailable') })
         return null
       }
       archivedSegments = [...normalizeArchivedSegments(precedingClip.archivedSegments), ...archivedSegments]
@@ -817,7 +822,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     let blob = rawBlob
     let remuxed = false
     if (archivedSegments.length > 0) {
-      const remuxedBlob = await remuxArchivedSegmentsBestEffort(archivedSegments, liveClip.label || 'Generated clip')
+      const remuxedBlob = await remuxArchivedSegmentsBestEffort(archivedSegments, liveClip.label || t('clip.generated'))
       if (remuxedBlob instanceof Blob && remuxedBlob.size > 0) {
         blob = remuxedBlob
         remuxed = true
@@ -828,7 +833,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     const archivedClip = {
       id: liveClip.id,
       originPromptId: liveClip.originPromptId,
-      label: liveClip.label || 'Generated clip',
+      label: liveClip.label || t('clip.generated'),
       prompt: liveClip.prompt,
       promptWindowPrompts: clonePromptWindowPrompts(liveClip.promptWindowPrompts),
       mime: blob.type || DEFAULT_AV_MIME,
@@ -989,14 +994,14 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
 
   /** Start one clip from Project's committed origin and prompt window, retaining only a matching label. */
   function buildStreamClip(payload: JsonObject): LiveClip {
-    const originPromptId = typeof payload.origin_prompt_id === 'string' ? payload.origin_prompt_id : null
+    const originPromptId = typeof payload.origin_prompt_id === 'string' ? brandString<PromptId>(payload.origin_prompt_id) : null
     const stream = streamStore.get()
     const matchingClip = [stream.pendingInitialClip, stream.liveClip].find(clip => clip?.originPromptId === originPromptId)
     const promptWindowPrompts = clonePromptWindowPrompts(payload.prompt_window_prompts)
     return {
-      id: makePromptId(),
+      id: randomUUID(),
       originPromptId,
-      label: matchingClip?.label || `Cuts ${stream.completedClips.length + 1}`,
+      label: matchingClip?.label || t('clip.cut', { index: stream.completedClips.length + 1 }),
       prompt: typeof payload.origin_prompt === 'string' && payload.origin_prompt.trim()
         ? payload.origin_prompt.trim() : summarizePresetPrompt(promptWindowPrompts),
       promptWindowPrompts,
@@ -1040,17 +1045,17 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     if (!lobbyCapabilities) return
     const references = [...selectedReferences]
     const validationError = validateReferenceSelection(referenceMode, references, lobbyCapabilities)
-    if (validationError) { projectControlsStore.patch({ projectNotice: validationError }); return }
+    if (validationError) { projectControlsStore.patch({ projectNotice: creationProblemText(validationError, t) }); return }
     const rewriteSourcePromptWindowPrompts = getActivePromptWindowPrompts()
     lastSubmitTimeRef.current = now
     projectControlsStore.patch({ generationRoundStatus: 'preparing', projectNotice: '' })
-    let referenceAssetIds: string[]
+    let referenceAssetIds: AssetId[]
     try {
       referenceAssetIds = await resolveReferenceAssetIds(references, rememberUploadedReference)
     } catch (error) {
       if (wsRef.current === ws) {
         lastSubmitTimeRef.current = 0
-        projectControlsStore.patch({ generationRoundStatus: 'failed', projectNotice: error instanceof Error ? error.message : 'Reference upload failed.' })
+        projectControlsStore.patch({ generationRoundStatus: 'failed', projectNotice: assetErrorText(error, t('reference.uploadFailed'), t) })
       }
       return
     }
@@ -1195,7 +1200,9 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     const normalizedEvent = normalizeSocketMessage(decoded.data)
     if (normalizedEvent.type === 'session/gpu_assigned') {
       applyEchoedCreationConfig(normalizedEvent.payload)
-      if (typeof normalizedEvent.payload.project_id === 'string') harnessProjectIdRef.current = normalizedEvent.payload.project_id
+      if (typeof normalizedEvent.payload.project_id === 'string') {
+        harnessProjectIdRef.current = brandString<ProjectId>(normalizedEvent.payload.project_id)
+      }
     }
     await applyNormalizedSocketEvent(normalizedEvent, {
       projectControlsStore,
@@ -1215,6 +1222,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       startTtffTimer,
       preserveArchivedPlaybackSelection: shouldUseArchivedPlaybackFallback(),
       finalizeStreamCompletion,
+      noticeText: notice => t(notice === 'server-error' ? 'notice.serverError' : 'notice.streamInitFailed'),
     })
   }
 
@@ -1265,7 +1273,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
               const probe = await probeBackendReadiness()
               if (wsRef.current !== ws) return
               recoverFailedProjectStart(projectControlsStore.get().projectNotice || (probe.ok
-                ? 'Dreamverse backend closed the connection before the project started. Click Generate to retry.'
+                ? t('backend.closedBeforeStart')
                 : probe.notice))
               return
             }
@@ -1286,7 +1294,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       })
       wsRef.current = ws
     } catch (error) {
-      recoverFailedProjectStart(error instanceof Error ? error.message : 'Failed to connect to Dreamverse.')
+      recoverFailedProjectStart(error instanceof Error ? error.message : t('connection.failed'))
     }
   }
 
@@ -1310,8 +1318,8 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     // Unmute during the user gesture so iOS Safari permits audio playback.
     setVideoMuted(false)
     clearProjectArchivedClips()
-    currentProjectIdRef.current = makePromptId()
-    harnessProjectIdRef.current = ''
+    currentProjectIdRef.current = randomUUID()
+    harnessProjectIdRef.current = null
     setOpenedProjectTitle(null)
     streamStore.patch({ currentThumbnail: null })
     const initialPrompt = payload.initial_rollout_prompt
@@ -1349,7 +1357,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     streamStore.patch({
       pendingInitialClip: {
         originPromptId: initialPromptRef.current.promptId,
-        label: payload.preset_label || 'Preset story',
+        label: payload.preset_label || t('clip.presetStory'),
       },
       liveClip: null,
       activeClipId: '',
@@ -1371,7 +1379,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       references,
     })
     if (validationError) {
-      showProjectStartNotice(validationError)
+      showProjectStartNotice(creationProblemText(validationError, t))
       return
     }
 
@@ -1400,7 +1408,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     } catch (error) {
       if (connectionAttemptRef.current !== connectionAttempt) return
       streamStore.patch({ loadingAnimation: false })
-      showProjectStartNotice(error instanceof Error ? error.message : 'Reference upload failed.')
+      showProjectStartNotice(assetErrorText(error, t('reference.uploadFailed'), t))
       return
     }
     if (connectionAttemptRef.current !== connectionAttempt) return
@@ -1422,12 +1430,12 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
   }
 
   /** Delete a harness project, showing the harness's reason in the sidebar when it refuses. */
-  async function handleDeleteProject(projectId: string) {
+  async function handleDeleteProject(projectId: ProjectId) {
     try {
       await deleteProject(projectId)
       setProjectListNotice('')
     } catch (error) {
-      setProjectListNotice(error instanceof Error ? error.message : 'Failed to delete the project.')
+      setProjectListNotice(projectErrorText(error, t('project.deleteFailed'), t))
     }
     await refreshProjectList()
   }
@@ -1453,7 +1461,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
     const blob = remuxed ? remuxedBlob : new Blob(chunks, { type: archivedSegments[0]?.mime ?? DEFAULT_AV_MIME })
     const prompts = round.segments.map(segment => segment.prompt)
     return {
-      id: makePromptId(),
+      id: randomUUID(),
       originPromptId: null,
       label,
       prompt: round.instruction?.trim() || summarizePresetPrompt(prompts),
@@ -1474,7 +1482,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
    * `gpu_assigned` arrives. A later open, leave, or start supersedes an unfinished open.
    * @param projectId - the harness project ID.
    */
-  async function openProject(projectId: string) {
+  async function openProject(projectId: ProjectId) {
     const controls = projectControlsStore.get()
     if (controls.connecting || controls.projectResetPending) return
     setSidebarOpen(false)
@@ -1493,7 +1501,7 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       lastRoundPrompts = project.rounds.at(-1)?.segments.map(segment => segment.prompt) ?? []
       for (const round of project.rounds) {
         // The first round carries the project's title, as a live first round carries its preset label.
-        const clip = await buildStoredRoundClip(round, clips.length === 0 ? project.title : `Cuts ${clips.length + 1}`)
+        const clip = await buildStoredRoundClip(round, clips.length === 0 ? project.title : t('clip.cut', { index: clips.length + 1 }))
         if (clip) clips.push(clip)
         if (connectionAttemptRef.current !== connectionAttempt) break
       }
@@ -1501,14 +1509,14 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
       clips.forEach((clip) => { URL.revokeObjectURL(clip.objectUrl) })
       if (connectionAttemptRef.current !== connectionAttempt) return
       resetToLobbyState()
-      showProjectStartNotice(error instanceof Error ? error.message : 'Failed to open the project.')
+      showProjectStartNotice(projectErrorText(error, t('project.openFailed'), t))
       return
     }
     if (connectionAttemptRef.current !== connectionAttempt) {
       clips.forEach((clip) => { URL.revokeObjectURL(clip.objectUrl) })
       return
     }
-    currentProjectIdRef.current = makePromptId()
+    currentProjectIdRef.current = randomUUID()
     harnessProjectIdRef.current = projectId
     setOpenedProjectTitle(title)
     setProjectCreationConfig(creationConfig)
@@ -1660,7 +1668,17 @@ export function DreamverseApp({ renderSlot }: DreamverseAppProps) {
           void handleStartNewProject()
         },
       })}
-      <Header onToggleSidebar={() => { setSidebarOpen(prev => !prev) }} />
+      <Header
+        onToggleSidebar={() => { setSidebarOpen(prev => !prev) }}
+        labels={{
+          toggleSidebar: t('header.toggleSidebar'),
+          repositoryLink: t('header.repositoryLink'),
+          logo: t('header.logo'),
+          joinWaitlist: t('header.joinWaitlist'),
+          lightMode: t('header.lightMode'),
+          darkMode: t('header.darkMode'),
+        }}
+      />
 
       <div className={cn('relative flex flex-1 min-h-0 flex-col', showActiveProject ? 'justify-center px-4 pb-2 sm:px-6 sm:pb-12' : 'overflow-hidden')}>
         <div className="contents">

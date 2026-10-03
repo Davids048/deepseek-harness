@@ -16,6 +16,7 @@ import {
   finishRound,
   logEntry,
   openUserActions,
+  projectCopies,
   projectPayload,
   REF2VA,
   rolloutText,
@@ -66,7 +67,7 @@ describe('generate_video_sequence', () => {
     const scenes = ['Scene 1', 'Scene 2', 'Scene 3', 'Scene 4']
     await finishRound(run, scenes)
     expect(harness.enhancer.rewriteRollout.mock.calls).toEqual([[[], {
-      promptsToRewrite: [], presetId: null, presetLabel: '', rewriteInstruction: 'Explore a forest', timeoutMs: 20000,
+      promptsToRewrite: [], presetId: null, presetLabel: '', rewriteInstruction: 'Explore a forest',
       generationMode: mode,
       // Only the reference-image model numbers its images; first-frame models have no image labels. Each later
       // ref2va segment keeps the selected image as Picture 1 and starts from its predecessor's last frame, Picture 2.
@@ -107,7 +108,7 @@ describe('generate_video_sequence', () => {
     await finishRound(run, ['Scene 1', 'Scene 2', 'Scene 3', 'Scene 4', 'Scene 5', 'Scene 6'])
     expect(harness.enhancer.rewriteRollout.mock.calls[0]![1]).toEqual({
       promptsToRewrite: [], presetId: 'custom_editable', presetLabel: 'Custom rollout',
-      rewriteInstruction: 'A moonbase corridor thriller with flooding', timeoutMs: 20000, generationMode: 't2va',
+      rewriteInstruction: 'A moonbase corridor thriller with flooding', generationMode: 't2va',
       referenceLabels: [], segmentCount: 6, segmentDurationSec: 5, continuedSegmentLabels: null,
       signal: run.project.generationSignal,
     })
@@ -229,7 +230,7 @@ describe('generate_video_sequence', () => {
       ...(kind === 'seed' ? { initial_rollout_prompt: 'A protagonist walks' } : { curated_prompts: ['A lake', 'A forest'] }),
     }))
     await finishRound(run, kind === 'seed' ? ['Scene 1', 'Scene 2'] : ['A lake', 'A forest'])
-    for (const segment of run.project.completedSequenceSegments) expect(segment.referenceAssets).toEqual([side, front])
+    for (const segment of run.project.completedSequenceSegments) expect(segment.referenceAssets).toEqual(projectCopies(run, [side, front]))
     // The second request carries the ordered images, then the first segment's last frame that it starts from.
     const images = [referenceImage('side'), referenceImage('front')]
     expect(run.generation.calls.map(call => call.request.referenceImages)).toEqual([images, [...images, lastFrameBytes(1)]])

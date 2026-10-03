@@ -3,8 +3,10 @@ import { motion, useAnimationControls } from 'framer-motion'
 import { Badge } from '@dreamverse/ui-kit/components/ui/badge.tsx'
 import { cn } from '@dreamverse/ui-kit/utils.ts'
 import { Check, Lightbulb, Pencil } from 'lucide-react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { WorkspaceProps } from '@dreamverse/ui-kit/contracts.ts'
 import type { PromptEvent } from '@dreamverse/project-controller/client/promptEvents.ts'
+import type {} from '../locales.ts'
 
 export const WORKSPACE_ORIGINAL_SELECTION_KEY = 'original'
 export const WORKSPACE_CURRENT_SELECTION_KEY = 'current'
@@ -214,7 +216,7 @@ function ChromaGradient({ projectStarted = false }: { projectStarted?: boolean }
 }
 
 /** Display prompt history and scroll to its most recent entry after updates. */
-export default function Workspace({ promptEvents = [], originalLabel = '', projectStarted = false, onSelectOriginal, onSelectEvent, onSelectCurrent, selectedClipId, selectedEntryKey: selectedEntryKeyProp, originalClipId = '' }: WorkspaceProps) {
+export default function Workspace({ promptEvents = [], originalLabel = '', projectStarted = false, onSelectOriginal, onSelectEvent, onSelectCurrent, selectedClipId, selectedEntryKey: selectedEntryKeyProp, originalClipId = '', t }: WorkspaceProps & { t: TranslateNS<'dreamverse.directing'> }) {
   const bottomSentinelRef = useRef<HTMLDivElement>(null)
   const topSentinelRef = useRef<HTMLDivElement>(null)
   const [showTopFade, setShowTopFade] = useState(false)
@@ -287,7 +289,7 @@ export default function Workspace({ promptEvents = [], originalLabel = '', proje
                 <div className="flex min-w-0 flex-1 flex-col gap-2">
                   <Badge variant="secondary" className="horizontal gap-2 items-center w-fit">
                     <Lightbulb className="size-3 opacity-70" />
-                    Original
+                    {t('original')}
                   </Badge>
                   {originalLabel && <p className="line-clamp-2 text-sm leading-5 text-muted-foreground">{originalLabel}</p>}
                 </div>
@@ -324,7 +326,7 @@ export default function Workspace({ promptEvents = [], originalLabel = '', proje
                     <div className="flex min-w-0 flex-1 flex-col gap-2">
                       <Badge variant="secondary" className="horizontal gap-2 items-center w-fit">
                         {isLast ? <Check className="size-3 opacity-70" /> : <Pencil className="size-3 opacity-70" />}
-                        {isLast ? 'Current' : 'Edit'}
+                        {isLast ? t('current') : t('edit')}
                       </Badge>
                       <p className="line-clamp-2 text-sm leading-5 text-muted-foreground">{event.text}</p>
                     </div>

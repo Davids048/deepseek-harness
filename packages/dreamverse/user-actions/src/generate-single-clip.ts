@@ -91,7 +91,6 @@ async function expandClip(
   referenceAssets: readonly AssetRecord[],
 ): Promise<string> {
   const model = project.promptEnhancementModel
-  const timeoutMs = project.promptEnhancementTimeoutMs
   const settings = project.videoGenerationSettings
   await project.sendBrowserEvent({ type: 'prompt_received', prompt_id: instruction.requestId })
   await project.sendBrowserEvent({ type: 'prompt_enhancing', prompt_id: instruction.requestId })
@@ -101,7 +100,7 @@ async function expandClip(
   let response: PromptResult
   try {
     response = await project.awaitPromptWork(async () => await project.promptEnhancer.expandClip(prompt, {
-      timeoutMs, generationMode: settings.generation_mode, segmentDurationSec: settings.segment_duration_sec,
+      generationMode: settings.generation_mode, segmentDurationSec: settings.segment_duration_sec,
       referenceLabels: project.promptImageLabels({ referenceCount: referenceAssets.length }).referenceLabels,
       signal: project.generationSignal,
     }))

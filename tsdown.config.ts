@@ -24,7 +24,7 @@ export default defineConfig(({ env }) => {
         // tsdown's default exclusions.
         '**/node_modules/**', '**/dist/**', '**/test?(s)/**', '**/t?(e)mp/**',
         // DreamVerse packages load from source through the dsh launcher's tsx hook and have no build step.
-        'packages/dreamverse/**', 'packages/bundle/dreamverse/**',
+        'packages/dreamverse/**', 'packages/bundle/dreamverse/**', 'packages/bundle/dreamverse-multiverse/**',
       ],
     },
     entry: client ? '' : ['lib/types/{index,invariant,startup}.js'],

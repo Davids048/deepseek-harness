@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { AssetId } from '@dreamverse/assets-manager/client/assets.ts'
 import { describe, expect, it } from 'vitest'
 import { buildCreationInitPayload, parseEchoedCreationConfig } from '../../src/client/creationPayload.ts'
 
 describe('creation asset payload', () => {
   it('serializes ordered stable IDs without media bytes', () => {
-    const ids = ['side', 'front']
+    const ids = ['side', 'front'].map(id => brandString<AssetId>(id))
     const payload = buildCreationInitPayload({ modelId: 'h3-ref2va', modeId: 'ref2av', aspectRatio: '16:9', resolution: '720p', segmentDurationSec: 5, segmentCount: 6, referenceAssetIds: ids })
     ids.reverse()
     expect(payload).toEqual({ model_id: 'h3-ref2va', aspect_ratio: '16:9', resolution: '720p', segment_duration_sec: 5, segment_count: 6, reference_asset_ids: ['side', 'front'] })

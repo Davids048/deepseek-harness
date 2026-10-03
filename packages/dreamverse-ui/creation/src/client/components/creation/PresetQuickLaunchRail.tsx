@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
 import { cn } from '@dreamverse/ui-kit/utils.ts'
 import type { StoryPresetLike } from '@dreamverse/ui-kit/contracts.ts'
@@ -10,6 +11,7 @@ interface PresetQuickLaunchRailProps {
   storyPresets: StoryPresetLike[]
   disabled?: boolean
   onPresetGenerate: (presetId: string) => void
+  t: TranslateNS<'dreamverse.creation'>
 }
 
 /** Display presets and update navigation arrows from scroll and resize events. */
@@ -17,6 +19,7 @@ export default function PresetQuickLaunchRail({
   storyPresets,
   disabled = false,
   onPresetGenerate,
+  t,
 }: PresetQuickLaunchRailProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
@@ -175,7 +178,7 @@ export default function PresetQuickLaunchRail({
           {canScrollLeft ? (
             <button
               type="button"
-              aria-label="Scroll suggested prompts left"
+              aria-label={t('presets.scrollLeft')}
               onClick={() => { scrollByAmount('left') }}
               className="studio-control studio-control-press inline-flex size-8 items-center justify-center rounded-full text-muted-foreground hover-capable:hover:bg-muted/60 hover-capable:hover:text-foreground"
             >
@@ -220,7 +223,7 @@ export default function PresetQuickLaunchRail({
           {canScrollRight ? (
             <button
               type="button"
-              aria-label="Scroll suggested prompts right"
+              aria-label={t('presets.scrollRight')}
               onClick={() => { scrollByAmount('right') }}
               className="studio-control studio-control-press inline-flex size-8 items-center justify-center rounded-full text-muted-foreground hover-capable:hover:bg-muted/60 hover-capable:hover:text-foreground"
             >

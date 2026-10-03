@@ -195,7 +195,6 @@ export async function rewriteRollout(prompts: string[], options: RewriteRolloutO
   try {
     const [provider, [content, rolloutId, rolloutLabel, rewritten]] = await race.firstAccepted(request, accept, {
       operationName: 'rewrite_prompt_sequence',
-      timeoutMs: options.timeoutMs,
       signal: options.signal,
     })
     return {

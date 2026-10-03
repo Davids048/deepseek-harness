@@ -27,14 +27,14 @@ const REF2VA_MIN_COMPLETION_TOKENS = 8192
 export interface PromptEnhancerConfig extends VendorSettings, PromptTemplateOptions {
   /** `FASTVIDEO_PROMPT_MODEL`. */
   readonly model?: string | undefined
+  /** Deadline of one prompt operation in milliseconds. */
+  readonly timeoutMs: number
 }
 
 /** Options shared by the three prompt operations. */
 export interface OperationOptions {
   /** The segment duration in seconds. */
   readonly segmentDurationSec: number
-  /** The operation deadline; `null` or omission selects the race default. */
-  readonly timeoutMs?: number | null | undefined
   /** `t2va`, `i2v`, or `ref2va`; omission selects `t2va`. */
   readonly generationMode?: string | undefined
   /** Ordered labels of the protagonist's reference images; for a rollout, those of its first segment. */
@@ -99,13 +99,13 @@ export class PromptEnhancer {
     const settings = new PromptSettings(config.model)
     const templates = new PromptTemplates(config)
     const clients = createVendorClients(settings.rewriteDefaultModel, config, diagnostics)
-    return new PromptEnhancer(settings, templates, ProviderRace.fromConfig(clients, diagnostics))
+    return new PromptEnhancer(settings, templates, ProviderRace.fromConfig(clients, config.timeoutMs, diagnostics))
   }
 
   /**
    * Expand a user idea into a standalone clip prompt.
    * @param conditioningPrompt - the user's idea.
-   * @param request - the duration, mode, labels, deadline, and abort signal.
+   * @param request - the duration, mode, labels, and abort signal.
    * @returns the accepted prompt, or an empty prompt with the failure.
    * @throws PromptValueError for an unsupported generation mode.
    */
@@ -123,7 +123,7 @@ export class PromptEnhancer {
   /**
    * Continue locked segments from a user steer prompt or, for `null`, an inferred next beat.
    * @param conditioningPrompt - the user's direction, or `null` for automatic continuation.
-   * @param request - the duration, history, mode, labels, deadline, and abort signal.
+   * @param request - the duration, history, mode, labels, and abort signal.
    * @returns the accepted prompt, or an empty prompt with the failure.
    * @throws PromptValueError for an unsupported generation mode.
    */
@@ -141,7 +141,7 @@ export class PromptEnhancer {
   /**
    * Select the source prompts and template, then request a complete rollout.
    * @param prompts - the project's stored prompts.
-   * @param request - the count, duration, browser window, metadata, mode, labels, deadline, and signal.
+   * @param request - the count, duration, browser window, metadata, mode, labels, and signal.
    * @returns the accepted rollout, or the source prompts with the failure.
    * @throws PromptValueError for an unsupported generation mode.
    */

@@ -2,6 +2,8 @@
 import '../support/setup.client.ts'
 import { describe, expect, it, vi, type Mock } from 'vitest'
 
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { PromptId } from '@dreamverse/project-controller/client/ids.ts'
 import { createProjectControlsStore } from '@dreamverse/project-controller/client/stores/projectControls.ts'
 import { createPromptWindowStore } from '@dreamverse/project-controller/client/stores/promptWindow.ts'
 import { createRewriteStore } from '@dreamverse/project-controller/client/stores/rewrite.ts'
@@ -750,12 +752,13 @@ function createInertSocketEventMembers() {
     fixedRewriteModel: '',
     parseLatencyMs: () => null,
     formatPromptWindowEventText: () => '',
-    makePromptId: () => '',
+    makePromptId: () => brandString<PromptId>(''),
     buildStreamClip: vi.fn(),
     resetTtffTimer: vi.fn(),
     startTtffTimer: vi.fn(),
     preserveArchivedPlaybackSelection: false,
     finalizeStreamCompletion: vi.fn(),
+    noticeText: notice => notice,
   } satisfies Partial<SocketEventContext>
 }
 

@@ -10,5 +10,9 @@
     "src/client",
     "src/client/**/*.json"
   ],
-  "references": []
+  "references": [
+    {
+      "path": "../../util/brand"
+    }
+  ]
 }

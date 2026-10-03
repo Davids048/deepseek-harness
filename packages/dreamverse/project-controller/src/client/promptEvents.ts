@@ -1,3 +1,5 @@
+import type { PromptId } from './ids.ts'
+
 /** The number of prompt events that the page retains, newest first. */
 export const MAX_PROMPT_EVENTS = 24
 
@@ -16,7 +18,7 @@ export type PromptEventStatus =
 
 /** One prompt the page shows in the directing timeline: a user prompt, an enhanced prompt, or an LLM rewrite. */
 export interface PromptEvent {
-  promptId: string
+  promptId: PromptId
   status: PromptEventStatus
   /** The prompt's origin, for example `user_raw`, `user_rewrite`, `llm_rewrite`, or a server prompt source. */
   source?: string | undefined
@@ -45,7 +47,7 @@ export type PromptEventUpdate = Partial<Omit<PromptEvent, 'promptId'>>
  */
 export function updatePromptEvent(
   events: readonly PromptEvent[],
-  promptId: string,
+  promptId: PromptId,
   update: PromptEventUpdate,
 ): PromptEvent[] {
   return events.map(event => (

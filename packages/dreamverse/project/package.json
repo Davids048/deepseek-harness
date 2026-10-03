@@ -7,9 +7,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@dreamverse/assets-manager": "workspace:*",
     "@dreamverse/generation-client": "workspace:*",
+    "@dreamverse/project-store": "workspace:*",
     "@dreamverse/prompt-enhancer": "workspace:*",
-    "@dreamverse/assets-manager": "workspace:*"
+    "@dreamverse/segment-generation": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

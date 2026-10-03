@@ -29,8 +29,6 @@ export interface FeatureDependencies {
   /** The completion budget selected for the generation mode. */
   readonly maxCompletionTokens: number
   readonly race: ProviderRace
-  /** The operation deadline; `null` or omission selects the race default. */
-  readonly timeoutMs?: number | null | undefined
   /** Ordered labels of the protagonist's reference images; they add request data only. */
   readonly referenceLabels?: readonly string[] | undefined
   /** Aborts the provider race; the feature then rejects with the abort reason instead of returning a fallback. */

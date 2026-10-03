@@ -1,4 +1,5 @@
 import { Box, ChevronDown, Clock, Monitor, Wand2 } from 'lucide-react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
 import ConfigPill from './ConfigPill.tsx'
 import {
@@ -19,9 +20,8 @@ import {
   type CreationModeId,
   type CreationModelId,
   type ResolutionId,
-  formatDurationLabel,
-  formatResolutionLabel,
 } from '@dreamverse/project-controller/client/creationConfig.ts'
+import { modeName, modeSummary, modelName, modelSummary, resolutionName, secondsName } from '../../creationChoiceText.ts'
 import { cn } from '@dreamverse/ui-kit/utils.ts'
 import type { ProjectCreationConfig } from '@dreamverse/ui-kit/contracts.ts'
 
@@ -34,6 +34,7 @@ interface ProjectCreationConfigPillsProps extends ProjectCreationConfig {
   onModeChange?: ((modeId: CreationModeId) => void) | undefined
   onAspectRatioChange?: ((aspectRatio: AspectRatioId) => void) | undefined
   onResolutionChange?: ((resolution: ResolutionId) => void) | undefined
+  t: TranslateNS<'dreamverse.creation'>
 }
 
 /** Display a project's creation settings with optional editing controls. */
@@ -50,9 +51,10 @@ export default function ProjectCreationConfigPills({
   onModeChange,
   onAspectRatioChange,
   onResolutionChange,
+  t,
 }: ProjectCreationConfigPillsProps) {
   const selectedModel = CREATION_MODELS.find(model => model.id === modelId) ?? CREATION_MODELS[0]
-  const selectedMode = CREATION_MODES.find(mode => mode.id === modeId) ?? CREATION_MODES[0]
+  const selectedMode = CREATION_MODES.find(mode => mode === modeId) ?? CREATION_MODES[0]
   const isInteractive = !readOnly && !disabled
 
   const pillClassName = cn(
@@ -63,24 +65,24 @@ export default function ProjectCreationConfigPills({
   if (readOnly) {
     return (
       <div className="flex flex-wrap items-center gap-1.5">
-        <ConfigPill disabled className={pillClassName} aria-label="Model">
+        <ConfigPill disabled className={pillClassName} aria-label={t('config.model')}>
           <Box className="size-3" />
-          {selectedModel?.label}
+          {selectedModel && modelName(selectedModel.id, t)}
         </ConfigPill>
-        <ConfigPill disabled className={pillClassName} aria-label="Mode">
+        <ConfigPill disabled className={pillClassName} aria-label={t('config.mode')}>
           <Wand2 className="size-3" />
-          {selectedMode?.label}
+          {selectedMode && modeName(selectedMode, t)}
         </ConfigPill>
-        <ConfigPill disabled className={pillClassName} aria-label="Aspect ratio and resolution">
+        <ConfigPill disabled className={pillClassName} aria-label={t('config.aspectRatioResolution')}>
           <Monitor className="size-3" />
-          {aspectRatio} {formatResolutionLabel(resolution)}
+          {aspectRatio} {resolutionName(resolution, t)}
         </ConfigPill>
-        <ConfigPill disabled className={pillClassName} aria-label="Segments">
-          {segmentCount} {segmentCount === 1 ? 'segment' : 'segments'}
+        <ConfigPill disabled className={pillClassName} aria-label={t('config.segments')}>
+          {t(segmentCount === 1 ? 'config.segmentCount.one' : 'config.segmentCount.other', { count: segmentCount })}
         </ConfigPill>
-        <ConfigPill disabled className={pillClassName} aria-label="Duration per segment">
+        <ConfigPill disabled className={pillClassName} aria-label={t('config.duration')}>
           <Clock className="size-3" />
-          {formatDurationLabel(segmentDurationSec)} per segment
+          {t('config.duration.pill', { duration: secondsName(segmentDurationSec, t) })}
         </ConfigPill>
       </div>
     )
@@ -90,22 +92,22 @@ export default function ProjectCreationConfigPills({
     <div className="flex flex-wrap items-center gap-1.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <ConfigPill disabled={disabled} className={pillClassName} aria-label="Model">
+          <ConfigPill disabled={disabled} className={pillClassName} aria-label={t('config.model')}>
             <Box className="size-3" />
-            {selectedModel?.label}
+            {selectedModel && modelName(selectedModel.id, t)}
             <ChevronDown className="size-2.5 opacity-60" />
           </ConfigPill>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-72">
-          <DropdownMenuLabel>Model</DropdownMenuLabel>
+          <DropdownMenuLabel>{t('config.model')}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {CREATION_MODELS.map(model => (
             <DropdownMenuItem key={model.id} onClick={() => onModelChange?.(model.id)} className="flex-col items-start gap-1 py-2.5">
               <span className="flex items-center gap-2 text-sm font-medium">
-                {model.label}
-                {model.badge && <span className="rounded-full bg-accent-blue/15 px-1.5 py-0.5 text-[10px] text-accent-blue">{model.badge}</span>}
+                {modelName(model.id, t)}
+                {model.badge === 'new' && <span className="rounded-full bg-accent-blue/15 px-1.5 py-0.5 text-[10px] text-accent-blue">{t('model.badge.new')}</span>}
               </span>
-              <span className="text-xs text-muted-foreground">{model.description}</span>
+              <span className="text-xs text-muted-foreground">{modelSummary(model.id, t)}</span>
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -113,19 +115,19 @@ export default function ProjectCreationConfigPills({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <ConfigPill disabled={disabled} className={pillClassName} aria-label="Mode">
+          <ConfigPill disabled={disabled} className={pillClassName} aria-label={t('config.mode')}>
             <Wand2 className="size-3" />
-            {selectedMode?.label}
+            {selectedMode && modeName(selectedMode, t)}
             <ChevronDown className="size-2.5 opacity-60" />
           </ConfigPill>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64">
-          <DropdownMenuLabel>Mode</DropdownMenuLabel>
+          <DropdownMenuLabel>{t('config.mode')}</DropdownMenuLabel>
           <DropdownMenuSeparator />
           {CREATION_MODES.map(mode => (
-            <DropdownMenuItem key={mode.id} onClick={() => onModeChange?.(mode.id)} className="flex-col items-start gap-1 py-2.5">
-              <span className="text-sm font-medium">{mode.label}</span>
-              <span className="text-xs text-muted-foreground">{mode.description}</span>
+            <DropdownMenuItem key={mode} onClick={() => onModeChange?.(mode)} className="flex-col items-start gap-1 py-2.5">
+              <span className="text-sm font-medium">{modeName(mode, t)}</span>
+              <span className="text-xs text-muted-foreground">{modeSummary(mode, t)}</span>
             </DropdownMenuItem>
           ))}
         </DropdownMenuContent>
@@ -133,13 +135,13 @@ export default function ProjectCreationConfigPills({
 
       <Popover>
         <PopoverTrigger asChild>
-          <ConfigPill disabled={disabled} className={pillClassName} aria-label="Aspect ratio and resolution">
+          <ConfigPill disabled={disabled} className={pillClassName} aria-label={t('config.aspectRatioResolution')}>
             <Monitor className="size-3" />
-            {aspectRatio} {formatResolutionLabel(resolution)}
+            {aspectRatio} {resolutionName(resolution, t)}
           </ConfigPill>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-80">
-          <p className="mb-3 text-xs font-medium text-muted-foreground">Aspect ratio</p>
+          <p className="mb-3 text-xs font-medium text-muted-foreground">{t('config.aspectRatio')}</p>
           <div className="grid grid-cols-3 gap-2">
             {ASPECT_RATIOS.map(ratio => (
               <button
@@ -166,7 +168,7 @@ export default function ProjectCreationConfigPills({
               </button>
             ))}
           </div>
-          <p className="mb-2 mt-4 text-xs font-medium text-muted-foreground">Resolution</p>
+          <p className="mb-2 mt-4 text-xs font-medium text-muted-foreground">{t('config.resolution')}</p>
           <div className="flex flex-wrap gap-2">
             {RESOLUTIONS.map(item => (
               <button
@@ -178,19 +180,19 @@ export default function ProjectCreationConfigPills({
                   resolution === item ? 'border-accent-blue bg-accent-blue/10 text-foreground' : 'border-border',
                 )}
               >
-                {formatResolutionLabel(item)}
+                {resolutionName(item, t)}
               </button>
             ))}
           </div>
         </PopoverContent>
       </Popover>
 
-      <ConfigPill disabled className={pillClassName} aria-label="Segments">
-        {segmentCount} {segmentCount === 1 ? 'segment' : 'segments'}
+      <ConfigPill disabled className={pillClassName} aria-label={t('config.segments')}>
+        {t(segmentCount === 1 ? 'config.segmentCount.one' : 'config.segmentCount.other', { count: segmentCount })}
       </ConfigPill>
-      <ConfigPill disabled className={pillClassName} aria-label="Duration per segment">
+      <ConfigPill disabled className={pillClassName} aria-label={t('config.duration')}>
         <Clock className="size-3" />
-        {formatDurationLabel(segmentDurationSec)} per segment
+        {t('config.duration.pill', { duration: secondsName(segmentDurationSec, t) })}
       </ConfigPill>
     </div>
   )

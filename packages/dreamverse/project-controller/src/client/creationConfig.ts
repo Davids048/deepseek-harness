@@ -6,17 +6,11 @@ export type AspectRatioId = '21:9' | '16:9' | '4:3' | '1:1' | '3:4' | '9:16'
 
 export type ResolutionId = '480p' | '720p' | '1080p' | '4k'
 
-export interface CreationModeOption {
-  id: CreationModeId
-  label: string
-  description: string
-}
-
+/** One selectable model; the page translates its name and description from the model ID. */
 export interface CreationModelOption {
   id: CreationModelId
-  label: string
-  description: string
-  badge?: string
+  /** Marks a recently added model; the page shows its localized badge. */
+  badge?: 'new'
 }
 
 export interface MentionOption {
@@ -26,34 +20,18 @@ export interface MentionOption {
   description?: string
 }
 
-export const CREATION_MODES: CreationModeOption[] = [
-  { id: 't2v', label: 'Text to video', description: 'Generate from a text prompt' },
-  { id: 'i2v', label: 'Image to video', description: 'Use an image as the first frame' },
-  { id: 'ref2av', label: 'Reference to video + audio', description: 'Generate independent shots of the subject in your pictures' },
-]
+/** The creation modes that the lobby offers, in display order; the page translates each mode ID. */
+export const CREATION_MODES: CreationModeId[] = ['t2v', 'i2v', 'ref2av']
 
-export const UNSUPPORTED_CREATION_MODES: CreationModeOption[] = [
-  { id: 'fl2av', label: 'First and last frame', description: 'Coming soon on FastLTX models' },
-]
+/** The creation modes that the lobby lists as unavailable; the page translates each mode ID. */
+export const UNSUPPORTED_CREATION_MODES: CreationModeId[] = ['fl2av']
 
+/** The models that the lobby can show, in display order. */
 export const CREATION_MODELS: CreationModelOption[] = [
-  { id: 'h3-ref2va', label: 'H3 Ref2AV', description: 'MiniMax H3 subject reference generation' },
-  {
-    id: 'fast-ltx23',
-    label: 'FastLTX 2.3',
-    description: 'LTX 2.3 with OmniNFT LoRA',
-    badge: 'New',
-  },
-  {
-    id: 'fast-ltx2',
-    label: 'FastLTX 2',
-    description: 'FastLTX 2 for streaming',
-  },
-  {
-    id: 'fast-h3',
-    label: 'FastH3',
-    description: 'MiniMax H3 with VSA data-free adapter',
-  },
+  { id: 'h3-ref2va' },
+  { id: 'fast-ltx23', badge: 'new' },
+  { id: 'fast-ltx2' },
+  { id: 'fast-h3' },
 ]
 
 export const ASPECT_RATIOS: AspectRatioId[] = ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16']
@@ -63,14 +41,6 @@ export const RESOLUTIONS: ResolutionId[] = ['480p', '720p', '1080p']
 export const UNSUPPORTED_RESOLUTIONS: ResolutionId[] = ['4k']
 
 export const SEGMENT_COUNTS = [1, 2, 3, 4, 5, 6] as const
-
-export function formatResolutionLabel(resolution: ResolutionId): string {
-  return resolution === '4k' ? '4K' : resolution.toUpperCase()
-}
-
-export function formatDurationLabel(seconds: number): string {
-  return `${seconds}s`
-}
 
 export function modeRequiresReference(modeId: CreationModeId): boolean {
   return modeId === 'ref2av' || modeId === 'i2v'

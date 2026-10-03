@@ -1,0 +1,48 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../core/agent-default-model"
+    },
+    {
+      "path": "../../host/webserver"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../assets-manager/tsconfig.host.json"
+    },
+    {
+      "path": "../generation-client"
+    },
+    {
+      "path": "../http-routes"
+    },
+    {
+      "path": "../prompt-enhancer"
+    },
+    {
+      "path": "../project-store"
+    },
+    {
+      "path": "../segment-generation"
+    }
+  ]
+}

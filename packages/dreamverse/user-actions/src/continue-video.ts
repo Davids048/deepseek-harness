@@ -18,6 +18,7 @@ import {
   type ActionPayload,
   type AssetRecord,
   type Project,
+  type PromptId,
   type PromptResult,
   type UserActionOptions,
   type UserInstruction,
@@ -91,7 +92,7 @@ export async function continueVideo(
 interface ContinuationRequest {
   /** The user steer prompt, or null for `auto_extend`, where the enhancer infers the next beat. */
   conditioningPrompt: string | null
-  promptId: string | null
+  promptId: PromptId | null
   rawPrompt: string | null
   history: string[]
   referenceAssets: readonly AssetRecord[]
@@ -106,7 +107,6 @@ interface ContinuationRequest {
  */
 async function enhanceContinuation(project: Project, request: ContinuationRequest): Promise<string> {
   const model = project.promptEnhancementModel
-  const timeoutMs = project.promptEnhancementTimeoutMs
   const settings = project.videoGenerationSettings
   const { promptId, rawPrompt, history } = request
   const labels = project.promptImageLabels({ append: true, referenceCount: request.referenceAssets.length })
@@ -114,7 +114,7 @@ async function enhanceContinuation(project: Project, request: ContinuationReques
   try {
     response = await project.awaitPromptWork(async () => await project.promptEnhancer.continueVideo(
       request.conditioningPrompt, {
-        lockedSegments: history, nextSegmentIdx: history.length + 1, timeoutMs,
+        lockedSegments: history, nextSegmentIdx: history.length + 1,
         generationMode: settings.generation_mode, segmentDurationSec: settings.segment_duration_sec,
         referenceLabels: labels.referenceLabels, firstFrameLabel: labels.firstFrameLabel,
         signal: project.generationSignal,

@@ -14,11 +14,12 @@ import {
   within,
   type HeldPromptCall,
 } from '../../project/tests/fakes.ts'
-import type { ProjectRun, ProjectsHarness } from '../../project/tests/harness.ts'
+import { FakeHolder, type ProjectRun, type ProjectsHarness } from '../../project/tests/harness.ts'
 import {
   finishRound,
   logEntry,
   openUserActions,
+  projectCopies,
   projectPayload,
   REF2VA,
   rolloutText,
@@ -87,7 +88,7 @@ describe('Auto Extension', () => {
     expect(run.project.generationRoundStatus).toBe('preparing')
     expect(run.project.promptEnhancementEnabled).toBe(false)
     expect(enhancer.continueVideo.mock.calls).toEqual([[null, {
-      lockedSegments: ['A'], nextSegmentIdx: 2, timeoutMs: 20000, generationMode: 't2va',
+      lockedSegments: ['A'], nextSegmentIdx: 2, generationMode: 't2va',
       segmentDurationSec: 5, referenceLabels: [], firstFrameLabel: null, signal: run.project.generationSignal,
     }]])
     provider.release.resolve()
@@ -269,7 +270,7 @@ describe('Auto Extension', () => {
     assets.addImage('image')
     harness = await openUserActions({ assets })
     const creation = harness.service.createProject({
-      projectId: 'project', socket: new FakeSocket(), payload: projectPayload({
+      holder: new FakeHolder(), socket: new FakeSocket(), payload: projectPayload({
         curated_prompts: ['A'], generation_mode: 'i2v', reference_asset_ids: ['image'], auto_extension_enabled: invalid,
       }),
     })
@@ -284,7 +285,7 @@ describe('Auto Extension', () => {
   it('rejects a creation opt-in without a generation request', async () => {
     harness = await openUserActions()
     await expect(harness.service.createProject({
-      projectId: 'project', socket: new FakeSocket(), payload: projectPayload({ curated_prompts: [], auto_extension_enabled: true }),
+      holder: new FakeHolder(), socket: new FakeSocket(), payload: projectPayload({ curated_prompts: [], auto_extension_enabled: true }),
     })).rejects.toMatchObject({
       message: 'Auto extension must be selected with a generation request.', reason: 'Invalid Auto extension',
     })
@@ -386,11 +387,11 @@ describe('Auto Extension', () => {
     expect(appended!.referenceAssets).toEqual([])
   })
 
-  it('reuses the latest round\'s ordered references and stops when one is deleted', async () => {
+  it('reuses the project copies of the latest round\'s ordered references, which a library deletion leaves in place', async () => {
     const assets = new FakeAssets()
     assets.addImage('initial')
-    assets.addImage('side')
-    assets.addImage('front')
+    const side = assets.addImage('side')
+    const front = assets.addImage('front')
     const { run, provider } = await startWithHeldContinuation({
       ...REF2VA, reference_asset_ids: ['initial'], curated_prompts: ['A'],
     }, { generation: new FakeGeneration(ref2vaFacts()), assets })
@@ -408,16 +409,18 @@ describe('Auto Extension', () => {
     const automatic = await run.generation.nextCall()
     expect(automatic.request.referenceImages).toEqual([referenceImage('side'), referenceImage('front'), lastFrameBytes(2)])
     assets.deleteAsset('front')
-    expect(assets.fileExists('front')).toBe(true)
+    expect(assets.fileExists('front')).toBe(false)
+    const after = run.socket.entries.length
+    await run.project.processBrowserCommand({ type: 'stop_auto_extension' })
     automatic.finish.resolve()
-    expect(await run.socket.waitForStatus('failed')).toEqual(roundStatus('failed', false))
-    const message = "Asset 'front' is unavailable. Select an asset from the library."
-    expect(run.socket.events().slice(-3)).toEqual([
-      { type: 'ltx2_stream_complete' }, { type: 'error', message }, roundStatus('failed', false),
-    ])
-    expect(harness!.logEvents('auto_extension_failed')).toEqual([logEntry('auto_extension_failed', { error: message })])
-    expect([assets.fileExists('front'), assets.fileExists('side')]).toEqual([false, true])
+    await run.socket.waitForStatus('idle', after)
     expect(run.project.completedSequencePrompts).toEqual(['A different protagonist', 'Prepared continuation'])
+    const [chosen, continued] = run.project.completedSequenceSegments
+    expect(continued!.referenceAssets).toEqual(projectCopies(run, [side, front]))
+    expect(continued!.referenceAssets).toEqual(chosen!.referenceAssets)
+    // Each library image is copied into the project once.
+    const owner = `project:${run.project.projectId}`
+    expect(assets.copyRequests).toEqual([['initial', owner], ['side', owner], ['front', owner]])
     expect(run.generation.calls).toHaveLength(3)
     expect(harness!.enhancer.continueVideo).toHaveBeenCalledTimes(1)
   })

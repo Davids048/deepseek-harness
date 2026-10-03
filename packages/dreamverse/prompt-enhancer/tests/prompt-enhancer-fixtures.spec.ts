@@ -316,7 +316,7 @@ describe('reference race fixtures', () => {
       buildEndpoint({ provider, apiKey: 'test-key', apiBaseUrl: stubBaseUrl(provider, fixture.scenarios[provider]) }),
       diagnostics,
     ))
-    const enhancer = new PromptEnhancer(settings, templates, ProviderRace.fromConfig(vendors, diagnostics))
+    const enhancer = new PromptEnhancer(settings, templates, ProviderRace.fromConfig(vendors, 20000, diagnostics))
     const {
       prompts, segment_count: segmentCount, segment_duration_sec: segmentDurationSec, rewrite_instruction: rewriteInstruction,
     } = fixture.args

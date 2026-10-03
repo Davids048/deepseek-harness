@@ -16,6 +16,9 @@
       "path": "../../host/webserver"
     },
     {
+      "path": "../../util/brand"
+    },
+    {
       "path": "../assets-manager/tsconfig.host.json"
     },
     {
@@ -26,6 +29,12 @@
     },
     {
       "path": "../project"
+    },
+    {
+      "path": "../project-store"
+    },
+    {
+      "path": "../segment-generation"
     }
   ],
   "exclude": [

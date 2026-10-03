@@ -5,14 +5,13 @@ import {
   DEFAULT_GENERATION_MODE,
   GENERATION_MODES,
   fromGenerationMode,
-  getGenerationMode,
   isGenerationMode,
   toGenerationMode,
 } from '../../src/client/generationMode.ts'
 
 describe('generation modes', () => {
   it('exposes stable wire IDs in the expected product order', () => {
-    expect(GENERATION_MODES.map(mode => mode.id)).toEqual([
+    expect(GENERATION_MODES).toEqual([
       't2va',
       'i2v',
       'fl2va',
@@ -21,10 +20,9 @@ describe('generation modes', () => {
     expect(DEFAULT_GENERATION_MODE).toBe('t2va')
   })
 
-  it('validates and resolves generation mode values', () => {
+  it('validates generation mode values', () => {
     expect(isGenerationMode('ref2va')).toBe(true)
     expect(isGenerationMode('unknown')).toBe(false)
-    expect(getGenerationMode('fl2va').label).toBe('FL2VA')
   })
 
   it('maps creation studio mode IDs to upstream wire values', () => {

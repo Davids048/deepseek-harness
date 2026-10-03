@@ -224,6 +224,18 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/web/web-fetch-http': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/web/web-search-exa': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/workflow/workflow': { kind: 'indirect', reason: 'The service delegates parent and child model rendering to its consumer and engine.' },
+  'packages/dreamverse/http-routes': { kind: 'none', reason: 'The library formats HTTP responses and matches browser route paths; it builds no model request.' },
+  'packages/dreamverse/project-store': { kind: 'none', reason: 'The store keeps project records and workload data; workload packages own every model request.' },
+  'packages/dreamverse-ui/player': { kind: 'none', reason: 'Browser-side video player; displays received video and status only.' },
+  'packages/dreamverse-ui/directing': { kind: 'none', reason: 'Browser-side prompt timeline; displays received prompt events only.' },
+  'packages/dreamverse-ui/project-history': { kind: 'none', reason: 'Browser-side project list; lists, opens, and deletes stored projects only.' },
+  'packages/dreamverse/assets-manager': { kind: 'indirect', reason: 'The file store holds image files; dreamverse-segment-generation sends selected images to the video model.' },
+  'packages/dreamverse-ui/kit': { kind: 'indirect', reason: 'Browser-side page kit; dreamverse-project turns page prompts and settings into model requests.' },
+  'packages/dreamverse-ui/assets': { kind: 'indirect', reason: 'Browser-side asset dialog; dreamverse-segment-generation sends the selected images to the video model.' },
+  'packages/dreamverse-ui/creation': { kind: 'indirect', reason: 'Browser-side creation components; dreamverse-user-actions turns submitted prompts into model requests.' },
+  'packages/dreamverse-ui/multiverse': { kind: 'indirect', reason: 'Browser-side multiverse page; dreamverse-multiverse turns chosen branches into model requests.' },
+  'packages/bundle/dreamverse': { kind: 'indirect', reason: 'The bundle mounts and configures DreamVerse packages, which own every model request.' },
+  'packages/bundle/dreamverse-multiverse': { kind: 'indirect', reason: 'The bundle mounts the multiverse packages and selects the branch-proposal model; the packages own every model request.' },
 }
 
 interface Failure {

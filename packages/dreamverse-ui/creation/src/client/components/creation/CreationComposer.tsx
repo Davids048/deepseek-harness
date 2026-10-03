@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { Box, ChevronDown, Clock, Monitor, Wand2 } from 'lucide-react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
 import AutoExtensionPill from './AutoExtensionPill.tsx'
 import ConfigPill from './ConfigPill.tsx'
@@ -25,8 +26,6 @@ import {
   UNSUPPORTED_RESOLUTIONS,
   modeRequiresReference,
   type MentionOption,
-  formatDurationLabel,
-  formatResolutionLabel,
 } from '@dreamverse/project-controller/client/creationConfig.ts'
 import {
   isSupportedCreationMode,
@@ -35,6 +34,7 @@ import {
   type LobbyCreationCapabilities,
   type LobbySelection,
 } from '@dreamverse/project-controller/client/creationCapabilities.ts'
+import { modeName, modeSummary, modelName, resolutionName, secondsName } from '../../creationChoiceText.ts'
 import { cn } from '@dreamverse/ui-kit/utils.ts'
 
 interface CreationComposerProps {
@@ -53,6 +53,7 @@ interface CreationComposerProps {
 
   capabilities: LobbyCreationCapabilities | null
   capabilityNotice: string | null
+  t: TranslateNS<'dreamverse.creation'>
 }
 
 /** Edit the lobby prompt and generation choices before starting a project. */
@@ -72,18 +73,19 @@ export default function CreationComposer({
 
   capabilities,
   capabilityNotice,
+  t,
 }: CreationComposerProps) {
   const { modeId, aspectRatio, resolution, segmentCount, segmentDurationSec } = selection
 
   const availableModes = useMemo(
     () => capabilities
-      ? [...CREATION_MODES, ...UNSUPPORTED_CREATION_MODES].filter(mode => isSupportedCreationMode(mode.id, capabilities))
+      ? [...CREATION_MODES, ...UNSUPPORTED_CREATION_MODES].filter(mode => isSupportedCreationMode(mode, capabilities))
       : [],
     [capabilities],
   )
   const unavailableModes = useMemo(
     () => capabilities
-      ? UNSUPPORTED_CREATION_MODES.filter(mode => unsupportedModeNotice(mode.id, capabilities) !== null)
+      ? UNSUPPORTED_CREATION_MODES.filter(mode => unsupportedModeNotice(mode, capabilities) !== null)
       : [],
     [capabilities],
   )
@@ -103,7 +105,7 @@ export default function CreationComposer({
   )
 
   const selectedModel = CREATION_MODELS.find(model => model.id === capabilities?.model_id)
-  const selectedMode = availableModes.find(mode => mode.id === modeId)
+  const selectedMode = availableModes.find(mode => mode === modeId)
   const requiresReference = modeRequiresReference(modeId)
   const referenceMissing = requiresReference && !referencePicker?.references.length
   const submitDisabled = !capabilities || !canSubmit || disabled || isGenerating || !value.trim() || referenceMissing
@@ -111,7 +113,7 @@ export default function CreationComposer({
 
   return (
     <section className="mx-auto flex w-full max-w-3xl flex-col gap-5">
-      <HeroTagline />
+      <HeroTagline t={t} />
 
       <ChatBar
         continuationDraft={value}
@@ -124,6 +126,7 @@ export default function CreationComposer({
         onGenerate={onSubmit}
         mentionOptions={mentionOptions}
         referencePicker={referencePicker}
+        t={t}
       >
 
         <div className="flex flex-wrap items-center gap-1.5 pt-2">
@@ -131,32 +134,32 @@ export default function CreationComposer({
             <>
               <span className="inline-flex h-9 items-center gap-1 px-2.5 text-[11px] font-medium text-foreground/90">
                 <Box className="size-3.5" />
-                {selectedModel?.label}
+                {selectedModel && modelName(selectedModel.id, t)}
               </span>
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <ConfigPill disabled={disabled}>
                     <Wand2 className="size-3.5" />
-                    {selectedMode?.label}
+                    {selectedMode && modeName(selectedMode, t)}
                     <ChevronDown className="size-3 opacity-60" />
                   </ConfigPill>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-64">
-                  <DropdownMenuLabel>Mode</DropdownMenuLabel>
+                  <DropdownMenuLabel>{t('config.mode')}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {availableModes.map(mode => (
-                    <DropdownMenuItem key={mode.id} onClick={() => { onSelectionChange({ modeId: mode.id }) }} className="flex-col items-start gap-1 py-2.5">
-                      <span className="text-sm font-medium">{mode.label}</span>
-                      <span className="text-xs text-muted-foreground">{mode.description}</span>
+                    <DropdownMenuItem key={mode} onClick={() => { onSelectionChange({ modeId: mode }) }} className="flex-col items-start gap-1 py-2.5">
+                      <span className="text-sm font-medium">{modeName(mode, t)}</span>
+                      <span className="text-xs text-muted-foreground">{modeSummary(mode, t)}</span>
                     </DropdownMenuItem>
                   ))}
                   {unavailableModes.length > 0 && <DropdownMenuSeparator />}
                   {unavailableModes.map(mode => (
-                    <DropdownMenuItem key={mode.id} disabled className="flex-col items-start gap-1 py-2.5 opacity-60">
-                      <span className="text-sm font-medium">{mode.label}</span>
+                    <DropdownMenuItem key={mode} disabled className="flex-col items-start gap-1 py-2.5 opacity-60">
+                      <span className="text-sm font-medium">{modeName(mode, t)}</span>
                       <span className="text-xs text-muted-foreground">
-                        {unsupportedModeNotice(mode.id, capabilities) ?? mode.description}
+                        {unsupportedModeNotice(mode, capabilities) ?? modeSummary(mode, t)}
                       </span>
                     </DropdownMenuItem>
                   ))}
@@ -167,11 +170,11 @@ export default function CreationComposer({
                 <PopoverTrigger asChild>
                   <ConfigPill disabled={disabled}>
                     <Monitor className="size-3.5" />
-                    {aspectRatio} {formatResolutionLabel(resolution)}
+                    {aspectRatio} {resolutionName(resolution, t)}
                   </ConfigPill>
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-80">
-                  <p className="mb-3 text-xs font-medium text-muted-foreground">Aspect ratio</p>
+                  <p className="mb-3 text-xs font-medium text-muted-foreground">{t('config.aspectRatio')}</p>
                   <div className="grid grid-cols-3 gap-2">
                     {availableAspectRatios.map(ratio => (
                       <button
@@ -188,7 +191,7 @@ export default function CreationComposer({
                       </button>
                     ))}
                   </div>
-                  <p className="mb-2 mt-4 text-xs font-medium text-muted-foreground">Resolution</p>
+                  <p className="mb-2 mt-4 text-xs font-medium text-muted-foreground">{t('config.resolution')}</p>
                   <div className="flex flex-wrap gap-2">
                     {availableResolutions.map(item => (
                       <button
@@ -200,7 +203,7 @@ export default function CreationComposer({
                           resolution === item ? 'border-accent-blue bg-accent-blue/10 text-foreground' : 'border-border',
                         )}
                       >
-                        {formatResolutionLabel(item)}
+                        {resolutionName(item, t)}
                       </button>
                     ))}
                     {unavailableResolutions.map(item => (
@@ -209,9 +212,9 @@ export default function CreationComposer({
                         type="button"
                         disabled
                         className="studio-control rounded-full border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground opacity-50"
-                        title="Not supported by the served model"
+                        title={t('config.resolution.unsupported')}
                       >
-                        {formatResolutionLabel(item)}
+                        {resolutionName(item, t)}
                       </button>
                     ))}
                   </div>
@@ -220,17 +223,17 @@ export default function CreationComposer({
 
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <ConfigPill disabled={disabled} aria-label={`Segments: ${segmentCount}`}>
-                    Segments {segmentCount}
+                  <ConfigPill disabled={disabled} aria-label={t('config.segments.aria', { count: segmentCount })}>
+                    {t('config.segments.pill', { count: segmentCount })}
                     <ChevronDown className="size-3 opacity-60" />
                   </ConfigPill>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
-                  <DropdownMenuLabel>Segments</DropdownMenuLabel>
+                  <DropdownMenuLabel>{t('config.segments')}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   {capabilities.segment_counts.map(count => (
                     <DropdownMenuItem key={count} onClick={() => { onSelectionChange({ segmentCount: count }) }}>
-                      {count} {count === 1 ? 'segment' : 'segments'}
+                      {t(count === 1 ? 'config.segmentCount.one' : 'config.segmentCount.other', { count })}
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -238,38 +241,42 @@ export default function CreationComposer({
 
               <Popover>
                 <PopoverTrigger asChild>
-                  <ConfigPill disabled={disabled} aria-label={`Duration per segment: ${formatDurationLabel(segmentDurationSec)}`}>
+                  <ConfigPill disabled={disabled} aria-label={t('config.duration.aria', { duration: secondsName(segmentDurationSec, t) })}>
                     <Clock className="size-3.5" />
-                    {formatDurationLabel(segmentDurationSec)} per segment
+                    {t('config.duration.pill', { duration: secondsName(segmentDurationSec, t) })}
                   </ConfigPill>
                 </PopoverTrigger>
                 <PopoverContent align="start" className="w-72">
-                  <p className="mb-3 text-xs font-medium text-muted-foreground">Duration per segment</p>
+                  <p className="mb-3 text-xs font-medium text-muted-foreground">{t('config.duration')}</p>
                   <Slider
                     min={capabilities.min_segment_duration_sec}
                     max={capabilities.max_segment_duration_sec}
                     step={1}
-                    aria-label="Duration per segment"
-                    aria-valuetext={`${segmentDurationSec} seconds`}
+                    aria-label={t('config.duration')}
+                    aria-valuetext={t('config.duration.valueText', { seconds: segmentDurationSec })}
                     value={[segmentDurationSec]}
                     onValueChange={([duration]) => {
                       if (duration !== undefined) onSelectionChange({ segmentDurationSec: duration })
                     }}
                   />
                   <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>{formatDurationLabel(capabilities.min_segment_duration_sec)}</span>
-                    <span className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground">{formatDurationLabel(segmentDurationSec)}</span>
-                    <span>{formatDurationLabel(capabilities.max_segment_duration_sec)}</span>
+                    <span>{secondsName(capabilities.min_segment_duration_sec, t)}</span>
+                    <span className="rounded-md border border-border px-2 py-1 text-xs font-medium text-foreground">{secondsName(segmentDurationSec, t)}</span>
+                    <span>{secondsName(capabilities.max_segment_duration_sec, t)}</span>
                   </div>
                 </PopoverContent>
               </Popover>
               {onAutoExtensionRequestChange && (
                 <AutoExtensionPill requested={autoExtensionRequested}
                   disabled={disabled || isGenerating}
-                  onChange={onAutoExtensionRequestChange} />
+                  onChange={onAutoExtensionRequestChange} t={t} />
               )}
               <p role="status" aria-live="polite" className="w-full px-2.5 text-xs text-muted-foreground">
-                {segmentCount} {segmentCount === 1 ? 'segment' : 'segments'} × {formatDurationLabel(segmentDurationSec)} = {formatDurationLabel(segmentCount * segmentDurationSec)} total
+                {t(segmentCount === 1 ? 'config.total.one' : 'config.total.other', {
+                  count: segmentCount,
+                  duration: secondsName(segmentDurationSec, t),
+                  total: secondsName(segmentCount * segmentDurationSec, t),
+                })}
               </p>
             </>
           ) : (
@@ -282,7 +289,7 @@ export default function CreationComposer({
 
         {referenceMissing && value.trim() && (
           <p className="mt-3 text-center text-xs leading-5 text-amber-700 dark:text-amber-400">
-            Select reference images to use {selectedMode?.label}.
+            {t('config.referenceRequired', { mode: selectedMode ? modeName(selectedMode, t) : '' })}
           </p>
         )}
       </ChatBar>

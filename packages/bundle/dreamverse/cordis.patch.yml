@@ -21,6 +21,22 @@
           process.getBuiltinModule('node:os').homedir(), '.local/state'), 'fastvideo/dreamverse'),
           'assets')
 
+    # The project store under the same state root: <state root>/projects. Each DreamVerse project is a project of
+    # kind `dreamverse`; startup migrates the projects that earlier versions stored there.
+    - id: dreamverse-project-store
+      name: '@dreamverse/project-store'
+      config:
+        root: !!js >-
+          process.getBuiltinModule('node:path').join(
+          process.env.FASTVIDEO_DREAMVERSE_HOME || process.getBuiltinModule('node:path').join(
+          process.env.XDG_STATE_HOME || process.getBuiltinModule('node:path').join(
+          process.getBuiltinModule('node:os').homedir(), '.local/state'), 'fastvideo/dreamverse'),
+          'projects')
+
+    # Generates one video segment and stores its video and last frame as project files.
+    - id: dreamverse-segment-generation
+      name: '@dreamverse/segment-generation'
+
     # The reference prompt-enhancement variables.
     - id: dreamverse-prompt-enhancer
       name: '@dreamverse/prompt-enhancer'
@@ -36,10 +52,11 @@
         autoSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_AUTO_SYSTEM_PROMPT_PATH
         rewriteAllSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_REWRITE_ALL_SYSTEM_PROMPT_PATH
         rewriteUserSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_REWRITE_USER_SYSTEM_PROMPT_PATH
+        # Deadline of one prompt operation, in milliseconds; DreamVerse and Multiverse both use it.
+        timeoutMs: 20000
 
     # The reference `load_application_settings` project log root: FASTVIDEO_PROJECT_LOG_ROOT, else
     # <FASTVIDEO_DREAMVERSE_HOME or $XDG_STATE_HOME/fastvideo/dreamverse or ~/.local/state/fastvideo/dreamverse>/outputs/project_logs.
-    # The stored projects live in <the same state root>/projects.
     - id: dreamverse-project
       name: '@dreamverse/project'
       config:
@@ -49,12 +66,6 @@
           process.env.XDG_STATE_HOME || process.getBuiltinModule('node:path').join(
           process.getBuiltinModule('node:os').homedir(), '.local/state'), 'fastvideo/dreamverse'),
           'outputs/project_logs')).trim()
-        projectRoot: !!js >-
-          process.getBuiltinModule('node:path').join(
-          process.env.FASTVIDEO_DREAMVERSE_HOME || process.getBuiltinModule('node:path').join(
-          process.env.XDG_STATE_HOME || process.getBuiltinModule('node:path').join(
-          process.getBuiltinModule('node:os').homedir(), '.local/state'), 'fastvideo/dreamverse'),
-          'projects')
 
     - id: dreamverse-action-generate-video-sequence
       name: '@dreamverse/user-actions/generate-video-sequence'
@@ -76,6 +87,10 @@
         host: !!js process.env.DREAMVERSE_BROWSER_HOST || '127.0.0.1'
         port: !!js process.env.DREAMVERSE_BROWSER_PORT && Number(process.env.DREAMVERSE_BROWSER_PORT)
         compression: none
+
+    # The /projects routes: list, read, and delete stored projects.
+    - id: dreamverse-project-routes
+      name: '@dreamverse/project-store/routes'
 
     # Serves the DSH page shell as the web server's fallback and prints the token URL that opens the page.
     - id: dreamverse-web-runtime
@@ -100,6 +115,15 @@
     # The application event source that the browser connection subscribes to.
     - id: dreamverse-api-remotes
       name: '@deepseek-ai/dsh-api-remotes'
+
+    # The `configForms` service that the locale row below requires.
+    - id: dreamverse-ui-settings
+      name: '@deepseek-ai/dsh-client-ui-settings'
+
+    # The page language: the dreamverse-ui rows register their dictionaries with this locale service, and the page shows
+    # the browser's language when it is Chinese or English, otherwise English.
+    - id: dreamverse-locale
+      name: '@deepseek-ai/dsh-client-locale'
 
     # Mounts the page's React tree from the `root` slot.
     - id: dreamverse-ui-renderer

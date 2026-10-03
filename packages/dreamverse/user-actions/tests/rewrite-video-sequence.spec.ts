@@ -14,6 +14,7 @@ import {
   finishRound,
   logEntry,
   openUserActions,
+  projectCopies,
   projectPayload,
   REF2VA,
   rolloutText,
@@ -100,7 +101,7 @@ describe('rewrite_seed_prompts', () => {
     await finishRound(run, ['Rewritten beach', 'Rewritten sunset'])
     expect(enhancer.rewriteRollout.mock.calls).toEqual([[['Accepted scene'], {
       promptsToRewrite: ['Archived beach', 'Archived sunset'], presetId: 'accepted-sequence',
-      presetLabel: 'Accepted sequence', rewriteInstruction: 'Add rain', timeoutMs: 20000, generationMode: mode,
+      presetLabel: 'Accepted sequence', rewriteInstruction: 'Add rain', generationMode: mode,
       referenceLabels: assetIds.map(() => 'Picture 1'), segmentCount: 1, segmentDurationSec: 5,
       continuedSegmentLabels: mode === 'ref2va' ? { referenceLabels: ['Picture 1'], firstFrameLabel: 'Picture 2' } : null,
       signal: run.project.generationSignal,
@@ -300,7 +301,7 @@ describe('rewrite_seed_prompts', () => {
       reference_asset_ids: ['side', 'front'],
     })
     await finishRound(run, ['Scene 1'])
-    expect(run.project.completedSequenceSegments[0]!.referenceAssets).toEqual([side, front])
+    expect(run.project.completedSequenceSegments[0]!.referenceAssets).toEqual(projectCopies(run, [side, front]))
     expect(harness!.enhancer.rewriteRollout.mock.calls[0]![1].referenceLabels).toEqual(['Picture 1', 'Picture 2'])
   })
 

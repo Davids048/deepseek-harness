@@ -249,24 +249,24 @@ describe('ProviderRace', () => {
 
   it('uses the initial stage deadline only when a fallback stage exists', async () => {
     const slow = () => new FakeVendor('cerebras', (_request, signal) => untilAborted(signal))
-    const single = new ProviderRace([[slow()]], { initialStageTimeoutMs: 20, httpTimeoutMs: 30, defaultTimeoutMs: 10 },
+    const single = new ProviderRace([[slow()]], { initialStageTimeoutMs: 20, httpTimeoutMs: 30, timeoutMs: 10 },
       recordingDiagnostics())
     await expect(single.firstAccepted(REQUEST, reply => reply.text, { operationName: 'op' }))
       .rejects.toThrow('op failed for all providers. provider=cerebras error=timed out after 0.03s')
-    const staged = new ProviderRace([[slow()], [slow()]], { initialStageTimeoutMs: 0, httpTimeoutMs: 10, defaultTimeoutMs: 40 },
+    const staged = new ProviderRace([[slow()], [slow()]], { initialStageTimeoutMs: 0, httpTimeoutMs: 10, timeoutMs: 20 },
       recordingDiagnostics())
-    await expect(staged.firstAccepted(REQUEST, reply => reply.text, { operationName: 'op', timeoutMs: 20 }))
+    await expect(staged.firstAccepted(REQUEST, reply => reply.text, { operationName: 'op' }))
       .rejects.toThrow('op failed for all providers. provider=cerebras error=timed out after 1.50s | '
         + 'provider=cerebras error=timed out after 0.02s')
   })
 
-  it('arranges configured vendors into one stage with the reference deadlines', () => {
+  it('arranges configured vendors into one stage with the reference stage deadlines and the given operation deadline', () => {
     const cerebras = new FakeVendor('cerebras', () => Promise.resolve(textReply('')))
     const groq = new FakeVendor('groq', () => Promise.resolve(textReply('')))
-    const race = ProviderRace.fromConfig([groq, cerebras], recordingDiagnostics())
+    const race = ProviderRace.fromConfig([groq, cerebras], 45000, recordingDiagnostics())
     expect(race.stages).toEqual([[cerebras, groq]])
     expect(race.providerLabel).toBe('cerebras')
-    expect(race.timeouts).toEqual({ initialStageTimeoutMs: 1500, httpTimeoutMs: 3000, defaultTimeoutMs: 20000 })
+    expect(race.timeouts).toEqual({ initialStageTimeoutMs: 1500, httpTimeoutMs: 3000, timeoutMs: 45000 })
     expect(race.getProviderSuccessCounts()).toEqual({ cerebras: 0, groq: 0 })
   })
 })

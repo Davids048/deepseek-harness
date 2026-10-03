@@ -15,7 +15,19 @@
       "path": "../../../vendor/schemastery"
     },
     {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../assets-manager/tsconfig.host.json"
+    },
+    {
       "path": "../generation-client"
+    },
+    {
+      "path": "../project-store"
+    },
+    {
+      "path": "../segment-generation"
     }
   ]
 }

@@ -1,7 +1,9 @@
 import { Buffer } from 'node:buffer'
+import { readFileSync } from 'node:fs'
 import { hostname } from 'node:os'
+import { projectOwner } from '@dreamverse/assets-manager'
 import { afterEach, describe, expect, it } from 'vitest'
-import { GenerationSegmentError } from '../src/index.ts'
+import { GenerationSegmentError, type VideoSegment } from '../src/index.ts'
 import { lastFrameBytes, settle, within, type BrowserEvent } from './fakes.ts'
 import { MEASURED_LATENCY, openProjects, type ProjectsHarness } from './harness.ts'
 import { actionPlugin, appendPrompt, generatePrompts } from './test-actions.ts'
@@ -29,6 +31,14 @@ async function open(): Promise<ProjectsHarness> {
     actionPlugin(['append_prompt'], appendPrompt),
   ])
   return harness
+}
+
+/**
+ * @param segment - a completed segment.
+ * @returns the bytes of the last frame that the file store holds for the segment.
+ */
+function storedLastFrame(segment: VideoSegment): Buffer {
+  return readFileSync(harness!.assets.get(segment.lastFrameAssetId!).filePath)
 }
 
 function status(value: string): BrowserEvent {
@@ -67,7 +77,7 @@ describe('GenerationPlanController', () => {
     expect(project.videoSegmentsById.get(plan.segmentIds[0]!)).toBe(firstRecord)
     expect(firstRecord.status).toBe('completed')
     expect(firstRecord.deliveryStats).toEqual({ timings: { e2e_latency_ms: 1 }, chunkCount: 1, byteCount: 8 })
-    expect(firstRecord.lastFrame).toEqual(lastFrameBytes(1))
+    expect(storedLastFrame(firstRecord)).toEqual(lastFrameBytes(1))
     // Each chained segment starts from its predecessor's last frame.
     expect(second.request.referenceImages).toEqual([lastFrameBytes(1)])
     expect(project.completedSequenceHistory).toEqual([])
@@ -78,7 +88,7 @@ describe('GenerationPlanController', () => {
     third.finish.resolve()
     await socket.waitForStatus('idle')
     expect(project.completedSequenceSegments.map(segment => segment.status)).toEqual(['completed', 'completed', 'completed'])
-    expect(project.completedSequenceSegments.map(segment => segment.lastFrame)).toEqual([
+    expect(project.completedSequenceSegments.map(storedLastFrame)).toEqual([
       lastFrameBytes(1), lastFrameBytes(2), lastFrameBytes(3),
     ])
     expect(project.completedSequenceHistory).toEqual([plan.sequenceIds])
@@ -167,7 +177,7 @@ describe('GenerationPlanController', () => {
     const after = run.socket.entries.length
     await run.project.processBrowserCommand({ type: 'append_prompt', prompt: 'B', prompt_id: 'continue' })
     const following = await run.generation.nextCall()
-    expect(following.request.referenceImages).toEqual([preceding.lastFrame])
+    expect(following.request.referenceImages).toEqual([storedLastFrame(preceding)])
     following.finish.resolve()
     await run.socket.waitForStatus('idle', after)
     expect(run.project.completedSequencePrompts).toEqual(['A', 'B'])
@@ -179,6 +189,35 @@ describe('GenerationPlanController', () => {
       ...segmentEvents(2, { source: 'user_raw', seedPromptIndex: null, promptId: 'continue' }),
       { type: 'ltx2_stream_complete' }, status('idle'),
     ])
+  })
+
+  it('streams a segment through segment generation and completes it after the file store holds its files', async () => {
+    const run = await (await open()).start(projectPayload({ curated_prompts: ['A'] }))
+    const completion = run.socket.hold('media_segment_complete')
+    ;(await run.generation.nextCall()).finish.resolve()
+    await within(completion.held.promise)
+    const [segmentId] = run.project.activeGenerationPlan!.segmentIds
+    const owner = projectOwner(run.project.projectId)
+    expect(harness!.assets.list(owner).map(record => [record.name, record.mimeType])).toEqual([
+      [`${segmentId}.mp4`, 'video/mp4'], [`${segmentId}.png`, 'image/png'],
+    ])
+    expect(run.socket.entries.slice(-2)).toEqual([
+      { type: 'media_init', segment_idx: 1, mime: 'video/mp4', stream_id: expect.stringMatching(/^seg001-[0-9a-f]{8}$/) as string },
+      Buffer.from('segment!'),
+    ])
+    completion.resume.resolve()
+    await run.socket.waitForStatus('idle')
+    const [segment] = run.project.completedSequenceSegments
+    const [video, frame] = harness!.assets.list(owner)
+    expect([segment!.videoAssetId, segment!.lastFrameAssetId]).toEqual([video!.assetId, frame!.assetId])
+    expect(readFileSync(video!.filePath, 'utf8')).toBe('segment!')
+    const record = harness!.store.get(run.project.projectId)!
+    expect(record.thumbnailAssetId).toBe(frame!.assetId)
+    expect(record.workload.data).toMatchObject({
+      segments: [{ segment_id: segmentId, status: 'completed', mime: 'video/mp4', video_asset_id: video!.assetId,
+        last_frame_asset_id: frame!.assetId }],
+      completed_sequences: [[segmentId]],
+    })
   })
 
   it.each([

@@ -1,3 +1,4 @@
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import AppNavRail from './AppNavRail.tsx'
 import CreationComposer from './CreationComposer.tsx'
 import PresetQuickLaunchRail from './PresetQuickLaunchRail.tsx'
@@ -12,17 +13,18 @@ export default function CreationStudio({
   onPresetGenerate,
   isGenerating = false,
   capabilities,
+  t,
   ...composerProps
-}: CreationStudioProps) {
+}: CreationStudioProps & { t: TranslateNS<'dreamverse.creation'> }) {
   return (
     <div className="flex min-h-0 flex-1">
-      <AppNavRail activeSection={activeSection} onOpenAssets={onOpenAssets} />
+      <AppNavRail activeSection={activeSection} onOpenAssets={onOpenAssets} t={t} />
       <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-7 sm:px-6 sm:py-8">
-          <CreationComposer {...composerProps} isGenerating={isGenerating} capabilities={capabilities} />
+          <CreationComposer {...composerProps} isGenerating={isGenerating} capabilities={capabilities} t={t} />
           {storyPresets.length > 0 && onPresetGenerate && (
             <PresetQuickLaunchRail storyPresets={storyPresets} disabled={isGenerating || composerProps.disabled || !capabilities}
-              onPresetGenerate={onPresetGenerate} />
+              onPresetGenerate={onPresetGenerate} t={t} />
           )}
         </div>
       </div>

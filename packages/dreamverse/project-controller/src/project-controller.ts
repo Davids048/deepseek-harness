@@ -1,7 +1,6 @@
 /**
- * The DreamVerse project controller: accepts `/ws` project sockets and serves the health, readiness, creation
- * capability, and stored-project routes, routed like the reference FastAPI application. The plugin registers them on
- * the DSH web server.
+ * The DreamVerse project controller: accepts `/ws` project sockets and serves the health, readiness, and creation
+ * capability routes, routed like the reference FastAPI application. The plugin registers them on the DSH web server.
  *
  * @module @dreamverse/project-controller/project-controller
  */
@@ -13,8 +12,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import { getCreationCapabilities } from './creation-route.ts'
 import type { DreamverseAssetsManager, DreamverseGeneration, DreamverseProjects } from './dependencies.ts'
 import { getHealthz, getReadyz } from './health-routes.ts'
-import { OpenProjectRegistry, ProjectConnection } from './project-connection.ts'
-import { projectRoutes } from './project-routes.ts'
+import { ProjectConnection } from './project-connection.ts'
 import { BrowserProjectSocket } from './project-socket.ts'
 
 /** How often the server pings each open project socket so that proxies keep it open while it is idle. */
@@ -32,11 +30,7 @@ export interface ProjectControllerServices {
 export class DreamverseProjectController {
   /** The exact paths of {@link routes}, which the plugin registers on the web server. */
   readonly routePaths = ['/health', '/healthz', '/readyz', '/creation-capabilities'] as const
-  /** The prefix paths of {@link routes}, which the plugin registers on the web server. */
-  readonly routePrefixes = ['/projects'] as const
   private readonly projectSockets = new WebSocketServer({ noServer: true })
-  /** The connection that serves each open project. */
-  private readonly registry = new OpenProjectRegistry()
   /** Running project connections; closing waits for their cleanup. */
   private readonly connections = new Set<Promise<void>>()
   /** The HTTP routes in the reference registration order. */
@@ -46,13 +40,12 @@ export class DreamverseProjectController {
    * @param services - the generation, asset, project, and logger services.
    */
   constructor(private readonly services: ProjectControllerServices) {
-    const { generation, assets, projects, logger } = services
+    const { generation, assets, logger } = services
     this.routes = [
       { method: 'GET', path: /^\/health$/, handle: (_request, response) => { getHealthz(response) } },
       { method: 'GET', path: /^\/healthz$/, handle: (_request, response) => { getHealthz(response) } },
       { method: 'GET', path: /^\/readyz$/, handle: (_request, response) => getReadyz(response, generation, logger) },
       { method: 'GET', path: /^\/creation-capabilities$/, handle: (_request, response) => getCreationCapabilities(response, generation, assets, logger) },
-      ...projectRoutes(projects, this.registry),
     ]
   }
 
@@ -87,7 +80,7 @@ export class DreamverseProjectController {
     const pingTimer = setInterval(() => { projectSocket.ping() }, PROJECT_SOCKET_PING_INTERVAL_MS)
     projectSocket.once('close', () => { clearInterval(pingTimer) })
     const { projects, logger } = this.services
-    const connection = new ProjectConnection(new BrowserProjectSocket(projectSocket), { projects, logger, registry: this.registry })
+    const connection = new ProjectConnection(new BrowserProjectSocket(projectSocket), { projects, logger })
     const running = connection.run().catch((error: unknown) => { this.services.logger.warn(error) })
     this.connections.add(running)
     void running.finally(() => { this.connections.delete(running) })

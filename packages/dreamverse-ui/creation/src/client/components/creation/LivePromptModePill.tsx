@@ -1,4 +1,5 @@
 import { Check, ChevronDown, GitBranch } from 'lucide-react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
 import ConfigPill from './ConfigPill.tsx'
 import {
@@ -12,8 +13,8 @@ import {
 
 /** The two things a submitted live prompt can do; `rewrite` is the boolean the composer stores. */
 const LIVE_PROMPT_MODES = [
-  { rewrite: true, label: 'Rewrite', description: 'Rewrite the prompt window and generate it again.' },
-  { rewrite: false, label: 'Continue from the last segment', description: 'Generate the next segment from where the video ends.' },
+  { rewrite: true, labelKey: 'promptAction.rewrite', descriptionKey: 'promptAction.rewrite.description' },
+  { rewrite: false, labelKey: 'promptAction.continue', descriptionKey: 'promptAction.continue.description' },
 ] as const
 
 interface LivePromptModePillProps {
@@ -21,30 +22,31 @@ interface LivePromptModePillProps {
   rewrite: boolean
   disabled?: boolean
   onChange: (rewrite: boolean) => void
+  t: TranslateNS<'dreamverse.creation'>
 }
 
 /** Choose whether the next live prompt rewrites the prompt window or continues from the last segment. */
-export default function LivePromptModePill({ rewrite, disabled = false, onChange }: LivePromptModePillProps) {
+export default function LivePromptModePill({ rewrite, disabled = false, onChange, t }: LivePromptModePillProps) {
   const selected = LIVE_PROMPT_MODES.find(mode => mode.rewrite === rewrite) ?? LIVE_PROMPT_MODES[0]
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <ConfigPill disabled={disabled} aria-label="Prompt action">
+        <ConfigPill disabled={disabled} aria-label={t('promptAction.label')}>
           <GitBranch className="size-3" />
-          {selected.label}
+          {t(selected.labelKey)}
           <ChevronDown className="size-2.5 opacity-60" />
         </ConfigPill>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72">
-        <DropdownMenuLabel>Prompt action</DropdownMenuLabel>
+        <DropdownMenuLabel>{t('promptAction.label')}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {LIVE_PROMPT_MODES.map(mode => (
-          <DropdownMenuItem key={mode.label} onClick={() => { onChange(mode.rewrite) }} className="flex-col items-start gap-1 py-2.5">
+          <DropdownMenuItem key={mode.labelKey} onClick={() => { onChange(mode.rewrite) }} className="flex-col items-start gap-1 py-2.5">
             <span className="flex items-center gap-2 text-sm font-medium">
-              {mode.label}
-              {mode.rewrite === rewrite && <Check className="size-3.5" aria-label="Selected" />}
+              {t(mode.labelKey)}
+              {mode.rewrite === rewrite && <Check className="size-3.5" aria-label={t('promptAction.selected')} />}
             </span>
-            <span className="text-xs text-muted-foreground">{mode.description}</span>
+            <span className="text-xs text-muted-foreground">{t(mode.descriptionKey)}</span>
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

@@ -1,3 +1,5 @@
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { PromptId } from '../ids.ts'
 import type { JsonObject } from '../json.ts'
 import type { ProjectControlsStore } from '../stores/projectControls.ts'
 import type { PromptWindowStore } from '../stores/promptWindow.ts'
@@ -32,14 +34,22 @@ export interface SocketEventContext {
   fixedRewriteModel: string
   parseLatencyMs: (value: unknown) => number | null
   formatPromptWindowEventText: (prompts: readonly string[]) => string
-  makePromptId: () => string
+  makePromptId: () => PromptId
   buildStreamClip: (payload: JsonObject) => LiveClip
   resetTtffTimer: () => void
   startTtffTimer: () => void
   /** Keep the selected archived clip while a new stream starts (native playback fallback). */
   preserveArchivedPlaybackSelection: boolean
   finalizeStreamCompletion: () => Promise<void>
+  /** The page's localized text for a notice that the reducer raises without server text. */
+  noticeText: (notice: SocketNotice) => string
 }
+
+/**
+ * A notice that the reducer raises without server text: `server-error` for a server error message with no text, and
+ * `stream-init-failed` when live playback cannot start.
+ */
+export type SocketNotice = 'server-error' | 'stream-init-failed'
 
 /** The field's value when it is a string. */
 function stringField(payload: JsonObject, key: string): string | undefined {
@@ -66,10 +76,11 @@ function isAbortError(error: unknown): boolean {
 /**
  * Preserve the actionable server notice shown beside project controls.
  * @param payload - the server `error` message.
- * @returns the trimmed server message, or a generic notice when it has none.
+ * @param noticeText - the page's localized notice text.
+ * @returns the trimmed server message, or the page's generic notice when it has none.
  */
-function resolveProjectErrorMessage(payload: JsonObject): string {
-  return trimmedField(payload, 'message') ?? 'An error occurred. Please start a new project.'
+function resolveProjectErrorMessage(payload: JsonObject, noticeText: SocketEventContext['noticeText']): string {
+  return trimmedField(payload, 'message') ?? noticeText('server-error')
 }
 
 /**
@@ -99,10 +110,12 @@ export async function applyNormalizedSocketEvent(
     startTtffTimer,
     preserveArchivedPlaybackSelection,
     finalizeStreamCompletion,
+    noticeText,
   } = context
 
   const payload = event.payload
-  const promptId = stringField(payload, 'prompt_id')
+  const rawPromptId = stringField(payload, 'prompt_id')
+  const promptId = rawPromptId === undefined ? undefined : brandString<PromptId>(rawPromptId)
   projectControlsStore.applyServerUiMessage(payload)
 
   switch (event.type) {
@@ -226,7 +239,7 @@ export async function applyNormalizedSocketEvent(
       } catch (error) {
         if (!isPlaybackCurrent() || isAbortError(error)) return
         streamStore.patch({
-          mediaAppendError: 'Unable to initialize AV streaming.',
+          mediaAppendError: noticeText('stream-init-failed'),
           avPlaybackStarted: false,
         })
         console.error('media_init failed:', error)
@@ -289,7 +302,7 @@ export async function applyNormalizedSocketEvent(
       return
 
     case 'session/error': {
-      const errorMessage = resolveProjectErrorMessage(payload)
+      const errorMessage = resolveProjectErrorMessage(payload, noticeText)
       projectControlsStore.patch({
         promptExtensionError: '',
         projectNotice: errorMessage,

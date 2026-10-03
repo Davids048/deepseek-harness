@@ -1,59 +1,26 @@
 /**
  * Port of the reference `ProjectConnection` (`dreamverse/project/project_websocket_connection.py`): one `/ws`
  * socket serves one project until disconnect, explicit leave, failure, or takeover. The first message either creates
- * a project (`project_init_v1`) or opens a stored one (`project_open_v1`); `OpenProjectRegistry` keeps one connection
- * per open project, and a later open of the same project takes the project over from the earlier connection.
+ * a project (`project_init_v1`) or opens a stored one (`project_open_v1`). The connection holds the project's lease in
+ * `dreamverseProjectStore`, so one connection serves each project: a later open of the same project revokes the
+ * earlier connection's lease, and `revoke()` takes the project over from that connection.
  *
  * @module @dreamverse/project-controller/project-connection
  */
 import { randomUUID } from 'node:crypto'
 import type { Logger } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { ProjectValidationError } from '@dreamverse/project'
-import type { DreamverseProjects, Project } from './dependencies.ts'
+import type { DreamverseProjects, Project, ProjectHolder, ProjectId } from './dependencies.ts'
 import { WebSocketDisconnect, type BrowserProjectSocket } from './project-socket.ts'
 
 /** The browser error that a connection receives when another connection opens its project. */
 export const PROJECT_TAKEN_OVER_MESSAGE = 'This project was opened in another window.'
 
-/** The connection that serves each open project ID; a later connection that opens the same project takes it over. */
-export class OpenProjectRegistry {
-  private readonly connections = new Map<string, ProjectConnection>()
-
-  /**
-   * @param projectId - the project ID.
-   * @returns whether a connection serves the project or is opening it.
-   */
-  has(projectId: string): boolean {
-    return this.connections.has(projectId)
-  }
-
-  /**
-   * Make `connection` the one that serves `projectId`. When another connection served it, that connection is taken
-   * over and has finished its cleanup, which stores the project, before the returned promise settles.
-   * @param projectId - the project ID.
-   * @param connection - the connection that creates or opens the project.
-   */
-  async claim(projectId: string, connection: ProjectConnection): Promise<void> {
-    const holder = this.connections.get(projectId)
-    this.connections.set(projectId, connection)
-    if (holder !== undefined && holder !== connection) await holder.takeOver()
-  }
-
-  /**
-   * Remove `connection`'s claim; a claim that a later connection has taken over stays.
-   * @param projectId - the project ID.
-   * @param connection - the connection that finished.
-   */
-  release(projectId: string, connection: ProjectConnection): void {
-    if (this.connections.get(projectId) === connection) this.connections.delete(projectId)
-  }
-}
-
 /** The services one project connection uses. */
 export interface ProjectConnectionServices {
   projects: DreamverseProjects
   logger: Logger
-  registry: OpenProjectRegistry
 }
 
 /** Python type names of JSON values, for the reference's `AttributeError` text. */
@@ -81,10 +48,13 @@ async function settled(task: Promise<void> | undefined): Promise<void> {
   await task?.then(() => {}, () => {})
 }
 
-/** Serve one project over one browser socket, like the reference `ProjectConnection.run`. */
-export class ProjectConnection {
-  /** A new UUID that a created project takes; `project_open_v1` replaces it with the opened project's ID. */
-  private servedProjectId: string = randomUUID()
+/** Serve one project over one browser socket, like the reference `ProjectConnection.run`; holds the project's lease. */
+export class ProjectConnection implements ProjectHolder {
+  /**
+   * The connection's ID in the project log until it serves a project: a new UUID, which the created project's
+   * store-assigned ID or the opened project's ID replaces.
+   */
+  private servedProjectId: ProjectId = brandString<ProjectId>(randomUUID())
   private project: Project | undefined
   private projectTask: Promise<void> | undefined
   private receiveTask: Promise<void> | undefined
@@ -94,8 +64,6 @@ export class ProjectConnection {
   private readonly projectStop = new AbortController()
   /** True once the project task entered `processQueuedGenerationActions`, which only closing the project ends. */
   private generating = false
-  /** True once this connection holds a claim in the registry for `projectId`. */
-  private claimed = false
   /** True once a later connection opened this connection's project. */
   private takenOver = false
   private finish!: () => void
@@ -104,19 +72,19 @@ export class ProjectConnection {
 
   /**
    * @param socket - the accepted browser socket.
-   * @param services - the project and logger services and the open project registry.
+   * @param services - the project and logger services.
    */
   constructor(private readonly socket: BrowserProjectSocket, private readonly services: ProjectConnectionServices) {}
 
   /** The served project's ID, which the connection's project log events carry. */
-  get projectId(): string {
+  get projectId(): ProjectId {
     return this.servedProjectId
   }
 
   /**
    * Accept one project request and supervise generation alongside browser commands.
    * Receiving starts with generation, so a disconnect stops queued work. Cleanup joins the receiver and project
-   * tasks before releasing project resources, closing the socket, and releasing the registry claim.
+   * tasks before releasing project resources, closing the socket, and releasing the project's lease.
    * @returns a promise that settles after cleanup; it rejects only when reporting a validation error fails.
    */
   async run(): Promise<void> {
@@ -148,7 +116,7 @@ export class ProjectConnection {
       try {
         await this.stopProject()
       } finally {
-        if (this.claimed) this.services.registry.release(this.projectId, this)
+        this.project?.releaseLease()
         this.finish()
       }
     }
@@ -156,9 +124,10 @@ export class ProjectConnection {
 
   /**
    * Hand the project to a connection that opened it later: tell the browser, close this socket, stop serving, and
-   * wait until this connection's cleanup has stored the project.
+   * wait until this connection's cleanup has stored the project. The project store calls this before it grants the
+   * later connection's lease.
    */
-  async takeOver(): Promise<void> {
+  async revoke(): Promise<void> {
     this.takenOver = true
     await this.socket.sendJson({ type: 'error', message: PROJECT_TAKEN_OVER_MESSAGE }).catch(() => {
       // A send failure means the browser already disconnected; the takeover proceeds without the notice.
@@ -169,29 +138,28 @@ export class ProjectConnection {
   }
 
   /**
-   * Create the project that `project_init_v1` describes, or open the stored project that `project_open_v1` names, and
-   * claim its ID. Opening claims before it reads the store, so a connection that served the project has stored it.
+   * Create the project that `project_init_v1` describes, or open the stored project that `project_open_v1` names,
+   * with this connection as the lease holder. Opening takes the lease before it reads the store, so a connection that
+   * served the project has stored it.
    * @param payload - the first browser message.
    * @returns the project.
    * @throws {ProjectValidationError} for another first message, a missing project ID, or a rejected project.
    */
   private async startProject(payload: Record<string, unknown>): Promise<Project> {
-    const { projects, registry } = this.services
+    const { projects } = this.services
     if (payload.type === 'project_init_v1') {
-      const project = await projects.createProject({ projectId: this.projectId, payload, socket: this.socket })
-      this.claimed = true
-      await registry.claim(this.projectId, this)
+      const project = await projects.createProject({ payload, socket: this.socket, holder: this })
+      this.servedProjectId = project.projectId
       return project
     }
     if (payload.type === 'project_open_v1') {
-      const projectId = payload['project_id']
-      if (typeof projectId !== 'string' || projectId === '') {
+      const rawProjectId = payload['project_id']
+      if (typeof rawProjectId !== 'string' || rawProjectId === '') {
         throw new ProjectValidationError('project_open_v1 requires a project_id.', 'Invalid project initialization')
       }
+      const projectId = brandString<ProjectId>(rawProjectId)
       this.servedProjectId = projectId
-      this.claimed = true
-      await registry.claim(projectId, this)
-      return await projects.openProject({ projectId, socket: this.socket })
+      return await projects.openProject({ projectId, socket: this.socket, holder: this })
     }
     throw new ProjectValidationError(
       'The first message must be project_init_v1 or project_open_v1.', 'Invalid project initialization')

@@ -7,12 +7,13 @@ import { readdirSync, writeFileSync } from 'node:fs'
 import { request as httpRequest, type IncomingHttpHeaders, type OutgoingHttpHeaders } from 'node:http'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import DreamverseAssetsManager, {
-  AssetInUseError, AssetNotFoundError, MediaValidationError, UploadTooLargeError, type AssetRecord,
+  AssetNotFoundError, MediaValidationError, UploadTooLargeError, projectOwner, type AssetId, type AssetOwner, type AssetRecord,
 } from '../src/index.ts'
-import { assetsRouteHandler, type AssetRoutesLibrary } from '../src/asset-routes.ts'
+import { PROJECT_FILE_DELETE_DETAIL, assetsRouteHandler, type AssetRoutesLibrary } from '../src/asset-routes.ts'
 import { shellFileResponder } from '../src/shell-files.ts'
 import { temporaryDirectory, type TemporaryDirectory } from './support.ts'
 
@@ -28,16 +29,15 @@ class FakeAssets implements AssetRoutesLibrary {
   readonly added: Array<{ content: Buffer; name: string; mimeType: string }> = []
   readonly retentions: string[] = []
   readonly releases: string[] = []
-  /** The number of stored projects that use each asset. */
-  readonly projectCounts = new Map<string, number>()
   addFailure: Error | undefined
 
   /** Publish a file under the temporary directory as one asset. */
-  put(assetId: string, name: string, content: Buffer, mimeType = 'video/mp4'): AssetRecord {
+  put(assetId: string, name: string, content: Buffer, mimeType = 'video/mp4', owner: AssetOwner = 'library'): AssetRecord {
     const filePath = join(temporary.directory, `asset-${assetId}`)
     writeFileSync(filePath, content)
     const record: AssetRecord = {
-      assetId, name, mediaType: 'video', mimeType, filePath, sizeBytes: content.length, width: 1344, height: 768, durationSec: 5.5,
+      assetId: brandString<AssetId>(assetId), owner, name, mediaType: 'video', mimeType, filePath, sizeBytes: content.length,
+      width: 1344, height: 768, durationSec: 5.5, createdAt: '2026-10-02T00:00:00.000Z',
     }
     this.records.set(assetId, record)
     return record
@@ -50,7 +50,7 @@ class FakeAssets implements AssetRoutesLibrary {
   }
 
   list(): AssetRecord[] {
-    return [...this.records.values()]
+    return [...this.records.values()].filter(record => record.owner === 'library')
   }
 
   retain(assetIds: readonly string[]): AssetRecord[] {
@@ -65,12 +65,10 @@ class FakeAssets implements AssetRoutesLibrary {
 
   delete(assetId: string): void {
     this.get(assetId)
-    const projectCount = this.projectCounts.get(assetId) ?? 0
-    if (projectCount > 0) throw new AssetInUseError(projectCount)
     this.records.delete(assetId)
   }
 
-  private get(assetId: string): AssetRecord {
+  get(assetId: string): AssetRecord {
     const record = this.records.get(assetId)
     if (!record) throw new AssetNotFoundError(`Asset '${assetId}' is unavailable. Select an asset from the library.`)
     return record
@@ -199,17 +197,18 @@ describe('/assets routing', () => {
 })
 
 describe('/assets', () => {
-  it('lists assets with their content URLs', async () => {
+  it('lists the library\'s files with their owner, creation time, and content URL', async () => {
     const assets = new FakeAssets()
     assets.put('a1', 'clip.mp4', Buffer.from('0123456789'))
+    assets.put('p1', 'segment.mp4', Buffer.from('x'), 'video/mp4', projectOwner('project-a'))
     await startAssetRoutes(assets)
-    expect(await callJson('GET', '/assets')).toMatchObject({
+    expect(await callJson('GET', '/assets')).toEqual(expect.objectContaining({
       status: 200,
       json: { assets: [{
-        asset_id: 'a1', name: 'clip.mp4', media_type: 'video', mime_type: 'video/mp4', size_bytes: 10, width: 1344,
-        height: 768, duration_sec: 5.5, content_url: '/assets/a1/content',
+        asset_id: 'a1', owner: 'library', name: 'clip.mp4', media_type: 'video', mime_type: 'video/mp4', size_bytes: 10,
+        width: 1344, height: 768, duration_sec: 5.5, created_at: '2026-10-02T00:00:00.000Z', content_url: '/assets/a1/content',
       }] },
-    })
+    }))
   })
 
   it('adds a multipart upload with its name and type, and names an unnamed file Untitled asset', async () => {
@@ -218,8 +217,8 @@ describe('/assets', () => {
     const content = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff])
     const uploaded = await call('POST', '/assets', multipart([{ name: 'file', filename: 'a.png', type: 'image/png', content }]))
     expect([uploaded.status, JSON.parse(uploaded.body.toString())]).toEqual([201, {
-      asset_id: 'new', name: 'a.png', media_type: 'image', mime_type: 'image/png', size_bytes: 6, width: 2, height: 1,
-      duration_sec: null, content_url: '/assets/new/content',
+      asset_id: 'new', owner: 'library', name: 'a.png', media_type: 'image', mime_type: 'image/png', size_bytes: 6, width: 2,
+      height: 1, duration_sec: null, created_at: '2026-10-02T00:00:00.000Z', content_url: '/assets/new/content',
     }])
     await call('POST', '/assets', multipart([{ name: 'file', filename: '', type: 'image/webp', content }]))
     expect(assets.added).toEqual([
@@ -321,14 +320,14 @@ describe('/assets', () => {
     })
   })
 
-  it('answers 409 with the project count for an asset that stored projects use', async () => {
+  it('answers 409 for a project\'s file, which goes with its project, and serves that file\'s content', async () => {
     const assets = new FakeAssets()
-    assets.put('a1', 'portrait.png', Buffer.from('x'), 'image/png')
-    assets.projectCounts.set('a1', 2)
+    assets.put('p1', 'frame.png', Buffer.from('png bytes'), 'image/png', projectOwner('project-a'))
     await startAssetRoutes(assets)
-    expect(await callJson('DELETE', '/assets/a1')).toMatchObject({
-      status: 409, json: { detail: 'This image is used by 2 project(s). Delete those projects first.' },
-    })
-    expect(assets.records.has('a1')).toBe(true)
+    expect(await callJson('DELETE', '/assets/p1')).toMatchObject({ status: 409, json: { detail: PROJECT_FILE_DELETE_DETAIL } })
+    expect(PROJECT_FILE_DELETE_DETAIL).toBe('This file belongs to a project. Delete the project to delete its files.')
+    expect(assets.records.has('p1')).toBe(true)
+    const content = await call('GET', '/assets/p1/content')
+    expect([content.status, content.body.toString()]).toEqual([200, 'png bytes'])
   })
 })

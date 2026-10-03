@@ -1734,7 +1734,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'Asset library dialog, declared by the kit\'s `root` registration. The component receives\nAssetLibraryProps; `@dreamverse/ui-assets` registers it, and without an occupant the Assets controls open\nnothing.',
     registerOptions: [],
     ownerProps: [
-      '/** Owner props of `dreamverse.asset-library`: the asset library dialog. */\nexport interface AssetLibraryProps {\n  open: boolean\n  assets: AssetRecord[]\n  onAssetsChange: (update: (assets: AssetRecord[]) => AssetRecord[]) => void\n  uploadPolicy: AssetUploadPolicy | null\n  onClose: () => void\n  onSelect: (asset: AssetRecord) => void\n  onDeleted: (assetId: string) => void\n  canSelect: boolean\n}',
+      '/** Owner props of `dreamverse.asset-library`: the asset library dialog. */\nexport interface AssetLibraryProps {\n  open: boolean\n  assets: AssetRecord[]\n  onAssetsChange: (update: (assets: AssetRecord[]) => AssetRecord[]) => void\n  uploadPolicy: AssetUploadPolicy | null\n  onClose: () => void\n  onSelect: (asset: AssetRecord) => void\n  onDeleted: (assetId: AssetId) => void\n  canSelect: boolean\n}',
     ],
     ownerPropsReferences: [
       'AssetUploadPolicy',
@@ -1757,7 +1757,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.asset-library\', () => ctx.slots.register(\n      { name: \'dreamverse.asset-library\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:228',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:229',
   },
   {
     key: 'dreamverse.chatbar',
@@ -1797,7 +1797,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.chatbar\', () => ctx.slots.register(\n      { name: \'dreamverse.chatbar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:252',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:253',
   },
   {
     key: 'dreamverse.creation-studio',
@@ -1835,7 +1835,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.creation-studio\', () => ctx.slots.register(\n      { name: \'dreamverse.creation-studio\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:246',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:247',
   },
   {
     key: 'dreamverse.player',
@@ -1868,7 +1868,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.player\', () => ctx.slots.register(\n      { name: \'dreamverse.player\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:234',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:235',
   },
   {
     key: 'dreamverse.sidebar',
@@ -1878,7 +1878,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     doc: 'Project history sidebar, declared by the kit\'s `root` registration. The component receives\nSidebarProps; `@dreamverse/ui-project-history` registers it, and without an occupant the page has no\nproject history.',
     registerOptions: [],
     ownerProps: [
-      '/** Owner props of `dreamverse.sidebar`: the project history that the harness lists. */\nexport interface SidebarProps {\n  open?: boolean\n  /** Harness ID of the current project; the history omits it because the Current entry shows it. */\n  currentProjectId?: string\n  currentProjectLabel?: string\n  hasCurrentProject?: boolean\n  connectionClosed?: boolean\n  projectResetPending?: boolean\n  /** The harness project list, newest update first. */\n  projects?: ProjectSummary[]\n  /** The failure of the last history action, such as a deletion that the harness refused. */\n  notice?: string\n  onClose?: () => void\n  /** Opens a listed project by its harness ID. */\n  onSelectProject?: (projectId: string) => void\n  onDeleteProject?: (projectId: string) => void\n  onNewProject?: () => void\n  onOpenAssets?: () => void\n}',
+      '/** Owner props of `dreamverse.sidebar`: the project history that the harness lists. */\nexport interface SidebarProps {\n  open?: boolean\n  /** Harness ID of the current project, or null when it has none; the history omits it because the Current entry shows it. */\n  currentProjectId?: ProjectId | null\n  currentProjectLabel?: string\n  hasCurrentProject?: boolean\n  connectionClosed?: boolean\n  projectResetPending?: boolean\n  /** The harness project list, newest update first. */\n  projects?: ProjectSummary[]\n  /** The failure of the last history action, such as a deletion that the harness refused. */\n  notice?: string\n  onClose?: () => void\n  /** Opens a listed project by its harness ID. */\n  onSelectProject?: (projectId: ProjectId) => void\n  onDeleteProject?: (projectId: ProjectId) => void\n  onNewProject?: () => void\n  onOpenAssets?: () => void\n}',
     ],
     ownerPropsReferences: [
       'ProjectSummary',
@@ -1901,7 +1901,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.sidebar\', () => ctx.slots.register(\n      { name: \'dreamverse.sidebar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:222',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:223',
   },
   {
     key: 'dreamverse.workspace',
@@ -1934,7 +1934,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'dreamverse.workspace\', () => ctx.slots.register(\n      { name: \'dreamverse.workspace\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:240',
+    source: 'packages/dreamverse-ui/kit/src/client/contracts.ts:241',
   },
   {
     key: 'main',
@@ -2429,6 +2429,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-layout AppFrame',
       '@dreamverse/ui-kit DreamverseRoot',
+      '@dreamverse/ui-multiverse MultiverseRoot',
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'root\', () => ctx.slots.register(\n      { name: \'root\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',

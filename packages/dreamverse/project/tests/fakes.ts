@@ -1,15 +1,20 @@
 /**
- * Controlled browser socket, generation backend, asset library, and prompt enhancer for project and user-action
+ * Controlled browser socket, generation backend, file store, and prompt enhancer for project and user-action
  * specs. Each fake records what the project sent or requested so specs can assert exact order and payloads.
  */
 
 import { Buffer } from 'node:buffer'
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { AssetWriter } from '@dreamverse/segment-generation'
 import { vi } from 'vitest'
 import {
+  type AssetId,
+  type AssetOwner,
   type AssetRecord,
+  type AssetWriteOptions,
   type ContinueVideoOptions,
   type DreamverseAssetsManager,
   type DreamverseGeneration,
@@ -320,7 +325,7 @@ export function ref2vaFacts(): ModelFacts {
   }
 }
 
-/** The error that the asset library raises for an absent or deleted asset. */
+/** The error that the file store raises for an absent or deleted asset. */
 class AssetNotFoundError extends Error {
   override name = 'AssetNotFoundError'
 }
@@ -335,29 +340,36 @@ export function imageBytes(assetId: string): Buffer {
 }
 
 /**
- * The `referenceImages` entry that a segment request carries for a library image.
- * @param assetId - the asset ID.
+ * The `referenceImages` entry that a segment request carries for a library image or its copy in a project.
+ * @param assetId - the library asset ID.
  * @returns the image's bytes.
  */
 export function referenceImage(assetId: string): Buffer {
   return imageBytes(assetId)
 }
 
+/** The file store's `image`, `video`, or `audio` media type of a MIME type. */
+function mediaTypeOf(mimeType: string): string {
+  return mimeType.split('/')[0] ?? ''
+}
+
 /**
- * Asset library with files in a temporary directory. A deleted asset keeps its file until its last retention is
- * released, as the reference `AssetLibrary` does.
+ * File store with files in a temporary directory: library assets that specs add, project-owned copies, and files that
+ * segment generation writes. A deleted asset keeps its file until its last retention is released, as the reference
+ * `AssetLibrary` does.
  */
 export class FakeAssets implements DreamverseAssetsManager {
   readonly root = mkdtempSync(join(tmpdir(), 'dreamverse-assets-manager-'))
   readonly retainRequests: string[][] = []
   readonly releaseRequests: string[][] = []
+  /** Each `copy` call's source asset ID and owner. */
+  readonly copyRequests: Array<[string, AssetOwner]> = []
   /** Fails the next release request. */
   releaseError: Error | null = null
-  /** Asset IDs that each project registered as its references. */
-  readonly projectReferences = new Map<string, Set<string>>()
   private readonly records = new Map<string, AssetRecord>()
   private readonly retentions = new Map<string, number>()
   private readonly deleted = new Set<string>()
+  private writtenCount = 0
 
   /** Resolve every ID before retaining any, like the reference `AssetLibrary.retain`. */
   retain(assetIds: readonly string[]): AssetRecord[] {
@@ -396,14 +408,46 @@ export class FakeAssets implements DreamverseAssetsManager {
     return record
   }
 
-  addProjectReferences(projectId: string, assetIds: readonly string[]): void {
-    const references = this.projectReferences.get(projectId) ?? new Set<string>()
-    for (const assetId of assetIds) references.add(assetId)
-    this.projectReferences.set(projectId, references)
+  /** Copy a published file for another owner under a new `file-<n>` ID. */
+  async copy(assetId: string, owner: AssetOwner): Promise<AssetRecord> {
+    this.copyRequests.push([assetId, owner])
+    const source = this.get(assetId)
+    return this.write({ ...source, owner }, readFileSync(source.filePath))
   }
 
-  removeProjectReferences(projectId: string): void {
-    this.projectReferences.delete(projectId)
+  /** A writer that publishes the written bytes under a new `file-<n>` ID on `commit`. */
+  createWriter(options: AssetWriteOptions): AssetWriter {
+    const chunks: Uint8Array[] = []
+    return {
+      assetId: brandString<AssetId>(''),
+      write: async (chunk) => { chunks.push(chunk) },
+      commit: async () => this.writeFile(options, Buffer.concat(chunks)),
+      abort: async () => {},
+    }
+  }
+
+  /** Publish one complete file under a new `file-<n>` ID. */
+  async addBytes(options: AssetWriteOptions, bytes: Uint8Array): Promise<AssetRecord> {
+    return this.writeFile(options, Buffer.from(bytes))
+  }
+
+  /** Delete one file, like `deleteAsset`. */
+  delete(assetId: string): void {
+    this.get(assetId)
+    this.deleteAsset(assetId)
+  }
+
+  /** Delete every file of one owner. */
+  deleteOwnedBy(owner: AssetOwner): void {
+    for (const record of this.list(owner)) this.deleteAsset(record.assetId)
+  }
+
+  /**
+   * @param owner - the owner.
+   * @returns the owner's files that are not deleted, in the order they were added.
+   */
+  list(owner: AssetOwner): AssetRecord[] {
+    return [...this.records.values()].filter(record => record.owner === owner && !this.deleted.has(record.assetId))
   }
 
   /**
@@ -458,7 +502,28 @@ export class FakeAssets implements DreamverseAssetsManager {
   private add(assetId: string, fields: Pick<AssetRecord, 'mediaType' | 'mimeType' | 'width' | 'height' | 'durationSec'>): AssetRecord {
     const content = imageBytes(assetId)
     writeFileSync(this.filePath(assetId), content)
-    const record = { assetId, name: assetId, filePath: this.filePath(assetId), sizeBytes: content.length, ...fields }
+    const record = {
+      assetId: brandString<AssetId>(assetId), owner: 'library' as const, name: assetId, filePath: this.filePath(assetId), sizeBytes: content.length,
+      createdAt: '2026-10-01T00:00:00.000Z', ...fields,
+    }
+    this.records.set(assetId, record)
+    return record
+  }
+
+  /** Publish written bytes with the options' owner, name, and MIME type. */
+  private writeFile(options: AssetWriteOptions, content: Buffer): AssetRecord {
+    return this.write({
+      owner: options.owner, name: options.name, mimeType: options.mimeType, mediaType: mediaTypeOf(options.mimeType),
+      width: null, height: null, durationSec: null, createdAt: new Date().toISOString(),
+    }, content)
+  }
+
+  /** Store a file under a new `file-<n>` ID with the given facts. */
+  private write(fields: Omit<AssetRecord, 'assetId' | 'filePath' | 'sizeBytes'>, content: Buffer): AssetRecord {
+    this.writtenCount += 1
+    const assetId = brandString<AssetId>(`file-${this.writtenCount}`)
+    writeFileSync(this.filePath(assetId), content)
+    const record = { ...fields, assetId, filePath: this.filePath(assetId), sizeBytes: content.length }
     this.records.set(assetId, record)
     return record
   }

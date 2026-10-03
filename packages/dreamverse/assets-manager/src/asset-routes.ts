@@ -2,35 +2,43 @@
  * Port of the reference `dreamverse/routes/assets.py`: `GET /assets`, multipart `POST /assets`, seekable
  * `GET /assets/{asset_id}/content`, and `DELETE /assets/{asset_id}` against the asset library, with FastAPI's status
  * codes and `{"detail": ...}` bodies. The service registers them as one `/assets` prefix route on the DSH web server.
- * A delete of an asset that stored projects use answers 409.
+ * The list and the delete cover the user's library; content serves a file of any owner, and a delete of a project's
+ * file answers 409 because the file goes with its project.
  *
  * @module @dreamverse/assets-manager/asset-routes
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import type { Logger } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { requestPath, sendInternalServerError, sendJson, serveRoutes, type Route, type ValidationIssue } from '@dreamverse/http-routes'
 import { sendFile } from './file-response.ts'
-import { AssetInUseError, AssetNotFoundError, type AssetRecord } from './library.ts'
+import { AssetNotFoundError, type AssetId, type AssetRecord } from './library.ts'
 import { MediaValidationError, UploadTooLargeError } from './media.ts'
 
 /** The asset library members that the asset routes call; the `dreamverseAssetsManager` service implements them. */
 export interface AssetRoutesLibrary {
   /** Rejects with `UploadTooLargeError` or another `MediaValidationError` for a rejected upload. */
   add(content: Uint8Array, name: string, mimeType: string): Promise<AssetRecord>
-  /** Every published asset, most recently added first. */
+  /** Every published file of the user's library, most recently added first. */
   list(): AssetRecord[]
+  /** Throws `AssetNotFoundError` when the file is absent or deleted. */
+  get(assetId: AssetId): AssetRecord
   /** Throws `AssetNotFoundError` for the first unavailable ID without retaining any file. */
-  retain(assetIds: readonly string[]): AssetRecord[]
-  release(assetIds: readonly string[]): void
-  /** Throws `AssetNotFoundError` when the asset is absent or already deleted, `AssetInUseError` when projects use it. */
-  delete(assetId: string): void
+  retain(assetIds: readonly AssetId[]): AssetRecord[]
+  release(assetIds: readonly AssetId[]): void
+  /** Throws `AssetNotFoundError` when the file is absent or already deleted. */
+  delete(assetId: AssetId): void
 }
 
-/** The reference `_asset_as_dict`: the record's fields without `file_path`, plus its content URL. */
+/** The 409 detail for a delete that names a project's file. */
+export const PROJECT_FILE_DELETE_DETAIL = 'This file belongs to a project. Delete the project to delete its files.'
+
+/** The reference `_asset_as_dict` (the record's fields without `file_path`, plus its content URL), with the owner. */
 function assetAsDict(asset: AssetRecord): Record<string, unknown> {
   return {
     asset_id: asset.assetId,
+    owner: asset.owner,
     name: asset.name,
     media_type: asset.mediaType,
     mime_type: asset.mimeType,
@@ -38,6 +46,7 @@ function assetAsDict(asset: AssetRecord): Record<string, unknown> {
     width: asset.width,
     height: asset.height,
     duration_sec: asset.durationSec,
+    created_at: asset.createdAt,
     content_url: `/assets/${asset.assetId}/content`,
   }
 }
@@ -136,7 +145,7 @@ async function readAssetContent(
   request: IncomingMessage,
   response: ServerResponse,
   assets: AssetRoutesLibrary,
-  assetId: string,
+  assetId: AssetId,
   logger: Logger,
 ): Promise<void> {
   let retained: AssetRecord[]
@@ -161,21 +170,26 @@ async function readAssetContent(
 }
 
 /**
- * Serve `DELETE /assets/{asset_id}` with 204, 404 for an absent or deleted asset, or 409 for an asset that stored
- * projects use.
+ * Serve `DELETE /assets/{asset_id}` with 204 for a library file, 404 for an absent or deleted file, or 409 for a
+ * project's file.
  * @param response - the browser response.
  * @param assets - the asset library.
  * @param assetId - the decoded path parameter.
  */
-function deleteAsset(response: ServerResponse, assets: AssetRoutesLibrary, assetId: string): void {
+function deleteAsset(response: ServerResponse, assets: AssetRoutesLibrary, assetId: AssetId): void {
+  let asset: AssetRecord
   try {
-    assets.delete(assetId)
+    asset = assets.get(assetId)
   } catch (error) {
-    if (error instanceof AssetInUseError) sendJson(response, 409, { detail: error.message })
-    else if (error instanceof AssetNotFoundError) sendJson(response, 404, { detail: error.message })
-    else throw error
+    if (!(error instanceof AssetNotFoundError)) throw error
+    sendJson(response, 404, { detail: error.message })
     return
   }
+  if (asset.owner !== 'library') {
+    sendJson(response, 409, { detail: PROJECT_FILE_DELETE_DETAIL })
+    return
+  }
+  assets.delete(assetId)
   response.writeHead(204)
   response.end()
 }
@@ -201,9 +215,13 @@ export function assetsRouteHandler(
     {
       method: 'GET',
       path: /^\/assets\/([^/]+)\/content$/,
-      handle: (request, response, [assetId = '']) => readAssetContent(request, response, assets, assetId, logger),
+      handle: (request, response, [assetId = '']) => readAssetContent(request, response, assets, brandString<AssetId>(assetId), logger),
     },
-    { method: 'DELETE', path: /^\/assets\/([^/]+)$/, handle: (_request, response, [assetId = '']) => { deleteAsset(response, assets, assetId) } },
+    {
+      method: 'DELETE',
+      path: /^\/assets\/([^/]+)$/,
+      handle: (_request, response, [assetId = '']) => { deleteAsset(response, assets, brandString<AssetId>(assetId)) },
+    },
   ]
   const getPaths = routes.filter(route => route.method === 'GET').map(route => route.path)
   return (request, response) => {
