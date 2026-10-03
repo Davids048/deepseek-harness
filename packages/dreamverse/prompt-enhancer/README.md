@@ -29,7 +29,7 @@ Mount the service with the provider settings; the DreamVerse workload injects `d
 
 ### Minimal configuration
 
-The bundles fill every field from the reference environment variables:
+The bundles fill the provider and template fields from the reference environment variables and set `timeoutMs` directly:
 
 ```yaml
 - id: dreamverse-prompt-enhancer
@@ -37,6 +37,7 @@ The bundles fill every field from the reference environment variables:
   config:
     cerebrasApiKey: !!js process.env.CEREBRAS_API_KEY
     groqApiKey: !!js process.env.GROQ_API_KEY
+    timeoutMs: 20000
 ```
 
 | Field | Environment variable | Default | Meaning |
@@ -52,6 +53,7 @@ The bundles fill every field from the reference environment variables:
 | `autoSystemPromptPath` | `FASTVIDEO_PROMPT_AUTO_SYSTEM_PROMPT_PATH` | packaged file | Clip expansion template |
 | `rewriteAllSystemPromptPath` | `FASTVIDEO_PROMPT_REWRITE_ALL_SYSTEM_PROMPT_PATH` | packaged file | Template for rewriting existing prompts |
 | `rewriteUserSystemPromptPath` | `FASTVIDEO_PROMPT_REWRITE_USER_SYSTEM_PROMPT_PATH` | packaged file | Template for writing a sequence from an instruction |
+| `timeoutMs` | none | required | Deadline of one prompt operation in milliseconds; both bundles set 20000 |
 
 A missing template or key fails plugin start with the reference message.
 
@@ -62,7 +64,7 @@ A missing template or key fails plugin start with the reference message.
 - `rewriteRollout(prompts, options)` rewrites the browser's prompt window or the project's prompts, or writes a new sequence from an instruction when no prompts remain. `continuedSegmentLabels` names the images of the segments after the first.
 - `rewriteModel()` returns the logical model that project logs and browser events report.
 
-Each operation takes the segment duration, the generation mode (`t2va`, `i2v`, or `ref2va`), the reference labels, a deadline (20 seconds when omitted), and an abort signal. A failed race returns an empty prompt (or the source prompts for a rollout) with the failure; an unsupported generation mode throws `PromptValueError`.
+Each operation takes the segment duration, the generation mode (`t2va`, `i2v`, or `ref2va`), the reference labels, and an abort signal, and runs under the `timeoutMs` deadline. A failed race returns an empty prompt (or the source prompts for a rollout) with the failure; an unsupported generation mode throws `PromptValueError`.
 
 -----
 
@@ -147,7 +149,7 @@ Independent request per call with a byte-stable system prefix per template and m
 <a id="known-limitations-and-deferred-work"></a>
 
 - **No request log** — the package writes `[ENHANCE]` diagnostics to its logger but records neither the rendered user message nor the provider reply. Callers record the inputs and results; DreamVerse records them in its project log.
-- **Fixed sampling and deadlines** — temperature 1.0, the 3000-token completion budget, the 20-second default deadline, and the race's stage deadlines are reference values in code; no `Config` field changes them.
+- **Fixed sampling and deadlines** — temperature 1.0, the 3000-token completion budget, and the race's stage deadlines are reference values in code; no `Config` field changes them.
 - **No `ref2va` template override** — the `ref2va` template always loads from the package; no path field replaces it.
 
 <a id="dev-note"></a>

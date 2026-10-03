@@ -34,7 +34,7 @@ kind: "package-reference"
   name: '@dreamverse/ui-creation'
 ```
 
-在页面声明各 slot 期间，浏览器部分用 `CreationStudio` 填充 `dreamverse.creation-studio`，用 `ChatBar` 填充 `dreamverse.chatbar`。Host 部分不注册任何内容。
+浏览器部分需要 `@deepseek-ai/dsh-client-locale` 的 `locale` 服务。它注册 `dreamverse.creation` locale 命名空间的中文和英文词典，并在页面声明各 slot 期间用 `CreationStudio` 填充 `dreamverse.creation-studio`，用 `ChatBar` 填充 `dreamverse.chatbar`。两个占用组件按页面当前语言从该命名空间渲染文案，包括 `@dreamverse/project-controller` 以 ID 标识的模式、模型、分辨率和时长名称；预设标签、所服务模型对模式的说明以及页面传入的提示信息按原样渲染。Host 部分不注册任何内容。
 
 实时编辑器的 **Prompt action** 选项（`LivePromptModePill`）提供默认的 **Rewrite**（发送 `rewrite_seed_prompts`）和 **Continue from the last segment**（发送 `append_prompt`）。该选择保存在 `projectControlsStore.livePromptRewriteMode`；演示模式隐藏此选项并总是继续。
 
@@ -50,7 +50,9 @@ kind: "package-reference"
 
 | 文件 | 内容 |
 | --- | --- |
-| [`src/client/index.ts`](src/client/index.ts) | slot 注册 |
+| [`src/client/index.ts`](src/client/index.ts) | 词典与 slot 注册 |
+| [`src/client/locales.ts`](src/client/locales.ts) | `dreamverse.creation` 中文和英文词典 |
+| [`src/client/creationChoiceText.ts`](src/client/creationChoiceText.ts) | 创建模式、模型、分辨率和时长的本地化名称 |
 | [`src/client/components/creation/`](src/client/components/creation/) | `CreationStudio`、编辑器、设置胶囊、预设栏与 Prompt action 选项 |
 | [`src/client/components/ChatBar.tsx`](src/client/components/ChatBar.tsx) | 实时编辑器 |
 | [`src/client/components/assets/`](src/client/components/assets/) | 参考图选择与预览 |

@@ -14,7 +14,7 @@
 import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { projectOwner } from '@dreamverse/assets-manager'
-import type { AssetOwner, DreamverseAssetsManager, DreamverseProjectStore } from './dependencies.ts'
+import type { AssetId, AssetOwner, DreamverseAssetsManager, DreamverseProjectStore } from './dependencies.ts'
 import { errorMessage } from './errors.ts'
 import {
   DREAMVERSE_DATA_SCHEMA_VERSION,
@@ -113,8 +113,8 @@ async function copyReferenceImages(
   services: LegacyMigrationServices,
   owner: AssetOwner,
   legacy: LegacyProject,
-): Promise<Map<string, string>> {
-  const copies = new Map<string, string>()
+): Promise<Map<AssetId, AssetId>> {
+  const copies = new Map<AssetId, AssetId>()
   for (const assetId of new Set(legacy.segments.flatMap(segment => segment.reference_asset_ids))) {
     try {
       copies.set(assetId, (await services.assets.copy(assetId, owner)).assetId)
@@ -141,10 +141,10 @@ async function importSegment(
   owner: AssetOwner,
   segmentsDirectory: string,
   segment: LegacySegment,
-  referenceCopies: ReadonlyMap<string, string>,
+  referenceCopies: ReadonlyMap<AssetId, AssetId>,
 ): Promise<StoredSegment> {
-  let videoAssetId: string | null = null
-  let lastFrameAssetId: string | null = null
+  let videoAssetId: AssetId | null = null
+  let lastFrameAssetId: AssetId | null = null
   if (segment.status === 'completed') {
     const videoPath = join(segmentsDirectory, `${segment.segment_id}.mp4`)
     if (existsSync(videoPath)) {

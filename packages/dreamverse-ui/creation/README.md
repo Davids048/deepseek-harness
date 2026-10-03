@@ -34,7 +34,7 @@ Mount the plugin with `@dreamverse/ui-kit`, which declares its slots on the Drea
   name: '@dreamverse/ui-creation'
 ```
 
-The browser half fills `dreamverse.creation-studio` with `CreationStudio` and `dreamverse.chatbar` with `ChatBar` while the page declares each slot. The Host half registers nothing.
+The browser half requires the `locale` service of `@deepseek-ai/dsh-client-locale`. It registers the Chinese and English dictionaries of the `dreamverse.creation` locale namespace, and it fills `dreamverse.creation-studio` with `CreationStudio` and `dreamverse.chatbar` with `ChatBar` while the page declares each slot. Both occupants render their copy from that namespace in the page's active language, including the mode, model, resolution, and duration names that `@dreamverse/project-controller` identifies by ID; preset labels, the served model's mode explanations, and the notices that the page passes in render as given. The Host half registers nothing.
 
 The live composer's **Prompt action** selection (`LivePromptModePill`) offers **Rewrite**, the default, which sends `rewrite_seed_prompts`, and **Continue from the last segment**, which sends `append_prompt`. The choice is `projectControlsStore.livePromptRewriteMode`; demo mode hides the selection and always continues.
 
@@ -50,7 +50,9 @@ The components port the frontend's `components/creation/`, `components/ChatBar.t
 
 | File | Content |
 | --- | --- |
-| [`src/client/index.ts`](src/client/index.ts) | The slot registrations |
+| [`src/client/index.ts`](src/client/index.ts) | The dictionary and slot registrations |
+| [`src/client/locales.ts`](src/client/locales.ts) | The `dreamverse.creation` Chinese and English dictionaries |
+| [`src/client/creationChoiceText.ts`](src/client/creationChoiceText.ts) | Localized names of the creation modes, models, resolutions, and durations |
 | [`src/client/components/creation/`](src/client/components/creation/) | `CreationStudio`, the composer, the setting pills, the preset rail, and the Prompt action selection |
 | [`src/client/components/ChatBar.tsx`](src/client/components/ChatBar.tsx) | The live composer |
 | [`src/client/components/assets/`](src/client/components/assets/) | Reference image selection and preview |

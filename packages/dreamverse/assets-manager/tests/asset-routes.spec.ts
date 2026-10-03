@@ -7,10 +7,11 @@ import { readdirSync, writeFileSync } from 'node:fs'
 import { request as httpRequest, type IncomingHttpHeaders, type OutgoingHttpHeaders } from 'node:http'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import DreamverseAssetsManager, {
-  AssetNotFoundError, MediaValidationError, UploadTooLargeError, projectOwner, type AssetOwner, type AssetRecord,
+  AssetNotFoundError, MediaValidationError, UploadTooLargeError, projectOwner, type AssetId, type AssetOwner, type AssetRecord,
 } from '../src/index.ts'
 import { PROJECT_FILE_DELETE_DETAIL, assetsRouteHandler, type AssetRoutesLibrary } from '../src/asset-routes.ts'
 import { shellFileResponder } from '../src/shell-files.ts'
@@ -35,8 +36,8 @@ class FakeAssets implements AssetRoutesLibrary {
     const filePath = join(temporary.directory, `asset-${assetId}`)
     writeFileSync(filePath, content)
     const record: AssetRecord = {
-      assetId, owner, name, mediaType: 'video', mimeType, filePath, sizeBytes: content.length, width: 1344, height: 768,
-      durationSec: 5.5, createdAt: '2026-10-02T00:00:00.000Z',
+      assetId: brandString<AssetId>(assetId), owner, name, mediaType: 'video', mimeType, filePath, sizeBytes: content.length,
+      width: 1344, height: 768, durationSec: 5.5, createdAt: '2026-10-02T00:00:00.000Z',
     }
     this.records.set(assetId, record)
     return record

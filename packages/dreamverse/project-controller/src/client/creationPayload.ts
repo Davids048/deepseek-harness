@@ -1,3 +1,4 @@
+import type { AssetId } from '@dreamverse/assets-manager/client/assets.ts'
 import { SEGMENT_COUNTS } from './creationConfig.ts'
 import type {
   AspectRatioId,
@@ -26,7 +27,7 @@ export interface CreationInitPayload {
   resolution: string
   segment_duration_sec: number
   segment_count: number
-  reference_asset_ids: string[]
+  reference_asset_ids: AssetId[]
 }
 
 /** Parse the server's echoed project creation choices. */
@@ -80,7 +81,7 @@ export function buildCreationInitPayload(input: {
   resolution: string
   segmentDurationSec: number
   segmentCount: number
-  referenceAssetIds: string[]
+  referenceAssetIds: AssetId[]
 }): CreationInitPayload {
   return {
     model_id: input.modelId,

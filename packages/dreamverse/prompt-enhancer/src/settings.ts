@@ -1,12 +1,10 @@
 /**
- * Prompt request defaults, shared deadlines, and provider order.
+ * Prompt request defaults and provider order.
  *
  * @module @dreamverse/prompt-enhancer/settings
  */
 import { stripWhitespace } from './utils/python-text.ts'
 
-/** Default deadline for one prompt operation. */
-export const PROMPT_TIMEOUT_MS = 20000
 /** Provider names in race order; the first name labels failure results. */
 export const PROMPT_PROVIDER_PRIORITY = ['cerebras', 'groq'] as const
 

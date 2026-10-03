@@ -27,6 +27,7 @@ import {
   type SegmentImageLabels,
 } from '@dreamverse/segment-generation'
 import type {
+  AssetId,
   AssetRecord,
   DreamverseAssetsManager,
   DreamverseGeneration,
@@ -35,9 +36,9 @@ import type {
   DreamverseSegmentGeneration,
   ModelFacts,
   ProjectHolder,
+  ProjectId,
   ProjectLease,
 } from './dependencies.ts'
-import { PROMPT_TIMEOUT_MS } from './dependencies.ts'
 import { DreamverseValueError, ProjectClosedError, ProjectValidationError, errorMessage } from './errors.ts'
 import { GenerationPlan, segmentRecord } from './generation-plan.ts'
 import { GenerationPlanController } from './generation-plan-controller.ts'
@@ -49,7 +50,7 @@ import {
   type StoredSegment,
 } from './project-data.ts'
 import { type ActionPayload, isTruthy, payloadGet, pythonFormatG, pythonStr, textOr } from './python-values.ts'
-import { VideoSegment, type SegmentSource, type SegmentStatus, type UserInstruction } from './video-segment.ts'
+import { VideoSegment, type SegmentId, type SegmentSource, type SegmentStatus, type UserInstruction } from './video-segment.ts'
 
 /** One browser socket; the implementation serializes `sendJson` and `sendBytes` through one lock. */
 export interface ProjectSocket {
@@ -66,7 +67,7 @@ export interface ProjectConnectionInit {
 
 /** The inputs of `DreamverseProjects.openProject()`. */
 export interface ProjectOpenInit extends ProjectConnectionInit {
-  projectId: string
+  projectId: ProjectId
 }
 
 /** The inputs of `DreamverseProjects.createProject()`; the project store assigns the new project's ID. */
@@ -104,7 +105,7 @@ export interface ProjectServices {
   /** Finds the handler registered for an action type when the project dispatches it. */
   resolveUserAction(actionType: string): UserActionHandler | undefined
   /** Writes one project log entry; a write failure only warns. */
-  logProjectEvent(projectId: string, event: string, payload?: Record<string, unknown>): Promise<void>
+  logProjectEvent(projectId: ProjectId, event: string, payload?: Record<string, unknown>): Promise<void>
   /** Stores the project's record and workload data and grants its lease. */
   store: DreamverseProjectStore
   /** Generates segments and stores their files. */
@@ -128,7 +129,7 @@ const BROWSER_SETTING_COMMANDS: ReadonlySet<unknown> = new Set(['set_enhancement
 
 /** Settings that `Project.create()` resolves from `project_init_v1`, or `Project.open()` reads from the store. */
 interface ProjectCreationFields {
-  projectId: string
+  projectId: ProjectId
   lease: ProjectLease
   modelFacts: ModelFacts
   videoGenerationSettings: CreationConfig
@@ -139,8 +140,8 @@ interface ProjectCreationFields {
   title: string
   createdAt: string
   /** Library asset ID to its project-owned copy. */
-  referenceCopies: Record<string, string>
-  thumbnailAssetId: string | null
+  referenceCopies: Readonly<Record<AssetId, AssetId>>
+  thumbnailAssetId: AssetId | null
 }
 
 /** The most code points of the first prompt that a project title keeps. */
@@ -182,7 +183,7 @@ function retainActionReferenceAssets(
   assets: DreamverseAssetsManager,
   modelFacts: ModelFacts,
   generationMode: string,
-  referenceCopies: ReadonlyMap<string, string>,
+  referenceCopies: ReadonlyMap<AssetId, AssetId>,
   payload: ActionPayload,
 ): readonly AssetRecord[] {
   const assetIds = parseReferenceAssetIds(payload).map(assetId => referenceCopies.get(assetId) ?? assetId)
@@ -219,6 +220,18 @@ function retainActionReferenceAssets(
  */
 function releaseReferenceAssets(assets: DreamverseAssetsManager, referenceAssets: readonly AssetRecord[]): void {
   if (referenceAssets.length > 0) assets.release(referenceAssets.map(asset => asset.assetId))
+}
+
+/**
+ * Copy the stored map from each library asset ID to the project's copy. A `for...in` loop over a record with a generic
+ * key type keeps the `AssetId` keys, which `Object.entries` would widen to `string`.
+ * @param copies - the `reference_copies` of the workload data.
+ * @returns a map with the same entries.
+ */
+function referenceCopyMap<K extends AssetId>(copies: Readonly<Record<K, AssetId>>): Map<K, AssetId> {
+  const map = new Map<K, AssetId>()
+  for (const libraryAssetId in copies) map.set(libraryAssetId, copies[libraryAssetId])
+  return map
 }
 
 /** FIFO of admitted actions with one consumer, the project's generation loop. */
@@ -260,7 +273,7 @@ class GenerationActionQueue {
 
 /** Segment records, completed sequences, and action admission for one browser project. */
 export class Project {
-  readonly projectId: string
+  readonly projectId: ProjectId
   readonly socket: ProjectSocket
   readonly generation: DreamverseGeneration
   readonly segmentGeneration: DreamverseSegmentGeneration
@@ -268,11 +281,10 @@ export class Project {
   readonly modelFacts: ModelFacts
   /** `ProjectCreationConfig.as_dict()` of the validated creation choices. */
   readonly videoGenerationSettings: CreationConfig
-  readonly promptEnhancementTimeoutMs = PROMPT_TIMEOUT_MS
-  readonly videoSegmentsById = new Map<string, VideoSegment>()
-  readonly completedSequenceHistory: (readonly string[])[] = []
+  readonly videoSegmentsById: Map<SegmentId, VideoSegment> = new Map()
+  readonly completedSequenceHistory: (readonly SegmentId[])[] = []
   readonly generationPlanController: GenerationPlanController
-  isClosed = false
+  isClosed: boolean = false
   promptSequenceId: unknown
   promptSequenceLabel: string
   promptEnhancementEnabled: boolean
@@ -282,7 +294,7 @@ export class Project {
   readonly title: string
   /** ISO-8601 UTC creation time. */
   readonly createdAt: string
-  autoContinueAfterGeneration = false
+  autoContinueAfterGeneration: boolean = false
   activeGenerationPlan: GenerationPlan | null = null
   generationRoundStatus: GenerationRoundStatus = 'idle'
   private readonly services: ProjectServices
@@ -290,9 +302,9 @@ export class Project {
   /** True after `releaseLease()`; `persist()` then writes nothing. */
   private leaseReleased = false
   /** Library asset ID to its project-owned copy, so the project copies each library image once. */
-  private readonly referenceCopies: Map<string, string>
+  private readonly referenceCopies: Map<AssetId, AssetId>
   /** The stored thumbnail, the last frame of the last completed segment. */
-  private thumbnailAssetId: string | null
+  private thumbnailAssetId: AssetId | null
   private readonly queuedGenerationActions = new GenerationActionQueue()
   /** Aborted by `closeAndWaitForGeneration()`; stands for cancelling the reference generation-loop task. */
   private readonly generationAbort = new AbortController()
@@ -308,7 +320,7 @@ export class Project {
     this.generation = services.generation
     this.segmentGeneration = services.segmentGeneration
     this.promptEnhancer = services.promptEnhancer
-    this.referenceCopies = new Map(Object.entries(fields.referenceCopies))
+    this.referenceCopies = referenceCopyMap(fields.referenceCopies)
     this.thumbnailAssetId = fields.thumbnailAssetId
     this.modelFacts = fields.modelFacts
     this.videoGenerationSettings = fields.videoGenerationSettings
@@ -480,7 +492,7 @@ export class Project {
   }
 
   /** The display order of the latest completed sequence, or an empty list before the first success. */
-  get completedSequenceSegmentIds(): readonly string[] {
+  get completedSequenceSegmentIds(): readonly SegmentId[] {
     return this.completedSequenceHistory.at(-1) ?? []
   }
 
@@ -631,7 +643,7 @@ export class Project {
    * Retain the display sequence that an action has finished generating.
    * @param sequenceIds - the plan's `sequenceIds`.
    */
-  recordCompletedSequence(sequenceIds: readonly string[]): void {
+  recordCompletedSequence(sequenceIds: readonly SegmentId[]): void {
     this.completedSequenceHistory.push(sequenceIds)
     this.persist()
   }
@@ -663,7 +675,7 @@ export class Project {
    * @returns the file's record.
    * @throws Error `AssetNotFoundError` when the file is absent or deleted.
    */
-  assetRecord(assetId: string): AssetRecord {
+  assetRecord(assetId: AssetId): AssetRecord {
     return this.services.assets.get(assetId)
   }
 

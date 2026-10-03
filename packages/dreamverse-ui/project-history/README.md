@@ -34,7 +34,7 @@ Mount the plugin with `@dreamverse/ui-kit`, which declares its slot.
   name: '@dreamverse/ui-project-history'
 ```
 
-The browser half fills `dreamverse.sidebar` with `Sidebar`, the port of the frontend's `components/Sidebar.tsx`, while the kit declares the slot. The Host half registers nothing. The page fills the list from `GET /projects?kind=dreamverse`, opens a selected project through the `/ws` message `project_open_v1`, and deletes one through `DELETE /projects/<project_id>`; a refused deletion shows its reason in the sidebar.
+The browser half fills `dreamverse.sidebar` with `Sidebar`, the port of the frontend's `components/Sidebar.tsx`, while the kit declares the slot. It also registers the sidebar's Chinese and English copy, including the elapsed-time labels, as the `dreamverse.projectHistory` locale namespace, so the profile must mount `@deepseek-ai/dsh-client-locale`, which provides the `locale` service; the sidebar shows its copy in the page's active language, and project titles stay verbatim. The Host half registers nothing. The page fills the list from `GET /projects?kind=dreamverse`, opens a selected project through the `/ws` message `project_open_v1`, and deletes one through `DELETE /projects/<project_id>`; a refused deletion shows its reason in the sidebar.
 
 -----
 
@@ -48,7 +48,8 @@ The browser half fills `dreamverse.sidebar` with `Sidebar`, the port of the fron
 
 | File | Content |
 | --- | --- |
-| [`src/client/index.ts`](src/client/index.ts) | The slot registration |
+| [`src/client/index.ts`](src/client/index.ts) | The dictionary and slot registrations |
+| [`src/client/locales.ts`](src/client/locales.ts) | The `zh` and `en` dictionaries of the `dreamverse.projectHistory` namespace |
 | [`src/client/components/Sidebar.tsx`](src/client/components/Sidebar.tsx) | The project sidebar |
 
 </details>

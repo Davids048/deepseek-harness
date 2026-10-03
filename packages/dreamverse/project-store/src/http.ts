@@ -6,10 +6,11 @@
  * @module @dreamverse/project-store/http
  */
 import type { IncomingMessage } from 'node:http'
-import { projectOwner, type AssetRecord } from '@dreamverse/assets-manager'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { projectOwner, type AssetId, type AssetRecord } from '@dreamverse/assets-manager'
 import { sendJson, type Route } from '@dreamverse/http-routes'
 import type { ProjectFiles } from './dependencies.ts'
-import type { ProjectRecord } from './records.ts'
+import type { ProjectId, ProjectRecord } from './records.ts'
 import type DreamverseProjectStore from './index.ts'
 import { ProjectInUseError, ProjectNotFoundError } from './index.ts'
 
@@ -17,7 +18,7 @@ import { ProjectInUseError, ProjectNotFoundError } from './index.ts'
  * @param assetId - a file store asset ID.
  * @returns the route that serves the file's content.
  */
-function contentUrl(assetId: string): string {
+function contentUrl(assetId: AssetId): string {
   return `/assets/${encodeURIComponent(assetId)}/content`
 }
 
@@ -84,7 +85,8 @@ export function projectRoutes(store: DreamverseProjectStore, files: ProjectFiles
     {
       method: 'GET',
       path: /^\/projects\/([^/]+)$/,
-      handle: (_request, response, [projectId = '']) => {
+      handle: (_request, response, [id = '']) => {
+        const projectId = brandString<ProjectId>(id)
         const record = store.get(projectId)
         if (record === undefined) {
           sendJson(response, 404, { detail: 'Project not found.' })
@@ -101,9 +103,9 @@ export function projectRoutes(store: DreamverseProjectStore, files: ProjectFiles
     {
       method: 'DELETE',
       path: /^\/projects\/([^/]+)$/,
-      handle: (_request, response, [projectId = '']) => {
+      handle: (_request, response, [id = '']) => {
         try {
-          store.delete(projectId)
+          store.delete(brandString<ProjectId>(id))
         } catch (error) {
           if (error instanceof ProjectNotFoundError) sendJson(response, 404, { detail: 'Project not found.' })
           else if (error instanceof ProjectInUseError) sendJson(response, 409, { detail: 'This project is open. Close it before deleting.' })

@@ -9,6 +9,7 @@ import { request as httpRequest, type IncomingHttpHeaders, type OutgoingHttpHead
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context, type Fiber } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { ProjectValidationError } from '@dreamverse/project'
 import DreamverseProjectStore, { ProjectInUseError } from '@dreamverse/project-store'
@@ -16,7 +17,7 @@ import WebSocket from 'ws'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as projectController from '../src/index.ts'
 import type {
-  CreationConfig, DreamverseAssetsManager, DreamverseGeneration, DreamverseProjects, ModelFacts, Project, ProjectInit,
+  CreationConfig, DreamverseAssetsManager, DreamverseGeneration, DreamverseProjects, ModelFacts, Project, ProjectId, ProjectInit,
   ProjectOpenInit, ProjectSocket,
 } from '../src/dependencies.ts'
 
@@ -64,7 +65,7 @@ class FakeProject implements Project {
    * @param socket - the browser socket.
    * @param release - gives up the project's lease in the store.
    */
-  constructor(readonly projectId: string, readonly socket: ProjectSocket, private readonly release: () => void) {}
+  constructor(readonly projectId: ProjectId, readonly socket: ProjectSocket, private readonly release: () => void) {}
 
   async processBrowserCommand(payload: Record<string, unknown>): Promise<void> {
     this.commands.push(payload)
@@ -307,7 +308,7 @@ describe('/ws project protocol', () => {
     const fakes = makeFakes()
     await startProjectController(fakes)
     fakes.createProject.mockImplementationOnce(async (init) => {
-      const project = new FakeProject('failing-project', init.socket, () => {})
+      const project = new FakeProject(brandString<ProjectId>('failing-project'), init.socket, () => {})
       project.serve = async () => { throw new Error('Segment 0 stream ended without a successful worker reply') }
       fakes.projects.created.push(project)
       return project
@@ -349,7 +350,7 @@ describe('/ws project protocol', () => {
   it('delivers the project socket JSON and binary sends to the browser in call order', async () => {
     const fakes = makeFakes()
     fakes.createProject.mockImplementationOnce(async (init) => {
-      const project = new FakeProject('streaming-project', init.socket, () => {})
+      const project = new FakeProject(brandString<ProjectId>('streaming-project'), init.socket, () => {})
       project.serve = async (socket) => {
         await Promise.all([
           socket.sendJson({ type: 'media_init', segment_idx: 0 }),
@@ -406,7 +407,7 @@ describe('/ws project protocol', () => {
     await startProjectController(fakes)
     const first = await BrowserClient.open()
     first.send(PROJECT_INIT)
-    const { project_id: projectId } = await first.next() as { project_id: string }
+    const { project_id: projectId } = await first.next() as { project_id: ProjectId }
     expect(projectId).toBe(fakes.projects.created[0]!.projectId)
     await vi.waitFor(() => { expect(steps).toContain('generation started') })
     const second = await BrowserClient.open()

@@ -44,7 +44,7 @@ Mount the store service and, on a harness with a web server, its routes plugin. 
 
 ### Projects and workload data
 
-`create` stores a project with a `kind`, a title, and workload data `{schemaVersion, data}`, where `data` is any JSON value. The kind names the owning workload, such as `dreamverse`, and never changes. `list({kind})` returns projects most recently updated first; `get` reads one. The store keeps workload data without interpreting it, and the project's files are file store assets owned by `projectOwner(projectId)`.
+`create` stores a project with a `kind`, a title, and workload data `{schemaVersion, data}`, where `data` is any JSON value. The kind names the owning workload, such as `dreamverse`, and never changes. `list({kind})` returns projects most recently updated first; `get` reads one. The store keeps workload data without interpreting it, and the project's files are file store assets owned by `projectOwner(projectId)`. Project IDs are `ProjectId`, a branded string: the store brands the IDs that it creates or finds under its root, and a caller that reads a project ID from a request brands it with `brandString` from `@deepseek-ai/dsh-brand`.
 
 ### Leases
 

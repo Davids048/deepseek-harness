@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package draws the DreamVerse page frame in the DSH page shell. It fills the shell's `root` slot with the DreamVerse page and declares the six child slots that the other DreamVerse page packages fill, passing each the props that the FastVideo frontend passed to that component. It also ships the components, hooks, media pipeline, and Tailwind stylesheet that those packages share, and it serves the page's logo and icons. The page keeps the frontend's English copy and needs no DSH Session.
+This package draws the DreamVerse page frame in the DSH page shell. It fills the shell's `root` slot with the DreamVerse page and declares the six child slots that the other DreamVerse page packages fill, passing each the props that the FastVideo frontend passed to that component. It also ships the components, hooks, media pipeline, and Tailwind stylesheet that those packages share, and it serves the page's logo and icons. The page frame's copy comes from Chinese and English locale dictionaries, and the page needs no DSH Session.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ This package draws the DreamVerse page frame in the DSH page shell. It fills the
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the kit after `@deepseek-ai/dsh-client-ui-renderer`; the other DreamVerse page packages fill its slots.
+Mount the kit after `@deepseek-ai/dsh-client-ui-renderer` and `@deepseek-ai/dsh-client-locale`; the other DreamVerse page packages fill its slots.
 
 ### Minimal configuration
 
@@ -35,6 +35,8 @@ Mount the kit after `@deepseek-ai/dsh-client-ui-renderer`; the other DreamVerse 
 ```
 
 The browser half registers `root` with the child slots `dreamverse.sidebar`, `dreamverse.asset-library`, `dreamverse.player`, `dreamverse.workspace`, `dreamverse.creation-studio`, and `dreamverse.chatbar` (`DREAMVERSE_SLOTS` in `src/client/contracts.ts`). `DreamverseApp`, the port of the frontend's `app/page.tsx`, renders each child through `renderSlot(name, props)` with the props in `DreamverseSlotOwners`. The browser half also sets the document title and favicon, applies the stored dark theme, and installs a `session` scope adapter whose binding is always absent, because the renderer wraps `root` in a `session-maybe` scope and DreamVerse has no DSH Sessions.
+
+The browser half injects `slots` and `locale`. It registers the `dreamverse.kit` dictionaries of `src/client/locales.ts` with the locale service and declares `root` with `locale: 'dreamverse.kit'`, so `DreamverseRoot` receives the `t` seat and passes it to `DreamverseApp`, which translates the header, page notices, backend readiness notices, and default clip and project labels. `src/client/problemText.ts` turns the selection problems and request failures that `@dreamverse/project-controller` and `@dreamverse/assets-manager` report as codes into text through the caller's translate function; the kit and `@dreamverse/ui-assets` define its keys in their own dictionaries. The shared components `Header`, `ThemeToggle`, and `AssetPreview` own no wording: each render site passes their `labels` from its own namespace. Every other DreamVerse page package registers its own namespace for the copy that it renders.
 
 The Host half serves `/logo.svg`, `/k2.png`, and `/icon-simple.svg` from `public/` on the DSH web server while one is available.
 
@@ -46,7 +48,7 @@ The Host half serves `/logo.svg`, `/k2.png`, and `/icon-simple.svg` from `public
 node node_modules/vitest/vitest.mjs run packages/dreamverse-ui
 ```
 
-Each `*.client.spec.{ts,tsx}` file runs in jsdom and first imports `tests/support/setup.client.ts`, the port of the frontend's test setup. The page tests in `tests/app/` render `DreamverseApp` with `tests/support/renderDreamverseSlot.client.tsx`, which renders each slot with its real occupant component.
+Each `*.client.spec.{ts,tsx}` file runs in jsdom and first imports `tests/support/setup.client.ts`, the port of the frontend's test setup. The page tests in `tests/app/` render `DreamverseApp` with `tests/support/renderDreamverseSlot.client.tsx`, which renders each slot with its real occupant component and translates each package's copy with that package's English dictionary.
 
 -----
 
@@ -63,6 +65,8 @@ Each `*.client.spec.{ts,tsx}` file runs in jsdom and first imports `tests/suppor
 | [`src/index.ts`](src/index.ts) | The Host half: the static image routes |
 | [`src/client/index.ts`](src/client/index.ts) | The browser half: document settings, the `session` scope, and the `root` registration |
 | [`src/client/contracts.ts`](src/client/contracts.ts) | The child slots and their owner props |
+| [`src/client/locales.ts`](src/client/locales.ts) | The `dreamverse.kit` Chinese and English dictionaries |
+| [`src/client/problemText.ts`](src/client/problemText.ts) | Localized text of the selection problems and request failures that the DreamVerse browser modules report as codes |
 | [`src/client/app/DreamverseApp.tsx`](src/client/app/DreamverseApp.tsx) | The page |
 | [`src/client/components/`](src/client/components/) | `Header`, `AssetPreview`, and the `ui/` components |
 | [`src/client/media/`](src/client/media/) | The fMP4 playback pipeline |
@@ -95,7 +99,7 @@ None; the page adds nothing to a model request beyond the user's own input.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **Large uncompressed bundles** — each package bundles its own copy of the libraries it imports; only React and Cordis are shared through the DSH platform modules. `@carbon/icons-react` is not tree-shaken, so every bundle that imports a Carbon icon holds the whole icon library, and the DreamVerse bundles set the web server's `compression` to `none`.
-- **English only** — the page keeps the frontend's inline English copy, so `scripts/verify-client-ui-i18n.ts` skips `packages/dreamverse-ui/`.
+- **No language switch** — the DreamVerse profiles mount no settings page, so the page shows the browser's language when it is Chinese or English and English otherwise. Text from the backend, such as readiness details, server errors, and the served model's mode explanations, appears in the language that the backend wrote.
 
 <a id="dev-note"></a>
 ### Dev Note

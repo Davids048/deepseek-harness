@@ -6,6 +6,8 @@
  * @module @dreamverse/segment-generation/creation
  */
 
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { AssetId } from '@dreamverse/assets-manager'
 import { DreamverseValueError, ProjectValidationError } from '@dreamverse/generation-client'
 import { referenceImageLimit } from './conditioning.ts'
 import type { ModelFacts } from './dependencies.ts'
@@ -115,7 +117,7 @@ export function validateProjectCreation(payload: Record<string, unknown>, modelF
  * @returns the asset IDs in selection order.
  * @throws {DreamverseValueError} for inline images, a malformed list, or duplicate IDs.
  */
-export function parseReferenceAssetIds(payload: ActionPayload): string[] {
+export function parseReferenceAssetIds(payload: ActionPayload): AssetId[] {
   if (Object.hasOwn(payload, 'initial_image') || Object.hasOwn(payload, 'last_frame_image')) {
     throw new DreamverseValueError('Upload references through /assets and supply reference_asset_ids.')
   }
@@ -124,7 +126,7 @@ export function parseReferenceAssetIds(payload: ActionPayload): string[] {
     throw new DreamverseValueError('reference_asset_ids must be a list of nonempty asset IDs.')
   }
   if (new Set(values).size !== values.length) throw new DreamverseValueError('reference_asset_ids must not contain duplicates.')
-  return values as string[]
+  return (values as string[]).map(value => brandString<AssetId>(value))
 }
 
 /**

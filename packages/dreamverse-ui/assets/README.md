@@ -34,7 +34,7 @@ Mount the plugin with `@dreamverse/ui-kit`, which declares its slot on the Dream
   name: '@dreamverse/ui-assets'
 ```
 
-The browser half fills `dreamverse.asset-library` with `AssetLibrary`, the port of the frontend's `components/assets/AssetLibrary.tsx`, while the page declares the slot. The Host half registers nothing. The dialog lists, uploads, and deletes files through the `/assets` routes with `@dreamverse/assets-manager/client/assets.ts`.
+The browser half fills `dreamverse.asset-library` with `AssetLibrary`, the port of the frontend's `components/assets/AssetLibrary.tsx`, while the page declares the slot. It also registers the dialog's Chinese and English copy as the `dreamverse.assets` locale namespace, so the profile must mount `@deepseek-ai/dsh-client-locale`, which provides the `locale` service; the dialog shows its copy in the page's active language, and file names and server error messages stay verbatim. The Host half registers nothing. The dialog lists, uploads, and deletes files through the `/assets` routes with `@dreamverse/assets-manager/client/assets.ts`.
 
 -----
 
@@ -48,7 +48,8 @@ The browser half fills `dreamverse.asset-library` with `AssetLibrary`, the port 
 
 | File | Content |
 | --- | --- |
-| [`src/client/index.ts`](src/client/index.ts) | The slot registration |
+| [`src/client/index.ts`](src/client/index.ts) | The dictionary and slot registrations |
+| [`src/client/locales.ts`](src/client/locales.ts) | The `zh` and `en` dictionaries of the `dreamverse.assets` namespace |
 | [`src/client/components/assets/AssetLibrary.tsx`](src/client/components/assets/AssetLibrary.tsx) | The asset library dialog |
 
 The `tests/` directory covers the dialog.

@@ -86,3 +86,4 @@ The page also differs from the FastVideo Next.js frontend:
 - The first visit opens the `dsh web:` token URL; that visit redirects to `/` without other query parameters, so demo mode needs a second visit to `/?demo=1`.
 - Images are plain `<img>` elements, so the K2 logo shows the original PNG instead of the Next.js image optimizer's copy.
 - The page omits the frontend's ineffective Google Fonts import and renders the same system fonts.
+- The page shows its copy in Chinese or English: each dreamverse-ui package registers a locale dictionary for the copy that it renders, and the page follows the browser's language. The frontend shows English only.

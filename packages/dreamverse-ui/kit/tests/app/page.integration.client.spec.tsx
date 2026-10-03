@@ -197,7 +197,8 @@ vi.mock('../../src/client/media/avPipeline.ts', () => ({
   }),
 }))
 
-vi.mock('@dreamverse/project-controller/client/projects.ts', () => ({
+vi.mock('@dreamverse/project-controller/client/projects.ts', async importOriginal => ({
+  ProjectRequestError: (await importOriginal<typeof import('@dreamverse/project-controller/client/projects.ts')>()).ProjectRequestError,
   listProjects: projectsMockState.listProjects,
   getProject: vi.fn(),
   deleteProject: vi.fn(),
@@ -205,7 +206,7 @@ vi.mock('@dreamverse/project-controller/client/projects.ts', () => ({
 }))
 
 import { DreamverseApp } from '../../src/client/app/DreamverseApp.tsx'
-import { renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
+import { englishKitT, renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
 import { createAvPipeline } from '../../src/client/media/avPipeline.ts'
 
 function getWsUrl() {
@@ -289,7 +290,7 @@ describe.skip('App websocket integration', () => {
   })
 
   it('renders the streaming chat workspace and hides advanced panels', async () => {
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     expect(await screen.findByRole('heading', { name: 'Realtime streaming video workspace' }))
       .toBeInTheDocument()
@@ -311,7 +312,7 @@ describe.skip('App websocket integration', () => {
 
   it('collapses and re-expands the history sidebar', async () => {
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Collapse history sidebar' }))
 
@@ -332,7 +333,7 @@ describe.skip('App websocket integration', () => {
 
   it('keeps the active prompt window collapsed by default and expands it on toggle', async () => {
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     expect(await screen.findByRole('button', { name: 'Show prompts' })).toBeInTheDocument()
     expect(
@@ -360,7 +361,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     const generateButton = await screen.findByRole('button', { name: 'Generate' })
     await waitFor(() => expect(generateButton).toBeEnabled())
@@ -388,7 +389,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     const continuationInput = await screen.findByLabelText('Continuation prompt')
     await user.type(
@@ -434,8 +435,8 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     const [firstGenerateButton, secondGenerateButton] = await screen.findAllByRole('button', { name: 'Generate' })
     if (!firstGenerateButton || !secondGenerateButton) throw new Error('Expected a Generate button on each page')
@@ -474,7 +475,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     const continuationInput = await screen.findByLabelText('Continuation prompt')
     await user.type(continuationInput, 'A neon city skyline in the rain')
@@ -525,7 +526,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     const continuationInput = await screen.findByLabelText('Continuation prompt')
     await user.type(continuationInput, 'A cathedral drifting through clouds')
@@ -548,7 +549,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -591,7 +592,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -632,7 +633,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -745,7 +746,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -915,7 +916,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -952,7 +953,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -989,7 +990,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -1034,7 +1035,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -1144,7 +1145,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -1232,7 +1233,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -1275,7 +1276,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 
@@ -1325,7 +1326,7 @@ describe.skip('App websocket integration', () => {
     })
 
     const user = userEvent.setup()
-    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
 
     await user.click(await screen.findByRole('button', { name: 'Generate' }))
 

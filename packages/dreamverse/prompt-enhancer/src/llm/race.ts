@@ -3,7 +3,7 @@
  *
  * @module @dreamverse/prompt-enhancer/llm/race
  */
-import { PROMPT_PROVIDER_PRIORITY, PROMPT_TIMEOUT_MS } from '../settings.ts'
+import { PROMPT_PROVIDER_PRIORITY } from '../settings.ts'
 import { errorText } from '../utils/errors.ts'
 import { stripWhitespace, truncateCodePoints } from '../utils/python-text.ts'
 import type { ChatRequest, PromptDiagnostics, VendorClient, VendorReply } from './client.ts'
@@ -22,15 +22,14 @@ const RESPONSE_PREVIEW_CODE_POINTS = 240
 export interface ProviderRaceTimeouts {
   readonly initialStageTimeoutMs: number
   readonly httpTimeoutMs: number
-  readonly defaultTimeoutMs: number
+  /** Deadline of one operation, from the plugin's `timeoutMs` Config field. */
+  readonly timeoutMs: number
 }
 
 /** Per-operation inputs of `firstAccepted`. */
 export interface FirstAcceptedOptions {
   /** The operation name used in diagnostics and the aggregated failure message. */
   readonly operationName: string
-  /** The operation deadline; `null` or omission selects the race default. */
-  readonly timeoutMs?: number | null | undefined
   /** Aborts every attempt; `firstAccepted` then rejects with the abort reason after the attempts settle. */
   readonly signal?: AbortSignal | undefined
 }
@@ -101,10 +100,11 @@ export class ProviderRace {
   /**
    * Arrange supplied vendor clients into configured race stages.
    * @param clients - the constructed vendor clients.
+   * @param timeoutMs - the deadline of one operation in milliseconds.
    * @param diagnostics - the sink for fallback and failure lines.
-   * @returns a race with the reference deadlines.
+   * @returns a race with the reference stage deadlines and the given operation deadline.
    */
-  static fromConfig(clients: readonly VendorClient[], diagnostics: PromptDiagnostics): ProviderRace {
+  static fromConfig(clients: readonly VendorClient[], timeoutMs: number, diagnostics: PromptDiagnostics): ProviderRace {
     const clientByName = new Map(clients.map(client => [client.name, client]))
     const stages: VendorClient[][] = []
     for (const stageNames of PROMPT_PROVIDER_RUNTIME_STAGES) {
@@ -114,7 +114,7 @@ export class ProviderRace {
     return new ProviderRace(stages, {
       initialStageTimeoutMs: PROMPT_INITIAL_STAGE_TIMEOUT_MS,
       httpTimeoutMs: PROMPT_HTTP_TIMEOUT_MS,
-      defaultTimeoutMs: PROMPT_TIMEOUT_MS,
+      timeoutMs,
     }, diagnostics)
   }
 
@@ -146,7 +146,7 @@ export class ProviderRace {
    * attempt has settled.
    * @param request - the feature request.
    * @param accept - validates a reply and returns the feature value, or throws to reject it.
-   * @param options - the operation name, deadline, and caller abort signal.
+   * @param options - the operation name and caller abort signal.
    * @returns the winning provider name and the accepted value.
    * @throws Error aggregating every provider failure, or the caller's abort reason.
    */
@@ -156,8 +156,7 @@ export class ProviderRace {
     options: FirstAcceptedOptions,
   ): Promise<[string, T]> {
     const { operationName, signal } = options
-    const effectiveTimeoutMs = options.timeoutMs ?? this.timeouts.defaultTimeoutMs
-    const fallbackTimeoutSeconds = Math.max(effectiveTimeoutMs, this.timeouts.httpTimeoutMs) / 1000
+    const fallbackTimeoutSeconds = Math.max(this.timeouts.timeoutMs, this.timeouts.httpTimeoutMs) / 1000
     let initialTimeoutMs = this.timeouts.initialStageTimeoutMs
     if (initialTimeoutMs <= 0) initialTimeoutMs = PROMPT_INITIAL_STAGE_TIMEOUT_MS
 

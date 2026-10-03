@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/dreamverse/segment-generation/README.md
-README.md: 0162a8045aa2c9e3ca89cee90926a96d0a39fbad
-README.zh.md: e671e7ad7b5cdcd5f53396c095cda33e57bb4361
+README.md: ddb19bb478b5147de433ba2934fd164c1a1f0f72
+README.zh.md: 633035b94bc9808358cd185153cc9645d7fe9c0c

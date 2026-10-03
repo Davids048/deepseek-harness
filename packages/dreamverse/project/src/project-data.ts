@@ -8,7 +8,10 @@
  *
  * @module @dreamverse/project/project-data
  */
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { CreationConfig } from '@dreamverse/segment-generation'
+import type { AssetId, ProjectId } from './dependencies.ts'
+import type { PromptId, SegmentId } from './video-segment.ts'
 
 /** The `kind` of every DreamVerse project in the project store. */
 export const DREAMVERSE_PROJECT_KIND = 'dreamverse'
@@ -18,20 +21,20 @@ export const DREAMVERSE_DATA_SCHEMA_VERSION = 1
 
 /** One segment of a DreamVerse project. */
 export interface StoredSegment {
-  segment_id: string
+  segment_id: SegmentId
   prompt: string
   /** `preset`, `user`, or `automatic`. */
   source: string
-  instruction: { request_id: string; text: string } | null
+  instruction: { request_id: PromptId; text: string } | null
   enhanced: boolean
   sequence_index: number | null
-  reference_segment_id: string | null
+  reference_segment_id: SegmentId | null
   /** The project-owned copies of the segment's reference images, in selection order. */
-  reference_asset_ids: string[]
+  reference_asset_ids: AssetId[]
   /** The file store ID of the segment's fragmented MP4; null until the segment completes. */
-  video_asset_id: string | null
+  video_asset_id: AssetId | null
   /** The file store ID of the segment's last frame PNG; null until the segment completes. */
-  last_frame_asset_id: string | null
+  last_frame_asset_id: AssetId | null
   /** `pending`, `generating`, `completed`, `failed`, or `cancelled`. */
   status: string
   error: string | null
@@ -50,9 +53,9 @@ export interface DreamverseProjectData {
   prompt_sequence_label: string
   segments: StoredSegment[]
   /** Each completed round's display sequence of segment IDs, oldest first. */
-  completed_sequences: string[][]
+  completed_sequences: SegmentId[][]
   /** Library asset ID to the ID of its copy owned by this project. */
-  reference_copies: Record<string, string>
+  reference_copies: Record<AssetId, AssetId>
 }
 
 /** The schema-1 segment record of the record format before the shared project store. */
@@ -60,7 +63,7 @@ export type LegacySegment = Omit<StoredSegment, 'video_asset_id' | 'last_frame_a
 
 /** The schema-1 `project.json` that `@dreamverse/project` wrote before the shared project store. */
 export interface LegacyProject {
-  project_id: string
+  project_id: ProjectId
   title: string
   created_at: string
   creation_config: CreationConfig
@@ -68,7 +71,7 @@ export interface LegacyProject {
   prompt_sequence_id: unknown
   prompt_sequence_label: string
   segments: LegacySegment[]
-  completed_sequences: string[][]
+  completed_sequences: SegmentId[][]
 }
 
 /** Segment IDs and project IDs name files; this pattern admits only names without separators or dots. */
@@ -86,6 +89,15 @@ function stringItems(value: unknown, path: string): string[] {
     if (typeof item !== 'string') throw new Error(`${path}[${index}] must be a string.`)
     return item
   })
+}
+
+/**
+ * Brand an ID read from stored data.
+ * @param value - the stored ID, or null.
+ * @returns the branded ID, or null.
+ */
+function storedIdOrNull<T extends Branded<string>>(value: string | T | null): T | null {
+  return value === null ? null : brandString<T>(value)
 }
 
 /** One untyped JSON object, with the path of its fields for error messages. */
@@ -169,17 +181,17 @@ function parseLegacySegmentFields(fields: JsonFields): LegacySegment {
   let instruction: LegacySegment['instruction'] = null
   if (instructionValue !== null) {
     const instructionFields = JsonFields.of(instructionValue, fields.name('instruction'))
-    instruction = { request_id: instructionFields.string('request_id'), text: instructionFields.string('text') }
+    instruction = { request_id: brandString<PromptId>(instructionFields.string('request_id')), text: instructionFields.string('text') }
   }
   return {
-    segment_id: fields.storedId('segment_id'),
+    segment_id: brandString<SegmentId>(fields.storedId('segment_id')),
     prompt: fields.string('prompt'),
     source: fields.string('source'),
     instruction,
     enhanced: fields.boolean('enhanced'),
     sequence_index: fields.nullableInteger('sequence_index'),
-    reference_segment_id: fields.nullableString('reference_segment_id'),
-    reference_asset_ids: fields.stringList('reference_asset_ids'),
+    reference_segment_id: storedIdOrNull<SegmentId>(fields.nullableString('reference_segment_id')),
+    reference_asset_ids: fields.stringList('reference_asset_ids').map(assetId => brandString<AssetId>(assetId)),
     status: fields.string('status'),
     error: fields.nullableString('error'),
     mime: fields.nullableString('mime'),
@@ -213,9 +225,9 @@ function parseCreationConfig(value: unknown, path: string): CreationConfig {
  * @param fields - the object that holds `completed_sequences`.
  * @returns the sequences.
  */
-function parseCompletedSequences(fields: JsonFields): string[][] {
+function parseCompletedSequences(fields: JsonFields): SegmentId[][] {
   return fields.list('completed_sequences').map((sequence, index) =>
-    stringItems(sequence, `${fields.name('completed_sequences')}[${index}]`))
+    stringItems(sequence, `${fields.name('completed_sequences')}[${index}]`).map(segmentId => brandString<SegmentId>(segmentId)))
 }
 
 /**
@@ -235,12 +247,15 @@ export function parseProjectData(value: unknown): DreamverseProjectData {
       const segmentFields = JsonFields.of(segment, `${fields.name('segments')}[${index}]`)
       return {
         ...parseLegacySegmentFields(segmentFields),
-        video_asset_id: segmentFields.nullableString('video_asset_id'),
-        last_frame_asset_id: segmentFields.nullableString('last_frame_asset_id'),
+        video_asset_id: storedIdOrNull<AssetId>(segmentFields.nullableString('video_asset_id')),
+        last_frame_asset_id: storedIdOrNull<AssetId>(segmentFields.nullableString('last_frame_asset_id')),
       }
     }),
     completed_sequences: parseCompletedSequences(fields),
-    reference_copies: JsonFields.of(fields.raw('reference_copies'), fields.name('reference_copies')).stringValues(),
+    reference_copies: Object.fromEntries(
+      Object.entries(JsonFields.of(fields.raw('reference_copies'), fields.name('reference_copies')).stringValues())
+        .map(([libraryAssetId, copyAssetId]) => [brandString<AssetId>(libraryAssetId), brandString<AssetId>(copyAssetId)]),
+    ),
   }
 }
 
@@ -251,7 +266,7 @@ export function parseProjectData(value: unknown): DreamverseProjectData {
  * @returns the typed record.
  * @throws Error naming the first invalid field, or when the record is not schema 1.
  */
-export function parseLegacyProject(value: unknown, projectId: string): LegacyProject {
+export function parseLegacyProject(value: unknown, projectId: ProjectId): LegacyProject {
   const fields = JsonFields.of(value, 'project.json')
   if (fields.raw('schema_version') !== 1) throw new Error(`project.json schema_version ${String(fields.raw('schema_version'))} is not 1.`)
   if (fields.string('project_id') !== projectId) throw new Error(`project.json project_id does not match directory ${projectId}.`)

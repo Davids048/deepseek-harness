@@ -64,6 +64,8 @@ DreamVerse 项目是 `dreamverseProjectStore` 中类型为 `dreamverse` 的项�
 | `completed_sequences` | 每个已完成轮次的片段 ID 显示序列，最早的在前 |
 | `reference_copies` | 项目使用过的每个素材库素材 ID，映射到项目副本的 ID |
 
+片段 ID 是 `SegmentId`，指令请求 ID（浏览器的 `prompt_id`）是 `PromptId`。本包导出这两个带品牌的字符串类型，并为它生成的、从工作负载数据读取的或在浏览器命令中收到的 ID 加上品牌。
+
 片段的 fragmented MP4（`<segment_id>.mp4`）和末帧（`<segment_id>.png`）是项目在文件存储中拥有的文件。某个操作第一次使用素材库图片时，项目把它复制进项目，并在 `reference_copies` 中记录副本；之后的操作复用该副本。项目在以下时刻写入工作负载数据：创建时、每个片段结束后、操作记录已完成序列时、轮次失败时以及关闭时。缩略图是最后一个已完成序列中最后一个片段的末帧。标题是预设标签，否则是截断到 60 个码点的第一个提示词，否则是 `Untitled project`。
 
 打开的项目从其工作负载数据重建：处于等待或生成中的片段变为 `cancelled`，最后一个已完成序列的最后一个片段成为追加时延续的片段，项目以空闲状态启动且不带 Auto Extension。打开会拒绝未存储或类型不同的项目（`Project not found`）、`model_id` 不是所服务模型的项目（`Model unavailable`），以及参考图副本不可用的项目（`Invalid reference asset`）。socket 关闭时，进行中的片段变为 `cancelled`（`Project disconnected.`），排队的操作被丢弃，最终的工作负载数据被存储。

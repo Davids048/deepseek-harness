@@ -34,7 +34,7 @@ kind: "package-reference"
   name: '@dreamverse/ui-player'
 ```
 
-在 kit 声明该 slot 期间，浏览器部分用 `VideoPlayer`（前端 `components/VideoPlayer.tsx` 的移植）填充 `dreamverse.player`。kit 的媒体管线通过 `videoRef` 和 `archivedPlaybackRef` props 接管实时和归档 video 元素。Host 部分不注册任何内容。
+在 kit 声明该 slot 期间，浏览器部分用 `VideoPlayer`（前端 `components/VideoPlayer.tsx` 的移植）填充 `dreamverse.player`。它还把播放器的中英文文案注册为 `dreamverse.player` locale 命名空间，因此 profile 必须挂载提供 `locale` 服务的 `@deepseek-ai/dsh-client-locale`；播放器以页面当前语言显示状态、排队和播放错误文案。kit 的媒体管线通过 `videoRef` 和 `archivedPlaybackRef` props 接管实时和归档 video 元素。Host 部分不注册任何内容。
 
 -----
 
@@ -48,7 +48,8 @@ kind: "package-reference"
 
 | 文件 | 内容 |
 | --- | --- |
-| [`src/client/index.ts`](src/client/index.ts) | slot 注册 |
+| [`src/client/index.ts`](src/client/index.ts) | 字典与 slot 注册 |
+| [`src/client/locales.ts`](src/client/locales.ts) | `dreamverse.player` 命名空间的 `zh` 与 `en` 字典 |
 | [`src/client/components/VideoPlayer.tsx`](src/client/components/VideoPlayer.tsx) | 播放器 |
 
 </details>

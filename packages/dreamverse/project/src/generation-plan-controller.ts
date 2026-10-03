@@ -15,7 +15,7 @@ import { ProjectClosedError, errorMessage } from './errors.ts'
 import { segmentRecord, type GenerationPlan } from './generation-plan.ts'
 import type { Project } from './project.ts'
 import { round2 } from './python-values.ts'
-import type { VideoSegment } from './video-segment.ts'
+import type { SegmentId, VideoSegment } from './video-segment.ts'
 
 /**
  * Build a browser stream ID in the reference `generate_stream_id` form, such as `seg007-abcd1234`.
@@ -29,7 +29,7 @@ function generateStreamId(segmentIdx: number): string {
 /** Submit dependency-ready segments and settle one finite round. */
 export class GenerationPlanController {
   /** The segment that this project generated last; null after any failed round. */
-  lastCompletedSegmentId: string | null = null
+  lastCompletedSegmentId: SegmentId | null = null
 
   constructor(private readonly project: Project) {}
 
@@ -76,8 +76,9 @@ export class GenerationPlanController {
   private async announceRound(plan: GenerationPlan): Promise<void> {
     const project = this.project
     const sequence = plan.sequenceIds.map(segmentId => segmentRecord(project.videoSegmentsById, segmentId))
-    const [firstSegmentId = ''] = plan.segmentIds
-    const instruction = segmentRecord(project.videoSegmentsById, firstSegmentId).instruction
+    // `execute()` validated the plan, so it has a first segment.
+    const [firstSegmentId] = plan.segmentIds
+    const instruction = firstSegmentId === undefined ? null : segmentRecord(project.videoSegmentsById, firstSegmentId).instruction
     await project.sendBrowserEvent({
       type: 'ltx2_stream_start',
       origin_prompt_id: instruction ? instruction.requestId : null,

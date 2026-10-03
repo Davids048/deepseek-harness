@@ -1,15 +1,16 @@
+import type { PromptId } from '../ids.ts'
 import { createManagedStore, type ManagedStore } from './createManagedStore.ts'
 
 /** The browser's initial creation label, retained until the first stream starts. */
 export interface PendingInitialClip {
-  originPromptId: string | null
+  originPromptId: PromptId | null
   label: string
 }
 
 /** One announced video stream, with a fresh ID even when replaying the same prompt request. */
 export interface LiveClip {
   id: string
-  originPromptId: string | null
+  originPromptId: PromptId | null
   label: string
   prompt: string
   promptWindowPrompts: string[]
@@ -30,7 +31,7 @@ export interface ArchivedSegment {
 /** One clip of the current project whose stream completed, with its media kept in the browser. */
 export interface CompletedClip {
   id: string
-  originPromptId: string | null
+  originPromptId: PromptId | null
   label: string
   prompt: string
   promptWindowPrompts: string[]

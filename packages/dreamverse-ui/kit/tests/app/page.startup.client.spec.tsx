@@ -33,7 +33,8 @@ vi.mock('@dreamverse/project-controller/client/storyPresetsData.ts', () => ({
   ],
 }))
 
-vi.mock('@dreamverse/project-controller/client/projects.ts', () => ({
+vi.mock('@dreamverse/project-controller/client/projects.ts', async importOriginal => ({
+  ProjectRequestError: (await importOriginal<typeof import('@dreamverse/project-controller/client/projects.ts')>()).ProjectRequestError,
   listProjects: projectsMockState.listProjects,
   getProject: projectsMockState.getProject,
   deleteProject: projectsMockState.deleteProject,
@@ -77,7 +78,7 @@ vi.mock('../../src/client/media/avPipeline.ts', () => ({
 }))
 
 import { DreamverseApp } from '../../src/client/app/DreamverseApp.tsx'
-import { renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
+import { englishKitT, renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
 
 const modelCapabilities = {
   generation_modes: ['t2va', 'i2v'], aspect_ratios: ['16:9'], resolutions: ['720p'], min_segment_duration_sec: 5, max_segment_duration_sec: 15, segment_counts: [1, 2, 3, 4, 5, 6],
@@ -160,7 +161,7 @@ describe('Page startup readiness UX', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await screen.findByText('FastH3')
 
     const promptInput = screen.getByRole('textbox', { name: 'Initial prompt' })
@@ -225,7 +226,7 @@ describe('Page startup readiness UX', () => {
     })
 
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await screen.findByText('FastH3')
 
     const promptInput = screen.getByRole('textbox', { name: 'Initial prompt' })
@@ -245,7 +246,7 @@ describe('Page startup readiness UX', () => {
   it('preserves editable drafts while capability loading blocks Generate, Enter, and presets', async () => {
     const response = holdCapabilities()
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     expect(await screen.findByText('Loading model capabilities…')).toBeVisible()
     const prompt = screen.getByRole('textbox', { name: 'Initial prompt' })
     await user.type(prompt, 'A retained river')
@@ -280,7 +281,7 @@ describe('Page startup readiness UX', () => {
         return new Response(JSON.stringify({ status: 'ready' }))
       }
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       expect(await screen.findByText(unavailableNotice)).toBeVisible()
       const prompt = screen.getByRole('textbox', { name: 'Initial prompt' })
       await user.type(prompt, 'Keep this draft')
@@ -303,12 +304,12 @@ describe('Page startup readiness UX', () => {
   /** A departed Page observes either fetch outcome while the independently mounted Page keeps its own draft. */
   it.each(['success', 'failure'] as const)('settles late capability %s after unmount', async (outcome) => {
     const response = holdCapabilities()
-    const first = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    const first = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await screen.findByText('Loading model capabilities…')
     first.unmount()
     capabilityResponse = async () => new Response(JSON.stringify(capabilities))
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await screen.findByText('FastH3')
     const prompt = screen.getByRole('textbox', { name: 'Initial prompt' })
     await user.type(prompt, 'Replacement draft')
@@ -329,12 +330,12 @@ describe('Page startup readiness UX', () => {
   /** Reload recovery consists of a fresh mount and one request, with no implicit retry on a failed mount. */
   it('loads capabilities on a fresh mount after failure', async () => {
     capabilityResponse = async () => new Response('{}', { status: 503 })
-    const first = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    const first = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await screen.findByText(unavailableNotice)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     first.unmount()
     capabilityResponse = async () => new Response(JSON.stringify(capabilities))
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await waitFor(() => expect(screen.getByText('FastH3')).toBeVisible())
     expect(screen.queryByText(unavailableNotice)).not.toBeInTheDocument()
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/creation-capabilities', '/creation-capabilities'])

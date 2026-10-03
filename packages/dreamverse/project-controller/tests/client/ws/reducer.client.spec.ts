@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { describe, expect, it, vi } from 'vitest'
 
+import type { PromptId } from '../../../src/client/ids.ts'
 import { createProjectControlsStore } from '../../../src/client/stores/projectControls.ts'
 import { createPromptWindowStore } from '../../../src/client/stores/promptWindow.ts'
 import { createRewriteStore } from '../../../src/client/stores/rewrite.ts'
@@ -15,10 +17,15 @@ import {
 
 describe('resolveProjectErrorMessage', () => {
   it('preserves an actionable server message', () => {
-    expect(resolveProjectErrorMessage({ message: '  Prompt preparation failed. Try another prompt.  ' }))
+    expect(resolveProjectErrorMessage({ message: '  Prompt preparation failed. Try another prompt.  ' }, notice => notice))
       .toBe('Prompt preparation failed. Try another prompt.')
   })
 })
+
+/** The prompt ID that a spec names. */
+function id(promptId: string): PromptId {
+  return brandString<PromptId>(promptId)
+}
 
 /** Record media pipeline calls without a media element. */
 function createMediaPipeline() {
@@ -48,12 +55,13 @@ function createContext() {
     fixedRewriteModel: 'gpt-oss-120b',
     parseLatencyMs: Number,
     formatPromptWindowEventText: prompts => prompts.join('\n'),
-    makePromptId: () => `event-${++nextPromptId}`,
+    makePromptId: () => id(`event-${++nextPromptId}`),
     buildStreamClip: vi.fn(),
     resetTtffTimer: vi.fn(),
     startTtffTimer: vi.fn(),
     preserveArchivedPlaybackSelection: false,
     finalizeStreamCompletion: vi.fn(),
+    noticeText: notice => `page notice ${notice}`,
   } satisfies SocketEventContext
 }
 
@@ -86,7 +94,7 @@ describe('browser notification effects', () => {
   /** One segment announcement owns both prompt activity and the prompt-to-media index. */
   it('marks the matching prompt consumed and advances prompt badges on media completion', async () => {
     const context = createContext()
-    context.rewriteStore.addPromptEvent({ promptId: 'continue-1', status: 'ready', text: 'Follow the river' })
+    context.rewriteStore.addPromptEvent({ promptId: id('continue-1'), status: 'ready', text: 'Follow the river' })
     context.streamStore.patch({ playingSeedPromptIndex: 0 })
     await applyNormalizedSocketEvent(normalizeSocketMessage({
       type: 'ltx2_segment_start', segment_idx: 2, seed_prompt_index: 1,
@@ -107,9 +115,9 @@ describe('browser notification effects', () => {
   /** Accepted prompts and diagnostics survive without preset, reason, or fallback metadata. */
   it('replaces the accepted window and preserves inspection details before ending rewrite preparation', async () => {
     const context = createContext()
-    context.rewriteStore.patch({ activeRewritePromptId: 'rewrite-1' })
+    context.rewriteStore.patch({ activeRewritePromptId: id('rewrite-1') })
     context.rewriteStore.addPromptEvent({
-      promptId: 'rewrite-1', status: 'rewrite_requested', source: 'user_rewrite', text: 'Move into the forest',
+      promptId: id('rewrite-1'), status: 'rewrite_requested', source: 'user_rewrite', text: 'Move into the forest',
     })
     await applyNormalizedSocketEvent(normalizeSocketMessage({
       type: 'seed_prompts_updated', prompts: ['Forest clearing', 'Forest canopy'],
@@ -140,7 +148,7 @@ describe('browser notification effects', () => {
   /** Rejected enhancement leaves the submitted text inspectable and reports failure through the generic notice. */
   it('marks the rejected prompt failed without replacing its text or releasing an active round', async () => {
     const context = createContext()
-    context.rewriteStore.addPromptEvent({ promptId: 'continue-1', status: 'enhancing', text: 'Follow the river' })
+    context.rewriteStore.addPromptEvent({ promptId: id('continue-1'), status: 'enhancing', text: 'Follow the river' })
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
       await applyNormalizedSocketEvent(normalizeSocketMessage({
@@ -157,10 +165,17 @@ describe('browser notification effects', () => {
     }
   })
 
+  /** A server error without text shows the page's own notice, which the page localizes. */
+  it('reports a server error without a message through the page notice', async () => {
+    const context = createContext()
+    await applyNormalizedSocketEvent(normalizeSocketMessage({ type: 'error' }), context)
+    expect(context.projectControlsStore.get().projectNotice).toBe('page notice server-error')
+  })
+
   /** A rewrite failure retains the model diagnostic displayed in the inspector. */
   it('keeps rewrite failure details when preparation ends', async () => {
     const context = createContext()
-    context.rewriteStore.patch({ activeRewritePromptId: 'rewrite-1' })
+    context.rewriteStore.patch({ activeRewritePromptId: id('rewrite-1') })
     await applyNormalizedSocketEvent(normalizeSocketMessage({
       type: 'rewrite_seed_prompts_complete', prompt_id: 'rewrite-1', error: 'Provider timed out.',
       model: 'rewrite-model', latency_ms: 1000,

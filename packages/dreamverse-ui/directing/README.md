@@ -34,7 +34,7 @@ Mount the plugin with `@dreamverse/ui-kit`, which declares its slot.
   name: '@dreamverse/ui-directing'
 ```
 
-The browser half fills `dreamverse.workspace` with `Workspace`, the port of the frontend's `components/Workspace.tsx`, while the kit declares the slot. The Host half registers nothing.
+The browser half fills `dreamverse.workspace` with `Workspace`, the port of the frontend's `components/Workspace.tsx`, while the kit declares the slot. It also registers the timeline's Chinese and English copy as the `dreamverse.directing` locale namespace, so the profile must mount `@deepseek-ai/dsh-client-locale`, which provides the `locale` service; the timeline shows its badges in the page's active language, and prompt text stays verbatim. The Host half registers nothing.
 
 -----
 
@@ -48,7 +48,8 @@ The browser half fills `dreamverse.workspace` with `Workspace`, the port of the 
 
 | File | Content |
 | --- | --- |
-| [`src/client/index.ts`](src/client/index.ts) | The slot registration |
+| [`src/client/index.ts`](src/client/index.ts) | The dictionary and slot registrations |
+| [`src/client/locales.ts`](src/client/locales.ts) | The `zh` and `en` dictionaries of the `dreamverse.directing` namespace |
 | [`src/client/components/Workspace.tsx`](src/client/components/Workspace.tsx) | The prompt timeline |
 
 </details>

@@ -185,46 +185,78 @@ export function clampLobbySelectionToCapabilities(input: LobbySelection & {
   }
 }
 
-/** Validate selected preferences and reference files before project admission. */
+/**
+ * Why a reference selection cannot start a request. The page translates each code when it shows the problem.
+ * - `references-not-accepted`: text-to-video received reference images.
+ * - `reference-count`: the selection holds fewer than one or more than `limit` images.
+ * - `reference-not-image`: a reference's MIME type is not an accepted image type.
+ * - `reference-too-large`: a reference exceeds the image upload size limit.
+ */
+export type ReferenceSelectionProblem =
+  | { code: 'references-not-accepted' }
+  | { code: 'reference-count'; limit: number }
+  | { code: 'reference-not-image' }
+  | { code: 'reference-too-large' }
+
+/**
+ * Why a lobby selection cannot start a project. `mode-notice` carries the served model's own explanation for the
+ * mode, which the page shows verbatim; the page translates every other code when it shows the problem.
+ */
+export type CreationSelectionProblem =
+  | { code: 'mode-notice'; notice: string }
+  | { code: 'mode-unsupported' }
+  | { code: 'aspect-ratio-unsupported' }
+  | { code: 'resolution-unsupported' }
+  | { code: 'segment-count-unsupported' }
+  | { code: 'duration-out-of-range'; min: number; max: number }
+  | ReferenceSelectionProblem
+
+/**
+ * Validate selected preferences and reference files before project admission.
+ * @param input - the lobby selection, the served model's capabilities, and the ordered references.
+ * @returns the first problem, or `null` when the selection can start a project.
+ */
 export function validateLobbyCreationSelection(input: LobbySelection & {
   capabilities: LobbyCreationCapabilities
   references?: readonly ReferenceDraft[]
-}): string | null {
+}): CreationSelectionProblem | null {
   const unsupportedMode = unsupportedModeNotice(input.modeId, input.capabilities)
-  if (unsupportedMode) return unsupportedMode
-  if (!isSupportedCreationMode(input.modeId, input.capabilities)) {
-    return 'Selected mode is not supported yet.'
-  }
-  if (!input.capabilities.aspect_ratios.includes(input.aspectRatio)) {
-    return 'Selected aspect ratio is not supported for this model yet.'
-  }
-  if (!isSupportedResolution(input.resolution, input.capabilities)) {
-    return 'Selected resolution is not supported for this model yet.'
-  }
-  if (!input.capabilities.segment_counts.includes(input.segmentCount)) {
-    return 'Selected segment count is not supported.'
-  }
+  if (unsupportedMode) return { code: 'mode-notice', notice: unsupportedMode }
+  if (!isSupportedCreationMode(input.modeId, input.capabilities)) return { code: 'mode-unsupported' }
+  if (!input.capabilities.aspect_ratios.includes(input.aspectRatio)) return { code: 'aspect-ratio-unsupported' }
+  if (!isSupportedResolution(input.resolution, input.capabilities)) return { code: 'resolution-unsupported' }
+  if (!input.capabilities.segment_counts.includes(input.segmentCount)) return { code: 'segment-count-unsupported' }
   if (!Number.isInteger(input.segmentDurationSec) || input.segmentDurationSec < input.capabilities.min_segment_duration_sec
 		|| input.segmentDurationSec > input.capabilities.max_segment_duration_sec) {
-    return `Duration per segment must be a whole number from ${input.capabilities.min_segment_duration_sec} to ${input.capabilities.max_segment_duration_sec} seconds.`
+    return {
+      code: 'duration-out-of-range',
+      min: input.capabilities.min_segment_duration_sec,
+      max: input.capabilities.max_segment_duration_sec,
+    }
   }
   return validateReferenceSelection(input.modeId, input.references ?? [], input.capabilities)
 }
 
-/** Apply the served generation limits to the request's ordered image selection. */
+/**
+ * Apply the served generation limits to the request's ordered image selection.
+ * @param modeId - the selected creation mode.
+ * @param references - the ordered references of the request.
+ * @param capabilities - the served model's capabilities.
+ * @returns the first problem, or `null` when the references satisfy the mode.
+ */
 export function validateReferenceSelection(
   modeId: CreationModeId,
   references: readonly ReferenceDraft[],
   capabilities: LobbyCreationCapabilities,
-): string | null {
-  if (modeId === 't2v') return references.length ? 'Text to video does not accept reference images.' : null
+): ReferenceSelectionProblem | null {
+  if (modeId === 't2v') return references.length ? { code: 'references-not-accepted' } : null
   const limit = modeId === 'i2v' ? 1 : capabilities.reference_inputs.max_count
-  if (references.length < 1 || references.length > limit) return `Select ${limit === 1 ? 'one reference image' : `1 to ${limit} reference images`}.`
+  if (references.length < 1 || references.length > limit) return { code: 'reference-count', limit }
   for (const reference of references) {
     const mime = reference.kind === 'localFile' ? reference.file.type : reference.asset.mime_type
     const size = reference.kind === 'localFile' ? reference.file.size : reference.asset.size_bytes
-    if (!capabilities.asset_upload.image.mime_types.includes(mime)) return 'This generation workflow accepts images only.'
-    if (size > capabilities.asset_upload.image.max_bytes) return 'Reference image exceeds the upload size limit.'
+    if (!capabilities.asset_upload.image.mime_types.includes(mime)) return { code: 'reference-not-image' }
+    if (size > capabilities.asset_upload.image.max_bytes) return { code: 'reference-too-large' }
   }
 
   return null

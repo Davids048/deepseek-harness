@@ -4,9 +4,13 @@ import { useState } from 'react'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import AssetLibrary from '../src/client/components/assets/AssetLibrary.tsx'
+import { en } from '../src/client/locales.ts'
 import type { AssetRecord } from '@dreamverse/assets-manager/client/assets.ts'
 import { assetUploadPolicy, imageAsset } from '../../kit/tests/support/assetFixtures.client.ts'
+
+const t = makeTranslate(en)
 
 function Library({ onSelect, onDeleted }: { onSelect: (asset: AssetRecord) => void; onDeleted: (id: string) => void }) {
   const [assets, setAssets] = useState<AssetRecord[]>([])
@@ -20,6 +24,7 @@ function Library({ onSelect, onDeleted }: { onSelect: (asset: AssetRecord) => vo
       onSelect={onSelect}
       onDeleted={onDeleted}
       canSelect
+      t={t}
     />
   )
 }
@@ -36,7 +41,7 @@ it.each(['Escape', 'backdrop', 'Close'])('dismisses the asset library with %s an
     return <>
       <button type="button" onClick={() => { setOpen(true) }}>Open assets</button>
       <AssetLibrary open={open} assets={assets} onAssetsChange={setAssets} uploadPolicy={assetUploadPolicy}
-        onClose={() => { setOpen(false) }} onSelect={() => {}} onDeleted={() => {}} canSelect />
+        onClose={() => { setOpen(false) }} onSelect={() => {}} onDeleted={() => {}} canSelect t={t} />
     </>
   }
   render(<DismissibleLibrary />)
@@ -117,6 +122,7 @@ it('keeps a deleted asset hidden when a refresh contains its earlier record', as
         onSelect={() => {}}
         onDeleted={() => {}}
         canSelect
+        t={t}
       />
     )
   }

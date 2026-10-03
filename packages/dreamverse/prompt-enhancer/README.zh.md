@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 最小配置
 
-组合包从参考实现的环境变量填写每个字段：
+组合包从参考实现的环境变量填写服务商和模板字段，并直接设置 `timeoutMs`：
 
 ```yaml
 - id: dreamverse-prompt-enhancer
@@ -37,6 +37,7 @@ kind: "package-reference"
   config:
     cerebrasApiKey: !!js process.env.CEREBRAS_API_KEY
     groqApiKey: !!js process.env.GROQ_API_KEY
+    timeoutMs: 20000
 ```
 
 | 字段 | 环境变量 | 默认值 | 含义 |
@@ -52,6 +53,7 @@ kind: "package-reference"
 | `autoSystemPromptPath` | `FASTVIDEO_PROMPT_AUTO_SYSTEM_PROMPT_PATH` | 打包文件 | 片段扩写模板 |
 | `rewriteAllSystemPromptPath` | `FASTVIDEO_PROMPT_REWRITE_ALL_SYSTEM_PROMPT_PATH` | 打包文件 | 改写已有提示词的模板 |
 | `rewriteUserSystemPromptPath` | `FASTVIDEO_PROMPT_REWRITE_USER_SYSTEM_PROMPT_PATH` | 打包文件 | 根据指令编写整组提示词的模板 |
+| `timeoutMs` | 无 | 必填 | 一次提示词操作的截止时间，单位毫秒；两个组合包都设为 20000 |
 
 缺少模板或密钥时，插件启动以参考消息失败。
 
@@ -62,7 +64,7 @@ kind: "package-reference"
 - `rewriteRollout(prompts, options)` 改写浏览器的提示词窗口或项目的提示词；当没有剩余提示词时，根据指令编写一组新提示词。`continuedSegmentLabels` 指明第一个之后各片段的图片。
 - `rewriteModel()` 返回项目日志和浏览器事件所报告的逻辑模型。
 
-每个操作接受片段时长、生成模式（`t2va`、`i2v` 或 `ref2va`）、参考标签、截止时间（省略时为 20 秒）和中止信号。竞速失败时返回空提示词（改写时返回源提示词）并附带失败信息；不受支持的生成模式抛出 `PromptValueError`。
+每个操作接受片段时长、生成模式（`t2va`、`i2v` 或 `ref2va`）、参考标签和中止信号，并在 `timeoutMs` 截止时间内运行。竞速失败时返回空提示词（改写时返回源提示词）并附带失败信息；不受支持的生成模式抛出 `PromptValueError`。
 
 -----
 
@@ -147,7 +149,7 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **没有请求日志**——本包把 `[ENHANCE]` 诊断写入其 logger，但既不记录渲染后的用户消息，也不记录提供方回复。由调用方记录输入和结果；DreamVerse 把它们记录在其项目日志中。
-- **固定的采样与截止时间**——温度 1.0、3000 token 的补全预算、20 秒的默认截止时间以及竞速的阶段截止时间都是代码中的参考值；没有 `Config` 字段可以修改它们。
+- **固定的采样与截止时间**——温度 1.0、3000 token 的补全预算以及竞速的阶段截止时间都是代码中的参考值；没有 `Config` 字段可以修改它们。
 - **没有 `ref2va` 模板覆盖**——`ref2va` 模板总是从包内加载；没有路径字段可以替换它。
 
 <a id="dev-note"></a>

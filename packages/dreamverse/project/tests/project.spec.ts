@@ -86,11 +86,10 @@ describe('Project creation', () => {
     expect({
       promptSequenceId: project.promptSequenceId, promptSequenceLabel: project.promptSequenceLabel,
       promptEnhancementEnabled: project.promptEnhancementEnabled, promptEnhancementModel: project.promptEnhancementModel,
-      promptEnhancementTimeoutMs: project.promptEnhancementTimeoutMs,
       autoContinueAfterGeneration: project.autoContinueAfterGeneration,
     }).toEqual({
       promptSequenceId: 'forest', promptSequenceLabel: 'Forest', promptEnhancementEnabled: false,
-      promptEnhancementModel: 'model-a', promptEnhancementTimeoutMs: 20000, autoContinueAfterGeneration: false,
+      promptEnhancementModel: 'model-a', autoContinueAfterGeneration: false,
     })
     await run.socket.waitForStatus('idle')
     expect(received).toEqual([{

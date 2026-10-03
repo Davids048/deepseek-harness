@@ -6,9 +6,9 @@
  * @module @dreamverse/project-controller/dependencies
  */
 import type { ModelFacts } from '@dreamverse/generation-client'
-import type { ProjectHolder } from '@dreamverse/project-store'
+import type { ProjectHolder, ProjectId } from '@dreamverse/project-store'
 
-export type { ModelFacts, ProjectHolder }
+export type { ModelFacts, ProjectHolder, ProjectId }
 
 /** One browser socket; the implementation serializes `sendJson` and `sendBytes` through one lock. */
 export interface ProjectSocket {
@@ -25,7 +25,7 @@ export interface ProjectConnectionInit {
 
 /** The inputs of `DreamverseProjects.openProject`. */
 export interface ProjectOpenInit extends ProjectConnectionInit {
-  projectId: string
+  projectId: ProjectId
 }
 
 /** The inputs of `DreamverseProjects.createProject`; the project store assigns the project ID. */
@@ -46,7 +46,7 @@ export interface CreationConfig {
 
 /** The Project members that one browser connection drives. */
 export interface Project {
-  readonly projectId: string
+  readonly projectId: ProjectId
   readonly videoGenerationSettings: CreationConfig
   processBrowserCommand(payload: Record<string, unknown>): Promise<void>
   /** Serves admitted rounds; rethrows failures that are not ValueError-kind, like the reference. */
@@ -67,7 +67,7 @@ export interface DreamverseProjects {
    */
   openProject(init: ProjectOpenInit): Promise<Project>
   /** Writes one connection-level project log event; logging failures do not reject. */
-  logProjectEvent(projectId: string, event: string, payload?: Record<string, unknown>): Promise<void>
+  logProjectEvent(projectId: ProjectId, event: string, payload?: Record<string, unknown>): Promise<void>
 }
 
 /** The `dreamverseGeneration` members that the project controller's HTTP routes call. */

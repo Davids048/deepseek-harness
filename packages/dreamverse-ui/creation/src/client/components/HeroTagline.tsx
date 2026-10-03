@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useRef } from 'react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 
 const HERO_WAVE_LIGHT = ['#2A4A98', '#4878E5', '#6FA0F2', '#B0BCC8', '#E8D99E', '#D8C844', '#C2A620']
 const HERO_WAVE_DARK = ['#143468', '#1E58B8', '#3892F0', '#80B8E8', '#B8D0EA', '#E2D498', '#DABB50']
-const HERO_TEXT = 'Direct scenes in seconds'
 
 /** Render the lobby headline and sweep a blurred color wave across its characters every five seconds. */
-export default function HeroTagline() {
+export default function HeroTagline({ t }: { t: TranslateNS<'dreamverse.creation'> }) {
   const ref = useRef<HTMLHeadingElement>(null)
+  const heroText = t('hero.tagline')
 
   useEffect(() => {
     const el = ref.current
@@ -73,7 +74,7 @@ export default function HeroTagline() {
 
   return (
     <h1 ref={ref} className="text-balance text-center text-3xl font-medium text-[#343537] dark:text-[#FAFAFB] sm:text-4xl">
-      {HERO_TEXT.split(' ').map((word, wi) => (
+      {heroText.split(' ').map((word, wi) => (
         <Fragment key={wi}>
           {wi > 0 && (
             <span data-char className="transition-[color,filter] duration-150">

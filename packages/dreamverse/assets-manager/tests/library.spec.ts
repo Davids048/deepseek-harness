@@ -3,9 +3,10 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { AssetLibrary, AssetNotFoundError, SCHEMA_VERSION, projectOwner } from '../src/library.ts'
+import { AssetLibrary, AssetNotFoundError, SCHEMA_VERSION, projectOwner, type AssetId } from '../src/library.ts'
 import { MediaValidationError, UploadTooLargeError } from '../src/media.ts'
 import {
   FFPROBE_ON_PATH, animatedImageBytes, fixturePath, imageBytes, temporaryDirectory, type TemporaryDirectory,
@@ -84,11 +85,12 @@ describe('AssetLibrary persistence', () => {
 
   it('reports an unavailable ID with the Python representation of the ID', () => {
     const unavailable = (assetId: string) => `Asset ${assetId} is unavailable. Select an asset from the library.`
-    expect(() => library.get('missing')).toThrow(new AssetNotFoundError(unavailable('\'missing\'')))
-    expect(() => library.get('it\'s')).toThrow(unavailable('"it\'s"'))
-    expect(() => library.get('both \' and "')).toThrow(unavailable('\'both \\\' and "\''))
-    expect(() => library.get('tab\there\\ctl\x01\x7f')).toThrow(unavailable('\'tab\\there\\\\ctl\\x01\\x7f\''))
-    expect(() => library.get('nbsp\xa0bom﻿é😀\ud800')).toThrow(unavailable('\'nbsp\\xa0bom\\ufeffé😀\\ud800\''))
+    const get = (assetId: string) => library.get(brandString<AssetId>(assetId))
+    expect(() => get('missing')).toThrow(new AssetNotFoundError(unavailable('\'missing\'')))
+    expect(() => get('it\'s')).toThrow(unavailable('"it\'s"'))
+    expect(() => get('both \' and "')).toThrow(unavailable('\'both \\\' and "\''))
+    expect(() => get('tab\there\\ctl\x01\x7f')).toThrow(unavailable('\'tab\\there\\\\ctl\\x01\\x7f\''))
+    expect(() => get('nbsp\xa0bom﻿é😀\ud800')).toThrow(unavailable('\'nbsp\\xa0bom\\ufeffé😀\\ud800\''))
   })
 })
 
@@ -118,7 +120,7 @@ describe('AssetLibrary retention', () => {
     const second = await library.add(content, 'second.png', 'image/png')
     expect(library.retain([second.assetId, first.assetId])).toEqual([second, first])
     library.release([second.assetId, first.assetId])
-    expect(() => library.retain([first.assetId, 'missing'])).toThrow(AssetNotFoundError)
+    expect(() => library.retain([first.assetId, brandString<AssetId>('missing')])).toThrow(AssetNotFoundError)
     library.delete(first.assetId)
     expect(fs.existsSync(first.filePath)).toBe(false)
     expect(fs.existsSync(second.filePath)).toBe(true)
@@ -176,7 +178,7 @@ describe('AssetLibrary index migration', () => {
       filePath: path.join(root, 'files', 'old'), sizeBytes: content.length, width: 16, height: 12, durationSec: null,
       createdAt: mtime.toISOString(),
     }])
-    library.delete('old')
+    library.delete(brandString<AssetId>('old'))
     expect(fs.existsSync(path.join(root, 'files', 'old'))).toBe(false)
     library.close()
     const migrated = new DatabaseSync(path.join(root, 'index.sqlite3'))

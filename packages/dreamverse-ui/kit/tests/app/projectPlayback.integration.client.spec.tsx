@@ -22,7 +22,8 @@ const fixtures = vi.hoisted(() => ({
 vi.mock('@dreamverse/project-controller/client/storyPresetsData.ts', () => ({
   default: [{ id: 'river', label: 'River', segment_prompts: ['A river'] }],
 }))
-vi.mock('@dreamverse/project-controller/client/projects.ts', () => ({
+vi.mock('@dreamverse/project-controller/client/projects.ts', async importOriginal => ({
+  ProjectRequestError: (await importOriginal<typeof import('@dreamverse/project-controller/client/projects.ts')>()).ProjectRequestError,
   listProjects: async () => [],
   getProject: vi.fn(),
   deleteProject: vi.fn(),
@@ -87,7 +88,7 @@ vi.mock('../../src/client/media/avPipeline.ts', async (importOriginal) => {
 })
 
 import { DreamverseApp } from '../../src/client/app/DreamverseApp.tsx'
-import { renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
+import { englishKitT, renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
 
 const mediaSources: ControlledMediaSource[] = []
 
@@ -299,7 +300,7 @@ describe('Project playback ownership', () => {
 
   /** Enter the project through the shipped lobby and wait only for the mock socket's queued connection events. */
   async function startProject() {
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await act(async () => {})
     expect(screen.getByText('FastH3')).toBeVisible()
     fireEvent.change(screen.getByRole('textbox', { name: 'Initial prompt' }), { target: { value: 'A river' } })

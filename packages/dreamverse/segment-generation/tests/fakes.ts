@@ -7,6 +7,8 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'nod
 import { open, rename, rm, type FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { AssetId } from '@dreamverse/assets-manager'
 import type {
   AssetOwner,
   AssetRecord,
@@ -110,13 +112,13 @@ export class FakeAssets implements DreamverseAssetsManager {
    * @returns the record.
    */
   put(owner: AssetOwner, name: string, bytes: Buffer): AssetRecord {
-    const assetId = `asset-${this.nextId++}`
+    const assetId = brandString<AssetId>(`asset-${this.nextId++}`)
     writeFileSync(join(this.root, assetId), bytes)
     return this.index(assetId, { owner, name, mimeType: name.endsWith('.png') ? 'image/png' : 'video/mp4' }, bytes.length)
   }
 
   createWriter(options: AssetWriteOptions): AssetWriter {
-    const assetId = `asset-${this.nextId++}`
+    const assetId = brandString<AssetId>(`asset-${this.nextId++}`)
     const partialPath = join(this.root, `${assetId}.partial`)
     let file: FileHandle | null = null
     let size = 0
@@ -146,7 +148,7 @@ export class FakeAssets implements DreamverseAssetsManager {
 
   async addBytes(options: AssetWriteOptions, bytes: Uint8Array): Promise<AssetRecord> {
     if (this.addBytesError) throw this.addBytesError
-    const assetId = `asset-${this.nextId++}`
+    const assetId = brandString<AssetId>(`asset-${this.nextId++}`)
     writeFileSync(join(this.root, assetId), bytes)
     return await Promise.resolve(this.index(assetId, options, bytes.length))
   }
@@ -171,7 +173,7 @@ export class FakeAssets implements DreamverseAssetsManager {
     rmSync(this.root, { recursive: true, force: true })
   }
 
-  private index(assetId: string, options: AssetWriteOptions, sizeBytes: number): AssetRecord {
+  private index(assetId: AssetId, options: AssetWriteOptions, sizeBytes: number): AssetRecord {
     const record: AssetRecord = {
       assetId, owner: options.owner, name: options.name, mediaType: options.mimeType.split('/')[0] ?? '',
       mimeType: options.mimeType, filePath: join(this.root, assetId), sizeBytes, width: null, height: null,

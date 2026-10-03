@@ -1,11 +1,12 @@
 /**
- * Service members that segment generation consumes. Generation types come from `@dreamverse/generation-client`. The
- * `dreamverseAssetsManager` members restate the file store calls that this package makes, so the package compiles and
- * tests against fakes.
+ * Service members that segment generation consumes. Generation types come from `@dreamverse/generation-client` and the
+ * asset ID type from `@dreamverse/assets-manager`. The `dreamverseAssetsManager` members restate the file store calls
+ * that this package makes, so the package compiles and tests against fakes.
  *
  * @module @dreamverse/segment-generation/dependencies
  */
 
+import type { AssetId } from '@dreamverse/assets-manager'
 import type { ModelFacts, SegmentOutput, SegmentRequest } from '@dreamverse/generation-client'
 
 export type { ModelFacts, SegmentOutput, SegmentRequest }
@@ -26,7 +27,7 @@ export type AssetOwner = 'library' | `project:${string}`
 
 /** One file store record. */
 export interface AssetRecord {
-  readonly assetId: string
+  readonly assetId: AssetId
   readonly owner: AssetOwner
   readonly name: string
   /** `image`, `video`, or `audio`. */
@@ -50,7 +51,7 @@ export interface AssetWriteOptions {
 
 /** One file written in pieces; it exists in the file store only after `commit`. */
 export interface AssetWriter {
-  readonly assetId: string
+  readonly assetId: AssetId
   write(chunk: Uint8Array): Promise<void>
   /** Complete the file and index it. */
   commit(): Promise<AssetRecord>
@@ -63,5 +64,5 @@ export interface DreamverseAssetsManager {
   createWriter(options: AssetWriteOptions): AssetWriter
   addBytes(options: AssetWriteOptions, bytes: Uint8Array): Promise<AssetRecord>
   /** Delete one file. */
-  delete(assetId: string): void
+  delete(assetId: AssetId): void
 }

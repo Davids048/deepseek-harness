@@ -49,7 +49,7 @@ kind: "package-reference"
 
 ### 页面模块
 
-`src/client/` 存放前端中不依赖 React 的模块，`@dreamverse/ui-*` 各包以 `@dreamverse/project-controller/client/<path>.ts` 导入它们：WebSocket 客户端与 reducer（`ws/`）、页面 store（`stores/`）、创建配置与能力、创建载荷、故事预设、提示词事件，以及通过 `/projects` 列出、读取、打开和删除已存储项目的 `projects.ts`。
+`src/client/` 存放前端中不依赖 React 的模块，`@dreamverse/ui-*` 各包以 `@dreamverse/project-controller/client/<path>.ts` 导入它们：WebSocket 客户端与 reducer（`ws/`）、页面 store（`stores/`）、创建配置与能力、创建载荷、故事预设、提示词事件，通过 `/projects` 列出、读取、打开和删除已存储项目的 `projects.ts`，以及用宿主类型的品牌标签声明页面 `ProjectId`、`SegmentId` 和 `PromptId` 的 `ids.ts`。这些模块为每个响应和 socket 事件中的 ID 加上品牌，页面为它生成的提示词 ID 加上品牌。这些模块不含页面文案：创建表只保存模式和模型 ID，选择校验函数返回 `CreationSelectionProblem` 代码，没有服务器 `detail` 而失败的项目请求抛出带 `failure` 代码的 `ProjectRequestError`，socket reducer 通过页面的 `noticeText` 回调读取它的两条页面提示。`@dreamverse/ui-*` 各包用自己的 locale 词典翻译这些值；所服务模型对模式的说明和服务器消息保持原样。
 
 -----
 

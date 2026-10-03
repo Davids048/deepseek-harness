@@ -20,14 +20,15 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import z from '@deepseek-ai/schemastery'
-import { projectOwner } from '@dreamverse/assets-manager'
+import { projectOwner, type AssetId } from '@dreamverse/assets-manager'
 import type { ProjectFiles } from './dependencies.ts'
 import {
-  PROJECT_RECORD_SCHEMA_VERSION, isProjectId, parseProjectRecord, projectRecordJson, type ProjectRecord, type WorkloadData,
+  PROJECT_RECORD_SCHEMA_VERSION, isProjectId, parseProjectRecord, projectRecordJson, type ProjectId, type ProjectRecord, type WorkloadData,
 } from './records.ts'
 
-export { PROJECT_RECORD_SCHEMA_VERSION, isProjectId, type ProjectRecord, type WorkloadData } from './records.ts'
+export { PROJECT_RECORD_SCHEMA_VERSION, isProjectId, type ProjectId, type ProjectRecord, type WorkloadData } from './records.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -44,12 +45,12 @@ export interface ProjectHolder {
 
 /** The write right of one project, from `acquire` until `release` or a later `acquire` revokes it. */
 export interface ProjectLease {
-  readonly projectId: string
+  readonly projectId: ProjectId
 }
 
 /** A directory under the root whose record is not schema 2, for a workload to migrate. */
 export interface UnrecognizedProject {
-  projectId: string
+  projectId: ProjectId
   directory: string
   /** The parsed `project.json` (or `project.legacy.json` when `project.json` is missing); null for invalid JSON. */
   record: unknown
@@ -58,7 +59,7 @@ export interface UnrecognizedProject {
 /** The project is not stored, or its record is not schema 2. */
 export class ProjectNotFoundError extends Error {
   /** @param projectId - the requested project. */
-  constructor(projectId: string) {
+  constructor(projectId: ProjectId) {
     super(`Project '${projectId}' not found.`)
     this.name = 'ProjectNotFoundError'
   }
@@ -67,7 +68,7 @@ export class ProjectNotFoundError extends Error {
 /** The project has a holder, so it cannot be deleted. */
 export class ProjectInUseError extends Error {
   /** @param projectId - the held project. */
-  constructor(projectId: string) {
+  constructor(projectId: ProjectId) {
     super(`Project '${projectId}' is in use.`)
     this.name = 'ProjectInUseError'
   }
@@ -76,7 +77,7 @@ export class ProjectInUseError extends Error {
 /** A write used a lease that was released or revoked. */
 export class StaleLeaseError extends Error {
   /** @param projectId - the project of the stale lease. */
-  constructor(projectId: string) {
+  constructor(projectId: ProjectId) {
     super(`The lease of project '${projectId}' is no longer current.`)
     this.name = 'StaleLeaseError'
   }
@@ -106,9 +107,9 @@ export default class DreamverseProjectStore extends Service {
   })
 
   private readonly root: string
-  private readonly holdings = new Map<string, Holding>()
+  private readonly holdings = new Map<ProjectId, Holding>()
   /** The last pending `acquire` of each project; the next one waits for it, so grants follow call order. */
-  private readonly acquireQueue = new Map<string, Promise<unknown>>()
+  private readonly acquireQueue = new Map<ProjectId, Promise<unknown>>()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'dreamverseProjectStore')
@@ -128,8 +129,8 @@ export default class DreamverseProjectStore extends Service {
   create(init: { kind: string; title: string; workload: WorkloadData }): ProjectRecord {
     const now = new Date().toISOString()
     const record: ProjectRecord = {
-      projectId: randomUUID(), kind: init.kind, title: init.title, createdAt: now, updatedAt: now, thumbnailAssetId: null,
-      workload: init.workload,
+      projectId: brandString<ProjectId>(randomUUID()), kind: init.kind, title: init.title, createdAt: now, updatedAt: now,
+      thumbnailAssetId: null, workload: init.workload,
     }
     this.write(record)
     return record
@@ -140,7 +141,7 @@ export default class DreamverseProjectStore extends Service {
    * @param projectId - the project ID.
    * @returns the record, or undefined when the project is not stored or its record is not schema 2.
    */
-  get(projectId: string): ProjectRecord | undefined {
+  get(projectId: ProjectId): ProjectRecord | undefined {
     if (!isProjectId(projectId)) return undefined
     const raw = this.readJson(join(this.root, projectId, RECORD_FILE))
     return raw.found ? parseProjectRecord(raw.value, projectId) : undefined
@@ -165,7 +166,7 @@ export default class DreamverseProjectStore extends Service {
    * @param projectId - the project ID.
    * @returns whether a holder holds the project's write right.
    */
-  isHeld(projectId: string): boolean {
+  isHeld(projectId: ProjectId): boolean {
     return this.holdings.has(projectId)
   }
 
@@ -177,7 +178,7 @@ export default class DreamverseProjectStore extends Service {
    * @returns the lease that the holder's writes take.
    * @throws {ProjectNotFoundError} when the project is not stored.
    */
-  async acquire(projectId: string, holder: ProjectHolder): Promise<ProjectLease> {
+  async acquire(projectId: ProjectId, holder: ProjectHolder): Promise<ProjectLease> {
     if (this.get(projectId) === undefined) throw new ProjectNotFoundError(projectId)
     const previous = this.acquireQueue.get(projectId) ?? Promise.resolve()
     const granted = previous.then(async () => {
@@ -239,7 +240,7 @@ export default class DreamverseProjectStore extends Service {
    * @returns the stored record.
    * @throws {StaleLeaseError} when the lease is not current.
    */
-  setThumbnail(lease: ProjectLease, assetId: string | null): ProjectRecord {
+  setThumbnail(lease: ProjectLease, assetId: AssetId | null): ProjectRecord {
     return this.update(lease, { thumbnailAssetId: assetId })
   }
 
@@ -249,7 +250,7 @@ export default class DreamverseProjectStore extends Service {
    * @throws {ProjectNotFoundError} when the project is not stored.
    * @throws {ProjectInUseError} when a holder holds the project.
    */
-  delete(projectId: string): void {
+  delete(projectId: ProjectId): void {
     if (this.get(projectId) === undefined) throw new ProjectNotFoundError(projectId)
     if (this.isHeld(projectId)) throw new ProjectInUseError(projectId)
     this.files.deleteOwnedBy(projectOwner(projectId))
@@ -283,7 +284,7 @@ export default class DreamverseProjectStore extends Service {
    * @returns the stored record.
    * @throws Error when the directory is missing or already holds a schema-2 record.
    */
-  migrate(projectId: string, init: { kind: string; title: string; createdAt: string; workload: WorkloadData }): ProjectRecord {
+  migrate(projectId: ProjectId, init: { kind: string; title: string; createdAt: string; workload: WorkloadData }): ProjectRecord {
     const directory = join(this.root, projectId)
     if (!isProjectId(projectId) || !existsSync(directory)) throw new Error(`Project directory '${projectId}' does not exist.`)
     if (this.get(projectId) !== undefined) throw new Error(`Project '${projectId}' already has a schema ${PROJECT_RECORD_SCHEMA_VERSION} record.`)
@@ -325,10 +326,10 @@ export default class DreamverseProjectStore extends Service {
   }
 
   /** @returns the root's subdirectories whose names are valid project IDs. */
-  private projectIds(): string[] {
+  private projectIds(): ProjectId[] {
     return readdirSync(this.root, { withFileTypes: true })
       .filter(entry => entry.isDirectory() && isProjectId(entry.name))
-      .map(entry => entry.name)
+      .map(entry => brandString<ProjectId>(entry.name))
   }
 
   /**

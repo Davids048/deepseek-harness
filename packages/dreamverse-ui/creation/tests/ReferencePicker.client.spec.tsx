@@ -4,13 +4,17 @@ import { useState } from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import ReferencePicker from '../src/client/components/assets/ReferencePicker.tsx'
+import { en } from '../src/client/locales.ts'
 import type { ReferenceDraft } from '@dreamverse/assets-manager/client/assets.ts'
 import { imageAsset, mockReferenceImageLayout } from '../../kit/tests/support/assetFixtures.client.ts'
 
+const t = makeTranslate(en)
+
 function Picker() {
   const [references, setReferences] = useState<ReferenceDraft[]>([])
-  return <ReferencePicker references={references} onReferencesChange={setReferences} onOpenAssets={() => {}} accept="image/png,image/jpeg,image/webp" maxCount={3} maxBytes={15728640} />
+  return <ReferencePicker t={t} references={references} onReferencesChange={setReferences} onOpenAssets={() => {}} accept="image/png,image/jpeg,image/webp" maxCount={3} maxBytes={15728640} />
 }
 
 describe('reference drafts', () => {
@@ -21,7 +25,7 @@ describe('reference drafts', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
     const changeReferences = vi.fn()
     const user = userEvent.setup()
-    render(<ReferencePicker references={[reference]} onReferencesChange={changeReferences} onOpenAssets={() => {}} accept="image/png" maxCount={3} maxBytes={15728640} />)
+    render(<ReferencePicker t={t} references={[reference]} onReferencesChange={changeReferences} onOpenAssets={() => {}} accept="image/png" maxCount={3} maxBytes={15728640} />)
     const thumbnail = screen.getByRole('button', { name: 'Preview picture 1: subject.png' })
     await user.click(thumbnail)
     const dialog = screen.getByRole('dialog', { name: 'subject.png' })
@@ -46,7 +50,7 @@ describe('reference drafts', () => {
   it('opens image upload and asset selection from the compact button', async () => {
     const openAssets = vi.fn()
     const user = userEvent.setup()
-    render(<ReferencePicker references={[]} onReferencesChange={vi.fn()} onOpenAssets={openAssets} accept="image/png" maxCount={3} maxBytes={15728640} />)
+    render(<ReferencePicker t={t} references={[]} onReferencesChange={vi.fn()} onOpenAssets={openAssets} accept="image/png" maxCount={3} maxBytes={15728640} />)
     expect(screen.queryByRole('button', { name: 'Add image' })).not.toBeInTheDocument()
     const trigger = screen.getByRole('button', { name: 'Add reference' })
     await user.click(trigger)

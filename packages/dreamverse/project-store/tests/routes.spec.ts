@@ -4,8 +4,9 @@
  */
 import { request as httpRequest } from 'node:http'
 import type { Fiber } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
-import { projectOwner } from '@dreamverse/assets-manager'
+import { projectOwner, type AssetId } from '@dreamverse/assets-manager'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as routes from '../src/routes.ts'
 import { startStore, type StoreFixture } from './support.ts'
@@ -51,7 +52,7 @@ describe('/projects', () => {
     const story = store.create({ kind: 'dreamverse', title: 'Story', workload: { schemaVersion: 1, data: {} } })
     const tree = store.create({ kind: 'multiverse', title: 'Tree', workload: { schemaVersion: 1, data: {} } })
     const lease = await store.acquire(tree.projectId, QUIET_HOLDER)
-    const updated = store.setThumbnail(lease, 'frame 1')
+    const updated = store.setThumbnail(lease, brandString<AssetId>('frame 1'))
 
     const all = await call(port, 'GET', '/projects')
     expect(all.status).toBe(200)

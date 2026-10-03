@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button } from '@dreamverse/ui-kit/components/ui/button.tsx'
 import { Checkbox } from '@dreamverse/ui-kit/components/ui/checkbox.tsx'
 import { Label } from '@dreamverse/ui-kit/components/ui/label.tsx'
@@ -9,6 +10,7 @@ interface LeaveProjectModalProps {
   open?: boolean
   onClose?: () => void
   onConfirmLeave?: () => void
+  t: TranslateNS<'dreamverse.creation'>
 }
 
 /** Confirm project departure and remember the browser's warning preference. */
@@ -16,6 +18,7 @@ export default function LeaveProjectModal({
   open = false,
   onClose = () => {},
   onConfirmLeave = () => {},
+  t,
 }: LeaveProjectModalProps) {
   const [suppress, setSuppress] = useState(false)
 
@@ -47,10 +50,10 @@ export default function LeaveProjectModal({
         <div className="space-y-3">
           <div className="space-y-1">
             <h2 id="leave-project-title" className="text-lg font-semibold text-foreground">
-              Leave project?
+              {t('leaveModal.title')}
             </h2>
             <p className="text-sm text-muted-foreground">
-              This closes the project's connection. Starting another project requests a GPU again.
+              {t('leaveModal.description')}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -60,16 +63,16 @@ export default function LeaveProjectModal({
               onCheckedChange={(v) => { setSuppress(v === true) }}
             />
             <Label htmlFor="suppress-leave-warning" className="text-sm text-muted-foreground cursor-pointer">
-              Do not warn again
+              {t('leaveModal.suppress')}
             </Label>
           </div>
         </div>
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {t('leaveModal.cancel')}
           </Button>
           <Button variant="destructive" onClick={handleConfirm}>
-            Leave project
+            {t('leaveModal.confirm')}
           </Button>
         </div>
       </div>

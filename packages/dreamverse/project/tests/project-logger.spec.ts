@@ -1,8 +1,9 @@
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ProjectEventLogger, logFileTimestamp, utcIsoTimestamp } from '../src/index.ts'
+import { ProjectEventLogger, logFileTimestamp, utcIsoTimestamp, type ProjectId } from '../src/index.ts'
 import { openProjects } from './harness.ts'
 
 const roots: string[] = []
@@ -36,8 +37,9 @@ describe('ProjectEventLogger', () => {
 
   it('appends one entry per event with the header keys before the payload keys', () => {
     const logger = new ProjectEventLogger(logRoot())
-    logger.writeEvent('append_prompt', 'project-123', { prompt: 'hello world', project_id: 'payload value' })
-    logger.writeEvent('ws_stream_complete', 'project-123')
+    const projectId = brandString<ProjectId>('project-123')
+    logger.writeEvent('append_prompt', projectId, { prompt: 'hello world', project_id: 'payload value' })
+    logger.writeEvent('ws_stream_complete', projectId)
     const lines = readFileSync(logger.path, 'utf8').split('\n')
     expect(lines).toHaveLength(3)
     expect(lines[2]).toBe('')
@@ -61,14 +63,15 @@ describe('ProjectEventLogger', () => {
 describe('DreamverseProjects.logProjectEvent', () => {
   it('writes connection-level events and only warns when the log write fails', async () => {
     const harness = await openProjects()
+    const projectId = brandString<ProjectId>('project-1')
     try {
-      await harness.service.logProjectEvent('project-1', 'gpu_assigned', { gpu_id: 0 })
+      await harness.service.logProjectEvent(projectId, 'gpu_assigned', { gpu_id: 0 })
       expect(harness.logEvents('gpu_assigned')).toEqual([
         { event: 'gpu_assigned', hostname: hostname(), project_id: 'project-1', gpu_id: 0 },
       ])
       const warn = vi.spyOn(harness.ctx.logger, 'warn').mockImplementation(() => undefined)
       rmSync(join(harness.logRoot, hostname()), { recursive: true })
-      await expect(harness.service.logProjectEvent('project-1', 'segment_start')).resolves.toBeUndefined()
+      await expect(harness.service.logProjectEvent(projectId, 'segment_start')).resolves.toBeUndefined()
       expect(warn).toHaveBeenCalledOnce()
       expect(warn.mock.calls[0]![0]).toMatch(/^Failed to write project log \(segment_start\): ENOENT/)
     } finally {

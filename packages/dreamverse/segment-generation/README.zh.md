@@ -44,7 +44,7 @@ kind: "package-reference"
 
 工作负载在调用 `generate` 之前应用以下规则：
 
-- **创建设置**——`parseProjectCreationConfig`、`validateProjectCreation`、`SEGMENT_COUNTS`、`parseReferenceAssetIds` 和 `validateReferenceAssets` 移植参考实现的 `project_creation.py`（不含提示词安全）及其模型能力检查，并使用参考消息。
+- **创建设置**——`parseProjectCreationConfig`、`validateProjectCreation`、`SEGMENT_COUNTS`、`parseReferenceAssetIds` 和 `validateReferenceAssets` 移植参考实现的 `project_creation.py`（不含提示词安全）及其模型能力检查，并使用参考消息。`parseReferenceAssetIds` 以 `AssetId` 值返回所选 ID。
 - **创建能力**——`lobbyCapabilitiesAsDict(model, uploadPolicy)` 构建 `GET /creation-capabilities` 的载荷。
 - **片段条件输入**——`continuesPreviousSegment` 决定片段是否从前一片段的末帧开始，`segmentImageLabels` 为提示词命名请求图片，`segmentRequestImages` 按相同顺序读取它们，`referenceImageLimit` 给出选择上限。
 

@@ -1,15 +1,16 @@
 /**
  * Service members that the project package consumes. Generation types come from `@dreamverse/generation-client`, file
- * store records from `@dreamverse/segment-generation`, and project store types from `@dreamverse/project-store`. The
- * `dreamverseAssetsManager`, `dreamverseProjectStore`, `dreamverseSegmentGeneration`, and `dreamversePromptEnhancer`
- * members restate what project and user-action code calls, as the package README defines them, so both packages
- * compile and test against fakes.
+ * store records from `@dreamverse/segment-generation`, the asset ID type from `@dreamverse/assets-manager`, and project
+ * store types from `@dreamverse/project-store`. The `dreamverseAssetsManager`, `dreamverseProjectStore`,
+ * `dreamverseSegmentGeneration`, and `dreamversePromptEnhancer` members restate what project and user-action code
+ * calls, as the package README defines them, so both packages compile and test against fakes.
  *
  * @module @dreamverse/project/dependencies
  */
 
+import type { AssetId } from '@dreamverse/assets-manager'
 import type { ModelFacts, SegmentOutput, SegmentRequest } from '@dreamverse/generation-client'
-import type { ProjectHolder, ProjectLease, ProjectRecord, UnrecognizedProject, WorkloadData } from '@dreamverse/project-store'
+import type { ProjectHolder, ProjectId, ProjectLease, ProjectRecord, UnrecognizedProject, WorkloadData } from '@dreamverse/project-store'
 import type {
   AssetOwner,
   AssetRecord,
@@ -20,8 +21,8 @@ import type {
 } from '@dreamverse/segment-generation'
 
 export type { ModelFacts, SegmentOutput, SegmentRequest }
-export type { AssetOwner, AssetRecord, AssetWriteOptions, GeneratedSegment, SegmentGenerationRequest, SegmentSink }
-export type { ProjectHolder, ProjectLease, ProjectRecord, UnrecognizedProject, WorkloadData }
+export type { AssetId, AssetOwner, AssetRecord, AssetWriteOptions, GeneratedSegment, SegmentGenerationRequest, SegmentSink }
+export type { ProjectHolder, ProjectId, ProjectLease, ProjectRecord, UnrecognizedProject, WorkloadData }
 
 /** The `dreamverseGeneration` members that project code calls. */
 export interface DreamverseGeneration {
@@ -35,19 +36,19 @@ export interface DreamverseAssetsManager {
    * Resolve every ID, then protect the files in request order until `release`.
    * @throws an error named `AssetNotFoundError` when an asset is absent or deleted; nothing is retained then.
    */
-  retain(assetIds: readonly string[]): AssetRecord[]
+  retain(assetIds: readonly AssetId[]): AssetRecord[]
   /** Release one accepted retention and remove deleted files that no retention protects any more. */
-  release(assetIds: readonly string[]): void
+  release(assetIds: readonly AssetId[]): void
   /**
    * Resolve one file of any owner.
    * @throws an error named `AssetNotFoundError` when the asset is absent or deleted.
    */
-  get(assetId: string): AssetRecord
+  get(assetId: AssetId): AssetRecord
   /**
    * Copy one file for another owner.
    * @throws an error named `AssetNotFoundError` when the asset is absent or deleted.
    */
-  copy(assetId: string, owner: AssetOwner): Promise<AssetRecord>
+  copy(assetId: AssetId, owner: AssetOwner): Promise<AssetRecord>
   /** Write one small file at once. */
   addBytes(options: AssetWriteOptions, bytes: Uint8Array): Promise<AssetRecord>
   /** Delete every file of an owner. */
@@ -57,14 +58,14 @@ export interface DreamverseAssetsManager {
 /** The `dreamverseProjectStore` members that project code calls. */
 export interface DreamverseProjectStore {
   create(init: { kind: string; title: string; workload: WorkloadData }): ProjectRecord
-  get(projectId: string): ProjectRecord | undefined
+  get(projectId: ProjectId): ProjectRecord | undefined
   /** Rejects with `ProjectNotFoundError` when the project is not stored; revokes the current holder first. */
-  acquire(projectId: string, holder: ProjectHolder): Promise<ProjectLease>
+  acquire(projectId: ProjectId, holder: ProjectHolder): Promise<ProjectLease>
   release(lease: ProjectLease): void
   updateWorkload(lease: ProjectLease, workload: WorkloadData): ProjectRecord
-  setThumbnail(lease: ProjectLease, assetId: string | null): ProjectRecord
+  setThumbnail(lease: ProjectLease, assetId: AssetId | null): ProjectRecord
   listUnrecognized(): UnrecognizedProject[]
-  migrate(projectId: string, init: { kind: string; title: string; createdAt: string; workload: WorkloadData }): ProjectRecord
+  migrate(projectId: ProjectId, init: { kind: string; title: string; createdAt: string; workload: WorkloadData }): ProjectRecord
 }
 
 /** The `dreamverseSegmentGeneration` members that project code calls. */
@@ -104,7 +105,6 @@ export interface RolloutResult {
 /** Keyword arguments of `PromptEnhancer.expand_clip`, plus the abort signal that stops the provider race. */
 export interface ExpandClipOptions {
   segmentDurationSec: number
-  timeoutMs: number
   generationMode: string
   referenceLabels: string[]
   /** The project's generation signal; aborting it rejects the operation. */
@@ -136,7 +136,6 @@ export interface RewriteRolloutOptions {
   presetId: unknown
   presetLabel: unknown
   rewriteInstruction: string
-  timeoutMs: number
   generationMode: string
   /** Labels of the first segment's reference images. */
   referenceLabels: string[]
@@ -154,6 +153,3 @@ export interface DreamversePromptEnhancer {
   continueVideo(conditioningPrompt: string | null, options: ContinueVideoOptions): Promise<PromptResult>
   rewriteRollout(prompts: string[], options: RewriteRolloutOptions): Promise<RolloutResult>
 }
-
-/** Reference `PROMPT_TIMEOUT_MS` from `prompt_enhancement/settings.py`: the provider deadline for project prompts. */
-export const PROMPT_TIMEOUT_MS = 20000

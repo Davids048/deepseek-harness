@@ -73,7 +73,8 @@ vi.mock('@dreamverse/project-controller/client/ws/client.ts', async (importOrigi
   }
 })
 vi.mock('../../src/client/media/fmp4Remux.ts', () => ({ remuxArchivedFmp4Segments: fixtures.remux }))
-vi.mock('@dreamverse/project-controller/client/projects.ts', () => ({
+vi.mock('@dreamverse/project-controller/client/projects.ts', async importOriginal => ({
+  ProjectRequestError: (await importOriginal<typeof import('@dreamverse/project-controller/client/projects.ts')>()).ProjectRequestError,
   listProjects: async () => [],
   getProject: vi.fn(),
   deleteProject: vi.fn(),
@@ -114,7 +115,7 @@ vi.mock('../../src/client/media/avPipeline.ts', () => ({
 }))
 
 import { DreamverseApp } from '../../src/client/app/DreamverseApp.tsx'
-import { renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
+import { englishKitT, renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
 
 /** Record one object URL that Page allocated; each `URL.createObjectURL` spy returns the URL through this function. */
 function trackObjectUrl(blob: Blob | MediaSource, url: string): string {
@@ -376,7 +377,7 @@ describe('Project WebSocket lifecycle', () => {
     /** Creation captures the selected sequence length in both wire settings and the project display. */
     it.each([6, 3])('sends a custom rollout with %s segments', async (segmentCount) => {
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('FastLTX 2.3')
       expect(screen.getByRole('status')).toHaveTextContent('6 segments × 5s = 30s total')
       if (segmentCount !== 6) {
@@ -404,7 +405,7 @@ describe('Project WebSocket lifecycle', () => {
         models: { 'fast-h3': { ...modelCapabilities, min_segment_duration_sec: 5, max_segment_duration_sec: 15 } },
       }))
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('FastH3')
       await user.click(screen.getByRole('button', { name: 'Duration per segment: 5s' }))
       screen.getByRole('slider', { name: 'Duration per segment' }).focus()
@@ -433,7 +434,7 @@ describe('Project WebSocket lifecycle', () => {
       { label: 'Test Preset', selected: 6, expected: ['A river', 'A waterfall'] },
     ])('submits $label with a requested count of $selected', async ({ label, selected, expected }) => {
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('FastLTX 2.3')
       if (selected !== 6) {
         screen.getByRole('button', { name: 'Segments: 6' }).focus()
@@ -455,7 +456,7 @@ describe('Project WebSocket lifecycle', () => {
       const readiness = deferred<undefined>(undefined)
       readinessResponse = () => readiness.promise
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('FastLTX 2.3')
       screen.getByRole('button', { name: 'Text to video' }).focus()
       await user.keyboard('{Enter}')
@@ -491,7 +492,7 @@ describe('Project WebSocket lifecycle', () => {
         return new Response(JSON.stringify(imageAsset(file.name)))
       }
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('H3 Ref2AV')
       await user.upload(screen.getByLabelText('Add reference images'), ['front.png', 'side.png', 'back.png'].map(name => new File(['png'], name, { type: 'image/png' })))
       expect(uploadedNames).toEqual([])
@@ -528,7 +529,7 @@ describe('Project WebSocket lifecycle', () => {
       window.history.replaceState({}, '', '/?demo=1')
       capabilityResponse = async () => new Response(JSON.stringify({ model_ids: ['h3-ref2va'], segment_counts: [1, 2, 3, 4, 5, 6], asset_upload: assetUploadPolicy, models: { 'h3-ref2va': { ...modelCapabilities, min_segment_duration_sec: 5, max_segment_duration_sec: 15, generation_modes: ['ref2va'], reference_inputs: { media_types: ['image'], max_count: 9, conditioning: 'reference' } } } }))
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('H3 Ref2AV')
       await user.upload(screen.getByLabelText('Add reference images'), new File(['png'], 'front.png', { type: 'image/png' }))
       await generate(user, 0)
@@ -564,7 +565,7 @@ describe('Project WebSocket lifecycle', () => {
       const upload = deferred<Response>(new Response(JSON.stringify(imageAsset('abandoned.png'))))
       uploadResponse = () => upload.promise
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('FastLTX 2.3')
       screen.getByRole('button', { name: 'Text to video' }).focus()
       await user.keyboard('{Enter}')
@@ -586,7 +587,7 @@ describe('Project WebSocket lifecycle', () => {
     /** Returning from a text project must release the active mode before choosing image generation. */
     it('shows the reference picker after a text project returns to image creation', async () => {
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('FastLTX 2.3')
       await generate(user, 0)
       completeClip(0, [1])
@@ -607,7 +608,7 @@ describe('Project WebSocket lifecycle', () => {
       const readiness = deferred<undefined>(undefined)
       readinessResponse = () => readiness.promise
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('FastLTX 2.3')
       await user.type(screen.getByRole('textbox', { name: 'Initial prompt' }), 'Superseded river')
       await user.click(screen.getByRole('button', { name: 'Generate' }))
@@ -631,7 +632,7 @@ describe('Project WebSocket lifecycle', () => {
     it('sends a raw continuation from a demo project', async () => {
       window.history.replaceState({}, '', '/?demo=1')
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('FastLTX 2.3')
       screen.getByRole('button', { name: 'Segments: 6' }).focus()
       await user.keyboard('{Enter}')
@@ -685,7 +686,7 @@ describe('Project WebSocket lifecycle', () => {
     it('archives cumulative continuation video and preserves prior versions', async () => {
       window.history.replaceState({}, '', '/?demo=1')
       const user = userEvent.setup()
-      const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await screen.findByText('FastLTX 2.3')
       await generate(user, 0)
       completeClip(0, [1, 2])
@@ -728,7 +729,7 @@ describe('Project WebSocket lifecycle', () => {
     it('opts in before generation and stops through one command', async () => {
       window.history.replaceState({}, '', '/')
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       const optIn = await screen.findByRole('checkbox', { name: 'Auto extension' })
       expect(optIn).not.toBeChecked()
       await user.click(optIn)
@@ -771,7 +772,7 @@ describe('Project WebSocket lifecycle', () => {
     it.each([false, true])('selects rewrite or continuation for the next live prompt (demo=%s)', async (demo) => {
       window.history.replaceState({}, '', demo ? '/?demo=1' : '/')
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await generate(user, 0)
       completeClip(0, [1, 2])
       const prompt = screen.getByRole('textbox', { name: 'Continuation prompt' })
@@ -794,7 +795,7 @@ describe('Project WebSocket lifecycle', () => {
     it.each([false, true])('keeps idle opt-in local until submission (demo=%s)', async (demo) => {
       window.history.replaceState({}, '', demo ? '/?demo=1' : '/')
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await generate(user, 0)
       expect(sentMessage(0, 0).auto_extension_enabled).toBe(false)
       completeClip(0, [1, 2])
@@ -829,7 +830,7 @@ describe('Project WebSocket lifecycle', () => {
     /** Automatic streams append cumulative archives until stopped; disconnect starts the next project with opt-in off. */
     it('archives successive automatic segments and clears opt-in on disconnect', async () => {
       const user = userEvent.setup()
-      render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       await user.click(await screen.findByRole('checkbox', { name: 'Auto extension' }))
       await generate(user, 0)
       completeClip(0, [1, 2], true)
@@ -918,7 +919,7 @@ describe('Project WebSocket lifecycle', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     try {
       await screen.findByText('FastH3')
       await user.type(screen.getByRole('textbox', { name: 'Initial prompt' }), 'A river at dawn')
@@ -1005,7 +1006,7 @@ describe('Project WebSocket lifecycle', () => {
       throw new Error(`Unexpected fetch in active composition test: ${url}`)
     }))
     const user = userEvent.setup()
-    const { unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    const { unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     try {
       await screen.findByText('FastH3')
       await generate(user, 0)
@@ -1069,7 +1070,7 @@ describe('Project WebSocket lifecycle', () => {
 
   it('closes the first socket before resetting and starts the next project without its clips', async () => {
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await generate(user, 0)
     let releaseRemux = (_blob: Blob) => {}
     fixtures.remux.mockImplementationOnce(() => new Promise((resolve) => { releaseRemux = resolve }))
@@ -1096,7 +1097,7 @@ describe('Project WebSocket lifecycle', () => {
 
   it('shows an unexpected disconnect, keeps the clip, and offers Reconnect without reconnecting', async () => {
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await generate(user, 0)
     completeClip(0, [1, 2, 3])
     await waitFor(() => { expect(archivedClips()).toHaveLength(1) })
@@ -1111,7 +1112,7 @@ describe('Project WebSocket lifecycle', () => {
 
   it('ignores callbacks and delayed binary decoding from the closed project', async () => {
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await generate(user, 0)
     const previous = projectConnection(0)
     const { onOpen, onMessage, onClose } = previous.callbacks
@@ -1312,7 +1313,7 @@ describe('Project WebSocket lifecycle', () => {
     /** Complete A, buffer part of B, then use Original to choose A for playback and export. */
     it('exports selected active Original before buffered live media', async () => {
       const user = userEvent.setup()
-      const { container, unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      const { container, unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       try {
         const { completedBlob, completedUrl } = await completeOriginal(user)
 
@@ -1364,7 +1365,7 @@ describe('Project WebSocket lifecycle', () => {
     /** History links come from Page's archive producer, and owned Blobs remain usable without another remux. */
     it('exports active history before live buffers even when remux is unavailable', async () => {
       const user = userEvent.setup()
-      const { container, unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      const { container, unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       try {
         await completeOriginal(user)
         await submitRewrite(user, 'A meadow at dawn')
@@ -1398,7 +1399,7 @@ describe('Project WebSocket lifecycle', () => {
     /** Selecting history preserves live bytes while another generation-changing action remains blocked. */
     it('exports Current live bytes while generation blocks another edit', async () => {
       const user = userEvent.setup()
-      const { container, unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      const { container, unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       try {
         const { completedUrl } = await completeOriginal(user)
         await bufferForestRewrite(user)
@@ -1429,7 +1430,7 @@ describe('Project WebSocket lifecycle', () => {
     /** Drained live buffers fall back to the completed Blob and its prompt during a pending edit. */
     it('exports the latest completed clip when a pending edit has no media', async () => {
       const user = userEvent.setup()
-      const { container, unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      const { container, unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       try {
         const { completedBlob } = await completeOriginal(user)
         await submitRewrite(user, 'A snowy mountain')
@@ -1449,7 +1450,7 @@ describe('Project WebSocket lifecycle', () => {
     /** Failed live remuxing must not silently export an older completed clip. */
     it('exports nothing when live media cannot be remuxed', async () => {
       const user = userEvent.setup()
-      const { container, unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      const { container, unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       try {
         await completeOriginal(user)
         await bufferForestRewrite(user)
@@ -1487,7 +1488,7 @@ describe('Project WebSocket lifecycle', () => {
         return Object.assign(list, { matches: query === '(pointer: coarse)' || list.matches })
       })
       const user = userEvent.setup()
-      const { unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+      const { unmount } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
       try {
         await completeOriginal(user)
         fixtures.remux.mockClear()

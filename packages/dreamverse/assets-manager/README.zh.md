@@ -44,7 +44,7 @@ DreamVerse 组合包用状态根目录下的 `assets` 目录挂载该服务：
 
 ### 文件所有者
 
-每个文件恰好有一个所有者：用户的素材库（`library`）或一个项目（`project:<project_id>`，由 `projectOwner(projectId)` 构造）。记录只保存文件本身可见的事实：名称、媒体类型、MIME 类型、大小、尺寸、时长和创建时间。
+每个文件恰好有一个所有者：用户的素材库（`library`）或一个项目（`project:<project_id>`，由 `projectOwner(projectId)` 构造）。记录只保存文件本身可见的事实：名称、媒体类型、MIME 类型、大小、尺寸、时长和创建时间。素材 ID 是带品牌的字符串 `AssetId`：服务为它创建的、从索引或 `/assets` 路径读取的 ID 加上品牌，从请求读取素材 ID 的调用方用 `@deepseek-ai/dsh-brand` 的 `brandString` 为其加上品牌。
 
 - `add` 存储一次素材库上传。图片经过 `sharp`（内容格式、像素上限、动画、完整解码）；视频和音频按参考实现的参数经过 `ffprobe`。被拒绝的上传抛出带参考消息的 `MediaValidationError` 或 `UploadTooLargeError`。
 - `createWriter` 把 harness 产生的文件（例如流式传输中的片段视频）写到 `files/<asset_id>.partial`。`commit` 检查该文件（不套用上传上限）、重命名并建立索引；`abort` 和失败的提交会删除该部分文件。`addBytes` 以同样方式写入一个完整文件。
@@ -62,7 +62,7 @@ DreamVerse 组合包用状态根目录下的 `assets` 目录挂载该服务：
 | `GET /assets/{asset_id}/content` | 任意所有者的文件，支持 `Range`；未知或已删除的文件返回 404 |
 | `DELETE /assets/{asset_id}` | 素材库文件返回 204；未知或已删除的文件返回 404；项目的文件返回 409，它随项目一起删除 |
 
-DSH 页面外壳从 `./assets/` 加载自己的脚本和样式，因此 `/assets` 下未匹配任何素材路由的 GET 或 HEAD 请求会通过 `@deepseek-ai/dsh-host-frontend-static` 提供外壳的文件。浏览器模块 `@dreamverse/assets-manager/client/assets.ts` 为页面列出、上传和删除素材库文件。
+DSH 页面外壳从 `./assets/` 加载自己的脚本和样式，因此 `/assets` 下未匹配任何素材路由的 GET 或 HEAD 请求会通过 `@deepseek-ai/dsh-host-frontend-static` 提供外壳的文件。浏览器模块 `@dreamverse/assets-manager/client/assets.ts` 为页面列出、上传和删除素材库文件，并用宿主类型的品牌标签声明页面的 `AssetId`；它为每个响应中的素材 ID 加上品牌。没有服务器 `detail` 而失败的请求抛出带 `failure` 代码的 `AssetRequestError`，由页面翻译；服务器的 `detail` 仍作为错误消息。
 
 -----
 

@@ -110,7 +110,7 @@ describe('creationCapabilities', () => {
     expect(validateLobbyCreationSelection({
       capabilities: h3Capabilities, modeId: 't2v', aspectRatio: '16:9', resolution: '720p',
       segmentDurationSec, segmentCount: 3,
-    })).toBe('Duration per segment must be a whole number from 5 to 15 seconds.')
+    })).toEqual({ code: 'duration-out-of-range', min: 5, max: 15 })
   })
 
   it.each([[0, 5], [7, 7], [16, 15]])('bounds duration %s to %s without changing count', (segmentDurationSec, expected) => {
@@ -124,7 +124,7 @@ describe('creationCapabilities', () => {
     expect(validateLobbyCreationSelection({
       capabilities: ltxCapabilities, modeId: 't2v', aspectRatio: '16:9', resolution: '720p',
       segmentDurationSec: 5, segmentCount,
-    })).toMatch(/segment count/)
+    })).toEqual({ code: 'segment-count-unsupported' })
   })
 
   /** Only the matching model record defines accepted choices and their fallback order. */
@@ -183,7 +183,7 @@ describe('creationCapabilities', () => {
   })
 
   /** The served explanation remains the actionable error for an unsupported mode. */
-  it('rejects unsupported generation modes with a clear message', () => {
+  it('rejects unsupported generation modes with the served explanation', () => {
     expect(
       validateLobbyCreationSelection({
         capabilities: ltxCapabilities,
@@ -192,7 +192,7 @@ describe('creationCapabilities', () => {
         resolution: '720p',
         segmentDurationSec: 5, segmentCount: 6,
       }),
-    ).toMatch(/FL2VA/i)
+    ).toEqual({ code: 'mode-notice', notice: 'First/last frame mode (FL2VA) is not supported yet.' })
   })
 
   /** A resolution outside the accepted model choices cannot pass admission validation. */
@@ -205,7 +205,7 @@ describe('creationCapabilities', () => {
         resolution: '4k',
         segmentDurationSec: 5, segmentCount: 6,
       }),
-    ).toMatch(/resolution/i)
+    ).toEqual({ code: 'resolution-unsupported' })
   })
 
   /** Text generation passes the same capability validation used before a project socket opens. */
@@ -228,7 +228,7 @@ describe('creationCapabilities', () => {
       resolution: '720p',
       segmentDurationSec: 5, segmentCount: 6,
       references: [],
-    })).toMatch(/reference image/i)
+    })).toEqual({ code: 'reference-count', limit: 1 })
   })
 
   /** Each advertised image MIME can satisfy a reference-guided selection. */
@@ -252,7 +252,7 @@ describe('creationCapabilities', () => {
       resolution: '720p',
       segmentDurationSec: 5, segmentCount: 6,
       references: [{ draftId: 'one', kind: 'localFile', file: new File(['video'], 'clip.mp4', { type: 'video/mp4' }) }],
-    })).toMatch(/images only/i)
+    })).toEqual({ code: 'reference-not-image' })
   })
 
   /** Saved subject pictures follow the same lower and upper generation limits as local files. */
@@ -268,6 +268,6 @@ describe('creationCapabilities', () => {
       })),
     })
     if (count === 1 || count === 9) expect(validation).toBeNull()
-    else expect(validation).toBe('Select 1 to 9 reference images.')
+    else expect(validation).toEqual({ code: 'reference-count', limit: 9 })
   })
 })

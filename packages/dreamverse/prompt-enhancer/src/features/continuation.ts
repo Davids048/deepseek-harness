@@ -100,7 +100,6 @@ export async function continueVideo(conditioningPrompt: unknown, options: Contin
   try {
     const [provider, prompt] = await race.firstAccepted(request, acceptContinuation, {
       operationName: automatic ? 'generate_auto_prompt' : 'enhance_prompt',
-      timeoutMs: options.timeoutMs,
       signal: options.signal,
     })
     return { prompt, fallbackUsed: false, error: null, provider, model, latencyMs: elapsedMs(started) }

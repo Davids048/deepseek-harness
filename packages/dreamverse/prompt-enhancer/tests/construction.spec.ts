@@ -40,18 +40,24 @@ afterEach(() => {
  */
 function config(overrides: Record<string, unknown> = {}): ReturnType<typeof Config> {
   const raw: Record<string, unknown> = {
-    cerebrasApiKey: 'test-cerebras-construction', groqApiKey: 'test-groq-construction', ...templatePathOptions(tmp), ...overrides,
+    cerebrasApiKey: 'test-cerebras-construction', groqApiKey: 'test-groq-construction', timeoutMs: 20000, ...templatePathOptions(tmp),
+    ...overrides,
   }
   return Config(raw)
 }
 
 describe('Config', () => {
   it('applies the reference defaults and keeps a blank Groq URL', () => {
-    expect(Config({})).toMatchObject({
+    expect(Config({ timeoutMs: 20000 })).toMatchObject({
       groqApiBaseUrl: 'https://api.groq.com/openai/v1',
       cerebrasBaseUrl: 'https://api.cerebras.ai',
     })
-    expect(Config({ groqApiBaseUrl: '' }).groqApiBaseUrl).toBe('')
+    expect(Config({ timeoutMs: 20000, groqApiBaseUrl: '' }).groqApiBaseUrl).toBe('')
+  })
+
+  it('requires a positive operation deadline', () => {
+    expect(() => Config({})).toThrow()
+    expect(() => Config({ timeoutMs: 0 })).toThrow()
   })
 })
 

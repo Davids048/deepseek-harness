@@ -13,7 +13,7 @@
 
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type { DreamverseAssetsManager, DreamversePromptEnhancer } from './dependencies.ts'
+import type { DreamverseAssetsManager, DreamversePromptEnhancer, ProjectId } from './dependencies.ts'
 import { errorMessage } from './errors.ts'
 import { migrateLegacyProjects } from './legacy-migration.ts'
 import {
@@ -118,7 +118,7 @@ export class DreamverseProjects extends Service {
    * @param event - the event name.
    * @param payload - the event fields, written after the entry header.
    */
-  logProjectEvent(projectId: string, event: string, payload?: Record<string, unknown>): Promise<void> {
+  logProjectEvent(projectId: ProjectId, event: string, payload?: Record<string, unknown>): Promise<void> {
     try {
       this.eventLogger.writeEvent(event, projectId, payload)
     } catch (error) {

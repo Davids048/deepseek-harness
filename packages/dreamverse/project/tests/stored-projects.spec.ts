@@ -6,14 +6,20 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { projectOwner } from '@dreamverse/assets-manager'
 import { afterEach, describe, expect, it } from 'vitest'
-import { ProjectValidationError, migrateLegacyProjects, type DreamverseProjectData } from '../src/index.ts'
+import {
+  ProjectValidationError, migrateLegacyProjects, type AssetId, type DreamverseProjectData, type ProjectId, type SegmentId,
+} from '../src/index.ts'
 import { FakeAssets, FakeGeneration, FakeSocket, lastFrameBytes, ltxFacts, ref2vaFacts, referenceImage } from './fakes.ts'
 import { FakeHolder, openProjects, type ProjectRun, type ProjectsHarness } from './harness.ts'
 import { actionPlugin, appendPrompt, generatePrompts } from './test-actions.ts'
 
 let harness: ProjectsHarness | undefined
+
+/** The asset ID of the library image that `openRef2va` adds. */
+const IMAGE_ID = brandString<AssetId>('image')
 
 afterEach(async () => {
   await harness?.dispose()
@@ -52,7 +58,7 @@ async function closeRun(run: ProjectRun): Promise<void> {
 }
 
 /** @returns the stored DreamVerse workload data of a project. */
-function storedData(projectId: string): DreamverseProjectData {
+function storedData(projectId: ProjectId): DreamverseProjectData {
   return harness!.store.get(projectId)!.workload.data as DreamverseProjectData
 }
 
@@ -113,7 +119,7 @@ describe('stored projects', () => {
     ;(await created.generation.nextCall()).finish.resolve()
     await created.socket.waitForStatus('idle', 1)
     await closeRun(created)
-    const copyId = storedData(projectId).reference_copies['image']!
+    const copyId = storedData(projectId).reference_copies[IMAGE_ID]!
     assets.deleteAsset('image')
     expect(assets.fileExists('image')).toBe(false)
 
@@ -176,7 +182,7 @@ describe('stored projects', () => {
   it('refuses to open a project that is not stored, belongs to another workload, or another model created', async () => {
     const { service, generation, store } = await openRef2va()
     const multiverse = store.create({ kind: 'multiverse', title: 'Tree', workload: { schemaVersion: 1, data: {} } })
-    for (const projectId of ['missing', '../p1', multiverse.projectId]) {
+    for (const projectId of [brandString<ProjectId>('missing'), brandString<ProjectId>('../p1'), multiverse.projectId]) {
       await expect(service.openProject({ projectId, socket: new FakeSocket(), holder: new FakeHolder() }))
         .rejects.toEqual(new ProjectValidationError('Project not found.', 'Project not found'))
     }
@@ -233,12 +239,13 @@ function writeLegacyProject(root: string, projectId: string, referenceAssetIds: 
 describe('schema-1 project migration', () => {
   it('migrates schema-1 projects at startup into dreamverse projects that own their files', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dreamverse-legacy-projects-'))
-    writeLegacyProject(root, 'p1', ['image'])
+    const projectId = brandString<ProjectId>('p1')
+    writeLegacyProject(root, projectId, ['image'])
     const { assets, store } = await openRef2va(root)
-    const owner = projectOwner('p1')
-    const record = store.get('p1')!
+    const owner = projectOwner(projectId)
+    const record = store.get(projectId)!
     const data = record.workload.data as DreamverseProjectData
-    const copyId = data.reference_copies['image']!
+    const copyId = data.reference_copies[IMAGE_ID]!
     expect(record).toMatchObject({
       kind: 'dreamverse', title: 'Legacy p1', createdAt: '2026-09-01T00:00:00.000Z', workload: { schemaVersion: 1 },
       thumbnailAssetId: data.segments[1]!.last_frame_asset_id,
@@ -258,9 +265,9 @@ describe('schema-1 project migration', () => {
     expect(assets.list(owner).map(file => file.name)).toEqual(['image', 's1.mp4', 's1.png', 's2.mp4', 's2.png'])
     expect([existsSync(join(root, 'p1', 'segments')), existsSync(join(root, 'p1', 'project.legacy.json'))]).toEqual([false, true])
 
-    const reopened = await harness!.open('p1')
+    const reopened = await harness!.open(projectId)
     await reopened.socket.waitForStatus('idle')
-    expect(reopened.project.videoSegmentsById.get('s3')?.status).toBe('cancelled')
+    expect(reopened.project.videoSegmentsById.get(brandString<SegmentId>('s3'))?.status).toBe('cancelled')
     await reopened.project.processBrowserCommand({ type: 'append_prompt', prompt: 'A cliff', reference_asset_ids: ['image'] })
     const continuation = await reopened.generation.nextCall()
     expect(continuation.request.referenceImages).toEqual([referenceImage('image'), Buffer.from('legacy frame s2')])
@@ -270,22 +277,23 @@ describe('schema-1 project migration', () => {
   it('retries a project that an earlier run left unfinished, skips a gone reference image, and changes nothing on a re-run', async () => {
     const { assets, store } = await openRef2va()
     const root = harness!.projectRoot
-    writeLegacyProject(root, 'p2', ['image', 'gone'])
+    const projectId = brandString<ProjectId>('p2')
+    writeLegacyProject(root, projectId, ['image', 'gone'])
     // A run that stopped before writing the record left one file that the project owns.
-    const stale = await assets.addBytes({ owner: projectOwner('p2'), name: 's1.mp4', mimeType: 'video/mp4' }, Buffer.from('partial'))
+    const stale = await assets.addBytes({ owner: projectOwner(projectId), name: 's1.mp4', mimeType: 'video/mp4' }, Buffer.from('partial'))
     const warnings: string[] = []
     const services = { store, assets, warn: (message: string) => { warnings.push(message) } }
     await migrateLegacyProjects(services)
     expect(() => assets.get(stale.assetId)).toThrow(/unavailable/)
     expect(warnings).toEqual(['DreamVerse project p2: reference image gone is gone; its segments keep no copy.'])
-    const data = store.get('p2')!.workload.data as DreamverseProjectData
+    const data = store.get(projectId)!.workload.data as DreamverseProjectData
     expect(data.reference_copies).toEqual({ image: expect.any(String) as string })
-    expect(data.segments[0]!.reference_asset_ids).toEqual([data.reference_copies['image']])
-    const migrated = store.get('p2')
-    const files = assets.list(projectOwner('p2'))
+    expect(data.segments[0]!.reference_asset_ids).toEqual([data.reference_copies[IMAGE_ID]])
+    const migrated = store.get(projectId)
+    const files = assets.list(projectOwner(projectId))
 
     await migrateLegacyProjects(services)
     expect(warnings).toHaveLength(1)
-    expect([store.get('p2'), assets.list(projectOwner('p2'))]).toEqual([migrated, files])
+    expect([store.get(projectId), assets.list(projectOwner(projectId))]).toEqual([migrated, files])
   })
 })

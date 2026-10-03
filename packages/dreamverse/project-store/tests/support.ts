@@ -6,7 +6,8 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import type { AssetOwner, AssetRecord } from '@dreamverse/assets-manager'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { AssetId, AssetOwner, AssetRecord } from '@dreamverse/assets-manager'
 import type { ProjectFiles } from '../src/dependencies.ts'
 import DreamverseProjectStore from '../src/index.ts'
 
@@ -23,8 +24,8 @@ export class FakeFiles implements ProjectFiles {
    */
   addImage(owner: AssetOwner, assetId: string): AssetRecord {
     const record: AssetRecord = {
-      assetId, owner, name: `${assetId}.png`, mediaType: 'image', mimeType: 'image/png', filePath: `/files/${assetId}`,
-      sizeBytes: 3, width: 16, height: 9, durationSec: null, createdAt: '2026-10-02T00:00:00.000Z',
+      assetId: brandString<AssetId>(assetId), owner, name: `${assetId}.png`, mediaType: 'image', mimeType: 'image/png',
+      filePath: `/files/${assetId}`, sizeBytes: 3, width: 16, height: 9, durationSec: null, createdAt: '2026-10-02T00:00:00.000Z',
     }
     this.files.set(owner, [record, ...this.files.get(owner) ?? []])
     return record

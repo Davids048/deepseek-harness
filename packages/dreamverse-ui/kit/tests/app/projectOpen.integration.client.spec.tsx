@@ -10,6 +10,8 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { Server, type Client } from 'mock-socket'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { ProjectId, SegmentId } from '@dreamverse/project-controller/client/ids.ts'
 import type { ProjectDetail, ProjectSummary } from '@dreamverse/project-controller/client/projects.ts'
 import type { remuxArchivedFmp4Segments } from '../../src/client/media/fmp4Remux.ts'
 
@@ -25,7 +27,8 @@ const fixtures = vi.hoisted(() => ({
 vi.mock('@dreamverse/project-controller/client/storyPresetsData.ts', () => ({
   default: [{ id: 'test_preset', label: 'Test Preset', segment_prompts: ['A river', 'A waterfall'] }],
 }))
-vi.mock('@dreamverse/project-controller/client/projects.ts', () => ({
+vi.mock('@dreamverse/project-controller/client/projects.ts', async importOriginal => ({
+  ProjectRequestError: (await importOriginal<typeof import('@dreamverse/project-controller/client/projects.ts')>()).ProjectRequestError,
   listProjects: async () => [...fixtures.summaries],
   getProject: fixtures.getProject,
   deleteProject: fixtures.deleteProject,
@@ -57,16 +60,17 @@ vi.mock('../../src/client/media/avPipeline.ts', () => ({
 }))
 
 import { DreamverseApp } from '../../src/client/app/DreamverseApp.tsx'
-import { renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
+import { englishKitT, renderDreamverseSlot } from '../support/renderDreamverseSlot.client.tsx'
 
 const creationConfig = {
   model_id: 'fast-h3', generation_mode: 't2va', aspect_ratio: '16:9', resolution: '720p', segment_count: 2, segment_duration_sec: 5,
 }
 
 /** A stored project with one completed two-segment round whose videos hold the given bytes. */
-function storeProject(projectId: string, title: string, bytes: [number[], number[]]): ProjectSummary {
+function storeProject(id: string, title: string, bytes: [number[], number[]]): ProjectSummary {
+  const projectId = brandString<ProjectId>(id)
   const segments = bytes.map((segmentBytes, index) => {
-    const segmentId = `${projectId}-s${index + 1}`
+    const segmentId = brandString<SegmentId>(`${projectId}-s${index + 1}`)
     const videoUrl = `/projects/${projectId}/segments/${segmentId}/video`
     fixtures.videos.set(videoUrl, segmentBytes)
     return {
@@ -193,7 +197,7 @@ describe('Harness-owned projects', () => {
   it('rebuilds a listed project from its stored segments and attaches it with project_open_v1', async () => {
     fixtures.summaries = [storeProject('p-river', 'River story', [[1, 2], [3, 4]])]
     const user = userEvent.setup()
-    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    const { container } = render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await screen.findByText('FastH3')
     await selectListedProject(user, /River story/)
     await waitFor(() => { expect(sentMessages(0)).toEqual([{ type: 'project_open_v1', project_id: 'p-river' }]) })
@@ -223,7 +227,7 @@ describe('Harness-owned projects', () => {
 
   it('reopens a disconnected project by the harness ID that gpu_assigned gave it', async () => {
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await user.type(await screen.findByLabelText('Initial prompt'), 'A river')
     await user.click(screen.getByRole('button', { name: 'Generate' }))
     await waitFor(() => { expect(sentMessages(0)[0]).toMatchObject({ type: 'project_init_v1' }) })
@@ -246,10 +250,10 @@ describe('Harness-owned projects', () => {
 
   it('shows the harness reason for a refused deletion and returns to the lobby when an open fails', async () => {
     const openStory = storeProject('p-open', 'Open story', [[1], [2]])
-    fixtures.summaries = [openStory, { ...openStory, project_id: 'p-missing', title: 'Missing story' }]
+    fixtures.summaries = [openStory, { ...openStory, project_id: brandString<ProjectId>('p-missing'), title: 'Missing story' }]
     fixtures.deleteProject.mockRejectedValueOnce(new Error('This project is open. Close it before deleting.'))
     const user = userEvent.setup()
-    render(<DreamverseApp renderSlot={renderDreamverseSlot} />)
+    render(<DreamverseApp renderSlot={renderDreamverseSlot} t={englishKitT} />)
     await screen.findByText('FastH3')
     await user.click(screen.getByRole('button', { name: 'Toggle sidebar' }))
     const sidebar = screen.getByRole('complementary', { name: 'Project history' })

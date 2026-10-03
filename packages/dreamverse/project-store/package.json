@@ -8,6 +8,7 @@
     "./routes": "./src/routes.ts"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:*",
     "@dreamverse/assets-manager": "workspace:*",
     "@dreamverse/http-routes": "workspace:*"
   },

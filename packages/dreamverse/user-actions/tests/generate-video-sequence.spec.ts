@@ -67,7 +67,7 @@ describe('generate_video_sequence', () => {
     const scenes = ['Scene 1', 'Scene 2', 'Scene 3', 'Scene 4']
     await finishRound(run, scenes)
     expect(harness.enhancer.rewriteRollout.mock.calls).toEqual([[[], {
-      promptsToRewrite: [], presetId: null, presetLabel: '', rewriteInstruction: 'Explore a forest', timeoutMs: 20000,
+      promptsToRewrite: [], presetId: null, presetLabel: '', rewriteInstruction: 'Explore a forest',
       generationMode: mode,
       // Only the reference-image model numbers its images; first-frame models have no image labels. Each later
       // ref2va segment keeps the selected image as Picture 1 and starts from its predecessor's last frame, Picture 2.
@@ -108,7 +108,7 @@ describe('generate_video_sequence', () => {
     await finishRound(run, ['Scene 1', 'Scene 2', 'Scene 3', 'Scene 4', 'Scene 5', 'Scene 6'])
     expect(harness.enhancer.rewriteRollout.mock.calls[0]![1]).toEqual({
       promptsToRewrite: [], presetId: 'custom_editable', presetLabel: 'Custom rollout',
-      rewriteInstruction: 'A moonbase corridor thriller with flooding', timeoutMs: 20000, generationMode: 't2va',
+      rewriteInstruction: 'A moonbase corridor thriller with flooding', generationMode: 't2va',
       referenceLabels: [], segmentCount: 6, segmentDurationSec: 5, continuedSegmentLabels: null,
       signal: run.project.generationSignal,
     })

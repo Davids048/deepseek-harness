@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { deleteAsset, listAssets, resolveReferenceAssetIds, type ReferenceDraft } from '../../src/client/assets.ts'
+import { deleteAsset, listAssets, resolveReferenceAssetIds, type AssetId, type ReferenceDraft } from '../../src/client/assets.ts'
 import { imageAsset } from './assetFixtures.client.ts'
 
 afterEach(() => vi.unstubAllGlobals())
@@ -36,7 +37,7 @@ describe('request attachment uploads', () => {
   it('deletes without reading a body from a 204 response', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
-    await deleteAsset('picture')
+    await deleteAsset(brandString<AssetId>('picture'))
     expect(fetchMock).toHaveBeenCalledWith('/assets/picture', { method: 'DELETE' })
   })
 })

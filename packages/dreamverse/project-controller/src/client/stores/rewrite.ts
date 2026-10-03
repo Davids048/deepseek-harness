@@ -4,11 +4,12 @@ import {
   type PromptEvent,
   type PromptEventUpdate,
 } from '../promptEvents.ts'
+import type { PromptId } from '../ids.ts'
 import { createManagedStore, type ManagedStore } from './createManagedStore.ts'
 
 /** The in-flight rewrite request and the prompt events of the current project. */
 export interface RewriteState {
-  activeRewritePromptId: string | null
+  activeRewritePromptId: PromptId | null
   /** Derived: a rewrite request is in flight. */
   rewritingSeedPrompts: boolean
   promptEvents: PromptEvent[]
@@ -25,8 +26,8 @@ const DEFAULT_REWRITE_STATE: RewriteState = {
 export type RewriteStore = ManagedStore<RewriteState> & {
   reset: (overrides?: Partial<RewriteState>) => RewriteState
   resetProjectActivity: () => RewriteState
-  finishRewriteRequest: (promptId: string | null | undefined) => RewriteState
-  trackPromptEvent: (promptId: string, update: PromptEventUpdate) => RewriteState
+  finishRewriteRequest: (promptId: PromptId | null | undefined) => RewriteState
+  trackPromptEvent: (promptId: PromptId, update: PromptEventUpdate) => RewriteState
   addPromptEvent: (event: PromptEvent) => RewriteState
 }
 

@@ -44,7 +44,7 @@ Any failure removes the files of the segment, and leaving the stream early cance
 
 A workload applies these rules before it calls `generate`:
 
-- **Creation settings** — `parseProjectCreationConfig`, `validateProjectCreation`, `SEGMENT_COUNTS`, `parseReferenceAssetIds`, and `validateReferenceAssets` port the reference `project_creation.py` (without prompt safety) and its model capability checks, with the reference messages.
+- **Creation settings** — `parseProjectCreationConfig`, `validateProjectCreation`, `SEGMENT_COUNTS`, `parseReferenceAssetIds`, and `validateReferenceAssets` port the reference `project_creation.py` (without prompt safety) and its model capability checks, with the reference messages. `parseReferenceAssetIds` returns the selected IDs as `AssetId` values.
 - **Creation capabilities** — `lobbyCapabilitiesAsDict(model, uploadPolicy)` builds the payload of `GET /creation-capabilities`.
 - **Segment conditioning** — `continuesPreviousSegment` decides whether a segment starts from its predecessor's last frame, `segmentImageLabels` names the request images for the prompt, `segmentRequestImages` reads them in the same order, and `referenceImageLimit` gives the selection limit.
 

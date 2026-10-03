@@ -52,6 +52,8 @@
         autoSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_AUTO_SYSTEM_PROMPT_PATH
         rewriteAllSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_REWRITE_ALL_SYSTEM_PROMPT_PATH
         rewriteUserSystemPromptPath: !!js process.env.FASTVIDEO_PROMPT_REWRITE_USER_SYSTEM_PROMPT_PATH
+        # Deadline of one prompt operation, in milliseconds.
+        timeoutMs: 20000
 
     # The reference `load_application_settings` project log root: FASTVIDEO_PROJECT_LOG_ROOT, else
     # <FASTVIDEO_DREAMVERSE_HOME or $XDG_STATE_HOME/fastvideo/dreamverse or ~/.local/state/fastvideo/dreamverse>/outputs/project_logs.
@@ -113,6 +115,15 @@
     # The application event source that the browser connection subscribes to.
     - id: dreamverse-api-remotes
       name: '@deepseek-ai/dsh-api-remotes'
+
+    # The `configForms` service that the locale row below requires.
+    - id: dreamverse-ui-settings
+      name: '@deepseek-ai/dsh-client-ui-settings'
+
+    # The page language: the dreamverse-ui rows register their dictionaries with this locale service, and the page shows
+    # the browser's language when it is Chinese or English, otherwise English.
+    - id: dreamverse-locale
+      name: '@deepseek-ai/dsh-client-locale'
 
     # Mounts the page's React tree from the `root` slot.
     - id: dreamverse-ui-renderer

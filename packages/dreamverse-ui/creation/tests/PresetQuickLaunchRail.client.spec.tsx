@@ -3,7 +3,11 @@ import '../../kit/tests/support/setup.client.ts'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import PresetQuickLaunchRail from '../src/client/components/creation/PresetQuickLaunchRail.tsx'
+import { en } from '../src/client/locales.ts'
+
+const t = makeTranslate(en)
 
 /** Supply browser measurements and resize notifications to the actual rail. */
 function renderRail() {
@@ -21,7 +25,7 @@ function renderRail() {
       resize.notify = () => { act(() => { callback([], this) }) }
     }
   })
-  const view = render(<PresetQuickLaunchRail storyPresets={storyPresets} onPresetGenerate={onPresetGenerate} />)
+  const view = render(<PresetQuickLaunchRail t={t} storyPresets={storyPresets} onPresetGenerate={onPresetGenerate} />)
   const scrollElement = observe.mock.calls[0]?.[0]
   if (!scrollElement) throw new Error('Expected the rail to observe its scroll element')
   const layout = { clientWidth: 220, scrollWidth: 660 }
@@ -99,7 +103,7 @@ describe('PresetQuickLaunchRail', () => {
     const { view, storyPresets, onPresetGenerate } = renderRail()
     fireEvent.click(screen.getByRole('button', { name: 'River' }))
     expect(onPresetGenerate).toHaveBeenCalledExactlyOnceWith('river')
-    view.rerender(<PresetQuickLaunchRail storyPresets={storyPresets} disabled onPresetGenerate={onPresetGenerate} />)
+    view.rerender(<PresetQuickLaunchRail t={t} storyPresets={storyPresets} disabled onPresetGenerate={onPresetGenerate} />)
     expect(screen.getByRole('button', { name: 'River' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Desert' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'River' }))

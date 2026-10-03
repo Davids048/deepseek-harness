@@ -15,13 +15,14 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
 
 import { assetsRouteHandler } from './asset-routes.ts'
-import { AssetLibrary, type AssetOwner, type AssetRecord, type AssetWriteOptions, type AssetWriter } from './library.ts'
+import { AssetLibrary, type AssetId, type AssetOwner, type AssetRecord, type AssetWriteOptions, type AssetWriter } from './library.ts'
 import { uploadPolicy } from './media.ts'
 import { shellFileResponder } from './shell-files.ts'
 
 export { sendFile, type FileDelivery } from './file-response.ts'
 export {
-  AssetNotFoundError, SCHEMA_VERSION, projectOwner, type AssetOwner, type AssetRecord, type AssetWriteOptions, type AssetWriter,
+  AssetNotFoundError, SCHEMA_VERSION, projectOwner, type AssetId, type AssetOwner, type AssetRecord, type AssetWriteOptions,
+  type AssetWriter,
 } from './library.ts'
 export { MediaValidationError, UploadTooLargeError, type MediaType } from './media.ts'
 
@@ -117,7 +118,7 @@ export default class DreamverseAssetsManager extends Service {
    * @param owner - the owner of the copy.
    * @returns the copy's record, with a new asset ID.
    */
-  copy(assetId: string, owner: AssetOwner): Promise<AssetRecord> {
+  copy(assetId: AssetId, owner: AssetOwner): Promise<AssetRecord> {
     return this.library.copy(assetId, owner)
   }
 
@@ -135,7 +136,7 @@ export default class DreamverseAssetsManager extends Service {
    * @param assetId - the asset ID.
    * @returns the asset record.
    */
-  get(assetId: string): AssetRecord {
+  get(assetId: AssetId): AssetRecord {
     return this.library.get(assetId)
   }
 
@@ -145,7 +146,7 @@ export default class DreamverseAssetsManager extends Service {
    * @param assetIds - the asset IDs one request uses.
    * @returns the records in `assetIds` order.
    */
-  retain(assetIds: readonly string[]): AssetRecord[] {
+  retain(assetIds: readonly AssetId[]): AssetRecord[] {
     return this.library.retain(assetIds)
   }
 
@@ -155,7 +156,7 @@ export default class DreamverseAssetsManager extends Service {
    * than it is retained.
    * @param assetIds - the IDs to release.
    */
-  release(assetIds: readonly string[]): void {
+  release(assetIds: readonly AssetId[]): void {
     this.library.release(assetIds)
   }
 
@@ -164,7 +165,7 @@ export default class DreamverseAssetsManager extends Service {
    * absent or already deleted.
    * @param assetId - the asset ID.
    */
-  delete(assetId: string): void {
+  delete(assetId: AssetId): void {
     this.library.delete(assetId)
   }
 

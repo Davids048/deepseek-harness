@@ -13,6 +13,7 @@ import { constants, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { copyFile, open, rename, rm, writeFile, type FileHandle } from 'node:fs/promises'
 import path from 'node:path'
 import { DatabaseSync, type SQLOutputValue } from 'node:sqlite'
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 
 import {
   UploadTooLargeError, describeMedia, inspectMedia, mediaTypeForMime, mediaTypeForMimePrefix, uploadPolicy, type MediaType,
@@ -25,6 +26,12 @@ export const SCHEMA_VERSION = 1
 export class AssetNotFoundError extends Error {
   override name = 'AssetNotFoundError'
 }
+
+/**
+ * The ID of one file in the file store, which names the file under `files/`. The page's `AssetId` in
+ * `@dreamverse/assets-manager/client/assets.ts` uses the same brand label.
+ */
+export type AssetId = Branded<'DreamverseAssetId'>
 
 /** The party that owns a file: the user's library, or one project. Every file has exactly one owner. */
 export type AssetOwner = 'library' | `project:${string}`
@@ -40,7 +47,7 @@ export function projectOwner(projectId: string): AssetOwner {
 
 /** One published file; `filePath` is `<root>/files/<assetId>`. */
 export interface AssetRecord {
-  readonly assetId: string
+  readonly assetId: AssetId
   readonly owner: AssetOwner
   readonly name: string
   readonly mediaType: MediaType
@@ -64,7 +71,7 @@ export interface AssetWriteOptions {
 
 /** One file written in pieces: `<root>/files/<assetId>.partial` until `commit` publishes it. */
 export interface AssetWriter {
-  readonly assetId: string
+  readonly assetId: AssetId
   /** Append bytes; rejects after `commit` or `abort`. */
   write(chunk: Uint8Array): Promise<void>
   /** Inspect the written bytes, rename the partial file, and index it; any failure removes the file. */
@@ -88,7 +95,7 @@ const PYTHON_STRIP_PATTERN = new RegExp(`^${PYTHON_WHITESPACE}+|${PYTHON_WHITESP
  */
 export class AssetLibrary {
   private readonly filesDirectory: string
-  private readonly retained = new Map<string, number>()
+  private readonly retained = new Map<AssetId, number>()
   private readonly database: DatabaseSync
   private closed = false
 
@@ -112,7 +119,7 @@ export class AssetLibrary {
       if (name.endsWith(PARTIAL_SUFFIX)) rmSync(path.join(this.filesDirectory, name), { force: true })
     }
     for (const row of this.database.prepare('SELECT asset_id FROM assets WHERE deleted = 1').all()) {
-      this.removeDeletedFile(String(row.asset_id))
+      this.removeDeletedFile(brandString<AssetId>(String(row.asset_id)))
     }
   }
 
@@ -194,7 +201,7 @@ export class AssetLibrary {
    * @returns the copy's record.
    * @throws {AssetNotFoundError} when the source is absent or deleted.
    */
-  async copy(assetId: string, owner: AssetOwner): Promise<AssetRecord> {
+  async copy(assetId: AssetId, owner: AssetOwner): Promise<AssetRecord> {
     const [source] = this.retain([assetId])
     if (source === undefined) throw new Error(`Retaining asset ${assetId} returned no record.`)
     const copyId = newAssetId()
@@ -227,7 +234,7 @@ export class AssetLibrary {
    * @returns the asset record.
    * @throws {AssetNotFoundError} when the asset is absent or deleted.
    */
-  get(assetId: string): AssetRecord {
+  get(assetId: AssetId): AssetRecord {
     const row = this.database.prepare('SELECT * FROM assets WHERE asset_id = ? AND deleted = 0').get(assetId)
     if (row === undefined) {
       const quotedAssetId = pythonStringRepr(assetId)
@@ -242,7 +249,7 @@ export class AssetLibrary {
    * @returns the records in `assetIds` order.
    * @throws {AssetNotFoundError} for the first unavailable ID; no file is retained then.
    */
-  retain(assetIds: readonly string[]): AssetRecord[] {
+  retain(assetIds: readonly AssetId[]): AssetRecord[] {
     const assets = assetIds.map(assetId => this.get(assetId))
     for (const assetId of assetIds) this.retained.set(assetId, (this.retained.get(assetId) ?? 0) + 1)
     return assets
@@ -254,8 +261,8 @@ export class AssetLibrary {
    * @throws {Error} `Asset release must match an accepted retention.` when an ID is released more often than it is
    *   retained; no count changes then.
    */
-  release(assetIds: readonly string[]): void {
-    const counts = new Map<string, number>()
+  release(assetIds: readonly AssetId[]): void {
+    const counts = new Map<AssetId, number>()
     for (const assetId of assetIds) counts.set(assetId, (counts.get(assetId) ?? 0) + 1)
     for (const [assetId, count] of counts) {
       if ((this.retained.get(assetId) ?? 0) < count) throw new Error('Asset release must match an accepted retention.')
@@ -274,7 +281,7 @@ export class AssetLibrary {
    * @param assetId - the asset ID.
    * @throws {AssetNotFoundError} when the asset is absent or already deleted.
    */
-  delete(assetId: string): void {
+  delete(assetId: AssetId): void {
     this.get(assetId)
     this.database.prepare('UPDATE assets SET deleted = 1 WHERE asset_id = ?').run(assetId)
     if (!this.retained.get(assetId)) this.removeDeletedFile(assetId)
@@ -287,7 +294,7 @@ export class AssetLibrary {
    */
   deleteOwnedBy(owner: AssetOwner): void {
     const rows = this.database.prepare('SELECT asset_id FROM assets WHERE deleted = 0 AND owner = ?').all(owner)
-    for (const row of rows) this.delete(String(row.asset_id))
+    for (const row of rows) this.delete(brandString<AssetId>(String(row.asset_id)))
   }
 
   /** Close the index after the application has drained accepted generation requests; later calls do nothing. */
@@ -298,7 +305,7 @@ export class AssetLibrary {
   }
 
   /** Keep the tombstone until both file deletion and index removal succeed. */
-  private removeDeletedFile(assetId: string): void {
+  private removeDeletedFile(assetId: AssetId): void {
     const row = this.database.prepare('SELECT deleted FROM assets WHERE asset_id = ?').get(assetId)
     if (row !== undefined && row.deleted) {
       rmSync(path.join(this.filesDirectory, assetId), { force: true })
@@ -318,7 +325,7 @@ export class AssetLibrary {
 
   /** Convert one `SELECT *` row of the `assets` table; the `deleted` column is dropped. */
   private record(row: Record<string, SQLOutputValue>): AssetRecord {
-    const assetId = String(row.asset_id)
+    const assetId = brandString<AssetId>(String(row.asset_id))
     return {
       assetId,
       owner: parseOwner(row.owner),
@@ -339,8 +346,8 @@ export class AssetLibrary {
 const PARTIAL_SUFFIX = '.partial'
 
 /** A new asset ID: 32 lowercase hexadecimal digits. */
-function newAssetId(): string {
-  return randomUUID().replaceAll('-', '')
+function newAssetId(): AssetId {
+  return brandString<AssetId>(randomUUID().replaceAll('-', ''))
 }
 
 /**
@@ -428,9 +435,9 @@ class PartialFileWriter implements AssetWriter {
    * @param publish - reads the partial file's facts, renames it to `<assetId>`, indexes it, and returns its record.
    */
   constructor(
-    readonly assetId: string,
+    readonly assetId: AssetId,
     filesDirectory: string,
-    private readonly publish: (assetId: string, sizeBytes: number, partialPath: string) => Promise<AssetRecord>,
+    private readonly publish: (assetId: AssetId, sizeBytes: number, partialPath: string) => Promise<AssetRecord>,
   ) {
     this.partialPath = path.join(filesDirectory, `${assetId}${PARTIAL_SUFFIX}`)
   }

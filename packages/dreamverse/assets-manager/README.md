@@ -44,7 +44,7 @@ The DreamVerse bundles mount the service with the state root's `assets` director
 
 ### File owners
 
-Every file has exactly one owner: the user's library (`library`) or one project (`project:<project_id>`, built by `projectOwner(projectId)`). A record holds only facts that the file itself shows: name, media type, MIME type, size, dimensions, duration, and creation time.
+Every file has exactly one owner: the user's library (`library`) or one project (`project:<project_id>`, built by `projectOwner(projectId)`). A record holds only facts that the file itself shows: name, media type, MIME type, size, dimensions, duration, and creation time. Asset IDs are `AssetId`, a branded string: the service brands the IDs that it creates or reads from its index and from `/assets` paths, and a caller that reads an asset ID from a request brands it with `brandString` from `@deepseek-ai/dsh-brand`.
 
 - `add` stores a library upload. Images go through `sharp` (content format, pixel limit, animation, full decode); video and audio go through `ffprobe` with the reference arguments. A rejected upload throws `MediaValidationError` or `UploadTooLargeError` with the reference message.
 - `createWriter` writes a file that the harness produces, such as a segment video while it streams, to `files/<asset_id>.partial`. `commit` inspects the file without the upload limits, renames it, and indexes it; `abort` and a failed commit remove the partial file. `addBytes` writes a complete file the same way.
@@ -62,7 +62,7 @@ While the DSH web server (`webServer`) is available, the service registers one `
 | `GET /assets/{asset_id}/content` | The file of any owner, with `Range` support; 404 for an unknown or deleted file |
 | `DELETE /assets/{asset_id}` | 204 for a library file; 404 for an unknown or deleted file; 409 for a project's file, which goes with its project |
 
-The DSH page shell loads its own scripts and styles from `./assets/`, so a GET or HEAD request under `/assets` that matches no asset route serves the shell's file through `@deepseek-ai/dsh-host-frontend-static`. The browser module `@dreamverse/assets-manager/client/assets.ts` lists, uploads, and deletes library files for the page.
+The DSH page shell loads its own scripts and styles from `./assets/`, so a GET or HEAD request under `/assets` that matches no asset route serves the shell's file through `@deepseek-ai/dsh-host-frontend-static`. The browser module `@dreamverse/assets-manager/client/assets.ts` lists, uploads, and deletes library files for the page, and declares the page's `AssetId` with the host type's brand label; it brands the asset IDs of each response. A request that fails without a server `detail` throws `AssetRequestError` with a `failure` code, which the page translates; a server `detail` stays the error message.
 
 -----
 

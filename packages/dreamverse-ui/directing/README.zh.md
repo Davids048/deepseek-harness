@@ -34,7 +34,7 @@ kind: "package-reference"
   name: '@dreamverse/ui-directing'
 ```
 
-在 kit 声明该 slot 期间，浏览器部分用 `Workspace`（前端 `components/Workspace.tsx` 的移植）填充 `dreamverse.workspace`。Host 部分不注册任何内容。
+在 kit 声明该 slot 期间，浏览器部分用 `Workspace`（前端 `components/Workspace.tsx` 的移植）填充 `dreamverse.workspace`。它还把时间线的中英文文案注册为 `dreamverse.directing` locale 命名空间，因此 profile 必须挂载提供 `locale` 服务的 `@deepseek-ai/dsh-client-locale`；时间线以页面当前语言显示标记，提示词文本保持原样。Host 部分不注册任何内容。
 
 -----
 
@@ -48,7 +48,8 @@ kind: "package-reference"
 
 | 文件 | 内容 |
 | --- | --- |
-| [`src/client/index.ts`](src/client/index.ts) | slot 注册 |
+| [`src/client/index.ts`](src/client/index.ts) | 字典与 slot 注册 |
+| [`src/client/locales.ts`](src/client/locales.ts) | `dreamverse.directing` 命名空间的 `zh` 与 `en` 字典 |
 | [`src/client/components/Workspace.tsx`](src/client/components/Workspace.tsx) | 提示词时间线 |
 
 </details>

@@ -34,7 +34,7 @@ kind: "package-reference"
   name: '@dreamverse/ui-project-history'
 ```
 
-在 kit 声明该 slot 期间，浏览器部分用 `Sidebar`（前端 `components/Sidebar.tsx` 的移植）填充 `dreamverse.sidebar`。Host 部分不注册任何内容。页面用 `GET /projects?kind=dreamverse` 填充列表，通过 `/ws` 消息 `project_open_v1` 打开选中的项目，并通过 `DELETE /projects/<project_id>` 删除项目；被拒绝的删除会在侧边栏中显示原因。
+在 kit 声明该 slot 期间，浏览器部分用 `Sidebar`（前端 `components/Sidebar.tsx` 的移植）填充 `dreamverse.sidebar`。它还把侧边栏的中英文文案（包括经过时间标签）注册为 `dreamverse.projectHistory` locale 命名空间，因此 profile 必须挂载提供 `locale` 服务的 `@deepseek-ai/dsh-client-locale`；侧边栏以页面当前语言显示文案，项目标题保持原样。Host 部分不注册任何内容。页面用 `GET /projects?kind=dreamverse` 填充列表，通过 `/ws` 消息 `project_open_v1` 打开选中的项目，并通过 `DELETE /projects/<project_id>` 删除项目；被拒绝的删除会在侧边栏中显示原因。
 
 -----
 
@@ -48,7 +48,8 @@ kind: "package-reference"
 
 | 文件 | 内容 |
 | --- | --- |
-| [`src/client/index.ts`](src/client/index.ts) | slot 注册 |
+| [`src/client/index.ts`](src/client/index.ts) | 字典与 slot 注册 |
+| [`src/client/locales.ts`](src/client/locales.ts) | `dreamverse.projectHistory` 命名空间的 `zh` 与 `en` 字典 |
 | [`src/client/components/Sidebar.tsx`](src/client/components/Sidebar.tsx) | 项目侧边栏 |
 
 </details>

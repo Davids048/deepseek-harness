@@ -3,7 +3,15 @@ import { Sun, Moon } from '@carbon/icons-react'
 
 import { Button } from './button.tsx'
 
-function ThemeToggle({ className }: { className?: string }) {
+/** Localized accessible names of {@link ThemeToggle}, supplied by the package that renders the toggle. */
+export interface ThemeToggleLabels {
+  /** Accessible name while the dark theme is active. */
+  lightMode: string
+  /** Accessible name while the light theme is active. */
+  darkMode: string
+}
+
+function ThemeToggle({ className, labels }: { className?: string; labels: ThemeToggleLabels }) {
   const [dark, setDark] = React.useState(false)
 
   React.useEffect(() => {
@@ -49,7 +57,7 @@ function ThemeToggle({ className }: { className?: string }) {
   }, [])
 
   return (
-    <Button variant="outline" size="icon" onClick={toggle} aria-label={dark ? 'Switch to light mode' : 'Switch to dark mode'} className={className}>
+    <Button variant="outline" size="icon" onClick={toggle} aria-label={dark ? labels.lightMode : labels.darkMode} className={className}>
       {dark ? <Sun size={18} /> : <Moon size={18} />}
     </Button>
   )

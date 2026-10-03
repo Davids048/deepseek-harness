@@ -17,6 +17,9 @@
       "path": "../../../vendor/cordis"
     },
     {
+      "path": "../../client/locale/tsconfig.client.json"
+    },
+    {
       "path": "../../client/ui-renderer"
     },
     {
@@ -26,7 +29,13 @@
       "path": "../../host/webserver"
     },
     {
+      "path": "../../util/brand"
+    },
+    {
       "path": "../../util/crypto"
+    },
+    {
+      "path": "../../util/values"
     },
     {
       "path": "../../dreamverse/assets-manager/tsconfig.client.json"

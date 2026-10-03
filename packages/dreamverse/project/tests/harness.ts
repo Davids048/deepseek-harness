@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import DreamverseProjectStore from '@dreamverse/project-store'
 import DreamverseSegmentGeneration from '@dreamverse/segment-generation'
-import DreamverseProjects, { type Project, type ProjectHolder } from '../src/index.ts'
+import DreamverseProjects, { type Project, type ProjectHolder, type ProjectId } from '../src/index.ts'
 import { FakeAssets, FakeGeneration, FakePromptEnhancer, FakeSocket, within, type BrowserEvent } from './fakes.ts'
 
 /**
@@ -109,7 +109,7 @@ export class ProjectsHarness {
    * @param socket - the browser socket fake.
    * @returns the running project.
    */
-  async open(projectId: string, socket = new FakeSocket()): Promise<ProjectRun> {
+  async open(projectId: ProjectId, socket = new FakeSocket()): Promise<ProjectRun> {
     const holder = new FakeHolder()
     return this.serve(await this.service.openProject({ projectId, socket, holder }), socket, holder)
   }

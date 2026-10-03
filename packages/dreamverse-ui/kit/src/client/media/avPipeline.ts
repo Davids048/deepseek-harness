@@ -137,14 +137,17 @@ export interface ArchivedAvSegment {
   chunks: ArrayBuffer[]
 }
 
+/** The media failure that stops live playback: a rejected chunk append, or a SourceBuffer `error` event. */
+export type MediaAppendFailure = 'chunk-append' | 'source-buffer-error'
+
 /** Browser element access and page callbacks for `createAvPipeline`. */
 interface CreateAvPipelineParams {
   /** Current video element; null before it mounts. */
   getVideoEl: () => HTMLVideoElement | null
   /** Clock in milliseconds for the initial playback delay; defaults to `performance.now()`. */
   getNow?: () => number
-  /** Reports a failed append or a SourceBuffer error event. */
-  onAppendError?: (message: string, error?: unknown) => void
+  /** Reports a failed append or a SourceBuffer error event; the page owns the message it shows for each failure. */
+  onAppendError?: (failure: MediaAppendFailure, error?: unknown) => void
   /** Runs each time a playback operation starts its initial playback. */
   onPlaybackStarted?: () => void
 }
@@ -556,7 +559,7 @@ export function createAvPipeline(params: CreateAvPipelineParams): AvPipeline {
         }
       }
       mediaChunkQueue = []
-      onAppendError('Unable to append media chunk.', error)
+      onAppendError('chunk-append', error)
     }
   }
 
@@ -897,7 +900,7 @@ export function createAvPipeline(params: CreateAvPipelineParams): AvPipeline {
 
             sourceBufferErrorHandler = (event: Event) => {
               if (!isActivePlayback(operation)) return
-              onAppendError('SourceBuffer reported a media error.', event)
+              onAppendError('source-buffer-error', event)
             }
 
             initializedSourceBuffer.addEventListener('updateend', sourceBufferUpdateEndHandler)

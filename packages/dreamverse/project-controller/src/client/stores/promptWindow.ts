@@ -145,12 +145,6 @@ const DEFAULT_PROMPT_WINDOW_STATE: PromptWindowState = {
   customPresetLabel: '',
 }
 
-/** Fallback custom preset ID and label for an editor seeded without a preset. */
-export interface SeedEditableOptions {
-  defaultCustomPresetId?: string
-  defaultCustomPresetLabel?: string
-}
-
 /** Options of {@link PromptWindowStore.replacePromptWindow}. */
 export interface ReplacePromptWindowOptions {
   /** In editable mode, also replace the editor drafts with the accepted prompts. */
@@ -166,10 +160,6 @@ export type PromptWindowStore = ManagedStore<PromptWindowState> & {
   ) => PromptWindowState
   appendStoryPreset: (
     preset: StoryPreset,
-  ) => PromptWindowState
-  seedEditableFromPreset: (
-    preset: StoryPreset | null,
-    options?: SeedEditableOptions,
   ) => PromptWindowState
   setSelectedPresetId: (
     selectedPresetId: string,
@@ -239,39 +229,6 @@ export function createPromptWindowStore(
         ...state,
         storyPresets: [...state.storyPresets, preset],
       }))
-    },
-    seedEditableFromPreset(
-      preset: StoryPreset | null,
-      {
-        defaultCustomPresetId = '',
-        defaultCustomPresetLabel = '',
-      }: SeedEditableOptions = {},
-    ) {
-      return store.update((state) => {
-        if (
-          preset &&
-          Array.isArray(preset.segment_prompts) &&
-          preset.segment_prompts.length > 0
-        ) {
-          return {
-            ...state,
-            editableSegments: [...preset.segment_prompts],
-            customPresetId: `${preset.id}_custom`,
-            customPresetLabel: `${preset.label} (Custom)`,
-            editableDirty: false,
-          }
-        }
-
-        return {
-          ...state,
-          editableSegments: ['', ''],
-          customPresetId:
-            state.customPresetId.trim() || defaultCustomPresetId,
-          customPresetLabel:
-            state.customPresetLabel.trim() || defaultCustomPresetLabel,
-          editableDirty: false,
-        }
-      })
     },
     setSelectedPresetId(selectedPresetId: string) {
       return store.patch({ selectedPresetId })

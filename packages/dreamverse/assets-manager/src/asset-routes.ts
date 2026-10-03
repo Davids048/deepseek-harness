@@ -10,9 +10,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Readable } from 'node:stream'
 import type { Logger } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { requestPath, sendInternalServerError, sendJson, serveRoutes, type Route, type ValidationIssue } from '@dreamverse/http-routes'
 import { sendFile } from './file-response.ts'
-import { AssetNotFoundError, type AssetRecord } from './library.ts'
+import { AssetNotFoundError, type AssetId, type AssetRecord } from './library.ts'
 import { MediaValidationError, UploadTooLargeError } from './media.ts'
 
 /** The asset library members that the asset routes call; the `dreamverseAssetsManager` service implements them. */
@@ -22,12 +23,12 @@ export interface AssetRoutesLibrary {
   /** Every published file of the user's library, most recently added first. */
   list(): AssetRecord[]
   /** Throws `AssetNotFoundError` when the file is absent or deleted. */
-  get(assetId: string): AssetRecord
+  get(assetId: AssetId): AssetRecord
   /** Throws `AssetNotFoundError` for the first unavailable ID without retaining any file. */
-  retain(assetIds: readonly string[]): AssetRecord[]
-  release(assetIds: readonly string[]): void
+  retain(assetIds: readonly AssetId[]): AssetRecord[]
+  release(assetIds: readonly AssetId[]): void
   /** Throws `AssetNotFoundError` when the file is absent or already deleted. */
-  delete(assetId: string): void
+  delete(assetId: AssetId): void
 }
 
 /** The 409 detail for a delete that names a project's file. */
@@ -144,7 +145,7 @@ async function readAssetContent(
   request: IncomingMessage,
   response: ServerResponse,
   assets: AssetRoutesLibrary,
-  assetId: string,
+  assetId: AssetId,
   logger: Logger,
 ): Promise<void> {
   let retained: AssetRecord[]
@@ -175,7 +176,7 @@ async function readAssetContent(
  * @param assets - the asset library.
  * @param assetId - the decoded path parameter.
  */
-function deleteAsset(response: ServerResponse, assets: AssetRoutesLibrary, assetId: string): void {
+function deleteAsset(response: ServerResponse, assets: AssetRoutesLibrary, assetId: AssetId): void {
   let asset: AssetRecord
   try {
     asset = assets.get(assetId)
@@ -214,9 +215,13 @@ export function assetsRouteHandler(
     {
       method: 'GET',
       path: /^\/assets\/([^/]+)\/content$/,
-      handle: (request, response, [assetId = '']) => readAssetContent(request, response, assets, assetId, logger),
+      handle: (request, response, [assetId = '']) => readAssetContent(request, response, assets, brandString<AssetId>(assetId), logger),
     },
-    { method: 'DELETE', path: /^\/assets\/([^/]+)$/, handle: (_request, response, [assetId = '']) => { deleteAsset(response, assets, assetId) } },
+    {
+      method: 'DELETE',
+      path: /^\/assets\/([^/]+)$/,
+      handle: (_request, response, [assetId = '']) => { deleteAsset(response, assets, brandString<AssetId>(assetId)) },
+    },
   ]
   const getPaths = routes.filter(route => route.method === 'GET').map(route => route.path)
   return (request, response) => {

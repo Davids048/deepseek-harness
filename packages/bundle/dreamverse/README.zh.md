@@ -51,7 +51,7 @@ kind: "package-bundle"
 <details>
 <summary>实现细节——点击展开</summary>
 
-[`cordis.patch.yml`](cordis.patch.yml) 是一个 `insert` 列表。它先挂载 DreamVerse harness 行（生成客户端、文件存储、项目存储、片段生成、提示词增强器、项目和四个用户操作），然后挂载 DSH web 行：带 `compression: none` 的 `@deepseek-ai/dsh-host-webserver`、`@dreamverse/project-store/routes`、`@deepseek-ai/dsh-web-app`（作为 web 服务器回退路由的页面外壳和打印出的令牌 URL）、`@deepseek-ai/dsh-client-modules`、`@deepseek-ai/dsh-client-connection`、`@deepseek-ai/dsh-api-remotes` 和 `@deepseek-ai/dsh-client-ui-renderer`。六个 `@dreamverse/ui-*` 页面行和 `@dreamverse/project-controller` 排在最后。web 服务器不发送压缩响应，因此路由响应与参考实现保持逐字节一致。
+[`cordis.patch.yml`](cordis.patch.yml) 是一个 `insert` 列表。它先挂载 DreamVerse harness 行（生成客户端、文件存储、项目存储、片段生成、提示词增强器、项目和四个用户操作），然后挂载 DSH web 行：带 `compression: none` 的 `@deepseek-ai/dsh-host-webserver`、`@dreamverse/project-store/routes`、`@deepseek-ai/dsh-web-app`（作为 web 服务器回退路由的页面外壳和打印出的令牌 URL）、`@deepseek-ai/dsh-client-modules`、`@deepseek-ai/dsh-client-connection`、`@deepseek-ai/dsh-api-remotes`、`@deepseek-ai/dsh-client-ui-settings`（locale 行所需的 `configForms` 服务）、`@deepseek-ai/dsh-client-locale`（页面语言和页面行的词典）和 `@deepseek-ai/dsh-client-ui-renderer`。六个 `@dreamverse/ui-*` 页面行和 `@dreamverse/project-controller` 排在最后。web 服务器不发送压缩响应，因此路由响应与参考实现保持逐字节一致。
 
 | 文件 | 内容 |
 | --- | --- |

@@ -1,7 +1,9 @@
 /** @vitest-environment jsdom */
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { deleteProject, fetchSegmentVideo, getProject, listProjects } from '../../src/client/projects.ts'
+import type { ProjectId } from '../../src/client/ids.ts'
+import { deleteProject, fetchSegmentVideo, getProject, listProjects, ProjectRequestError } from '../../src/client/projects.ts'
 
 const summary = {
   project_id: 'p-1', title: 'River story', created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-01T10:05:00Z',
@@ -65,7 +67,7 @@ describe('stored project client', () => {
   it('rebuilds a project\'s completed rounds from its workload data and its files', async () => {
     const fetchMock = serve(new Response(JSON.stringify(storedProject)))
     const first = { segment_id: 's-1', prompt: 'Prompt s-1', mime: 'video/mp4', video_url: '/assets/f-1/content', frame_url: null }
-    expect(await getProject('p/1')).toEqual({
+    expect(await getProject(brandString<ProjectId>('p/1'))).toEqual({
       project_id: 'p-1', title: 'River story', created_at: '2026-10-01T10:00:00Z', updated_at: '2026-10-01T10:05:00Z',
       open: false, creation_config: creationConfig,
       rounds: [
@@ -81,7 +83,7 @@ describe('stored project client', () => {
 
   it('rejects a response whose project fields are missing or mistyped, or that is not a DreamVerse project', async () => {
     serve(new Response(JSON.stringify({ projects: [{ ...summary, title: 1 }] })))
-    await expect(listProjects()).rejects.toThrow('The project list response contains an invalid project.')
+    await expect(listProjects()).rejects.toEqual(new ProjectRequestError({ code: 'list-entry-invalid' }))
     const { data } = storedProject.workload
     for (const project of [
       { ...storedProject, kind: 'multiverse' },
@@ -90,16 +92,16 @@ describe('stored project client', () => {
       { ...storedProject, workload: { schema_version: 1, data: { ...data, completed_sequences: [['s-9']] } } },
     ]) {
       serve(new Response(JSON.stringify(project)))
-      await expect(getProject('p-1')).rejects.toThrow('The project response is invalid.')
+      await expect(getProject(brandString<ProjectId>('p-1'))).rejects.toEqual(new ProjectRequestError({ code: 'project-invalid' }))
     }
   })
 
   it('reports the store\'s detail when a request is refused', async () => {
     const fetchMock = serve(new Response(JSON.stringify({ detail: 'This project is open. Close it before deleting.' }), { status: 409 }))
-    await expect(deleteProject('p-1')).rejects.toThrow('This project is open. Close it before deleting.')
+    await expect(deleteProject(brandString<ProjectId>('p-1'))).rejects.toThrow('This project is open. Close it before deleting.')
     expect(fetchMock.mock.calls[0]).toEqual(['/projects/p-1', { method: 'DELETE' }])
     serve(new Response('not json', { status: 404 }))
-    await expect(fetchSegmentVideo('/assets/f-9/content')).rejects.toThrow('Project request failed (404).')
+    await expect(fetchSegmentVideo('/assets/f-9/content')).rejects.toEqual(new ProjectRequestError({ code: 'status', status: 404 }))
   })
 
   it('downloads one segment video as bytes', async () => {

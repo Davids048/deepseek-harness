@@ -3,14 +3,18 @@ import '../../kit/tests/support/setup.client.ts'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import ChatBar from '../src/client/components/ChatBar.tsx'
+import { en } from '../src/client/locales.ts'
 import { imageAsset } from '../../kit/tests/support/assetFixtures.client.ts'
+
+const t = makeTranslate(en)
 
 it('uses the same ordered attachment picker for project rewrite controls', async () => {
   const submit = vi.fn()
   const change = vi.fn()
   const user = userEvent.setup()
-  render(<ChatBar projectStarted continuationDraft="Walk toward the camera" canSubmitContinuation onSubmitContinuation={submit}
+  render(<ChatBar t={t} projectStarted continuationDraft="Walk toward the camera" canSubmitContinuation onSubmitContinuation={submit}
     referencePicker={{ references: [{ draftId: 'one', kind: 'savedAsset', asset: imageAsset() }], onReferencesChange: change, onOpenAssets: vi.fn(), accept: 'image/png', maxCount: 9, maxBytes: 15728640 }} />)
   await user.click(screen.getByRole('button', { name: 'Rewrite rollout' }))
   expect(submit).toHaveBeenCalledTimes(1)
@@ -26,27 +30,27 @@ it('shows opt-in before generation and only a stop action during automatic gener
   const stop = vi.fn()
   const user = userEvent.setup()
   const props = { projectStarted: true, canChooseAutoExtension: true, continuationDraft: 'Follow the river', canSubmitContinuation: true, onAutoExtensionRequestChange: change, onStopGeneration: stop }
-  const { rerender } = render(<ChatBar {...props} />)
+  const { rerender } = render(<ChatBar t={t} {...props} />)
   const toggle = screen.getByRole('checkbox', { name: 'Auto extension' })
   expect(toggle).not.toBeChecked()
   await user.click(toggle)
   expect(change).toHaveBeenLastCalledWith(true)
   expect(toggle).not.toBeChecked()
-  rerender(<ChatBar {...props} autoExtensionRequested />)
+  rerender(<ChatBar t={t} {...props} autoExtensionRequested />)
   expect(toggle).toBeChecked()
   expect(screen.getByRole('button', { name: 'Rewrite rollout' })).toBeEnabled()
-  rerender(<ChatBar {...props} generationRoundBusy autoExtensionRequested autoExtensionEnabled />)
+  rerender(<ChatBar t={t} {...props} generationRoundBusy autoExtensionRequested autoExtensionEnabled />)
   expect(screen.queryByRole('checkbox', { name: 'Auto extension' })).not.toBeInTheDocument()
   expect(screen.getByText('Finishes the current round.')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Stop generation' }))
   expect(stop).toHaveBeenCalledTimes(1)
   expect(screen.getByRole('textbox', { name: 'Continuation prompt' })).toBeDisabled()
-  rerender(<ChatBar {...props} generationRoundBusy />)
+  rerender(<ChatBar t={t} {...props} generationRoundBusy />)
   expect(screen.queryByRole('button', { name: 'Stop generation' })).not.toBeInTheDocument()
   expect(screen.queryByRole('checkbox', { name: 'Auto extension' })).not.toBeInTheDocument()
   expect(screen.getByRole('textbox', { name: 'Continuation prompt' })).toBeDisabled()
   expect(screen.getByRole('button', { name: 'Rewrite rollout' })).toBeDisabled()
-  rerender(<ChatBar {...props} />)
+  rerender(<ChatBar t={t} {...props} />)
   expect(screen.getByRole('checkbox', { name: 'Auto extension' })).not.toBeChecked()
   expect(screen.getByRole('textbox', { name: 'Continuation prompt' })).toBeEnabled()
   expect(screen.getByRole('button', { name: 'Rewrite rollout' })).toBeEnabled()
@@ -55,15 +59,15 @@ it('shows opt-in before generation and only a stop action during automatic gener
 /** Lobby choices remain available before submission; disconnected projects have no controls. */
 it('offers opt-in in the lobby and hides it while busy or disconnected', () => {
   const props = { canChooseAutoExtension: true, onAutoExtensionRequestChange: vi.fn() }
-  const { rerender } = render(<ChatBar {...props} />)
+  const { rerender } = render(<ChatBar t={t} {...props} />)
   expect(screen.getByRole('checkbox', { name: 'Auto extension' })).toBeEnabled()
-  rerender(<ChatBar {...props} projectStarted canChooseAutoExtension={false} />)
+  rerender(<ChatBar t={t} {...props} projectStarted canChooseAutoExtension={false} />)
   expect(screen.getByRole('checkbox', { name: 'Auto extension' })).toBeDisabled()
-  rerender(<ChatBar {...props} projectStarted generationRoundBusy />)
+  rerender(<ChatBar t={t} {...props} projectStarted generationRoundBusy />)
   expect(screen.queryByRole('checkbox', { name: 'Auto extension' })).not.toBeInTheDocument()
-  rerender(<ChatBar {...props} projectStarted projectResetPending />)
+  rerender(<ChatBar t={t} {...props} projectStarted projectResetPending />)
   expect(screen.queryByRole('checkbox', { name: 'Auto extension' })).not.toBeInTheDocument()
-  rerender(<ChatBar {...props} projectStarted connectionClosed />)
+  rerender(<ChatBar t={t} {...props} projectStarted connectionClosed />)
   expect(screen.queryByRole('checkbox', { name: 'Auto extension' })).not.toBeInTheDocument()
 })
 
@@ -73,9 +77,9 @@ it('offers Reconnect for a disconnected project that the owner can reopen', asyn
   const startNew = vi.fn()
   const user = userEvent.setup()
   const props = { projectStarted: true, connectionClosed: true, onStartNewProject: startNew }
-  const { rerender } = render(<ChatBar {...props} />)
+  const { rerender } = render(<ChatBar t={t} {...props} />)
   expect(screen.queryByRole('button', { name: 'Reconnect' })).not.toBeInTheDocument()
-  rerender(<ChatBar {...props} onReconnect={reconnect} projectNotice="This project was opened in another window." />)
+  rerender(<ChatBar t={t} {...props} onReconnect={reconnect} projectNotice="This project was opened in another window." />)
   expect(screen.getByText('This project was opened in another window.')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Reconnect' }))
   expect(reconnect).toHaveBeenCalledTimes(1)
@@ -88,15 +92,15 @@ it('selects whether a live prompt rewrites the prompt window or continues from t
   const change = vi.fn()
   const user = userEvent.setup()
   const props = { projectStarted: true, continuationDraft: 'Follow the river', canSubmitContinuation: true }
-  const { rerender } = render(<ChatBar {...props} />)
+  const { rerender } = render(<ChatBar t={t} {...props} />)
   expect(screen.queryByRole('button', { name: 'Prompt action' })).not.toBeInTheDocument()
-  rerender(<ChatBar {...props} onRewriteModeChange={change} />)
+  rerender(<ChatBar t={t} {...props} onRewriteModeChange={change} />)
   expect(screen.getByRole('button', { name: 'Prompt action' })).toHaveTextContent('Rewrite')
   expect(screen.getByRole('button', { name: 'Rewrite rollout' })).toBeEnabled()
   await user.click(screen.getByRole('button', { name: 'Prompt action' }))
   await user.click(await screen.findByRole('menuitem', { name: /Continue from the last segment/ }))
   expect(change).toHaveBeenLastCalledWith(false)
-  rerender(<ChatBar {...props} rewriteMode={false} onRewriteModeChange={change} />)
+  rerender(<ChatBar t={t} {...props} rewriteMode={false} onRewriteModeChange={change} />)
   expect(screen.getByRole('button', { name: 'Prompt action' })).toHaveTextContent('Continue from the last segment')
   expect(screen.getByRole('button', { name: 'Continue video' })).toBeEnabled()
 })

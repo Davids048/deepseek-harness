@@ -8,6 +8,7 @@
     "./client/*": "./src/client/*"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:*",
     "@dreamverse/assets-manager": "workspace:*",
     "@dreamverse/generation-client": "workspace:*",
     "@dreamverse/http-routes": "workspace:*",

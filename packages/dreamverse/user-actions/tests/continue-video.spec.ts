@@ -93,7 +93,7 @@ describe('append_prompt', () => {
         expect(appended.referenceSegmentId).toBe(preceding)
         if (enhance) {
           expect(harness!.enhancer.continueVideo.mock.calls).toEqual([['Follow the fox', {
-            lockedSegments: ['Accepted scene'], nextSegmentIdx: 2, timeoutMs: 20000,
+            lockedSegments: ['Accepted scene'], nextSegmentIdx: 2,
             // Only the reference-image model labels its images: the selected image keeps Picture 1 and the last
             // frame follows it as Picture 2.
             generationMode: mode, segmentDurationSec: duration, referenceLabels: assetIds.map(() => 'Picture 1'),

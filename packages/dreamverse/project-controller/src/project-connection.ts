@@ -9,8 +9,9 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { Logger } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { ProjectValidationError } from '@dreamverse/project'
-import type { DreamverseProjects, Project, ProjectHolder } from './dependencies.ts'
+import type { DreamverseProjects, Project, ProjectHolder, ProjectId } from './dependencies.ts'
 import { WebSocketDisconnect, type BrowserProjectSocket } from './project-socket.ts'
 
 /** The browser error that a connection receives when another connection opens its project. */
@@ -53,7 +54,7 @@ export class ProjectConnection implements ProjectHolder {
    * The connection's ID in the project log until it serves a project: a new UUID, which the created project's
    * store-assigned ID or the opened project's ID replaces.
    */
-  private servedProjectId: string = randomUUID()
+  private servedProjectId: ProjectId = brandString<ProjectId>(randomUUID())
   private project: Project | undefined
   private projectTask: Promise<void> | undefined
   private receiveTask: Promise<void> | undefined
@@ -76,7 +77,7 @@ export class ProjectConnection implements ProjectHolder {
   constructor(private readonly socket: BrowserProjectSocket, private readonly services: ProjectConnectionServices) {}
 
   /** The served project's ID, which the connection's project log events carry. */
-  get projectId(): string {
+  get projectId(): ProjectId {
     return this.servedProjectId
   }
 
@@ -152,10 +153,11 @@ export class ProjectConnection implements ProjectHolder {
       return project
     }
     if (payload.type === 'project_open_v1') {
-      const projectId = payload['project_id']
-      if (typeof projectId !== 'string' || projectId === '') {
+      const rawProjectId = payload['project_id']
+      if (typeof rawProjectId !== 'string' || rawProjectId === '') {
         throw new ProjectValidationError('project_open_v1 requires a project_id.', 'Invalid project initialization')
       }
+      const projectId = brandString<ProjectId>(rawProjectId)
       this.servedProjectId = projectId
       return await projects.openProject({ projectId, socket: this.socket, holder: this })
     }

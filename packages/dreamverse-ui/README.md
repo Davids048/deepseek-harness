@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-These packages draw the DreamVerse page in the browser: the creation studio, the live composer, the video player, the prompt timeline, the asset library, and the project history. They port the FastVideo DreamVerse Next.js frontend to DSH browser plugins and keep its components, Tailwind theme, and layout. The page talks to the harness through the `/ws` protocol and the HTTP routes of [`../dreamverse/`](../dreamverse/README.md).
+These packages draw the DreamVerse page in the browser: the creation studio, the live composer, the video player, the prompt timeline, the asset library, and the project history. They port the FastVideo DreamVerse Next.js frontend to DSH browser plugins and keep its components, Tailwind theme, and layout; each package registers Chinese and English locale dictionaries for the copy that it renders. The page talks to the harness through the `/ws` protocol and the HTTP routes of [`../dreamverse/`](../dreamverse/README.md).
 
 ## Table of Contents
 

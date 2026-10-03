@@ -7,9 +7,11 @@ import { Buffer } from 'node:buffer'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AssetWriter } from '@dreamverse/segment-generation'
 import { vi } from 'vitest'
 import {
+  type AssetId,
   type AssetOwner,
   type AssetRecord,
   type AssetWriteOptions,
@@ -417,7 +419,7 @@ export class FakeAssets implements DreamverseAssetsManager {
   createWriter(options: AssetWriteOptions): AssetWriter {
     const chunks: Uint8Array[] = []
     return {
-      assetId: '',
+      assetId: brandString<AssetId>(''),
       write: async (chunk) => { chunks.push(chunk) },
       commit: async () => this.writeFile(options, Buffer.concat(chunks)),
       abort: async () => {},
@@ -501,7 +503,7 @@ export class FakeAssets implements DreamverseAssetsManager {
     const content = imageBytes(assetId)
     writeFileSync(this.filePath(assetId), content)
     const record = {
-      assetId, owner: 'library' as const, name: assetId, filePath: this.filePath(assetId), sizeBytes: content.length,
+      assetId: brandString<AssetId>(assetId), owner: 'library' as const, name: assetId, filePath: this.filePath(assetId), sizeBytes: content.length,
       createdAt: '2026-10-01T00:00:00.000Z', ...fields,
     }
     this.records.set(assetId, record)
@@ -519,7 +521,7 @@ export class FakeAssets implements DreamverseAssetsManager {
   /** Store a file under a new `file-<n>` ID with the given facts. */
   private write(fields: Omit<AssetRecord, 'assetId' | 'filePath' | 'sizeBytes'>, content: Buffer): AssetRecord {
     this.writtenCount += 1
-    const assetId = `file-${this.writtenCount}`
+    const assetId = brandString<AssetId>(`file-${this.writtenCount}`)
     writeFileSync(this.filePath(assetId), content)
     const record = { ...fields, assetId, filePath: this.filePath(assetId), sizeBytes: content.length }
     this.records.set(assetId, record)

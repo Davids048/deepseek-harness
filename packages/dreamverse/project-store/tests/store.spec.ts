@@ -4,8 +4,10 @@
  */
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { AssetId } from '@dreamverse/assets-manager'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ProjectInUseError, ProjectNotFoundError, StaleLeaseError, type ProjectHolder } from '../src/index.ts'
+import { ProjectInUseError, ProjectNotFoundError, StaleLeaseError, type ProjectHolder, type ProjectId } from '../src/index.ts'
 import { startStore, type StoreFixture } from './support.ts'
 
 const fixtures: StoreFixture[] = []
@@ -62,12 +64,12 @@ describe('project records', () => {
     const record = store.create({ kind: 'dreamverse', title: 'Story', workload: WORKLOAD })
     const lease = await store.acquire(record.projectId, QUIET_HOLDER)
     store.updateWorkload(lease, { schemaVersion: 2, data: { scenes: ['a'] } })
-    const updated = store.setThumbnail(lease, 'frame-1')
+    const updated = store.setThumbnail(lease, brandString<AssetId>('frame-1'))
 
     expect(readdirSync(join(root, record.projectId))).toEqual(['project.json'])
     expect(updated).toMatchObject({ kind: 'dreamverse', thumbnailAssetId: 'frame-1', workload: { schemaVersion: 2, data: { scenes: ['a'] } } })
     expect(store.get(record.projectId)).toEqual(updated)
-    expect(store.get('../escape')).toBeUndefined()
+    expect(store.get(brandString<ProjectId>('../escape'))).toBeUndefined()
   })
 })
 
@@ -111,7 +113,7 @@ describe('write lease', () => {
 
     expect(store.isHeld(projectId)).toBe(false)
     expect(() => store.updateWorkload(lease, WORKLOAD)).toThrow(StaleLeaseError)
-    await expect(store.acquire('missing', QUIET_HOLDER)).rejects.toThrow(ProjectNotFoundError)
+    await expect(store.acquire(brandString<ProjectId>('missing'), QUIET_HOLDER)).rejects.toThrow(ProjectNotFoundError)
   })
 })
 
@@ -135,6 +137,7 @@ describe('deletion', () => {
 describe('unrecognized records', () => {
   it('skips records of other schemas when listing and migrates them, keeping the old record', async () => {
     const { store, root } = await start()
+    const legacyId = brandString<ProjectId>('legacy-1')
     const legacy = { schema_version: 1, project_id: 'legacy-1', title: 'Old story', segments: [] }
     mkdirSync(join(root, 'legacy-1'))
     writeFileSync(join(root, 'legacy-1', 'project.json'), JSON.stringify(legacy))
@@ -144,23 +147,23 @@ describe('unrecognized records', () => {
     writeFileSync(join(root, 'interrupted', 'project.legacy.json'), JSON.stringify({ schema_version: 1 }))
 
     expect(store.list()).toEqual([])
-    expect(store.get('legacy-1')).toBeUndefined()
+    expect(store.get(legacyId)).toBeUndefined()
     expect(store.listUnrecognized().sort((a, b) => a.projectId.localeCompare(b.projectId))).toEqual([
       { projectId: 'broken', directory: join(root, 'broken'), record: null },
       { projectId: 'interrupted', directory: join(root, 'interrupted'), record: { schema_version: 1 } },
       { projectId: 'legacy-1', directory: join(root, 'legacy-1'), record: legacy },
     ])
 
-    const migrated = store.migrate('legacy-1', {
+    const migrated = store.migrate(legacyId, {
       kind: 'dreamverse', title: 'Old story', createdAt: '2026-09-01T00:00:00.000Z', workload: WORKLOAD,
     })
     expect(migrated).toMatchObject({ projectId: 'legacy-1', kind: 'dreamverse', createdAt: '2026-09-01T00:00:00.000Z' })
     expect(JSON.parse(readFileSync(join(root, 'legacy-1', 'project.legacy.json'), 'utf8'))).toEqual(legacy)
     expect(store.list().map(record => record.projectId)).toEqual(['legacy-1'])
-    expect(() => store.migrate('legacy-1', { kind: 'dreamverse', title: 'Again', createdAt: '2026-09-01T00:00:00.000Z', workload: WORKLOAD }))
+    expect(() => store.migrate(legacyId, { kind: 'dreamverse', title: 'Again', createdAt: '2026-09-01T00:00:00.000Z', workload: WORKLOAD }))
       .toThrow('already has a schema 2 record')
 
-    store.migrate('interrupted', { kind: 'dreamverse', title: 'Resumed', createdAt: '2026-09-02T00:00:00.000Z', workload: WORKLOAD })
+    store.migrate(brandString<ProjectId>('interrupted'), { kind: 'dreamverse', title: 'Resumed', createdAt: '2026-09-02T00:00:00.000Z', workload: WORKLOAD })
     expect(readdirSync(join(root, 'interrupted')).sort()).toEqual(['project.json', 'project.legacy.json'])
     expect(store.listUnrecognized().map(project => project.projectId)).toEqual(['broken'])
   })

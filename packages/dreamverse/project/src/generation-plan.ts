@@ -5,7 +5,7 @@
  */
 
 import { DreamverseValueError } from './errors.ts'
-import type { VideoSegment } from './video-segment.ts'
+import type { SegmentId, VideoSegment } from './video-segment.ts'
 
 /**
  * Python `segments[segment_id]`: the record of a segment ID that the caller knows exists.
@@ -14,7 +14,7 @@ import type { VideoSegment } from './video-segment.ts'
  * @returns the record.
  * @throws Error when no record exists, as the reference `KeyError` does.
  */
-export function segmentRecord(segments: ReadonlyMap<string, VideoSegment>, segmentId: string): VideoSegment {
+export function segmentRecord(segments: ReadonlyMap<SegmentId, VideoSegment>, segmentId: SegmentId): VideoSegment {
   const segment = segments.get(segmentId)
   if (segment === undefined) throw new Error(`Unknown video segment: ${segmentId}`)
   return segment
@@ -27,11 +27,11 @@ export function segmentRecord(segments: ReadonlyMap<string, VideoSegment>, segme
  * segment's output. A plan stays fixed during execution.
  */
 export class GenerationPlan {
-  readonly segmentIds: readonly string[]
-  readonly sequenceIds: readonly string[]
+  readonly segmentIds: readonly SegmentId[]
+  readonly sequenceIds: readonly SegmentId[]
   readonly append: boolean
 
-  constructor(segmentIds: readonly string[], sequenceIds: readonly string[], append = false) {
+  constructor(segmentIds: readonly SegmentId[], sequenceIds: readonly SegmentId[], append = false) {
     this.segmentIds = Object.freeze([...segmentIds])
     this.sequenceIds = Object.freeze([...sequenceIds])
     this.append = append
@@ -43,7 +43,7 @@ export class GenerationPlan {
    * @param segments - every segment record the plan may reference, by ID.
    * @throws {DreamverseValueError} when the plan cannot run to completion.
    */
-  validate(segments: ReadonlyMap<string, VideoSegment>): void {
+  validate(segments: ReadonlyMap<SegmentId, VideoSegment>): void {
     if (this.segmentIds.length === 0 || new Set(this.segmentIds).size !== this.segmentIds.length) {
       throw new DreamverseValueError('A generation plan requires distinct segment IDs.')
     }
@@ -84,7 +84,7 @@ export class GenerationPlan {
    * @param segments - the project's segment records by ID.
    * @returns the first ready segment in plan order, or null when none is ready.
    */
-  nextReadySegment(segments: ReadonlyMap<string, VideoSegment>): VideoSegment | null {
+  nextReadySegment(segments: ReadonlyMap<SegmentId, VideoSegment>): VideoSegment | null {
     for (const segmentId of this.segmentIds) {
       const segment = segmentRecord(segments, segmentId)
       const reference = segment.referenceSegmentId

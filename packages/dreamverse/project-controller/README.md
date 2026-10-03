@@ -49,7 +49,7 @@ The connection holds the project's lease in `dreamverseProjectStore`. When anoth
 
 ### Page modules
 
-`src/client/` holds the frontend's React-free modules, which the `@dreamverse/ui-*` packages import as `@dreamverse/project-controller/client/<path>.ts`: the WebSocket client and reducer (`ws/`), the page stores (`stores/`), creation configuration and capabilities, the creation payload, the story presets, prompt events, and `projects.ts`, which lists, reads, opens, and deletes stored projects through `/projects`.
+`src/client/` holds the frontend's React-free modules, which the `@dreamverse/ui-*` packages import as `@dreamverse/project-controller/client/<path>.ts`: the WebSocket client and reducer (`ws/`), the page stores (`stores/`), creation configuration and capabilities, the creation payload, the story presets, prompt events, `projects.ts`, which lists, reads, opens, and deletes stored projects through `/projects`, and `ids.ts`, which declares the page's `ProjectId`, `SegmentId`, and `PromptId` with the brand labels of the host types. The modules brand the IDs of each response and socket event, and the page brands the prompt IDs that it generates. These modules hold no page wording: the creation tables hold mode and model IDs, the selection validators return `CreationSelectionProblem` codes, a project request that fails without a server `detail` throws `ProjectRequestError` with a `failure` code, and the socket reducer reads its two page notices from the page's `noticeText` callback. The `@dreamverse/ui-*` packages translate these with their locale dictionaries; the served model's mode explanations and server messages stay verbatim.
 
 -----
 

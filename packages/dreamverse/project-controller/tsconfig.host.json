@@ -16,6 +16,9 @@
       "path": "../../host/webserver"
     },
     {
+      "path": "../../util/brand"
+    },
+    {
       "path": "../assets-manager/tsconfig.host.json"
     },
     {

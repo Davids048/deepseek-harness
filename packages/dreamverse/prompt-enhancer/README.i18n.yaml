@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/dreamverse/prompt-enhancer/README.md
-README.md: 1f207303fbdb0e27253c4bafc6eaaf51ed194993
-README.zh.md: a2383af47e3759ea148a8be68dab7191986da8aa
+README.md: 5cd6757f3d0ca6caf4e30e8d592f10b70fded329
+README.zh.md: 1b4ca1404abd05a3de7a8ca8dfcc10460aa8b532

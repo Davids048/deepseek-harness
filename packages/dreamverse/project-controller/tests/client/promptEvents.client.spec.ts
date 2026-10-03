@@ -1,36 +1,43 @@
 /** @vitest-environment jsdom */
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { describe, expect, it } from 'vitest'
 
+import type { PromptId } from '../../src/client/ids.ts'
 import {
   prependPromptEvent,
   type PromptEvent,
   updatePromptEvent,
 } from '../../src/client/promptEvents.ts'
 
+/** The prompt ID that a spec names. */
+function id(promptId: string): PromptId {
+  return brandString<PromptId>(promptId)
+}
+
 describe('updatePromptEvent', () => {
   it('updates only the matching prompt event', () => {
     const events: PromptEvent[] = [
-      { promptId: 'a', status: 'submitted' },
-      { promptId: 'b', status: 'submitted' },
+      { promptId: id('a'), status: 'submitted' },
+      { promptId: id('b'), status: 'submitted' },
     ]
 
-    const updated = updatePromptEvent(events, 'b', {
+    const updated = updatePromptEvent(events, id('b'), {
       status: 'ready',
       source: 'enhanced',
     })
 
     expect(updated).toEqual([
-      { promptId: 'a', status: 'submitted' },
-      { promptId: 'b', status: 'ready', source: 'enhanced' },
+      { promptId: id('a'), status: 'submitted' },
+      { promptId: id('b'), status: 'ready', source: 'enhanced' },
     ])
   })
 })
 
 describe('prependPromptEvent', () => {
   it('prepends new event', () => {
-    const events: PromptEvent[] = [{ promptId: 'a', status: 'submitted' }]
+    const events: PromptEvent[] = [{ promptId: id('a'), status: 'submitted' }]
     const next = prependPromptEvent(events, {
-      promptId: 'b',
+      promptId: id('b'),
       status: 'submitted',
     })
 
@@ -40,12 +47,12 @@ describe('prependPromptEvent', () => {
 
   it('caps list length to 24 entries', () => {
     const events: PromptEvent[] = Array.from({ length: 24 }, (_, i: number) => ({
-      promptId: `p-${i}`,
+      promptId: id(`p-${i}`),
       status: 'submitted',
     }))
 
     const next = prependPromptEvent(events, {
-      promptId: 'new',
+      promptId: id('new'),
       status: 'submitted',
     })
 

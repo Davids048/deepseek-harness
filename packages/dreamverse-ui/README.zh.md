@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-这些包在浏览器中绘制 DreamVerse 页面：创作工作室、实时编辑器、视频播放器、提示词时间线、素材库和项目历史。它们把 FastVideo DreamVerse Next.js 前端移植为 DSH 浏览器插件，并保留其组件、Tailwind 主题和布局。页面通过 [`../dreamverse/`](../dreamverse/README.zh.md) 的 `/ws` 协议和 HTTP 路由与 harness 通信。
+这些包在浏览器中绘制 DreamVerse 页面：创作工作室、实时编辑器、视频播放器、提示词时间线、素材库和项目历史。它们把 FastVideo DreamVerse Next.js 前端移植为 DSH 浏览器插件，并保留其组件、Tailwind 主题和布局；每个包为自己渲染的文案注册中文和英文 locale 词典。页面通过 [`../dreamverse/`](../dreamverse/README.zh.md) 的 `/ws` 协议和 HTTP 路由与 harness 通信。
 
 ## 目录
 

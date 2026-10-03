@@ -1,8 +1,16 @@
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
+
 /** Persistent media records and ordered, request-local attachment drafts. */
 export type MediaType = 'image' | 'video' | 'audio'
 
+/**
+ * The ID of one file in the DreamVerse file store. It uses the brand label of the host `AssetId` of
+ * `@dreamverse/assets-manager`, so the IDs that the page sends back have the host's type.
+ */
+export type AssetId = Branded<'DreamverseAssetId'>
+
 export interface AssetRecord {
-  asset_id: string
+  asset_id: AssetId
   name: string
   media_type: MediaType
   mime_type: string
@@ -51,7 +59,7 @@ function parseAssetRecord(value: unknown): AssetRecord | null {
     || !isNumberOrNull(value.width) || !isNumberOrNull(value.height) || !isNumberOrNull(value.duration_sec)
     || typeof value.content_url !== 'string') return null
   return {
-    asset_id: value.asset_id,
+    asset_id: brandString<AssetId>(value.asset_id),
     name: value.name,
     media_type: mediaType,
     mime_type: value.mime_type,
@@ -63,13 +71,33 @@ function parseAssetRecord(value: unknown): AssetRecord | null {
   }
 }
 
-/** Read server validation errors without discarding their useful explanation. */
+/**
+ * Why an asset request failed without a server explanation: an error status, or a response body that is not the
+ * expected list, list entry, or uploaded record.
+ */
+export type AssetRequestFailure =
+  | { code: 'status'; status: number }
+  | { code: 'list-invalid' }
+  | { code: 'list-entry-invalid' }
+  | { code: 'upload-invalid' }
+
+/** An asset request failure that carries no server text; the page translates its `failure` when it shows it. */
+export class AssetRequestError extends Error {
+  /**
+   * @param failure - the reason, with the HTTP status for an error status.
+   */
+  constructor(readonly failure: AssetRequestFailure) {
+    super(failure.code === 'status' ? `asset-request:status:${failure.status}` : `asset-request:${failure.code}`)
+  }
+}
+
+/** Reject a failed response with the server's `detail` text, or with an {@link AssetRequestError} without one. */
 async function requireSuccess(response: Response): Promise<void> {
   if (response.ok) return
   const payload: unknown = await response.json().catch(() => null)
-  throw new Error(isJsonObject(payload) && typeof payload.detail === 'string'
-    ? payload.detail
-    : `Asset request failed (${response.status}).`)
+  throw isJsonObject(payload) && typeof payload.detail === 'string'
+    ? new Error(payload.detail)
+    : new AssetRequestError({ code: 'status', status: response.status })
 }
 
 /**
@@ -81,10 +109,10 @@ export async function listAssets(): Promise<AssetRecord[]> {
   const response = await fetch('/assets')
   await requireSuccess(response)
   const body: unknown = await response.json()
-  if (!isJsonObject(body) || !Array.isArray(body.assets)) throw new Error('The asset list response is invalid.')
+  if (!isJsonObject(body) || !Array.isArray(body.assets)) throw new AssetRequestError({ code: 'list-invalid' })
   return body.assets.map((entry: unknown) => {
     const record = parseAssetRecord(entry)
-    if (!record) throw new Error('The asset list response contains an invalid asset record.')
+    if (!record) throw new AssetRequestError({ code: 'list-entry-invalid' })
     return record
   })
 }
@@ -101,7 +129,7 @@ export async function uploadAsset(file: File): Promise<AssetRecord> {
   const response = await fetch('/assets', { method: 'POST', body })
   await requireSuccess(response)
   const record = parseAssetRecord(await response.json())
-  if (!record) throw new Error('The asset upload response is not an asset record.')
+  if (!record) throw new AssetRequestError({ code: 'upload-invalid' })
   return record
 }
 
@@ -110,7 +138,7 @@ export async function uploadAsset(file: File): Promise<AssetRecord> {
  * @param assetId - the asset to delete.
  * @throws when the server rejects the deletion.
  */
-export async function deleteAsset(assetId: string): Promise<void> {
+export async function deleteAsset(assetId: AssetId): Promise<void> {
   const response = await fetch(`/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' })
   await requireSuccess(response)
 }
@@ -119,8 +147,8 @@ export async function deleteAsset(assetId: string): Promise<void> {
 export async function resolveReferenceAssetIds(
   draft: readonly ReferenceDraft[],
   onUploaded: (reference: Extract<ReferenceDraft, { kind: 'localFile' }>, asset: AssetRecord) => void,
-): Promise<string[]> {
-  const ids: string[] = []
+): Promise<AssetId[]> {
+  const ids: AssetId[] = []
   for (const reference of draft) {
     if (reference.kind === 'savedAsset') {
       ids.push(reference.asset.asset_id)

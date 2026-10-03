@@ -86,3 +86,4 @@ FastVideo 检出目录中 `apps/dreamverse/dreamverse/` 下的 Python DreamVerse
 - 首次访问打开 `dsh web:` 令牌 URL；这次访问会重定向到不带其他查询参数的 `/`，因此演示模式需要再访问一次 `/?demo=1`。
 - 图片是普通 `<img>` 元素，因此 K2 标志显示原始 PNG，而不是 Next.js 图片优化器生成的副本。
 - 页面省略了前端中不起作用的 Google Fonts 导入，渲染相同的系统字体。
+- 页面以中文或英文显示文案：每个 dreamverse-ui 包为自己渲染的文案注册 locale 词典，页面跟随浏览器语言。前端只显示英文。

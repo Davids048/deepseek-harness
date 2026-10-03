@@ -34,7 +34,7 @@ kind: "package-reference"
   name: '@dreamverse/ui-assets'
 ```
 
-在页面声明该 slot 期间，浏览器部分用 `AssetLibrary`（前端 `components/assets/AssetLibrary.tsx` 的移植）填充 `dreamverse.asset-library`。Host 部分不注册任何内容。对话框通过 `@dreamverse/assets-manager/client/assets.ts` 使用 `/assets` 路由列出、上传和删除文件。
+在页面声明该 slot 期间，浏览器部分用 `AssetLibrary`（前端 `components/assets/AssetLibrary.tsx` 的移植）填充 `dreamverse.asset-library`。它还把对话框的中英文文案注册为 `dreamverse.assets` locale 命名空间，因此 profile 必须挂载提供 `locale` 服务的 `@deepseek-ai/dsh-client-locale`；对话框以页面当前语言显示文案，文件名和服务器错误消息保持原样。Host 部分不注册任何内容。对话框通过 `@dreamverse/assets-manager/client/assets.ts` 使用 `/assets` 路由列出、上传和删除文件。
 
 -----
 
@@ -48,7 +48,8 @@ kind: "package-reference"
 
 | 文件 | 内容 |
 | --- | --- |
-| [`src/client/index.ts`](src/client/index.ts) | slot 注册 |
+| [`src/client/index.ts`](src/client/index.ts) | 字典与 slot 注册 |
+| [`src/client/locales.ts`](src/client/locales.ts) | `dreamverse.assets` 命名空间的 `zh` 与 `en` 字典 |
 | [`src/client/components/assets/AssetLibrary.tsx`](src/client/components/assets/AssetLibrary.tsx) | 素材库对话框 |
 
 `tests/` 目录覆盖该对话框。

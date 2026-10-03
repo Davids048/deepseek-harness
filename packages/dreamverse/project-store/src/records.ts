@@ -4,6 +4,8 @@
  *
  * @module @dreamverse/project-store/records
  */
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
+import type { AssetId } from '@dreamverse/assets-manager'
 
 /** The `project.json` schema that this package reads and writes; schema 1 is the DreamVerse-only record. */
 export const PROJECT_RECORD_SCHEMA_VERSION = 2
@@ -14,9 +16,15 @@ export interface WorkloadData {
   data: unknown
 }
 
+/**
+ * The ID of one stored project, which names its directory under the store root. The page's `ProjectId` in
+ * `@dreamverse/project-controller/client/ids.ts` uses the same brand label.
+ */
+export type ProjectId = Branded<'DreamverseProjectId'>
+
 /** One stored project. */
 export interface ProjectRecord {
-  readonly projectId: string
+  readonly projectId: ProjectId
   /** The workload that owns the project, fixed at creation. */
   readonly kind: string
   readonly title: string
@@ -25,7 +33,7 @@ export interface ProjectRecord {
   /** ISO-8601 UTC time of the last write. */
   readonly updatedAt: string
   /** The file store asset shown as the project's thumbnail, or null. */
-  readonly thumbnailAssetId: string | null
+  readonly thumbnailAssetId: AssetId | null
   readonly workload: WorkloadData
 }
 
@@ -70,7 +78,7 @@ function isJsonObject(value: unknown): value is Readonly<Record<string, unknown>
  * @param projectId - the name of the record's directory.
  * @returns the record, or undefined when the value is not a valid schema-2 record of that project.
  */
-export function parseProjectRecord(value: unknown, projectId: string): ProjectRecord | undefined {
+export function parseProjectRecord(value: unknown, projectId: ProjectId): ProjectRecord | undefined {
   if (!isJsonObject(value) || value['schema_version'] !== PROJECT_RECORD_SCHEMA_VERSION) return undefined
   const { project_id: id, kind, title, created_at: createdAt, updated_at: updatedAt } = value
   const thumbnail = value['thumbnail_asset_id']
@@ -85,7 +93,7 @@ export function parseProjectRecord(value: unknown, projectId: string): ProjectRe
     title,
     createdAt,
     updatedAt,
-    thumbnailAssetId: thumbnail,
+    thumbnailAssetId: thumbnail === null ? null : brandString<AssetId>(thumbnail),
     workload: { schemaVersion: Number(workload['schema_version']), data: workload['data'] },
   }
 }

@@ -1,4 +1,5 @@
-import type { AssetRecord, AssetUploadPolicy } from '../../src/client/assets.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { AssetId, AssetRecord, AssetUploadPolicy } from '../../src/client/assets.ts'
 import { vi } from 'vitest'
 
 export const assetUploadPolicy: AssetUploadPolicy = {
@@ -8,7 +9,7 @@ export const assetUploadPolicy: AssetUploadPolicy = {
 }
 
 export function imageAsset(name = 'subject.png'): AssetRecord {
-  return { asset_id: `asset-${name}`, name, media_type: 'image', mime_type: 'image/png', size_bytes: 3,
+  return { asset_id: brandString<AssetId>(`asset-${name}`), name, media_type: 'image', mime_type: 'image/png', size_bytes: 3,
     width: 32, height: 32, duration_sec: null, content_url: `/assets/asset-${name}/content` }
 }
 /** Give sortable thumbnails two-column geometry because jsdom does not calculate layout. */

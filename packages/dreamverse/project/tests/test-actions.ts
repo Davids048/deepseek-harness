@@ -3,7 +3,8 @@
  */
 
 import type { Context, Plugin } from '@deepseek-ai/cordis'
-import type { UserActionHandler } from '../src/index.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { PromptId, UserActionHandler } from '../src/index.ts'
 
 /**
  * A plugin that registers one handler for the given action types, as a user-action plugin does.
@@ -36,7 +37,7 @@ export const generatePrompts: UserActionHandler = async (project, payload, { ref
 
 /** Append `payload.prompt` as one user segment to the completed sequence and record the extended sequence. */
 export const appendPrompt: UserActionHandler = async (project, payload, { referenceAssets }) => {
-  const instruction = { requestId: String(payload['prompt_id']), text: String(payload['prompt']) }
+  const instruction = { requestId: brandString<PromptId>(String(payload['prompt_id'])), text: String(payload['prompt']) }
   const segment = project.buildVideoSegment(instruction.text, { source: 'user', instruction, referenceAssets })
   const plan = project.registerSegmentsAndBuildGenerationPlan([segment], { append: true })
   await project.executeGenerationPlan(plan)

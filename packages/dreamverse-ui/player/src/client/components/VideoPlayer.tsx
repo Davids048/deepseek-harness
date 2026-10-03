@@ -3,7 +3,11 @@ import { cn } from '@dreamverse/ui-kit/utils.ts'
 import { PlayFilledAlt } from '@carbon/icons-react'
 import { Download, Share } from 'lucide-react'
 import { Button } from '@dreamverse/ui-kit/components/ui/button.tsx'
+import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { VideoPlayerProps } from '@dreamverse/ui-kit/contracts.ts'
+import type {} from '../locales.ts'
+
+type PlayerTranslate = TranslateNS<'dreamverse.player'>
 
 function LoadingSpinner({ className }: { className?: string }) {
   return (
@@ -15,10 +19,10 @@ function LoadingSpinner({ className }: { className?: string }) {
   )
 }
 
-function generatingLabel(connected: boolean, gpuAssigned: boolean) {
-  if (!connected) return 'Connecting\u2026'
-  if (!gpuAssigned) return 'Waiting for GPU\u2026'
-  return 'Generating video\u2026'
+function generatingLabel(connected: boolean, gpuAssigned: boolean, t: PlayerTranslate) {
+  if (!connected) return t('connecting')
+  if (!gpuAssigned) return t('gpu.waiting')
+  return t('generating')
 }
 
 /** Display live or archived video with connection, allocation, and playback feedback. */
@@ -38,7 +42,8 @@ export default function VideoPlayer({
   defaultMuted = true,
   onPlaying = () => {},
   onDownload,
-}: VideoPlayerProps) {
+  t,
+}: VideoPlayerProps & { t: PlayerTranslate }) {
   const inQueue = projectStarted && connected && queuePosition > 0 && !gpuAssigned
   const showArchived = !showLivePlayback && !!activeClip
 
@@ -81,7 +86,7 @@ export default function VideoPlayer({
             {!projectStarted && !avPlaybackStarted ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-900/50 p-4 text-center">
                 <PlayFilledAlt className="size-10 text-white/25" />
-                <p className="text-sm text-white/50">Your video will appear here</p>
+                <p className="text-sm text-white/50">{t('placeholder')}</p>
               </div>
             ) : !avPlaybackStarted && !mediaAppendError && !inQueue && loadingAnimation ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-slate-900/60 p-4 backdrop-blur-[2px]">
@@ -89,14 +94,14 @@ export default function VideoPlayer({
                   <div className="absolute inset-0 -translate-x-full animate-[shimmer_3s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-white/[0.04] to-transparent" />
                 </div>
                 <LoadingSpinner />
-                <p className="relative text-sm font-medium text-white/90">{generatingLabel(connected, gpuAssigned)}</p>
+                <p className="relative text-sm font-medium text-white/90">{generatingLabel(connected, gpuAssigned, t)}</p>
               </div>
             ) : null}
 
             {mediaAppendError && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-4">
                 <div className="max-w-sm rounded-xl border border-rose-500/30 bg-rose-950/50 p-4 text-center text-rose-100 shadow-xl">
-                  <h2 className="text-base font-semibold">Playback Error</h2>
+                  <h2 className="text-base font-semibold">{t('playback.error')}</h2>
                   <p className="mt-1 text-xs leading-5 text-rose-100/90">{mediaAppendError}</p>
                 </div>
               </div>
@@ -106,10 +111,10 @@ export default function VideoPlayer({
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/80 p-4">
                 <LoadingSpinner />
                 <div className="max-w-sm rounded-xl border border-border bg-card/90 p-4 text-center text-card-foreground shadow-xl backdrop-blur-sm">
-                  <h2 className="text-base font-semibold">In Queue</h2>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">All GPUs are currently busy.</p>
+                  <h2 className="text-base font-semibold">{t('queue.title')}</h2>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">{t('queue.busy')}</p>
                   <p className="mt-2 text-xs text-foreground">
-                    Position: <strong>{queuePosition}</strong>
+                    {t('queue.position')}<strong>{queuePosition}</strong>
                   </p>
                 </div>
               </div>
@@ -124,7 +129,7 @@ export default function VideoPlayer({
               }}
               size="icon"
               variant="outline"
-              aria-label={canShare ? 'Share video' : 'Download video'}
+              aria-label={canShare ? t('share') : t('download')}
               className="absolute top-3 left-3 z-10 cursor-pointer bg-slate-800/50 text-white/90 shadow-md backdrop-blur-sm transition-all border-white/30 hover:bg-slate-800/85 hover:border-white/50 hover:text-white hover:scale-105"
             >
               {canShare ? <Share className="size-5" /> : <Download className="size-5" />}

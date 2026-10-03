@@ -34,7 +34,7 @@ Mount the plugin with `@dreamverse/ui-kit`, which declares its slot.
   name: '@dreamverse/ui-player'
 ```
 
-The browser half fills `dreamverse.player` with `VideoPlayer`, the port of the frontend's `components/VideoPlayer.tsx`, while the kit declares the slot. The kit's media pipeline attaches the live and archived video elements through the `videoRef` and `archivedPlaybackRef` props. The Host half registers nothing.
+The browser half fills `dreamverse.player` with `VideoPlayer`, the port of the frontend's `components/VideoPlayer.tsx`, while the kit declares the slot. It also registers the player's Chinese and English copy as the `dreamverse.player` locale namespace, so the profile must mount `@deepseek-ai/dsh-client-locale`, which provides the `locale` service; the player shows its status, queue, and playback-error copy in the page's active language. The kit's media pipeline attaches the live and archived video elements through the `videoRef` and `archivedPlaybackRef` props. The Host half registers nothing.
 
 -----
 
@@ -48,7 +48,8 @@ The browser half fills `dreamverse.player` with `VideoPlayer`, the port of the f
 
 | File | Content |
 | --- | --- |
-| [`src/client/index.ts`](src/client/index.ts) | The slot registration |
+| [`src/client/index.ts`](src/client/index.ts) | The dictionary and slot registrations |
+| [`src/client/locales.ts`](src/client/locales.ts) | The `zh` and `en` dictionaries of the `dreamverse.player` namespace |
 | [`src/client/components/VideoPlayer.tsx`](src/client/components/VideoPlayer.tsx) | The player |
 
 </details>
