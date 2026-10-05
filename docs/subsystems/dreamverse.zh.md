@@ -88,3 +88,7 @@ FastVideo 检出目录中 `apps/dreamverse/dreamverse/` 下的 Python DreamVerse
 - 图片是普通 `<img>` 元素，因此 K2 标志显示原始 PNG，而不是 Next.js 图片优化器生成的副本。
 - 页面省略了前端中不起作用的 Google Fonts 导入，渲染相同的系统字体。
 - 页面以中文或英文显示文案：每个 dreamverse-ui 包为自己渲染的文案注册 locale 词典，页面跟随浏览器语言。前端只显示英文。
+
+## 与 video harness 的关系
+
+[video harness](video-harness.zh.md) 是取代 DreamVerse 工作负载的项目层；其[设计页](video-harness-design.zh.md)记录设计依据。它原样复用四个 DreamVerse 包：`generation-client` 作为生成后端客户端，`segment-generation` 提供单个片段的规则，`assets-manager` 保存素材库上传，`prompt-enhancer` 的提示词模板作为 skill 文本。它取代五个包：`project`（由 `vhProject` 折叠与 plan 工具取代）、`user-actions`（skill 与工具）、`project-controller`（`@video-harness/views` 与 harness 的推流路由）、`project-store`（`@video-harness/oplog`）、`multiverse`（plan continuity 加分支）。在它们的页面迁移到 harness 之前，`dreamverse` 与 `dreamverse-multiverse` profile 继续挂载这些被取代的包。

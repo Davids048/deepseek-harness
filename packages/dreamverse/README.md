@@ -44,6 +44,9 @@ The [DreamVerse subsystem page](../../docs/subsystems/dreamverse.md) explains ho
 - [`dreamverse-ui/`](../dreamverse-ui/README.md) — the DreamVerse and Multiverse pages.
 - [`@dreamverse/bundle`](../bundle/dreamverse/README.md) — the `dreamverse` profile layer.
 - [`@dreamverse/multiverse-bundle`](../bundle/dreamverse-multiverse/README.md) — the `dreamverse-multiverse` profile layer.
+- [Video harness subsystem](../../docs/subsystems/video-harness.md) — the project layer that supersedes the DreamVerse workloads; its [design page](../../docs/subsystems/video-harness-design.md) records the rationale.
+
+The video harness reuses `generation-client`, `segment-generation`, `assets-manager`, and the prompt templates of `prompt-enhancer` unchanged, and supersedes `project`, `user-actions`, `project-controller`, `project-store`, and `multiverse`, which remain only for the `dreamverse` and `dreamverse-multiverse` profiles.
 
 <a id="dev-note"></a>
 ## Dev Note

@@ -1,0 +1,25 @@
+{
+  "name": "@video-harness/media",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Media processing service of the video harness: runs ffmpeg and ffprobe over stored assets for probing, frame extraction, trimming, concatenation, and declared-output commands.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-subprocess": "workspace:*",
+    "@video-harness/assets": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/schemastery": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@types/node": "^22.20.0"
+  }
+}

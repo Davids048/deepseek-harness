@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-这些插件决定 DreamVerse 用户操作时会发生什么：从预设或想法开始一个序列、生成一个片段、用引导提示词或 Auto Extension 续写故事，或改写整个序列。每个操作准备提示词（适用增强时经过提示词增强器），生成片段，并记录已完成的序列。每个操作都是独立插件，因此 profile 可以省略其中任何一个。增强失败会让操作失败，而不是回退到用户的文本。
+这些插件决定 DreamVerse 用户操作时会发生什么：从预设或想法开始一个序列、生成一个片段、用引导提示词或 Auto Extension 续写故事，或改写整个序列。每个操作准备提示词（适用增强时经过提示词增强器），生成片段，并记录已完成的序列。每个操作都是独立插件，因此 profile 可以省略其中任何一个。增强失败会让操作失败，而不是回退到用户的文本。 已被 [video harness](../../../docs/subsystems/video-harness.zh.md) 取代。
 
 ## 目录
 
@@ -132,6 +132,7 @@ kind: "package-reference"
 
 - **增强失败后没有回退**——当提供方竞速失败、发生回退或返回空提示词时，操作以 `Prompt extension failed for this request.` 失败，而不是根据用户的文本生成。
 - **预设长度**——当预设提供的提示词少于项目的 `segment_count` 时，`generate_video_sequence` 失败。
+- **已被 video harness 取代**——[video harness](../../../docs/subsystems/video-harness.zh.md) 用video harness 的 skill 与工具（`@video-harness/agent`、`@video-harness/tools`）取代了本包；本包仅为 `dreamverse` 与 `dreamverse-multiverse` profile 保留。
 
 <a id="dev-note"></a>
 ### 开发备注

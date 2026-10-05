@@ -1,0 +1,36 @@
+{
+  "name": "@video-harness/ui-tool",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DreamVerse Tool mode: a direct video generation panel (Reference mode) with the results feed of one Tool session, and the Tool session list for the left navigation.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./client": {
+      "types": "./lib/types/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "inject": [],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "bundle": "tsdown"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "@video-harness/ui-kit": "workspace:*",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}

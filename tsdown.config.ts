@@ -25,6 +25,13 @@ export default defineConfig(({ env }) => {
         '**/node_modules/**', '**/dist/**', '**/test?(s)/**', '**/t?(e)mp/**',
         // DreamVerse packages load from source through the dsh launcher's tsx hook and have no build step.
         'packages/dreamverse/**', 'packages/bundle/dreamverse/**', 'packages/bundle/dreamverse-multiverse/**',
+        // Video harness host packages load from source the same way; ui-kit is bundled into the two client plugins.
+        // One pattern per package: the matcher does not expand braces.
+        'packages/video-harness/assets/**', 'packages/video-harness/oplog/**', 'packages/video-harness/runtime/**',
+        'packages/video-harness/media/**', 'packages/video-harness/tools/**', 'packages/video-harness/agent/**',
+        'packages/video-harness/views/**', 'packages/video-harness/ui-kit/**', 'packages/video-harness/stream/**',
+        'packages/video-harness/mentions/**',
+        'packages/bundle/video-harness/**',
       ],
     },
     entry: client ? '' : ['lib/types/{index,invariant,startup}.js'],

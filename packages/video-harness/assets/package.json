@@ -1,0 +1,24 @@
+{
+  "name": "@video-harness/assets",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Content-addressed immutable media store of the video harness, with the /vh/assets content route.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/schemastery": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@types/node": "^22.20.0"
+  }
+}

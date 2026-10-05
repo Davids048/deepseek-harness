@@ -88,3 +88,7 @@ The page also differs from the FastVideo Next.js frontend:
 - Images are plain `<img>` elements, so the K2 logo shows the original PNG instead of the Next.js image optimizer's copy.
 - The page omits the frontend's ineffective Google Fonts import and renders the same system fonts.
 - The page shows its copy in Chinese or English: each dreamverse-ui package registers a locale dictionary for the copy that it renders, and the page follows the browser's language. The frontend shows English only.
+
+## Relationship to the video harness
+
+The [video harness](video-harness.md) is the project layer that supersedes the DreamVerse workloads; its [design page](video-harness-design.md) records the rationale. It reuses four DreamVerse packages unchanged: `generation-client` as the generation backend client, `segment-generation` for the rules of one segment, `assets-manager` for library uploads, and the prompt templates of `prompt-enhancer` as skill text. It supersedes five: `project` (replaced by the `vhProject` fold and the plan tools), `user-actions` (skills and tools), `project-controller` (`@video-harness/views` and the harness stream route), `project-store` (`@video-harness/oplog`), and `multiverse` (plan continuity plus branches). The `dreamverse` and `dreamverse-multiverse` profiles keep mounting the superseded packages until their pages move to the harness.

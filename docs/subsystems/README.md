@@ -69,5 +69,6 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [session-telemetry.md](session-telemetry.md) | the outbound session-reporting capability seam: `SessionTelemetryRecord`/`SessionTelemetrySeverity`, the `SessionTelemetrySink` contract, and the `session-telemetry/record` redact waterfall |
 | [product-telemetry.md](product-telemetry.md) | Explicit product analytics submission and OTLP/HTTP transport |
 | [dreamverse.md](dreamverse.md) | the DreamVerse packages: process layout, the shared project layer (file store, project store, segment generation), workloads, and the differences from the FastVideo reference |
+| [video-harness.md](video-harness.md) | the video harness packages: the operation log as the single source of truth, the content-addressed asset store, the project runtime (fold, turns, drafts, undo, branches, staleness), and the built-in tools |
 
 > Type declarations and their JSDoc on these pages are source-equivalent and drift-checked by `pnpm run verify-type-equiv` (see [development.md](../development.md#documenting-types-verbatim-ts-type-equiv)). Ordinary blocks preserve complete declarations; `public-api` blocks preserve body-stripped public class declarations. Cordis services and events use each page's generated **Cordis API** section.

@@ -236,6 +236,16 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/dreamverse-ui/multiverse': { kind: 'indirect', reason: 'Browser-side multiverse page; dreamverse-multiverse turns chosen branches into model requests.' },
   'packages/bundle/dreamverse': { kind: 'indirect', reason: 'The bundle mounts and configures DreamVerse packages, which own every model request.' },
   'packages/bundle/dreamverse-multiverse': { kind: 'indirect', reason: 'The bundle mounts the multiverse packages and selects the branch-proposal model; the packages own every model request.' },
+  'packages/video-harness/assets': { kind: 'none', reason: 'The store keeps media bytes by content hash; tools decide what reaches a model.' },
+  'packages/video-harness/oplog': { kind: 'none', reason: 'The log keeps operation records and branch heads that no model request reads directly.' },
+  'packages/video-harness/runtime': { kind: 'indirect', reason: 'The runtime records tool calls and folds state; the tools it invokes own every model request.' },
+  'packages/video-harness/media': { kind: 'none', reason: 'The service runs media commands and stores files; a tool decides what the model learns about the result.' },
+  'packages/bundle/video-harness': { kind: 'indirect', reason: 'The bundle composes the harness plugins; the tools, the agent section, and the skills they mount own every model request.' },
+  'packages/video-harness/views': { kind: 'indirect', reason: 'The routes record view gestures as user records; the agent layer decides what the model learns about them.' },
+  'packages/video-harness/stream': { kind: 'none', reason: 'The service relays media bytes to browsers; no model request reads them.' },
+  'packages/video-harness/ui-kit': { kind: 'none', reason: 'Browser-side graph, form, and track helpers; they touch no prompt, schema, or tool result.' },
+  'packages/video-harness/ui-canvas': { kind: 'indirect', reason: 'Browser-side canvas; the records its gestures write reach the model only through the project prompt section of the agent layer.' },
+  'packages/video-harness/ui-timeline': { kind: 'indirect', reason: 'Browser-side timeline; the records its gestures write reach the model only through the project prompt section of the agent layer.' },
 }
 
 interface Failure {

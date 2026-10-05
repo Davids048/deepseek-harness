@@ -25,11 +25,13 @@ export interface ActiveAtToken {
  */
 export function activeAtToken(line: string, cursorCol: number): ActiveAtToken | undefined {
   const beforeCursor = line.slice(0, cursorCol)
-  const quoted = /(?:^|\s)(@"([^"]*))$/u.exec(beforeCursor)
+  // CJK text has no spaces, so a preceding Han/Kana/Hangul character also starts an `@` token; ASCII letters do not
+  // (`a@b.com` stays plain text).
+  const quoted = /(?:^|\s|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])(@"([^"]*))$/u.exec(beforeCursor)
   if (quoted?.[1] !== undefined && quoted[2] !== undefined) {
     return { prefix: quoted[1], query: quoted[2], quoted: true }
   }
-  const plain = /(?:^|\s)(@([^\s]*))$/u.exec(beforeCursor)
+  const plain = /(?:^|\s|[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}])(@([^\s]*))$/u.exec(beforeCursor)
   if (plain?.[1] === undefined || plain[2] === undefined) return undefined
   return { prefix: plain[1], query: plain[2], quoted: false }
 }

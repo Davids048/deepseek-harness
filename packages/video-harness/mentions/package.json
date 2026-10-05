@@ -1,0 +1,28 @@
+{
+  "name": "@video-harness/mentions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Composer support of the video harness: per-session composer modes, generation approval cards, and the expansion of vh: references in user messages into concrete record and asset IDs for the model.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@video-harness/agent": "workspace:*",
+    "@video-harness/oplog": "workspace:*",
+    "@video-harness/runtime": "workspace:*",
+    "@video-harness/tools": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@types/node": "^22.20.0"
+  }
+}

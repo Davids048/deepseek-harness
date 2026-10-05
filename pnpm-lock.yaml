@@ -2408,6 +2408,39 @@ importers:
         specifier: workspace:~
         version: link:../../../vendor/cordis
 
+  packages/bundle/video-harness:
+    dependencies:
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../../dreamverse/generation-client
+      '@video-harness/agent':
+        specifier: workspace:*
+        version: link:../../video-harness/agent
+      '@video-harness/assets':
+        specifier: workspace:*
+        version: link:../../video-harness/assets
+      '@video-harness/media':
+        specifier: workspace:*
+        version: link:../../video-harness/media
+      '@video-harness/oplog':
+        specifier: workspace:*
+        version: link:../../video-harness/oplog
+      '@video-harness/runtime':
+        specifier: workspace:*
+        version: link:../../video-harness/runtime
+      '@video-harness/tools':
+        specifier: workspace:*
+        version: link:../../video-harness/tools
+      '@video-harness/ui-canvas':
+        specifier: workspace:*
+        version: link:../../video-harness/ui-canvas
+      '@video-harness/ui-timeline':
+        specifier: workspace:*
+        version: link:../../video-harness/ui-timeline
+      '@video-harness/views':
+        specifier: workspace:*
+        version: link:../../video-harness/views
+
   packages/bundle/web-app:
     dependencies:
       '@deepseek-ai/dsh-agent-instructions':
@@ -13768,6 +13801,369 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
+
+  packages/video-harness/agent:
+    dependencies:
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-user-questions':
+        specifier: workspace:*
+        version: link:../../interaction/user-questions
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@video-harness/oplog':
+        specifier: workspace:*
+        version: link:../oplog
+      '@video-harness/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@video-harness/tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@video-harness/views':
+        specifier: workspace:*
+        version: link:../views
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/video-harness/assets:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/video-harness/dreamverse-bridge:
+    dependencies:
+      '@dreamverse/segment-generation':
+        specifier: workspace:*
+        version: link:../../dreamverse/segment-generation
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
+      '@dreamverse/assets-manager':
+        specifier: workspace:*
+        version: link:../../dreamverse/assets-manager
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../../dreamverse/generation-client
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/video-harness/e2e:
+    devDependencies:
+      '@deepseek-ai/dsh-llm-mock-server':
+        specifier: workspace:*
+        version: link:../../test-support/llm-mock-server
+
+  packages/video-harness/media:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:*
+        version: link:../../subprocess/subprocess
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@video-harness/assets':
+        specifier: workspace:*
+        version: link:../assets
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/video-harness/oplog:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@video-harness/assets':
+        specifier: workspace:*
+        version: link:../assets
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/video-harness/runtime:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@video-harness/assets':
+        specifier: workspace:*
+        version: link:../assets
+      '@video-harness/oplog':
+        specifier: workspace:*
+        version: link:../oplog
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/video-harness/stream:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@video-harness/oplog':
+        specifier: workspace:*
+        version: link:../oplog
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-client-connection':
+        specifier: workspace:*
+        version: link:../../client/connection
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/video-harness/tools:
+    dependencies:
+      '@deepseek-ai/dsh-agent-default-model':
+        specifier: workspace:*
+        version: link:../../core/agent-default-model
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:*
+        version: link:../../attachment/attachment
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:*
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:*
+        version: link:../../util/values
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../../dreamverse/generation-client
+      '@dreamverse/segment-generation':
+        specifier: workspace:*
+        version: link:../../dreamverse/segment-generation
+      '@video-harness/assets':
+        specifier: workspace:*
+        version: link:../assets
+      '@video-harness/media':
+        specifier: workspace:*
+        version: link:../media
+      '@video-harness/oplog':
+        specifier: workspace:*
+        version: link:../oplog
+      '@video-harness/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:~
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:~
+        version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/video-harness/ui-canvas:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:*
+        version: link:../../client/locale
+      '@deepseek-ai/dsh-client-test-runtime':
+        specifier: workspace:*
+        version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:*
+        version: link:../../client/ui-renderer
+      '@deepseek-ai/dsh-client-ui-sidebar-right':
+        specifier: workspace:*
+        version: link:../../client/ui-sidebar-right
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:*
+        version: link:../../client/ui-slots
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ~18.3.0
+        version: 18.3.7(@types/react@18.3.31)
+      '@video-harness/ui-kit':
+        specifier: workspace:*
+        version: link:../ui-kit
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+
+  packages/video-harness/ui-kit:
+    devDependencies:
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+
+  packages/video-harness/ui-timeline:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:*
+        version: link:../../client/locale
+      '@deepseek-ai/dsh-client-test-runtime':
+        specifier: workspace:*
+        version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:*
+        version: link:../../client/ui-renderer
+      '@deepseek-ai/dsh-client-ui-sidebar-right':
+        specifier: workspace:*
+        version: link:../../client/ui-sidebar-right
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:*
+        version: link:../../client/ui-slots
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.2)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ~18.3.0
+        version: 18.3.7(@types/react@18.3.31)
+      '@video-harness/ui-kit':
+        specifier: workspace:*
+        version: link:../ui-kit
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
+
+  packages/video-harness/views:
+    dependencies:
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@video-harness/assets':
+        specifier: workspace:*
+        version: link:../assets
+      '@video-harness/oplog':
+        specifier: workspace:*
+        version: link:../oplog
+      '@video-harness/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@video-harness/tools':
+        specifier: workspace:*
+        version: link:../tools
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-client-connection':
+        specifier: workspace:*
+        version: link:../../client/connection
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+      '@video-harness/media':
+        specifier: workspace:*
+        version: link:../media
 
   packages/web/tool-web:
     dependencies:

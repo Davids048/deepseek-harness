@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package connects the DreamVerse page to the harness. The page opens one WebSocket per project to create a project or reopen a stored one, sends its commands, and receives prompt events and the video stream; a second window that opens the same project takes it over and the first window is told why. The package also answers the health, readiness, and creation-capability requests, and it ships the page's protocol client, state stores, and story presets. The socket stays open through idle proxies with a ping every 20 seconds.
+This package connects the DreamVerse page to the harness. The page opens one WebSocket per project to create a project or reopen a stored one, sends its commands, and receives prompt events and the video stream; a second window that opens the same project takes it over and the first window is told why. The package also answers the health, readiness, and creation-capability requests, and it ships the page's protocol client, state stores, and story presets. The socket stays open through idle proxies with a ping every 20 seconds. Superseded by the [video harness](../../../docs/subsystems/video-harness.md).
 
 ## Table of Contents
 
@@ -108,6 +108,7 @@ Independent request per segment; the presets are fixed text in the package.
 - **Fixed ping interval** — the 20-second socket ping is a constant in code; no `Config` field changes it.
 - **Unused developer-tool state** — the page stores in `src/client/stores/` keep the frontend's developer-tools state and operations (editable prompt drafts, curated prompt limits, prompt editor flags), which the page never enables.
 - **Health payload names the reference service** — `/health`, `/healthz`, and `/readyz` report the reference service name `ltx2-streaming-backend`.
+- **Superseded by the video harness** — the [video harness](../../../docs/subsystems/video-harness.md) replaces this package with `@video-harness/views` and the harness stream route; the package remains only for the `dreamverse` and `dreamverse-multiverse` profiles.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-These plugins decide what happens when a DreamVerse user acts: start a sequence from a preset or an idea, generate one clip, continue the story with a steer prompt or by Auto Extension, or rewrite the whole sequence. Each action prepares the prompts, through the prompt enhancer when enhancement applies, generates the segments, and records the completed sequence. Each action is a separate plugin, so a profile can leave one out. An enhancement failure fails the action instead of falling back to the user's text.
+These plugins decide what happens when a DreamVerse user acts: start a sequence from a preset or an idea, generate one clip, continue the story with a steer prompt or by Auto Extension, or rewrite the whole sequence. Each action prepares the prompts, through the prompt enhancer when enhancement applies, generates the segments, and records the completed sequence. Each action is a separate plugin, so a profile can leave one out. An enhancement failure fails the action instead of falling back to the user's text. Superseded by the [video harness](../../../docs/subsystems/video-harness.md).
 
 ## Table of Contents
 
@@ -132,6 +132,7 @@ Independent requests; the locked segments are sent again in full on each continu
 
 - **No fallback after an enhancement failure** — when the provider race fails, falls back, or returns an empty prompt, the action fails with `Prompt extension failed for this request.` instead of generating from the user's text.
 - **Preset length** — `generate_video_sequence` fails when the preset provides fewer prompts than the project's `segment_count`.
+- **Superseded by the video harness** — the [video harness](../../../docs/subsystems/video-harness.md) replaces this package with the video harness skills and tools (`@video-harness/agent`, `@video-harness/tools`); the package remains only for the `dreamverse` and `dreamverse-multiverse` profiles.
 
 <a id="dev-note"></a>
 ### Dev Note

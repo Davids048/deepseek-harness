@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包在 harness 中运行 DreamVerse 项目。项目接受页面的命令，排队生成轮次，生成每个片段，并存储其提示词、片段和参考图副本，因此用户可以关闭页面并在之后重新打开项目。在第二个窗口中打开项目会把它移到那里并关闭第一个窗口。用户操作作为独立插件接入，每个项目事件都写入一个 JSON Lines 日志。早期版本存储的项目会在启动时迁移。
+使用本包在 harness 中运行 DreamVerse 项目。项目接受页面的命令，排队生成轮次，生成每个片段，并存储其提示词、片段和参考图副本，因此用户可以关闭页面并在之后重新打开项目。在第二个窗口中打开项目会把它移到那里并关闭第一个窗口。用户操作作为独立插件接入，每个项目事件都写入一个 JSON Lines 日志。早期版本存储的项目会在启动时迁移。 已被 [video harness](../../../docs/subsystems/video-harness.zh.md) 取代。
 
 ## 目录
 
@@ -164,6 +164,7 @@ Auto Extension 开启时，项目在每个已完成轮次之后排入操作 `{"t
 - **不完整的请求记录**——项目日志记录用户的提示词和增强器的回复，但不记录渲染后的增强器请求，也不记录每个片段最终的视频提示词。工作负载数据保存每个片段最终的 `prompt`。
 - **重新打开的项目不带 Auto Extension**——打开已存储的项目永远不会恢复 Auto Extension，即使项目关闭时它处于开启状态。
 - **失败轮次之后的追加**——当同一个 socket 服务项目时，失败轮次之后的追加需要先改写；重新打开的项目会追加到其最后一个已完成序列。
+- **已被 video harness 取代**——[video harness](../../../docs/subsystems/video-harness.zh.md) 用`@video-harness/runtime` 的 `vhProject` 折叠与 `@video-harness/tools` 的 plan 工具取代了本包；本包仅为 `dreamverse` 与 `dreamverse-multiverse` profile 保留。
 
 <a id="dev-note"></a>
 ### 开发备注

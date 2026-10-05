@@ -10,6 +10,36 @@ import { useLayoutEffect, useRef } from 'react'
 import type { HTMLAttributes, ReactNode } from 'react'
 import type { LexicalEditor } from 'lexical'
 
+/**
+ * The hosts that currently claim each editor, oldest first. One session editor can be shown by several composer
+ * hosts at once (for example a chat panel and a second Conversation occurrence); the newest claim owns the root,
+ * and when a host unmounts the editor returns to the newest remaining host instead of being left without a root.
+ */
+const claims = new WeakMap<LexicalEditor, HTMLDivElement[]>()
+
+/**
+ * Make `el` the editor's root and the newest claim.
+ * @param editor - the shared editor.
+ * @param el - the claiming host.
+ */
+function claimRoot(editor: LexicalEditor, el: HTMLDivElement): void {
+  const hosts = (claims.get(editor) ?? []).filter(host => host !== el)
+  hosts.push(el)
+  claims.set(editor, hosts)
+  if (editor.getRootElement() !== el) editor.setRootElement(el)
+}
+
+/**
+ * Drop `el`'s claim; if it held the root, hand the root to the newest remaining host.
+ * @param editor - the shared editor.
+ * @param el - the releasing host.
+ */
+function releaseRoot(editor: LexicalEditor, el: HTMLDivElement): void {
+  const hosts = (claims.get(editor) ?? []).filter(host => host !== el)
+  claims.set(editor, hosts)
+  if (editor.getRootElement() === el) editor.setRootElement(hosts.at(-1) ?? null)
+}
+
 /** Host props: the editor binding plus the div passthroughs the bar owns. */
 export interface ComposerContentEditableProps extends HTMLAttributes<HTMLDivElement> {
   /** The shell-owned editor; null renders the same div unbound and inert. */
@@ -23,14 +53,19 @@ export interface ComposerContentEditableProps extends HTMLAttributes<HTMLDivElem
  * @param props - editor binding, editability, and div passthroughs.
  * @returns the resident contenteditable div.
  */
-export function ComposerContentEditable({ editor, editable, ...rest }: ComposerContentEditableProps): ReactNode {
+export function ComposerContentEditable({ editor, editable, onFocus, onPointerDown, ...rest }: ComposerContentEditableProps): ReactNode {
   const ref = useRef<HTMLDivElement | null>(null)
   useLayoutEffect(() => {
     const el = ref.current
     if (editor === null || el === null) return
-    editor.setRootElement(el)
-    return () => { editor.setRootElement(null) }
+    claimRoot(editor, el)
+    return () => { releaseRoot(editor, el) }
   }, [editor])
+  // The host the user interacts with takes the editor back from any other host showing the same session.
+  const reclaim = (): void => {
+    const el = ref.current
+    if (editor !== null && el !== null) claimRoot(editor, el)
+  }
   useLayoutEffect(() => {
     if (editor !== null) editor.setEditable(editable)
   }, [editor, editable])
@@ -45,6 +80,8 @@ export function ComposerContentEditable({ editor, editable, ...rest }: ComposerC
       aria-multiline="true"
       data-composer-input
       {...rest}
+      onPointerDown={(event) => { reclaim(); onPointerDown?.(event) }}
+      onFocus={(event) => { reclaim(); onFocus?.(event) }}
     />
   )
 }

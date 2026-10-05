@@ -1,0 +1,13 @@
+{
+  "name": "@video-harness/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser smoke tests for the video harness pages: boot the profile with fake services and drive Chromium.",
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-llm-mock-server": "workspace:*"
+  }
+}

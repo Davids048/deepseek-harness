@@ -44,6 +44,9 @@ kind: "package-group"
 - [`dreamverse-ui/`](../dreamverse-ui/README.zh.md)——DreamVerse 与 Multiverse 页面。
 - [`@dreamverse/bundle`](../bundle/dreamverse/README.zh.md)——`dreamverse` profile 层。
 - [`@dreamverse/multiverse-bundle`](../bundle/dreamverse-multiverse/README.zh.md)——`dreamverse-multiverse` profile 层。
+- [Video harness 子系统](../../docs/subsystems/video-harness.zh.md)——取代 DreamVerse 工作负载的项目层；其[设计页](../../docs/subsystems/video-harness-design.zh.md)记录设计依据。
+
+video harness 原样复用 `generation-client`、`segment-generation`、`assets-manager` 以及 `prompt-enhancer` 的提示词模板，并取代 `project`、`user-actions`、`project-controller`、`project-store` 与 `multiverse`；后五个包仅为 `dreamverse` 与 `dreamverse-multiverse` profile 保留。
 
 <a id="dev-note"></a>
 ## 开发备注

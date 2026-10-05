@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to keep the projects of every DreamVerse workload: each project's title, thumbnail, timestamps, kind, and the workload's own data, stored as one JSON file per project. One holder at a time may write a project, and a new holder takes over by revoking the current one, so two browser windows never write the same project. The `/projects` routes list, read, and delete stored projects for any page. Deleting a project deletes its files in the file store. Leases exist only inside one harness process.
+Use this package to keep the projects of every DreamVerse workload: each project's title, thumbnail, timestamps, kind, and the workload's own data, stored as one JSON file per project. One holder at a time may write a project, and a new holder takes over by revoking the current one, so two browser windows never write the same project. The `/projects` routes list, read, and delete stored projects for any page. Deleting a project deletes its files in the file store. Leases exist only inside one harness process. Superseded by the [video harness](../../../docs/subsystems/video-harness.md).
 
 ## Table of Contents
 
@@ -111,6 +111,7 @@ None; the store adds nothing to a model request.
 
 - **Leases inside one process** — two harness processes over the same `root`, such as the `dreamverse` and `dreamverse-multiverse` profiles, do not see each other's leases. One process can delete or overwrite a project while the other process writes it.
 - **No paging or search** — `GET /projects` returns every project of the requested kind in one response.
+- **Superseded by the video harness** — the [video harness](../../../docs/subsystems/video-harness.md) replaces this package with `@video-harness/oplog`, the append-only operation log with branch heads; the package remains only for the `dreamverse` and `dreamverse-multiverse` profiles.
 
 <a id="dev-note"></a>
 ### Dev Note

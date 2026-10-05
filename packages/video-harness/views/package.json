@@ -1,0 +1,31 @@
+{
+  "name": "@video-harness/views",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser API of the video harness: authenticated routes that read folded project state, invoke tools from the canvas and the timeline, manage turns and branches, and stream operation log changes.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@video-harness/assets": "workspace:*",
+    "@video-harness/oplog": "workspace:*",
+    "@video-harness/runtime": "workspace:*",
+    "@video-harness/tools": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/schemastery": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@video-harness/media": "workspace:*",
+    "@types/node": "^22.20.0"
+  }
+}

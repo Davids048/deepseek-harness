@@ -1,0 +1,24 @@
+{
+  "name": "@video-harness/dreamverse-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Serves the DreamVerse page's lobby routes (/creation-capabilities, /healthz, /readyz) from the video-harness generation client, so the page runs on the harness runtime without the project-controller.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@dreamverse/segment-generation": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@dreamverse/assets-manager": "workspace:*",
+    "@dreamverse/generation-client": "workspace:*",
+    "@types/node": "^22.20.0"
+  }
+}

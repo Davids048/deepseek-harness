@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包把 DreamVerse 页面连接到 harness。页面为每个项目打开一个 WebSocket，用来创建项目或重新打开已存储的项目、发送命令，并接收提示词事件和视频流；打开同一项目的第二个窗口会接管它，第一个窗口会被告知原因。本包还响应健康、就绪和创建能力请求，并随附页面的协议客户端、状态 store 和故事预设。socket 每 20 秒 ping 一次，以便在空闲的代理后面保持打开。
+本包把 DreamVerse 页面连接到 harness。页面为每个项目打开一个 WebSocket，用来创建项目或重新打开已存储的项目、发送命令，并接收提示词事件和视频流；打开同一项目的第二个窗口会接管它，第一个窗口会被告知原因。本包还响应健康、就绪和创建能力请求，并随附页面的协议客户端、状态 store 和故事预设。socket 每 20 秒 ping 一次，以便在空闲的代理后面保持打开。 已被 [video harness](../../../docs/subsystems/video-harness.zh.md) 取代。
 
 ## 目录
 
@@ -108,6 +108,7 @@ kind: "package-reference"
 - **固定的 ping 间隔**——20 秒的 socket ping 是代码中的常量；没有 `Config` 字段可以修改它。
 - **未使用的开发者工具状态**——`src/client/stores/` 中的页面 store 保留了前端的开发者工具状态和操作（可编辑的提示词草稿、精选提示词上限、提示词编辑器标志），页面从不启用它们。
 - **健康载荷使用参考服务名**——`/health`、`/healthz` 和 `/readyz` 报告参考实现的服务名 `ltx2-streaming-backend`。
+- **已被 video harness 取代**——[video harness](../../../docs/subsystems/video-harness.zh.md) 用`@video-harness/views` 与 harness 的推流路由取代了本包；本包仅为 `dreamverse` 与 `dreamverse-multiverse` profile 保留。
 
 <a id="dev-note"></a>
 ### 开发备注

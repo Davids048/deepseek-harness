@@ -51,6 +51,21 @@ const PROCESS_ICONS: Record<ProcessTitleActivity, ReactNode> = {
   tools: <IconSparkleRegular size={14} />,
 }
 
+/**
+ * The live detail shown in a running group title. A detail that is a bare wire tool name reads as the name a plugin
+ * gave that tool in the chat dictionary under `tool.name.<wire name>`; any other detail, or a tool without such an
+ * entry, shows as is.
+ * @param detail - the running tool's argument detail or wire name.
+ * @param t - the chat translate function.
+ * @returns the text to show.
+ */
+function liveDetailText(detail: string, t: ChatViewSlotProps['t']): string {
+  if (detail === '') return detail
+  const key = `tool.name.${detail}`
+  const named = t(key as Parameters<ChatViewSlotProps['t']>[0])
+  return named === key ? detail : named
+}
+
 function sameLiveProcessTitle(left: LiveProcessTitle, right: LiveProcessTitle): boolean {
   return left.activity === right.activity && left.detail === right.detail && left.preparing === right.preparing
 }
@@ -108,7 +123,7 @@ const ProcessGroupHeader = memo(function ProcessGroupHeader({ groupKey, useChatG
   const label = data.closed ? processTitle(data.summary, t)
     : live.preparing ? t(`message.stepProcess.prepare.${live.activity === 'thinking' ? 'tools' : live.activity}`)
       : t(`message.stepProcess.${live.activity}`)
-  const detail = detailed && !data.closed ? live.detail : ''
+  const detail = detailed && !data.closed ? liveDetailText(live.detail, t) : ''
   const title = detail === '' ? label : `${label}${t('message.turnProcess.separator')}${detail}`
   const activity = data.closed ? data.summary.counts[0]?.kind ?? 'thinking' : live.activity
   return (

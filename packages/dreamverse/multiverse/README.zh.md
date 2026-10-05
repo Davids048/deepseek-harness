@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包把故事生长为一棵视频场景树。用户写下开场场景并挑选角色图片；harness 生成该场景，并请语言模型给出两个不同的后续走向。选择一个走向只会生成该场景，它从父场景的末帧开始，并得到两个新的后续走向；未被选择的走向保持可用。每个 multiverse 都是一个已存储的项目，因此能在 harness 重启后保留，且每次模型调用都会被记录。分支提议需要所选模型提供商的密钥。
+使用本包把故事生长为一棵视频场景树。用户写下开场场景并挑选角色图片；harness 生成该场景，并请语言模型给出两个不同的后续走向。选择一个走向只会生成该场景，它从父场景的末帧开始，并得到两个新的后续走向；未被选择的走向保持可用。每个 multiverse 都是一个已存储的项目，因此能在 harness 重启后保留，且每次模型调用都会被记录。分支提议需要所选模型提供商的密钥。 已被 [video harness](../../../docs/subsystems/video-harness.zh.md) 取代。
 
 ## 目录
 
@@ -184,6 +184,7 @@ Scenes so far:
 - **接管后被中止的节点**——在另一方取得 multiverse 的租约后，director 已中止生成的节点会在内存中保持 `generating`，直到下次启动。
 - **快速隧道后的事件流**——Cloudflare 快速隧道会扣住 `events` 路由的响应体，直到响应结束，因此页面改为读取 `GET /multiverse/api/multiverses/<id>`。
 - **日志中没有渲染后的增强器请求**——`prompt_enhance_request` 记录增强器的输入；提示词增强器据此渲染出的模板和用户消息不会被记录。
+- **已被 video harness 取代**——[video harness](../../../docs/subsystems/video-harness.zh.md) 用`@video-harness/runtime` 中的 plan continuity 加分支取代了本包；本包仅为 `dreamverse` 与 `dreamverse-multiverse` profile 保留。
 
 <a id="dev-note"></a>
 ### 开发备注

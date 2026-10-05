@@ -20,8 +20,8 @@ import { ReferenceIconRegular } from './ReferenceIcon.tsx'
 import css from './user-text.module.css'
 import markdownCss from './markdown/MarkdownText.module.css'
 
-/** The wire form a session chip serializes to; label is the display text. */
-const SESSION_WIRE_RE = /@\[([^\]\n]+)\]\(dsh-session:[^)\s]+\)/gu
+/** The wire form a reference chip serializes to (`dsh-session:` or a plugin scheme such as `vh:`); label is the display text. */
+const SESSION_WIRE_RE = /@\[([^\]\n]+)\]\(([a-z][\w+.-]*):[^)\s]+\)/gu
 
 /** Sentence punctuation a bare `@name` token may carry without being part of the reference. */
 const TRAILING_PUNCTUATION_RE = /[.,;:!?，。；：！？]+$/u
@@ -70,7 +70,7 @@ export function projectUserText(
       start: wire.index,
       end: wire.index + wire[0].length,
       label: wire[0],
-      kind: 'session',
+      kind: wire[2] === 'dsh-session' ? 'session' : 'plain',
       display: wire[1] as string, // non-optional capture in SESSION_WIRE_RE
     })
   }
@@ -107,11 +107,14 @@ export function projectUserText(
     if (range.start < cursor) continue
     const { start: tokenStart, end, label, kind } = range
     if (tokenStart > cursor) pushPlain(cursor, tokenStart)
+    // A folded plugin reference (display set, kind plain) is a label chip without a file icon.
     const referenceKind = kind === 'session'
       ? 'session'
-      : label.startsWith('@')
-        ? label.replace(/^@"|"$/gu, '').endsWith('/') ? 'folder' : 'file'
-        : undefined
+      : range.display !== undefined
+        ? undefined
+        : label.startsWith('@')
+          ? label.replace(/^@"|"$/gu, '').endsWith('/') ? 'folder' : 'file'
+          : undefined
     const displayLabel = range.display
       ?? (referenceKind === undefined
         ? label
@@ -127,7 +130,7 @@ export function projectUserText(
     const open = references === undefined ? undefined
       : referenceKind === 'file'
         ? () => { references.openFile(label.slice(1).replace(/^"|"$/gu, '')) }
-        : referenceKind === undefined && slashKind === 'skill'
+        : referenceKind === undefined && slashKind === 'skill' && range.display === undefined
           ? () => { references.openSkill(label.slice(1)) }
           : undefined
     const className = clsx(css.refChip, referenceKind === undefined && css.slashChip)

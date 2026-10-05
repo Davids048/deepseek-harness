@@ -1,0 +1,210 @@
+# The video-harness bundle patch: the harness plugins over dsh-base, for a profile that also stacks dsh-web-app (the
+# chat page) or dsh-headless (one task per process). Every row reads its configuration from the environment that
+# scripts/video-harness/launch.sh prepares:
+#   VH_BACKEND_URL   FastVideo streaming_v2 server (default http://127.0.0.1:8029)
+#   VH_STATE_ROOT    where assets, operation logs, and session bindings live (default ~/.local/state/video-harness)
+#   VH_FFMPEG / VH_FFPROBE  media binaries
+#   VH_PUBLIC_URL    origin that serves /vh/assets to remote viewers, for links in chat cards
+#   VH_AGENT_PROVIDER / VH_AGENT_MODEL / VH_AGENT_REASONING  the agent's model route
+#   VH_DEEPSEEK_BASE_URL  the OpenAI-compatible SGLang endpoint that serves DeepSeek (default http://10.244.6.153:30000/v1)
+#   VH_DEEPSEEK_API_KEY   bearer token for that endpoint; the launch script exports `none` when unset
+#   VH_AGENT_VISION       `0` makes perception.describe report that images are unsupported instead of calling the model
+#   GROQ_API_KEY          key of the documented fallback route
+
+- insert:
+    - id: vh-generation-client
+      name: '@dreamverse/generation-client'
+      config:
+        baseUrl: !!js process.env.VH_BACKEND_URL || 'http://127.0.0.1:8029'
+
+    - id: vh-media
+      name: '@video-harness/media'
+      config:
+        ffmpegPath: !!js process.env.VH_FFMPEG || '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
+        ffprobePath: !!js process.env.VH_FFPROBE || 'ffprobe'
+
+    - id: vh-assets
+      name: '@video-harness/assets'
+      config:
+        root: !!js >-
+          process.getBuiltinModule('node:path').join(
+          process.env.VH_STATE_ROOT || process.getBuiltinModule('node:path').join(
+          process.getBuiltinModule('node:os').homedir(), '.local/state/video-harness'), 'assets')
+
+    - id: vh-oplog
+      name: '@video-harness/oplog'
+      config:
+        root: !!js >-
+          process.getBuiltinModule('node:path').join(
+          process.env.VH_STATE_ROOT || process.getBuiltinModule('node:path').join(
+          process.getBuiltinModule('node:os').homedir(), '.local/state/video-harness'), 'projects')
+
+    - id: vh-runtime
+      name: '@video-harness/runtime'
+      config:
+        ffmpegPath: !!js process.env.VH_FFMPEG || '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
+        builtinTools: false
+
+    - id: vh-tools
+      name: '@video-harness/tools'
+      config:
+        publicBaseUrl: !!js process.env.VH_PUBLIC_URL || ''
+        imageInput: !!js process.env.VH_AGENT_VISION !== '0'
+        sessionStateRoot: !!js >-
+          process.getBuiltinModule('node:path').join(
+          process.env.VH_STATE_ROOT || process.getBuiltinModule('node:path').join(
+          process.getBuiltinModule('node:os').homedir(), '.local/state/video-harness'), 'sessions')
+
+    - id: vh-agent
+      name: '@video-harness/agent'
+
+    # The browser API for the canvas and timeline pages, and the two pages themselves.
+    - id: vh-views
+      name: '@video-harness/views'
+      config:
+        keepaliveMs: 15000
+
+    - id: vh-mentions
+      name: '@video-harness/mentions'
+
+    - id: vh-ui-composer
+      name: '@video-harness/ui-composer'
+
+    - id: vh-ui-canvas
+      name: '@video-harness/ui-canvas'
+
+    - id: vh-ui-timeline
+      name: '@video-harness/ui-timeline'
+
+    - id: vh-ui-tool
+      name: '@video-harness/ui-tool'
+
+    - id: vh-ui-assets
+      name: '@video-harness/ui-assets'
+
+    - id: vh-ui-shell
+      name: '@video-harness/ui-shell'
+
+# The directing skills ship inside @video-harness/agent; skill-filesystem discovers them beside the user's own.
+- id: skill-filesystem
+  config:
+    customSkillDirs:
+      - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@video-harness/agent/package.json')), 'skills')
+
+# DreamVerse identity. The host prompt drops the harness opener and states the creator-facing persona, which the
+# headless profile uses as is; the Web surface's prompt section (Web GUI URL, harness checkout) is left out, because
+# creators talk to a video assistant, not to a coding harness.
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    personaPrefix: &dreamverse-persona >-
+      You are the DreamVerse video assistant. You help creators plan, generate, and edit videos in their DreamVerse
+      project: characters and references, shots, takes, and the cuts of each episode. You work only through the
+      vh_* video tools and the skills listed for you; you have no shell, file, or web access. Reply in the language of
+      the user's latest message, in plain words a creator understands; mention record IDs, asset IDs, and tool names
+      only when the user asks for them.
+    personaSuffix: ''
+
+- id: web-runtime
+  config:
+    openBrowser: !!js ctx.webStartup.openBrowser
+    printUrl: true
+    surfaceContext: false
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
+# The Web agent preset of every DreamVerse chat: the persona above, the directing skills only, questions to the user,
+# and context compaction. It mounts no shell, file, web, delegation, goal, or plan-mode tools; the video tools come
+# from the vh-tools row on the host. The chooser is hidden, so every chat uses this preset.
+- id: agent-preset-registry
+  config:
+    default: dreamverse
+    modeSelectionEnabled: false
+
+- insert:
+    - id: preset-dreamverse
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: dreamverse
+        name: DreamVerse
+        order: 0
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: *dreamverse-persona
+              includeRuntimeContext: false
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+            config:
+              includeDefaultRoots: false
+              customSkillDirs:
+                - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@video-harness/agent/package.json')), 'skills')
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+
+# The agent model: DeepSeek V4.1 served by SGLang on the cluster through its OpenAI-compatible API. No installed pi-ai
+# catalog describes that server, so the route is declared by hand with the model's modalities and thinking levels; the
+# server accepts the catalog id `deepseek-v4.1` as sent. pi-ai's OpenAI implementation insists on a bearer token, so the
+# launch script exports VH_DEEPSEEK_API_KEY=none for a keyless server. Groq stays available as the documented fallback:
+# VH_AGENT_PROVIDER=groq VH_AGENT_MODEL=qwen/qwen3.8-27b.
+- id: llm-pi-ai
+  config:
+    providers:
+      deepseek-local:
+        apiKeyEnv: VH_DEEPSEEK_API_KEY
+        api: openai-completions
+        baseURL: !!js process.env.VH_DEEPSEEK_BASE_URL || 'http://10.244.6.153:30000/v1'
+        models:
+          - id: deepseek-v4.1
+            name: DeepSeek V4.1 (SGLang)
+            input: [text, image]
+            reasoningEfforts:
+              off: none
+              low: low
+              medium: medium
+              high: high
+      groq:
+        apiKeyEnv: GROQ_API_KEY
+
+- id: agent-default-model
+  config:
+    provider: !!js process.env.VH_AGENT_PROVIDER || 'deepseek-local'
+    model: !!js process.env.VH_AGENT_MODEL || 'deepseek-v4.1'
+    reasoningEffort: !!js process.env.VH_AGENT_REASONING || 'low'
+
+# DreamVerse references project items through @video-harness/ui-composer's `@` source; DSH's file and session `@`
+# source would list the project's oplog files and the sessions of every project.
+- id: ui-reference
+  disabled: true
+
+# The model is fixed by agent-default-model; the composer shows no model picker and no /model command.
+- id: ui-model-selection
+  disabled: true
+
+# The agent's skills are its own procedures; the composer's / menu does not list them to creators.
+- id: ui-skill
+  disabled: true
+
+# Completed turns show no token-usage pill; the composer statistics are hidden by @video-harness/ui-shell.
+- id: ui-chat
+  config:
+    performanceUsage: compact

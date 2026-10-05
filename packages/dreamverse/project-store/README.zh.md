@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包保存每个 DreamVerse 工作负载（workload）的项目：每个项目的标题、缩略图、时间戳、类型，以及工作负载自己的数据，每个项目存为一个 JSON 文件。同一时刻只有一个持有者可以写入某个项目，新持有者通过撤销当前持有者来接管，因此两个浏览器窗口永远不会同时写同一个项目。`/projects` 路由为任意页面列出、读取和删除已存储的项目。删除项目会删除其在文件存储中的文件。租约只存在于单个 harness 进程内。
+使用本包保存每个 DreamVerse 工作负载（workload）的项目：每个项目的标题、缩略图、时间戳、类型，以及工作负载自己的数据，每个项目存为一个 JSON 文件。同一时刻只有一个持有者可以写入某个项目，新持有者通过撤销当前持有者来接管，因此两个浏览器窗口永远不会同时写同一个项目。`/projects` 路由为任意页面列出、读取和删除已存储的项目。删除项目会删除其在文件存储中的文件。租约只存在于单个 harness 进程内。 已被 [video harness](../../../docs/subsystems/video-harness.zh.md) 取代。
 
 ## 目录
 
@@ -111,6 +111,7 @@ kind: "package-reference"
 
 - **租约只在单个进程内**——在同一个 `root` 上运行的两个 harness 进程（例如 `dreamverse` 与 `dreamverse-multiverse` profile）看不到对方的租约。一个进程可能在另一个进程写入某个项目时删除或覆盖该项目。
 - **没有分页或搜索**——`GET /projects` 在一个响应中返回所请求类型的全部项目。
+- **已被 video harness 取代**——[video harness](../../../docs/subsystems/video-harness.zh.md) 用`@video-harness/oplog`，即带分支指针的追加式操作日志取代了本包；本包仅为 `dreamverse` 与 `dreamverse-multiverse` profile 保留。
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -950,6 +950,29 @@ describe('ChatView', () => {
     expect(translate.mock.calls.filter(([key]) => key.startsWith('message.stepProcess.'))).toHaveLength(0)
   })
 
+  it('names a running tool by its tool.name dictionary entry and keeps other details verbatim', () => {
+    const snapshot = chatSnapshotFixture({ nodes: [user(1, 'named'), user(2, 'plain')] })
+    const h = makeHarness({}, {}, snapshot)
+    const groupStore = new ConversationGroupStore<ProcessGroupData>()
+    const groups = snapshot.order.map((nodeKey, index): GroupSnapshot<ProcessGroupData> => ({
+      key: `running-${index}` as GroupKey,
+      data: { turn: 1, closed: false, summary: { counts: [], running: 'tools', runningDetail: index === 0 ? 'vh_plan_approve' : 'other_tool' } },
+      members: [{ kind: 'node', key: nodeKey as NodeKey }],
+    }))
+    groupStore.prepareAndInstall({
+      entries: groups.map(group => ({ kind: 'group', key: group.key })),
+      groups: { kind: 'replace', snapshots: groups },
+    }, key => snapshot.nodes.get(key))
+    h.setGrouped(groupStore)
+    const translate = ((key: string, params?: Record<string, unknown>) => key === 'tool.name.vh_plan_approve'
+      ? 'Approve plan' : h.props.t(key as never, params)) as typeof h.props.t
+    const view = render(<h.ChatView {...h.props} t={translate} />)
+    act(() => { h.setTranscriptView('standard') })
+    const label = `${h.props.t('message.stepProcess.tools')}${h.props.t('message.turnProcess.separator')}`
+    expect([...view.container.querySelectorAll('[data-process-activity]')].map(header => header.textContent))
+      .toEqual([`${label}Approve plan`, `${label}other_tool`])
+  })
+
   it('passes independently keyed group parts to business Node renderers', () => {
     const snapshot = chatSnapshotFixture({ nodes: [assistant(1, 'answer')] })
     const h = makeHarness({}, {}, snapshot)

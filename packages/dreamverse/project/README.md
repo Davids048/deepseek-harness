@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to run DreamVerse projects in the harness. A project accepts the page's commands, queues generation rounds, generates each segment, and stores its prompts, segments, and reference copies so that the user can close the page and reopen the project later. Opening a project in a second window moves it there and closes the first. User actions plug in as separate plugins, and every project event goes to a JSON Lines log. Projects stored by earlier versions migrate at start.
+Use this package to run DreamVerse projects in the harness. A project accepts the page's commands, queues generation rounds, generates each segment, and stores its prompts, segments, and reference copies so that the user can close the page and reopen the project later. Opening a project in a second window moves it there and closes the first. User actions plug in as separate plugins, and every project event goes to a JSON Lines log. Projects stored by earlier versions migrate at start. Superseded by the [video harness](../../../docs/subsystems/video-harness.md).
 
 ## Table of Contents
 
@@ -164,6 +164,7 @@ None; logging changes no model request.
 - **Partial request record** — the project log records the user's prompts and the enhancer's replies, but not the rendered enhancer request or every segment's final video prompt. The workload data holds each segment's final `prompt`.
 - **Reopened projects start without Auto Extension** — opening a stored project never resumes Auto Extension, even when it was on when the project closed.
 - **Append after a failed round** — while the same socket serves a project, an append after a failed round requires a rewrite first; a reopened project appends to its last completed sequence.
+- **Superseded by the video harness** — the [video harness](../../../docs/subsystems/video-harness.md) replaces this package with the `vhProject` fold and the plan tools of `@video-harness/runtime` and `@video-harness/tools`; the package remains only for the `dreamverse` and `dreamverse-multiverse` profiles.
 
 <a id="dev-note"></a>
 ### Dev Note

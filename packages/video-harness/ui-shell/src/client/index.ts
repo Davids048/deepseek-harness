@@ -1,0 +1,85 @@
+/**
+ * Browser half of the DreamVerse shell: the center workspace in place of DSH's main Conversation, the DreamVerse
+ * navigator and brand in the left sidebar, the 对话 / 轨迹 right-panel tabs, and DSH's New Session action redirected
+ * into the open project.
+ *
+ * @module @video-harness/ui-shell/client
+ */
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import { createActions } from './actions.ts'
+import { CenterPanel, type ShellInjected } from './Center.tsx'
+import { applyChrome } from './chrome.tsx'
+import { BrandName, Navigator } from './Navigator.tsx'
+import { getShell, refreshLinks } from './store.ts'
+import { CHAT_ID, ChatTab, chatDefinition, TRAJECTORY_ID, TrajectoryTab, trajectoryDefinition } from './tabs.tsx'
+
+export type { ShellActions } from './actions.ts'
+export type { ShellInjected } from './Center.tsx'
+
+/** Services the shell uses. */
+export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'workspaces', 'sessions', 'uiWorkspace']
+
+/** Milliseconds between reads of the project ↔ Workspace links, which pick up projects the agent creates. */
+const LINKS_POLL_MS = 4000
+
+/**
+ * Register the shell's slot entries and tab types. The center and the navigator shadow DSH's entries at priority -1.
+ * @param ctx - client root context.
+ */
+export function apply(ctx: ClientContext): void {
+  const injected: ShellInjected = { shell: createActions(ctx) }
+  ctx.effect(() => ctx.slots.inject('main.conversation', () => ctx.slots.register(
+    { name: 'main.conversation', priority: -1, inject: () => injected }, CenterPanel,
+  )), 'ui-shell: center')
+  ctx.effect(() => ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register(
+    { name: 'sidebar.workspaces', priority: -1, inject: () => injected }, Navigator,
+  )), 'ui-shell: navigator')
+  ctx.effect(() => ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register(
+    { name: 'sidebar.brand.name', priority: -1 }, BrandName,
+  )), 'ui-shell: brand')
+  applyChrome(ctx)
+  ctx.effect(() => ctx.sidebarRightTabs.register(chatDefinition), 'ui-shell: chat tab type')
+  ctx.effect(() => ctx.sidebarRightTabs.register(trajectoryDefinition), 'ui-shell: trajectory tab type')
+  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
+    { name: 'sidebar.right.pane.tab', key: CHAT_ID }, ChatTab,
+  )), 'ui-shell: chat tab body')
+  ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
+    { name: 'sidebar.right.pane.tab', key: TRAJECTORY_ID }, TrajectoryTab,
+  )), 'ui-shell: trajectory tab body')
+  ctx.effect(() => {
+    // DSH's New Session buttons (sidebar header and macOS window chrome) call `uiWorkspace.startSession`. In
+    // DreamVerse they start a chat session in the open project, and on the entry page they equal 首页.
+    const navigation = ctx.get('uiWorkspace')
+    if (navigation === undefined) return () => {}
+    Object.defineProperty(navigation, 'startSession', {
+      configurable: true, writable: true,
+      value: () => {
+        const projectId = getShell().projectId
+        const work = projectId === null ? injected.shell.goHome() : injected.shell.newSession(projectId)
+        work.catch((error: unknown) => { console.warn('ui-shell: new session failed', error) })
+      },
+    })
+    return () => { Reflect.deleteProperty(navigation, 'startSession') }
+  }, 'ui-shell: New Session in the open project')
+  ctx.effect(() => {
+    // DSH's first-use start creates a default Workspace in the user's documents folder, which fails on hosts without
+    // one and toasts "Unable to create default workspace". DreamVerse's first chat belongs to the entry Workspace, so
+    // first-use initialization prepares that one instead.
+    const workspaces = ctx.get('workspaces')
+    if (workspaces === undefined) return () => {}
+    Object.defineProperty(workspaces, 'initializeDefault', {
+      configurable: true, writable: true,
+      value: () => injected.shell.entryWorkspace(),
+    })
+    return () => { Reflect.deleteProperty(workspaces, 'initializeDefault') }
+  }, 'ui-shell: entry Workspace as the default Workspace')
+  ctx.effect(() => {
+    const read = (): void => { refreshLinks().catch((error: unknown) => { console.warn('ui-shell: links read failed', error) }) }
+    read()
+    const timer = setInterval(read, LINKS_POLL_MS)
+    return () => { clearInterval(timer) }
+  }, 'ui-shell: links poll')
+}

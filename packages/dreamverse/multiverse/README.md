@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to grow a story as a tree of video scenes. The user writes an opening scene and picks character images; the harness generates it and asks a language model for two different continuations. Choosing a continuation generates only that scene, which starts from its parent's last frame and gets two new continuations; unchosen ones stay available. Each multiverse is a stored project, so it survives a harness restart, and every model call is logged. Branch proposals need a key for the selected model provider.
+Use this package to grow a story as a tree of video scenes. The user writes an opening scene and picks character images; the harness generates it and asks a language model for two different continuations. Choosing a continuation generates only that scene, which starts from its parent's last frame and gets two new continuations; unchosen ones stay available. Each multiverse is a stored project, so it survives a harness restart, and every model call is logged. Branch proposals need a key for the selected model provider. Superseded by the [video harness](../../../docs/subsystems/video-harness.md).
 
 ## Table of Contents
 
@@ -184,6 +184,7 @@ None; logging changes no model request.
 - **Aborted node after a takeover** — after another party takes a multiverse's lease, a node whose generation the director aborted stays `generating` in memory until the next start.
 - **Event stream behind a quick tunnel** — a Cloudflare quick tunnel holds back the body of the `events` route until the response ends, so the page reads `GET /multiverse/api/multiverses/<id>` instead.
 - **Enhancer request not rendered in the log** — `prompt_enhance_request` records the enhancer's inputs; the template and user message that the prompt enhancer renders from them are not logged.
+- **Superseded by the video harness** — the [video harness](../../../docs/subsystems/video-harness.md) replaces this package with plan continuity plus branches in `@video-harness/runtime`; the package remains only for the `dreamverse` and `dreamverse-multiverse` profiles.
 
 <a id="dev-note"></a>
 ### Dev Note
