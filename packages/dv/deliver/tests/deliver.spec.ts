@@ -22,8 +22,8 @@ import DvTimeline from '@dv/timeline'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DvDeliver from '../src/index.ts'
 
-const FFMPEG = process.env['VH_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
-const FFPROBE = process.env['VH_FFPROBE'] ?? 'ffprobe'
+const FFMPEG = process.env['DV_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
+const FFPROBE = process.env['DV_FFPROBE'] ?? 'ffprobe'
 
 /** The plugin classes the fixture rows resolve through `globalThis`, because Node imports the rows outside Vite. */
 const PLUGINS = { SystemPrompt, ToolRuntime, DvAssetPool, DvProject, DvFfmpeg, DvTimeline, DvDeliver }
@@ -138,7 +138,7 @@ describe('dvDeliver', () => {
     const red = await fixture.clip('red', '160x90', 1)
     const blue = await fixture.clip('blue', '160x90', 2)
     await fixture.run('timeline.create', { timeline: 't1', name: 'Pilot', assets: [red, blue] })
-    await fixture.run('timeline.clip_trim', { timeline: 't1', clip: 2, in_sec: 0.5, out_sec: 1.5 })
+    await fixture.run('timeline.clip_trim', { clip: 'cl2', in_sec: 0.5, out_sec: 1.5 })
     const exported = value(await fixture.call('dv_deliver_timeline_export', { reason: 'export the pilot', timeline: 't1' }))
     expect(exported).toMatchObject({ status: 'done', summary: 'exported timeline t1', outputs: [{ role: 'video', mime: 'video/mp4' }] })
     const record = fixture.ctx.dvProject.getRecord(fixture.project, brandString<RecordId>(exported.record))

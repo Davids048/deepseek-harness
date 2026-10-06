@@ -233,7 +233,7 @@ gives its steps.
   busy.
 - Replay copies keep every field of the original's current form except `id`, `parents`, `created_at`; the copy's
   `branch` is the draft name. The update line after the copy repeats the original's final fields, so copies have the
-  same `outputs`, `cost` and `report`.
+  same `outputs`, `cost` and `report`. Timeline relies on it: the clip IDs a record assigned are in its `report.clips`.
 - Generic conflict (besides reducer conflicts): a draft record that supersedes a record which the new base already
   marks superseded by a record outside the draft.
 - `switchBranch` to the branch the session already works on still writes the record (`from` equals `to`).

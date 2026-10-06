@@ -20,8 +20,8 @@ import DvProject, { type AssetId, type OperationToolValue, type ProjectId, type 
 import { afterEach, describe, expect, it } from 'vitest'
 import DvInspector from '../src/index.ts'
 
-const FFMPEG = process.env['VH_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
-const FFPROBE = process.env['VH_FFPROBE'] ?? 'ffprobe'
+const FFMPEG = process.env['DV_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
+const FFPROBE = process.env['DV_FFPROBE'] ?? 'ffprobe'
 
 /** The answer the fake model gives. */
 const ANSWER = 'A red kite over a beach.'

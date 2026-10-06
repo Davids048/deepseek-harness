@@ -30,8 +30,8 @@ Mount the plugin with the projects directory and the session directory. The asse
 - id: dv-project
   name: '@dv/project'
   config:
-    root: $VH_STATE_ROOT/projects
-    sessionRoot: $VH_STATE_ROOT/sessions
+    root: $DV_STATE_ROOT/projects
+    sessionRoot: $DV_STATE_ROOT/sessions
 ```
 
 | Field | Default | Meaning |

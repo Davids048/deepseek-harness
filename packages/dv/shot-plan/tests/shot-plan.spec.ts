@@ -1,9 +1,9 @@
 /**
  * The Shot plan component in a REAL composition: a test-only `cordis.yml` boots the DSH tool registry, `dvProject`,
- * `dvFfmpeg`, the asset pool and `dvShotPlan` through the Loader. `plan.approve` schedules other components'
- * operations by name, so the test registers two stand-ins with `dvProject`: a `shot.render` that imports a small
- * video and a last still without a generation backend, and a `timeline.create` that writes only its record. The
- * browser stories run the approval against the real components.
+ * `dvFfmpeg`, the asset pool, `dvTimeline` and `dvShotPlan` through the Loader. `plan.approve` schedules other
+ * components' operations by name: the timeline operations of the real `dvTimeline`, and a stand-in `shot.render`
+ * registered with `dvProject` that imports a small video and a last still without a generation backend. The browser
+ * stories run the approval against the real components.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -22,14 +22,15 @@ import DvProject, {
   type AssetId, type OperationSpec, type OperationToolValue, type ProjectId, type ProjectRecord, type RecordId, type RunRequest,
   type SessionId,
 } from '@dv/project'
+import DvTimeline from '@dv/timeline'
 import { afterEach, describe, expect, it } from 'vitest'
 import DvShotPlan from '../src/index.ts'
 
-const FFMPEG = process.env['VH_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
-const FFPROBE = process.env['VH_FFPROBE'] ?? 'ffprobe'
+const FFMPEG = process.env['DV_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
+const FFPROBE = process.env['DV_FFPROBE'] ?? 'ffprobe'
 
 /** The plugin classes the fixture rows resolve through `globalThis`, because Node imports the rows outside Vite. */
-const PLUGINS = { SystemPrompt, ToolRuntime, DvProject, DvFfmpeg, DvAssetPool, DvShotPlan }
+const PLUGINS = { SystemPrompt, ToolRuntime, DvProject, DvFfmpeg, DvAssetPool, DvTimeline, DvShotPlan }
 
 /** A user action outside any chat session: it lands on `main` directly. */
 const USER = { actor: 'user' as const, surface: 'canvas' as const, session: null, turn: null, tool_call: null }
@@ -54,10 +55,10 @@ afterEach(async () => {
 })
 
 /**
- * Stand-ins for the operations `plan.approve` schedules: their names, input roles and output order match the real
- * Shot render and Timeline components.
+ * The stand-in for the `shot.render` that `plan.approve` schedules: its name, input roles and output order match the
+ * real Shot render component.
  * @param precondition - the stand-in render's precondition, when the test needs one.
- * @returns the two specs.
+ * @returns the spec.
  */
 function standIns(precondition?: OperationSpec['precondition']): OperationSpec[] {
   const base = { version: '1', description: 'stand-in', deterministic: false, confirm: 'never' as const, summarize: () => 'stand-in' }
@@ -79,11 +80,6 @@ function standIns(precondition?: OperationSpec['precondition']): OperationSpec[]
           context.importAsset(Buffer.from(`frame ${String(context.params['prompt'])}`), { mime: 'image/png', name: 'last.png' }),
         ],
       }),
-    },
-    {
-      ...base, name: 'timeline.create', component: 'timeline', resource: 'none', params: { plan: { type: 'string' } },
-      inputs: { clip: { type: 'video', many: true, description: 'Clips.' } }, outputs: [],
-      execute: () => Promise.resolve({ outputs: [] }),
     },
   ]
 }
@@ -107,6 +103,7 @@ async function start(precondition?: OperationSpec['precondition']): Promise<Fixt
   row('dv-project', 'DvProject', [`root: ${join(dir, 'projects')}`, `sessionRoot: ${join(dir, 'sessions')}`])
   row('dv-ffmpeg', 'DvFfmpeg', [`ffmpegPath: ${FFMPEG}`, `ffprobePath: ${FFPROBE}`])
   row('dv-asset-pool', 'DvAssetPool', [`root: ${join(dir, 'assets')}`])
+  row('dv-timeline', 'DvTimeline', [])
   row('dv-shot-plan', 'DvShotPlan', [])
   writeFileSync(join(dir, 'cordis.yml'), `${rows.join('\n')}\n`)
 
@@ -214,10 +211,54 @@ describe('dvShotPlan', () => {
     expect(shots[0]?.inputs).toEqual([{ role: 'reference', ref: { asset: picture }, resolved_asset: picture }])
     expect(shots[1]?.inputs[1]).toEqual({ role: 'first_frame', ref: { record: shots[0]?.id, output: 1 }, resolved_asset: shots[0]?.outputs[1] })
     const timeline = state.components.proj.records.find(record => record.operation === 'timeline.create')
-    expect(timeline).toMatchObject({ actor: 'system', status: 'done', params: { plan: plan.id } })
+    expect(timeline).toMatchObject({ actor: 'system', status: 'done', params: { timeline: 't1', plan: plan.id } })
     expect(timeline?.inputs.map(input => input.resolved_asset)).toEqual(shots.map(shot => shot.outputs[0]))
     expect(approved.scheduled).toEqual([...shots.map(shot => shot.id), timeline?.id])
+    expect(state.components.timeline.timelines[0]?.clips.map(clip => clip.asset)).toEqual(shots.map(shot => shot.outputs[0]))
     expect(state.components.plan.plans).toEqual([{ record: plan.id, approved: true, approved_by: approved.record }])
+  })
+
+  it('updates the plan\'s timeline when the plan is approved again, and creates a timeline for another plan', async () => {
+    const fixture = await start()
+    const picture = fixture.put('face', 'image/png', 'face.png')
+    const plan = await fixture.record('plan.create', { references: [picture], shots: [{ prompt: 'one' }] })
+    const other = await fixture.record('plan.create', { references: [picture], shots: [{ prompt: 'two' }] })
+    const layouts = async (): Promise<unknown[]> => {
+      await fixture.ctx.dvProject.wait(fixture.project)
+      return fixture.ctx.dvProject.getState(fixture.project).components.proj.records
+        .filter(record => record.component === 'timeline').map(record => [record.operation, record.params, record.status])
+    }
+    // Each approval waits for the scheduled records of the one before, so it sees the timeline they laid out.
+    for (const approved of [plan, plan, other]) {
+      await fixture.record('plan.approve', { plan: approved.id })
+      await fixture.ctx.dvProject.wait(fixture.project)
+    }
+    expect(await layouts()).toEqual([
+      ['timeline.create', { timeline: 't1', plan: plan.id }, 'done'],
+      ['timeline.update', { timeline: 't1', plan: plan.id }, 'done'],
+      ['timeline.create', { timeline: 't2', plan: other.id }, 'done'],
+    ])
+    const timelines = fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines
+    const renders = fixture.recordsOf('shot.render')
+    expect(timelines.map(timeline => [timeline.id, timeline.clips.map(clip => clip.asset)]))
+      .toEqual([['t1', [renders[1]?.outputs[0]]], ['t2', [renders[2]?.outputs[0]]]])
+  })
+
+  it('updates the timeline of the plan an approved plan.update is based on', async () => {
+    const fixture = await start()
+    const picture = fixture.put('face', 'image/png', 'face.png')
+    const plan = await fixture.record('plan.create', { references: [picture], shots: [{ prompt: 'one' }] })
+    await fixture.record('plan.approve', { plan: plan.id })
+    await fixture.ctx.dvProject.wait(fixture.project)
+    const updated = await fixture.record('plan.update', { references: [picture], shots: [{ prompt: 'two' }] }, { based_on: plan.id })
+    await fixture.record('plan.approve', { plan: updated.id })
+    await fixture.ctx.dvProject.wait(fixture.project)
+    const layouts = fixture.ctx.dvProject.getState(fixture.project).components.proj.records
+      .filter(record => record.component === 'timeline').map(record => [record.operation, record.params])
+    expect(layouts).toEqual([
+      ['timeline.create', { timeline: 't1', plan: plan.id }],
+      ['timeline.update', { timeline: 't1', plan: updated.id }],
+    ])
   })
 
   it('gives independent shots only their references, and a shot\'s own references replace the plan\'s', async () => {

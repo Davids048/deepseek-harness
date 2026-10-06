@@ -4,8 +4,9 @@
  * - `plan.create`: the shots with prompts and durations, the references, and the continuity, stored as a JSON asset so
  *   the agent and the user read the same text;
  * - `plan.update`: a changed copy of an earlier plan, with that plan's record as `based_on`;
- * - `plan.approve`: the user's go-ahead; it schedules one `shot.render` per shot and one `timeline.create` of the
- *   rendered clips through `dvProject.run`, as the `system` actor.
+ * - `plan.approve`: the user's go-ahead; it schedules one `shot.render` per shot and, through `dvProject.run` as the
+ *   `system` actor, one `timeline.update` of the plan's timeline with the rendered clips, or a `timeline.create` of a new
+ *   timeline when the plan has none.
  *
  * `dvProject` turns each operation into its agent tool (`dv_plan_create`, `dv_plan_update`, `dv_plan_approve`). The
  * reducer keeps the `plan` slice: every finished plan and the record that approved it.
@@ -17,6 +18,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import z from '@deepseek-ai/schemastery'
 import type DvProject from '@dv/project'
 import type { OperationContext, OperationResult, OperationSpec, ProjectId, ProjectState, RecordId, RunRequest } from '@dv/project'
+import type {} from '@dv/timeline'
 import { planReducer } from './reducer.ts'
 import type { Plan } from './types.ts'
 
@@ -38,8 +40,9 @@ export const Config: z<Config> = z.object({})
 /** The operation that renders one shot; `plan.approve` schedules it by name. */
 const SHOT_RENDER = 'shot.render'
 
-/** The operation that lays out the rendered clips; `plan.approve` schedules it by name. */
+/** The operations that lay out the rendered clips on a timeline; `plan.approve` schedules one of them by name. */
 const TIMELINE_CREATE = 'timeline.create'
+const TIMELINE_UPDATE = 'timeline.update'
 
 /** The operations whose records store a plan. */
 const PLAN_OPERATIONS: ReadonlySet<string> = new Set(['plan.create', 'plan.update'])
@@ -111,6 +114,38 @@ function shotRenders(
   })
 }
 
+/**
+ * The timeline an approval of a plan lays the rendered clips on, and the operation that does it. The plan's timeline is
+ * the timeline whose latest finished `timeline.create` or `timeline.update` record names, in `params.plan`, the plan or
+ * an earlier version of it (a `plan.update` record names the version it changes in `based_on`); the approval replaces
+ * its clips with `timeline.update`. Without one, it creates a timeline with the next free ID (`t<n>` after the highest
+ * number in use, `t1` in a project without timelines) with `timeline.create`.
+ * @param state - the state the approval runs on.
+ * @param planId - the record ID of the plan.
+ * @returns the operation and the timeline ID.
+ */
+function timelineCall(state: ProjectState, planId: string): { operation: string; timeline: string } {
+  // The plan named by the latest create or update record of each timeline; a create without an ID created `t1`.
+  const latestPlan = new Map<string, unknown>()
+  for (const record of state.components.proj.records) {
+    if (record.status !== 'done' || (record.operation !== TIMELINE_CREATE && record.operation !== TIMELINE_UPDATE)) continue
+    latestPlan.set(typeof record.params['timeline'] === 'string' ? record.params['timeline'] : 't1', record.params['plan'])
+  }
+  // The plan and every earlier version of it, following `based_on` from each `plan.update` record.
+  const versions = new Set<unknown>()
+  const records = new Map(state.components.proj.records.map(record => [String(record.id), record]))
+  for (let id: string | null = planId; id !== null && !versions.has(id);) {
+    versions.add(id)
+    const record = records.get(id)
+    id = record?.operation === 'plan.update' && record.based_on !== null ? String(record.based_on) : null
+  }
+  const timelines = state.components.timeline.timelines
+  const own = timelines.find(timeline => versions.has(latestPlan.get(timeline.id)))
+  if (own !== undefined) return { operation: TIMELINE_UPDATE, timeline: own.id }
+  const highest = Math.max(0, ...timelines.map(timeline => Number(/^t(\d+)$/.exec(timeline.id)?.[1] ?? 0)))
+  return { operation: TIMELINE_CREATE, timeline: `t${String(highest + 1)}` }
+}
+
 /** The Shot plan service: the three operations, the reducer, and the methods the operations run. */
 export default class DvShotPlan extends Service {
   static inject = ['dvProject']
@@ -139,8 +174,9 @@ export default class DvShotPlan extends Service {
 
   /**
    * Schedule the renders of the plan that a running `plan.approve` call names: one `shot.render` per shot and one
-   * `timeline.create` of their clips, written by the `system` actor in the approving record's surface, session and
-   * turn. Chained continuity names each shot's predecessor last still (output 1) as its `first_frame` input, which also
+   * `timeline.update` of the plan's timeline with their clips, or a `timeline.create` of a new timeline when the plan has
+   * none (see `timelineCall`), written by the `system` actor in the approving record's surface, session and turn.
+   * Chained continuity names each shot's predecessor last still (output 1) as its `first_frame` input, which also
    * orders the renders.
    * @param context - the running `plan.approve` call.
    * @returns the scheduled records: the shot renders in plan order, then the timeline.
@@ -168,9 +204,12 @@ export default class DvShotPlan extends Service {
       if (scheduled.record === null) throw new Error('A scheduled shot render returned no record.')
       shots.push(scheduled.record.id)
     }
+    const layout = timelineCall(context.state, planId)
+    const verb = layout.operation === TIMELINE_CREATE ? 'create' : 'update'
     const timeline = await project.run({
-      ...origin, project: context.project, operation: TIMELINE_CREATE, params: { plan: planId },
-      inputs: shots.map(id => ({ role: 'clip', ref: { record: id, output: 0 } })), intent: `create timeline of plan ${planId.slice(0, 8)}`, after: shots,
+      ...origin, project: context.project, operation: layout.operation, params: { timeline: layout.timeline, plan: planId },
+      inputs: shots.map(id => ({ role: 'clip', ref: { record: id, output: 0 } })),
+      intent: `${verb} timeline ${layout.timeline} of plan ${planId.slice(0, 8)}`, after: shots,
     })
     return timeline.record === null ? shots : [...shots, timeline.record.id]
   }

@@ -19,6 +19,9 @@
     },
     {
       "path": "../project"
+    },
+    {
+      "path": "../timeline"
     }
   ]
 }

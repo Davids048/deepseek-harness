@@ -93,7 +93,7 @@ work; each operation's `execute` calls one of them.
 mounted, with the shared arguments `reason`, `project_id`, `inputs`, `supersedes` and `based_on`, and the result
 `{record, status, summary, outputs, scheduled, params, report?, images?}`. A component writes no tool code. The DSH
 question rule (`user_approved`, `user_requested`, the GPU budget) is the agent integration's `ToolCallCheck`
-(`packages/video-harness/agent/src/question-rule.ts`), which applies to operations by name: an operation that needs
+(`packages/dv/agent-integration/src/question-rule.ts`), which applies to operations by name: an operation that needs
 the user's approval before an agent call gets its rule there. A rule that every caller must meet belongs in the
 operation's `precondition`, which the runner calls for every caller.
 
@@ -131,9 +131,9 @@ Test-only packages go in `devDependencies`.
 
 1. `tsconfig.base.json` `paths`: `"@dv/<dir>": ["./packages/dv/<dir>/src/index.ts"]` next to the other `@dv/*` rows.
 2. `tsconfig.host.json` `references`: `{ "path": "./packages/dv/<dir>" }` next to the other `packages/dv` rows.
-3. `packages/bundle/video-harness/cordis.patch.yml`: one row `- id: dv-<dir>` / `name: '@dv/<dir>'` with its
+3. `packages/bundle/dv/cordis.patch.yml`: one row `- id: dv-<dir>` / `name: '@dv/<dir>'` with its
    config, in the `insert` list after the rows it injects; and `@dv/<dir>` in that bundle's `package.json`.
-4. Every consumer's `tsconfig.json` `references` and `package.json` `dependencies` (views, agent, mentions for a
+4. Every consumer's `tsconfig.json` `references` and `package.json` `dependencies` (api, agent-integration for a
    slice type).
 
 **node_modules.** `pnpm install` is broken; create the links by hand (they are untracked):
@@ -144,8 +144,8 @@ ln -s ../../../../../vendor/cordis node_modules/@deepseek-ai/cordis
 ln -s ../../../../../vendor/schemastery node_modules/@deepseek-ai/schemastery
 ln -s ../../../project node_modules/@dv/project
 ln -s ../../../../../node_modules/.pnpm/@types+node@22.20.0/node_modules/@types/node node_modules/@types/node
-# one link per further dependency; and in packages/bundle/video-harness/node_modules/@dv:
-ln -s ../../../../dv/<dir> packages/bundle/video-harness/node_modules/@dv/<dir>
+# one link per further dependency; and in packages/bundle/dv/node_modules/@dv:
+ln -s ../../../../dv/<dir> packages/bundle/dv/node_modules/@dv/<dir>
 ```
 
 Also link `@dv/<dir>` into the `node_modules/@dv` of every package that imports it.
@@ -166,8 +166,8 @@ Also link `@dv/<dir>` into the `node_modules/@dv` of every package that imports 
   `assetsOf`, `conflict` and `agentSummary` where present.
 
 **E2E stories.** Add or update the stories that exercise your component, and run every suite you touched,
-from the worktree root: `node_modules/.bin/vitest run --config packages/video-harness/e2e/vitest.e2e.config.ts
-<story>` (stories: `navigation`, `chat`, `canvas-cuts`, `assets`). The scripted model in <!-- names:allow -->
+from the worktree root: `node_modules/.bin/vitest run --config packages/dv/e2e/vitest.e2e.config.ts
+<story>` (stories: `navigation`, `chat`, `canvas-timeline`, `assets`). The scripted model in
 `e2e/tests/scripted-model.ts` and the rules in each story name tools by their `dv_*` names.
 
 ## 6. README
@@ -186,14 +186,13 @@ From the worktree root, with the environment of BRIEF.md:
 
 1. `node_modules/.bin/tsc -b tsconfig.host.json` and `node_modules/.bin/tsc -b tsconfig.client.json`: 0 errors
    (the host check includes every `packages/*/*/tests` file).
-2. Unit tests: `packages/dv` (section 5) and `packages/video-harness`
-   (`cd packages/video-harness && ../../node_modules/.bin/vitest run --config vitest.config.ts`): all pass.
+2. Unit tests: `packages/dv` (section 5): all pass.
 3. Lint (BRIEF.md "Lint"), including untracked files:
    `{ git diff --name-only -- '*.ts' '*.tsx'; git ls-files --others --exclude-standard -- '*.ts' '*.tsx'; } | xargs
    node_modules/.bin/tsx scripts/run-oxlint.ts --config .oxlintrc.staged.json --fix --no-error-on-unmatched-pattern`:
    0 errors.
 4. `bash vh-run/team/refactor/check-names.sh packages/dv`: 0 findings.
 5. Client bundles rebuilt for every changed `ui-*` package:
-   `cd packages/video-harness/<ui-pkg> && ../../../node_modules/.bin/tsdown`.
+   `cd packages/dv/<ui-pkg> && ../../../node_modules/.bin/tsdown`.
 6. The e2e suites that exercise your component: all pass.
 7. `node_modules/.bin/tsx scripts/verify-translation-pairing.ts`: all pairs consistent.

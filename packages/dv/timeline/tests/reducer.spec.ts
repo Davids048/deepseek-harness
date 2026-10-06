@@ -1,4 +1,4 @@
-/** The pure `timeline` reducer: every operation's effect on the slice, the clip checks, and replay conflicts. */
+/** The pure `timeline` reducer: every operation's effect on the slice, the clip and clip ID checks, and replay conflicts. */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AssetId, ComponentStates, ProjectRecord, RecordId } from '@dv/project'
 import { describe, expect, it } from 'vitest'
@@ -18,115 +18,140 @@ function edit(operation: string, params: Record<string, unknown>, fields: Partia
   }
 }
 
+/** A finished record of an operation that adds clips, with the clip IDs it stored in `report.clips`. */
+function adding(operation: string, params: Record<string, unknown>, clips: string[], fields: Partial<ProjectRecord> = {}): ProjectRecord {
+  return edit(operation, params, { report: { clips }, ...fields })
+}
+
 /** Reduce records in order from the initial slice. */
 function reduceAll(records: ProjectRecord[], slice: ComponentStates['timeline'] = timelineReducer.initial()): ComponentStates['timeline'] {
   return records.reduce((current, record) => timelineReducer.reduce(current, record), slice)
 }
 
-/** The clips of one timeline as `asset in-out` text, for compact expectations. */
+/** The clips of one timeline as `id asset in-out` text, for compact expectations. */
 function clipsOf(slice: ComponentStates['timeline'], id = 't1'): string[] {
   const timeline = slice.timelines.find(candidate => candidate.id === id)
-  return timeline?.clips.map(clip => `${clip.asset} ${String(clip.in_sec)}-${String(clip.out_sec)}`) ?? []
+  return timeline?.clips.map(clip => `${clip.id} ${clip.asset} ${String(clip.in_sec)}-${String(clip.out_sec)}`) ?? []
 }
 
 const conflict = (slice: ComponentStates['timeline'], record: ProjectRecord): string | null => timelineReducer.conflict?.(slice, record) ?? null
 
+/** A slice with timeline t1 holding clips cl1, cl2 and cl3 of assets a, b and c. */
+const base = (): ComponentStates['timeline'] => reduceAll([adding('timeline.create', { assets: ['a', 'b', 'c'] }, ['cl1', 'cl2', 'cl3'])])
+
 describe('timeline reducer', () => {
-  it('creates, replaces, renames and deletes whole timelines', () => {
-    const first = edit('timeline.create', { assets: ['a', 'b'] })
-    const second = edit('timeline.create', { timeline: 't2', name: 'B side', assets: ['c'] })
+  it('creates, updates, renames and deletes whole timelines', () => {
+    const first = adding('timeline.create', { assets: ['a', 'b'] }, ['cl1', 'cl2'])
+    const second = adding('timeline.create', { timeline: 't2', name: 'B side', assets: ['c'] }, ['cl3'])
     const slice = reduceAll([first, second])
-    expect(slice.timelines.map(timeline => [timeline.id, timeline.name])).toEqual([[FIRST_TIMELINE_ID, '第 1 集'], ['t2', 'B side']])
-    expect(clipsOf(slice)).toEqual(['a null-null', 'b null-null'])
-    // Without an ID, create replaces the first timeline's clips and keeps its name; with a known ID, that timeline's.
-    expect(clipsOf(reduceAll([edit('timeline.create', { assets: ['d'] })], slice))).toEqual(['d null-null'])
-    expect(reduceAll([edit('timeline.create', { timeline: 't2', assets: [] })], slice).timelines[1]).toEqual({ id: 't2', name: 'B side', clips: [] })
+    expect(slice.timelines.map(timeline => [timeline.id, timeline.name])).toEqual([[FIRST_TIMELINE_ID, ''], ['t2', 'B side']])
+    expect(clipsOf(slice)).toEqual(['cl1 a null-null', 'cl2 b null-null'])
+    // create only creates: a create of an existing ID changes nothing; update replaces the clips and keeps the name.
+    expect(reduceAll([adding('timeline.create', { assets: ['d'] }, ['cl4'])], slice)).toBe(slice)
+    expect(clipsOf(reduceAll([adding('timeline.update', { timeline: 't1', assets: ['d'] }, ['cl4'])], slice))).toEqual(['cl4 d null-null'])
+    expect(reduceAll([adding('timeline.update', { timeline: 't2', assets: [] }, [])], slice).timelines[1]).toEqual({ id: 't2', name: 'B side', clips: [] })
     const renamed = reduceAll([edit('timeline.rename', { timeline: 't2', name: '片尾' })], slice)
-    expect(renamed.timelines.map(timeline => timeline.name)).toEqual(['第 1 集', '片尾'])
+    expect(renamed.timelines.map(timeline => timeline.name)).toEqual(['', '片尾'])
     expect(reduceAll([edit('timeline.delete', { timeline: 't1' })], slice).timelines.map(timeline => timeline.id)).toEqual(['t2'])
-    expect(reduceAll([edit('timeline.create', { timeline: 't3' })], slice).timelines[2]).toEqual({ id: 't3', name: '第 3 集', clips: [] })
+    expect(reduceAll([adding('timeline.create', { timeline: 't3' }, [])], slice).timelines[2]).toEqual({ id: 't3', name: '', clips: [] })
   })
 
-  it('assembles a scheduled create from the resolved assets of its clip inputs', () => {
+  it('assembles a scheduled create or update from the resolved assets of its clip inputs', () => {
     const producer = brandString<RecordId>('shot')
     const asset = brandString<AssetId>('v')
-    const assembly = edit('timeline.create', { plan: 'p1' }, {
-      inputs: [
-        { role: 'clip', ref: { record: producer, output: 0 }, resolved_asset: asset },
-        { role: 'clip', ref: { record: producer, output: 0 }, resolved_asset: null },
-        { role: 'other', ref: { asset }, resolved_asset: asset },
-      ],
-    })
-    expect(clipsOf(reduceAll([assembly]))).toEqual(['v null-null'])
-  })
-
-  it('inserts, moves, removes, splits, trims and replaces clips by position', () => {
-    const base = reduceAll([edit('timeline.create', { assets: ['a', 'b', 'c'] })])
-    expect(clipsOf(reduceAll([edit('timeline.clip_insert', { at: 4, asset: 'd' })], base))).toEqual(['a null-null', 'b null-null', 'c null-null', 'd null-null'])
-    expect(clipsOf(reduceAll([edit('timeline.clip_move', { clip: 3, to: 1 })], base))).toEqual(['c null-null', 'a null-null', 'b null-null'])
-    expect(clipsOf(reduceAll([edit('timeline.clip_remove', { clip: 2 })], base))).toEqual(['a null-null', 'c null-null'])
-    expect(clipsOf(reduceAll([edit('timeline.clip_replace', { clip: 1, asset: 'z' })], base))).toEqual(['z null-null', 'b null-null', 'c null-null'])
-    const trimmed = reduceAll([edit('timeline.clip_trim', { clip: 2, in_sec: 0.5, out_sec: 3 })], base)
-    expect(clipsOf(trimmed)).toEqual(['a null-null', 'b 0.5-3', 'c null-null'])
-    // `at_sec` is a time inside the asset: both parts play the same asset.
-    expect(clipsOf(reduceAll([edit('timeline.clip_split', { clip: 2, at_sec: 1 })], trimmed))).toEqual(['a null-null', 'b 0.5-1', 'b 1-3', 'c null-null'])
-    // A trim without points plays the whole asset again; a replace resets the points.
-    expect(clipsOf(reduceAll([edit('timeline.clip_trim', { clip: 2 })], trimmed))).toEqual(['a null-null', 'b null-null', 'c null-null'])
-    expect(clipsOf(reduceAll([edit('timeline.clip_replace', { clip: 2, asset: 'y' })], trimmed))).toEqual(['a null-null', 'y null-null', 'c null-null'])
-  })
-
-  it('edits the timeline a call names, and creates the timeline an insert names when it does not exist', () => {
-    const base = reduceAll([edit('timeline.create', { assets: ['a'] }), edit('timeline.create', { timeline: 't2', assets: ['b'] })])
-    const named = reduceAll([edit('timeline.clip_remove', { timeline: 't2', clip: 1 })], base)
-    expect([clipsOf(named), clipsOf(named, 't2')]).toEqual([['a null-null'], []])
-    expect(reduceAll([edit('timeline.clip_insert', { at: 1, asset: 'a' })]).timelines).toEqual([
-      { id: FIRST_TIMELINE_ID, name: '第 1 集', clips: [{ asset: 'a', in_sec: null, out_sec: null }] },
-    ])
-    expect(clipsOf(reduceAll([edit('timeline.clip_insert', { timeline: 't9', at: 1, asset: 'c' })], base), 't9')).toEqual(['c null-null'])
-  })
-
-  it('ignores unfinished records, records of other components, and calls that do not apply', () => {
-    const base = reduceAll([edit('timeline.create', { assets: ['a'] })])
-    const ignored = [
-      edit('timeline.clip_remove', { clip: 1 }, { status: 'pending' }),
-      edit('plan.create', { shots: [] }),
-      edit('timeline.clip_remove', { clip: 5 }),
-      edit('timeline.clip_split', { clip: 1, at_sec: 0 }),
-      edit('timeline.rename', { timeline: 't7', name: 'x' }),
+    const inputs = [
+      { role: 'clip', ref: { record: producer, output: 0 }, resolved_asset: asset },
+      { role: 'clip', ref: { record: producer, output: 0 }, resolved_asset: null },
+      { role: 'other', ref: { asset }, resolved_asset: asset },
     ]
-    expect(reduceAll(ignored, base)).toBe(base)
-    expect(timelineReducer.reduce(base, { ...edit('timeline.create', {}), operation: null })).toBe(base)
+    const created = reduceAll([adding('timeline.create', { plan: 'p1' }, ['cl1'], { inputs })])
+    expect(clipsOf(created)).toEqual(['cl1 v null-null'])
+    expect(clipsOf(reduceAll([adding('timeline.update', { timeline: 't1', plan: 'p1' }, ['cl2'], { inputs })], created))).toEqual(['cl2 v null-null'])
+  })
+
+  it('inserts, moves, removes, splits, trims and replaces clips by clip ID', () => {
+    const slice = base()
+    expect(clipsOf(reduceAll([adding('timeline.clip_insert', { at: 4, asset: 'd' }, ['cl4'])], slice)))
+      .toEqual(['cl1 a null-null', 'cl2 b null-null', 'cl3 c null-null', 'cl4 d null-null'])
+    expect(clipsOf(reduceAll([edit('timeline.clip_move', { clip: 'cl3', to: 1 })], slice))).toEqual(['cl3 c null-null', 'cl1 a null-null', 'cl2 b null-null'])
+    expect(clipsOf(reduceAll([edit('timeline.clip_remove', { clip: 'cl2' })], slice))).toEqual(['cl1 a null-null', 'cl3 c null-null'])
+    expect(clipsOf(reduceAll([edit('timeline.clip_replace', { clip: 'cl1', asset: 'z' })], slice))).toEqual(['cl1 z null-null', 'cl2 b null-null', 'cl3 c null-null'])
+    const trimmed = reduceAll([edit('timeline.clip_trim', { clip: 'cl2', in_sec: 0.5, out_sec: 3 })], slice)
+    expect(clipsOf(trimmed)).toEqual(['cl1 a null-null', 'cl2 b 0.5-3', 'cl3 c null-null'])
+    // `at_sec` is a time inside the asset: both parts play the same asset; the second part gets the assigned ID.
+    expect(clipsOf(reduceAll([adding('timeline.clip_split', { clip: 'cl2', at_sec: 1 }, ['cl4'])], trimmed)))
+      .toEqual(['cl1 a null-null', 'cl2 b 0.5-1', 'cl4 b 1-3', 'cl3 c null-null'])
+    // A trim without points plays the whole asset again; a replace keeps the ID and resets the points.
+    expect(clipsOf(reduceAll([edit('timeline.clip_trim', { clip: 'cl2' })], trimmed))).toEqual(['cl1 a null-null', 'cl2 b null-null', 'cl3 c null-null'])
+    expect(clipsOf(reduceAll([edit('timeline.clip_replace', { clip: 'cl2', asset: 'y' })], trimmed))).toEqual(['cl1 a null-null', 'cl2 y null-null', 'cl3 c null-null'])
+  })
+
+  it('edits the timeline that holds the clip, and creates the timeline an insert names when it does not exist', () => {
+    const slice = reduceAll([adding('timeline.create', { assets: ['a'] }, ['cl1']), adding('timeline.create', { timeline: 't2', assets: ['b'] }, ['cl2'])])
+    const removed = reduceAll([edit('timeline.clip_remove', { clip: 'cl2' })], slice)
+    expect([clipsOf(removed), clipsOf(removed, 't2')]).toEqual([['cl1 a null-null'], []])
+    expect(reduceAll([adding('timeline.clip_insert', { at: 1, asset: 'a' }, ['cl1'])]).timelines).toEqual([
+      { id: FIRST_TIMELINE_ID, name: '', clips: [{ id: 'cl1', asset: 'a', in_sec: null, out_sec: null }] },
+    ])
+    expect(clipsOf(reduceAll([adding('timeline.clip_insert', { timeline: 't9', at: 1, asset: 'c' }, ['cl3'])], slice), 't9')).toEqual(['cl3 c null-null'])
+  })
+
+  it('ignores unfinished records, records of other components, calls that do not apply, and records without their clip IDs', () => {
+    const slice = base()
+    const ignored = [
+      edit('timeline.clip_remove', { clip: 'cl1' }, { status: 'pending' }),
+      edit('plan.create', { shots: [] }),
+      edit('timeline.clip_remove', { clip: 'cl5' }),
+      adding('timeline.clip_split', { clip: 'cl1', at_sec: 0 }, ['cl4']),
+      edit('timeline.rename', { timeline: 't7', name: 'x' }),
+      // A record written before clips had IDs, a record with too many IDs, and one that reuses an ID.
+      edit('timeline.clip_insert', { at: 1, asset: 'd' }),
+      adding('timeline.clip_insert', { at: 1, asset: 'd' }, ['cl4', 'cl5']),
+      adding('timeline.clip_insert', { at: 1, asset: 'd' }, ['cl2']),
+      adding('timeline.update', { timeline: 't1', assets: ['d', 'e'] }, ['cl4', 'cl4']),
+    ]
+    expect(reduceAll(ignored, slice)).toBe(slice)
+    expect(timelineReducer.reduce(slice, { ...edit('timeline.create', {}), operation: null })).toBe(slice)
   })
 
   it('reports why a draft record cannot apply to a main that moved', () => {
-    const main = reduceAll([edit('timeline.create', { assets: ['a', 'b'] })])
-    const ranged = reduceAll([edit('timeline.clip_trim', { clip: 1, in_sec: 1, out_sec: 2 })], main)
-    expect(conflict(main, edit('timeline.clip_remove', { clip: 2 }))).toBeNull()
-    expect(conflict(main, edit('timeline.clip_remove', { clip: 3 }))).toBe('Timeline t1 has 2 clips; position 3 is not between 1 and 2.')
-    expect(conflict(main, edit('timeline.clip_move', { clip: 1, to: 3 }))).toBe('Timeline t1 has 2 clips; position 3 is not between 1 and 2.')
-    expect(conflict(main, edit('timeline.clip_insert', { at: 3, asset: 'c' }))).toBeNull()
-    expect(conflict(main, edit('timeline.clip_insert', { at: 4, asset: 'c' }))).toContain('not between 1 and 3')
-    expect(conflict(main, edit('timeline.clip_insert', { timeline: 't2', at: 2, asset: 'c' }))).toBe('Timeline t2 has 0 clips; position 2 is not between 1 and 1.')
+    const main = reduceAll([adding('timeline.create', { assets: ['a', 'b'] }, ['cl1', 'cl2'])])
+    const ranged = reduceAll([edit('timeline.clip_trim', { clip: 'cl1', in_sec: 1, out_sec: 2 })], main)
+    expect(conflict(main, edit('timeline.clip_remove', { clip: 'cl2' }))).toBeNull()
+    expect(conflict(main, edit('timeline.clip_remove', { clip: 'cl3' }))).toBe('Clip cl3 does not exist.')
+    expect(conflict(main, edit('timeline.clip_move', { clip: 'cl1', to: 3 }))).toBe('Timeline t1 has 2 clips; position 3 is not between 1 and 2.')
+    expect(conflict(main, adding('timeline.clip_insert', { at: 3, asset: 'c' }, ['cl3']))).toBeNull()
+    expect(conflict(main, adding('timeline.clip_insert', { at: 4, asset: 'c' }, ['cl3']))).toContain('not between 1 and 3')
+    expect(conflict(main, adding('timeline.clip_insert', { at: 1, asset: 'c' }, ['cl2']))).toBe('Clip cl2 already exists.')
+    expect(conflict(main, edit('timeline.clip_insert', { at: 1, asset: 'c' }))).toBe('The record stored 0 clip IDs for the 1 clips it adds.')
+    expect(conflict(main, adding('timeline.clip_insert', { timeline: 't2', at: 2, asset: 'c' }, ['cl3'])))
+      .toBe('Timeline t2 has 0 clips; position 2 is not between 1 and 1.')
+    expect(conflict(main, adding('timeline.create', { assets: [] }, []))).toBe('Timeline t1 exists; call dv_timeline_update to replace its clips.')
+    expect(conflict(main, adding('timeline.update', { timeline: 't2', assets: [] }, []))).toBe('Timeline t2 does not exist.')
     expect(conflict(main, edit('timeline.rename', { timeline: 't2', name: 'x' }))).toBe('Timeline t2 does not exist.')
-    expect(conflict(timelineReducer.initial(), edit('timeline.clip_remove', { clip: 1 }))).toBe('The project has no timeline.')
-    expect(conflict(timelineReducer.initial(), edit('timeline.create', {}))).toBeNull()
+    expect(conflict(timelineReducer.initial(), edit('timeline.rename', { name: 'x' }))).toBe('The project has no timeline.')
+    expect(conflict(timelineReducer.initial(), adding('timeline.create', {}, []))).toBeNull()
     expect(conflict(main, edit('plan.create', {}))).toBeNull()
-    expect(conflict(ranged, edit('timeline.clip_split', { clip: 1, at_sec: 1.5 }))).toBeNull()
-    expect(conflict(ranged, edit('timeline.clip_split', { clip: 1, at_sec: 2 }))).toContain('does not play 2s of its asset')
-    expect(conflict(main, edit('timeline.clip_split', { clip: 1, at_sec: 'x' }))).toContain('does not play null')
-    expect(conflict(main, edit('timeline.clip_trim', { clip: 1, in_sec: -1 }))).toBe('The in point -1s is before the asset\'s start.')
-    expect(conflict(main, edit('timeline.clip_trim', { clip: 1, in_sec: 2, out_sec: 2 }))).toBe('The out point 2s is not after the in point 2s.')
-    expect(conflict(main, edit('timeline.clip_trim', { clip: 1, out_sec: 0 }))).toBe('The out point 0s is not after the in point 0s.')
-    expect(conflict(main, edit('timeline.clip_trim', { clip: 1, out_sec: 2 }))).toBeNull()
+    // A record that did not finish done changes nothing, so it cannot conflict.
+    expect(conflict(main, edit('timeline.clip_remove', { clip: 'cl3' }, { status: 'failed' }))).toBeNull()
+    expect(conflict(ranged, adding('timeline.clip_split', { clip: 'cl1', at_sec: 1.5 }, ['cl3']))).toBeNull()
+    expect(conflict(ranged, adding('timeline.clip_split', { clip: 'cl1', at_sec: 2 }, ['cl3']))).toContain('does not play 2s of its asset')
+    expect(conflict(main, adding('timeline.clip_split', { clip: 'cl1', at_sec: 'x' }, ['cl3']))).toContain('does not play null')
+    expect(conflict(main, edit('timeline.clip_trim', { clip: 'cl1', in_sec: -1 }))).toBe('The in point -1s is before the asset\'s start.')
+    expect(conflict(main, edit('timeline.clip_trim', { clip: 'cl1', in_sec: 2, out_sec: 2 }))).toBe('The out point 2s is not after the in point 2s.')
+    expect(conflict(main, edit('timeline.clip_trim', { clip: 'cl1', out_sec: 0 }))).toBe('The out point 0s is not after the in point 0s.')
+    expect(conflict(main, edit('timeline.clip_trim', { clip: 'cl1', out_sec: 2 }))).toBeNull()
   })
 
-  it('lists every timeline with its clips by position and their URLs in the agent summary', () => {
-    const slice = reduceAll([edit('timeline.create', { assets: ['a', 'b'] }), edit('timeline.clip_trim', { clip: 2, in_sec: 1, out_sec: 2 })])
+  it('lists every timeline with its clips by clip ID and their URLs in the agent summary', () => {
+    const slice = reduceAll([
+      adding('timeline.create', { assets: ['a', 'b'] }, ['cl1', 'cl2']), edit('timeline.clip_trim', { clip: 'cl2', in_sec: 1, out_sec: 2 }),
+    ])
     expect(timelineReducer.agentSummary?.(slice, { url: asset => `/dv/assets/${asset}` })).toEqual({
       timelines: [{
-        id: FIRST_TIMELINE_ID, name: '第 1 集', clips: [
-          { clip: 1, asset: 'a', url: '/dv/assets/a', in_sec: null, out_sec: null },
-          { clip: 2, asset: 'b', url: '/dv/assets/b', in_sec: 1, out_sec: 2 },
+        id: FIRST_TIMELINE_ID, name: '', clips: [
+          { clip: 'cl1', asset: 'a', url: '/dv/assets/a', in_sec: null, out_sec: null },
+          { clip: 'cl2', asset: 'b', url: '/dv/assets/b', in_sec: 1, out_sec: 2 },
         ],
       }],
     })

@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/dv/shot-render/README.md
 README.md: 124c1efd36dbbc7ad79daa678a06eba95bf34756
-README.zh.md: 248c297cc57184df5bd6541a467e4f37ef2bc1a5
+README.zh.md: 032e6c6691fdf895681fbe4dd0ec2f759737004f

@@ -2,7 +2,7 @@
  * The Timeline component in a REAL composition: a test-only `cordis.yml` boots the DSH tool registry, `dvProject`,
  * `dvFfmpeg`, the asset pool and `dvTimeline` through the Loader. The agent edits timelines with the `dv_timeline_*`
  * tools on its chat session's draft, the human edits them with `dvProject.run`, and each call becomes one record that
- * the `timeline` slice folds.
+ * the `timeline` slice folds. Clips are named by the clip IDs that the records store in `report.clips`.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -24,9 +24,9 @@ import DvTimeline from '../src/index.ts'
 /** The plugin classes the fixture rows resolve through `globalThis`, because Node imports the rows outside Vite. */
 const PLUGINS = { SystemPrompt, ToolRuntime, DvProject, DvFfmpeg, DvAssetPool, DvTimeline }
 
-/** The nine operations in registration order. */
+/** The ten operations in registration order. */
 const OPERATIONS = [
-  'timeline.create', 'timeline.rename', 'timeline.delete', 'timeline.clip_insert', 'timeline.clip_move', 'timeline.clip_remove',
+  'timeline.create', 'timeline.update', 'timeline.rename', 'timeline.delete', 'timeline.clip_insert', 'timeline.clip_move', 'timeline.clip_remove',
   'timeline.clip_split', 'timeline.clip_trim', 'timeline.clip_replace',
 ]
 
@@ -106,7 +106,7 @@ function failure(result: ToolExecutionResult): string {
 }
 
 describe('dvTimeline', () => {
-  it('registers the nine operations with their dv_timeline_* tools and removes them on disposal', async () => {
+  it('registers the ten operations with their dv_timeline_* tools and removes them on disposal', async () => {
     const fixture = await start()
     const specs = fixture.ctx.dvProject.listOperations().filter(spec => spec.component === 'timeline')
     expect(specs.map(spec => spec.name)).toEqual(OPERATIONS)
@@ -122,28 +122,29 @@ describe('dvTimeline', () => {
 
   it('records the agent\'s timeline edits on its draft and folds them into the timeline slice', async () => {
     const fixture = await start()
-    const created = value(await fixture.call('dv_timeline_create', { reason: 'lay out', name: '第 1 集', assets: ['a1', 'a2', 'a3'] }))
+    const created = value(await fixture.call('dv_timeline_create', { reason: 'lay out', name: '开场', assets: ['a1', 'a2', 'a3'] }))
     expect(created).toMatchObject({ status: 'done', summary: 'timeline of 3 clips', outputs: [], scheduled: [] })
     const record = fixture.ctx.dvProject.getRecord(fixture.project, brandString<RecordId>(created.record))
     expect(record).toMatchObject({
-      actor: 'agent', component: 'timeline', operation: 'timeline.create', branch: 'draft/s1', session: 's1',
-      params: { name: '第 1 集', assets: ['a1', 'a2', 'a3'] }, inputs: [], outputs: [], status: 'done',
+      actor: 'agent', component: 'timeline', operation: 'timeline.create', operation_version: '2', branch: 'draft/s1', session: 's1',
+      params: { name: '开场', assets: ['a1', 'a2', 'a3'] }, inputs: [], outputs: [], status: 'done', report: { clips: ['cl1', 'cl2', 'cl3'] },
     })
-    const moved = value(await fixture.call('dv_timeline_clip_move', { reason: 'open on the kite', clip: 3, to: 1 }))
-    expect(moved.summary).toBe('clip 3 moved to 1')
-    expect(value(await fixture.call('dv_timeline_clip_trim', { reason: 'tighten', timeline: 't1', clip: 1, in_sec: 0.5, out_sec: 2 })).summary)
-      .toBe('t1 clip 1 trimmed')
-    expect(value(await fixture.call('dv_timeline_clip_split', { reason: 'cut', clip: 2, at_sec: 1 })).summary).toBe('clip 2 split at 1s')
-    expect(value(await fixture.call('dv_timeline_clip_remove', { reason: 'drop', clip: 4 })).summary).toBe('clip 4 removed')
-    expect(value(await fixture.call('dv_timeline_clip_replace', { reason: 'swap', clip: 2, asset: 'b1' })).summary).toBe('clip 2 replaced')
-    expect(value(await fixture.call('dv_timeline_clip_insert', { reason: 'add', at: 4, asset: 'b2' })).summary).toBe('clip inserted at 4')
+    const moved = value(await fixture.call('dv_timeline_clip_move', { reason: 'open on the kite', clip: 'cl3', to: 1 }))
+    expect(moved.summary).toBe('clip cl3 moved to 1')
+    expect(value(await fixture.call('dv_timeline_clip_trim', { reason: 'tighten', clip: 'cl3', in_sec: 0.5, out_sec: 2 })).summary)
+      .toBe('clip cl3 trimmed')
+    const split = value(await fixture.call('dv_timeline_clip_split', { reason: 'cut', clip: 'cl1', at_sec: 1 }))
+    expect([split.summary, split.report]).toEqual(['clip cl1 split at 1s', { clips: ['cl4'] }])
+    expect(value(await fixture.call('dv_timeline_clip_remove', { reason: 'drop', clip: 'cl2' })).summary).toBe('clip cl2 removed')
+    expect(value(await fixture.call('dv_timeline_clip_replace', { reason: 'swap', clip: 'cl1', asset: 'b1' })).summary).toBe('clip cl1 replaced')
+    expect(value(await fixture.call('dv_timeline_clip_insert', { reason: 'add', at: 4, asset: 'b2' })).summary).toBe('clip cl5 inserted at 4')
     expect(value(await fixture.call('dv_timeline_create', { reason: 'second', timeline: 't2', assets: [] })).summary).toBe('t2 timeline of 0 clips')
     expect(value(await fixture.call('dv_timeline_rename', { reason: 'name it', timeline: 't2', name: '片尾' })).summary).toBe('t2 renamed to 片尾')
     const draft = fixture.ctx.dvProject.getState(fixture.project, 'draft/s1').components.timeline.timelines
-    expect(draft.map(timeline => [timeline.id, timeline.name])).toEqual([['t1', '第 1 集'], ['t2', '片尾']])
+    expect(draft.map(timeline => [timeline.id, timeline.name])).toEqual([['t1', '开场'], ['t2', '片尾']])
     expect(draft[0]?.clips).toEqual([
-      { asset: 'a3', in_sec: 0.5, out_sec: 2 }, { asset: 'b1', in_sec: null, out_sec: null },
-      { asset: 'a1', in_sec: 1, out_sec: null }, { asset: 'b2', in_sec: null, out_sec: null },
+      { id: 'cl3', asset: 'a3', in_sec: 0.5, out_sec: 2 }, { id: 'cl1', asset: 'b1', in_sec: null, out_sec: null },
+      { id: 'cl4', asset: 'a1', in_sec: 1, out_sec: null }, { id: 'cl5', asset: 'b2', in_sec: null, out_sec: null },
     ])
     expect(value(await fixture.call('dv_timeline_delete', { reason: 'not needed', timeline: 't2' })).summary).toBe('t2 deleted')
     expect(fixture.ctx.dvProject.getState(fixture.project, 'draft/s1').components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1'])
@@ -151,15 +152,28 @@ describe('dvTimeline', () => {
     expect(fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines).toEqual([])
   })
 
-  it('records the human\'s edits on main and assembles a create from the clip inputs it names', async () => {
+  it('records the human\'s edits on main, replaces clips with timeline.update, and assembles a create from clip inputs', async () => {
     const fixture = await start()
     const create = await fixture.run('timeline.create', { assets: ['a1'] })
     expect(create).toMatchObject({ actor: 'user', surface: 'timeline', branch: 'main', operation: 'timeline.create', status: 'done' })
     await fixture.run('timeline.clip_insert', { at: 1, asset: 'a0' })
-    expect(fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines[0]?.clips.map(clip => clip.asset)).toEqual(['a0', 'a1'])
-    const spec = fixture.ctx.dvProject.listOperations().find(entry => entry.name === 'timeline.create')
-    expect(spec?.summarize({ ...create, params: {}, inputs: [{ role: 'clip', ref: { record: create.id, output: 0 }, resolved_asset: null }] }))
-      .toBe('timeline of 1 clips')
+    const clips = (): unknown => fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines[0]?.clips
+      .map(clip => [clip.id, clip.asset])
+    expect(clips()).toEqual([['cl2', 'a0'], ['cl1', 'a1']])
+    // create only creates; update replaces every clip of an existing timeline with clips that get new IDs.
+    expect(await fixture.run('timeline.create', { assets: ['b1'] })).toMatchObject({
+      status: 'failed', error: { message: 'Timeline t1 exists; call dv_timeline_update to replace its clips.' },
+    })
+    const update = await fixture.run('timeline.update', { timeline: 't1', assets: ['b1', 'b2'] })
+    expect(update).toMatchObject({ status: 'done', report: { clips: ['cl3', 'cl4'] } })
+    expect(clips()).toEqual([['cl3', 'b1'], ['cl4', 'b2']])
+    expect(fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines[0]?.name).toBe('')
+    expect(await fixture.run('timeline.update', { timeline: 't2', assets: [] })).toMatchObject({
+      status: 'failed', error: { message: 'Timeline t2 does not exist.' },
+    })
+    const spec = fixture.ctx.dvProject.listOperations().find(entry => entry.name === 'timeline.update')
+    expect(spec?.summarize({ ...update, params: { timeline: 't1' }, inputs: [{ role: 'clip', ref: { record: create.id, output: 0 }, resolved_asset: null }] }))
+      .toBe('t1 timeline updated (1 clips)')
   })
 
   it('fails a call whose timeline or clip does not exist, and refuses invalid params before any record', async () => {
@@ -170,32 +184,47 @@ describe('dvTimeline', () => {
       ['timeline.rename', { timeline: 't9', name: 'x' }, 'Timeline t9 does not exist.'],
       ['timeline.delete', { timeline: 't9' }, 'Timeline t9 does not exist.'],
       ['timeline.clip_insert', { at: 4, asset: 'a3' }, 'Timeline t1 has 2 clips; position 4 is not between 1 and 3.'],
-      ['timeline.clip_move', { clip: 1, to: 3 }, 'Timeline t1 has 2 clips; position 3 is not between 1 and 2.'],
-      ['timeline.clip_remove', { clip: 0 }, 'Timeline t1 has 2 clips; position 0 is not between 1 and 2.'],
-      ['timeline.clip_split', { clip: 1, at_sec: 0 }, 'Clip 1 of timeline t1 does not play 0s of its asset; split inside its in and out points.'],
-      ['timeline.clip_trim', { clip: 2, in_sec: 3, out_sec: 1 }, 'The out point 1s is not after the in point 3s.'],
-      ['timeline.clip_replace', { timeline: 't2', clip: 1, asset: 'a3' }, 'Timeline t2 does not exist.'],
+      ['timeline.clip_move', { clip: 'cl1', to: 3 }, 'Timeline t1 has 2 clips; position 3 is not between 1 and 2.'],
+      ['timeline.clip_remove', { clip: 'cl9' }, 'Clip cl9 does not exist.'],
+      ['timeline.clip_split', { clip: 'cl1', at_sec: 0 }, 'Clip cl1 of timeline t1 does not play 0s of its asset; split inside its in and out points.'],
+      ['timeline.clip_trim', { clip: 'cl2', in_sec: 3, out_sec: 1 }, 'The out point 1s is not after the in point 3s.'],
+      ['timeline.clip_replace', { clip: 'cl3', asset: 'a3' }, 'Clip cl3 does not exist.'],
     ]
     for (const [operation, params, message] of cases) {
       expect(await fixture.run(operation, params)).toMatchObject({ status: 'failed', error: { code: 'operation_failed', message } })
     }
     // A failed call changes nothing; repeating it fails again because the check runs on every call.
     expect(fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines[0]?.clips).toHaveLength(2)
-    expect(await fixture.run('timeline.clip_remove', { clip: 0 })).toMatchObject({ status: 'failed' })
+    expect(await fixture.run('timeline.clip_remove', { clip: 'cl9' })).toMatchObject({ status: 'failed' })
     expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before + cases.length + 1)
-    await expect(fixture.run('timeline.clip_move', { clip: 1 })).rejects.toMatchObject({ code: 'invalid_params' })
-    await expect(fixture.run('timeline.clip_split', { clip: 'one', at_sec: 1 })).rejects.toMatchObject({ code: 'invalid_params' })
+    await expect(fixture.run('timeline.clip_move', { clip: 'cl1' })).rejects.toMatchObject({ code: 'invalid_params' })
+    await expect(fixture.run('timeline.clip_split', { clip: 1, at_sec: 1 })).rejects.toMatchObject({ code: 'invalid_params' })
+    await expect(fixture.run('timeline.update', { assets: [] })).rejects.toMatchObject({ code: 'invalid_params' })
     expect(failure(await fixture.call('dv_timeline_rename', { reason: 'no name', timeline: 't1' }))).toContain('name')
     expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before + cases.length + 1)
   })
 
-  it('stops accepting a draft whose clip edit no longer applies to main', async () => {
+  it('keeps clip IDs unique across main and a draft and through accept replay', async () => {
     const fixture = await start()
     await fixture.run('timeline.create', { assets: ['a1', 'a2'] })
-    value(await fixture.call('dv_timeline_clip_remove', { reason: 'drop the second', clip: 2 }))
-    await fixture.run('timeline.clip_remove', { clip: 2 })
+    // The draft and main add a clip each; the project-wide numbering gives them different IDs.
+    expect(value(await fixture.call('dv_timeline_clip_insert', { reason: 'add', at: 3, asset: 'd1' })).report).toEqual({ clips: ['cl3'] })
+    expect(await fixture.run('timeline.clip_insert', { at: 3, asset: 'm1' })).toMatchObject({ report: { clips: ['cl4'] } })
+    value(await fixture.call('dv_timeline_clip_move', { reason: 'open on it', clip: 'cl3', to: 1 }))
+    const origin = { actor: 'user' as const, surface: 'timeline' as const, session: brandString<SessionId>('s1'), turn: null, tool_call: null, intent: 'accept' }
+    await fixture.ctx.dvProject.acceptDraft(fixture.project, origin)
+    // The replayed insert keeps cl3, so the replayed move still finds it on the moved main.
+    expect(fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines[0]?.clips.map(clip => [clip.id, clip.asset]))
+      .toEqual([['cl3', 'd1'], ['cl1', 'a1'], ['cl2', 'a2'], ['cl4', 'm1']])
+  })
+
+  it('stops accepting a draft whose clip edit names a clip that main removed', async () => {
+    const fixture = await start()
+    await fixture.run('timeline.create', { assets: ['a1', 'a2'] })
+    value(await fixture.call('dv_timeline_clip_trim', { reason: 'tighten the second', clip: 'cl2', in_sec: 1 }))
+    await fixture.run('timeline.clip_remove', { clip: 'cl2' })
     const origin = { actor: 'user' as const, surface: 'timeline' as const, session: brandString<SessionId>('s1'), turn: null, tool_call: null, intent: 'accept' }
     await expect(fixture.ctx.dvProject.acceptDraft(fixture.project, origin))
-      .rejects.toMatchObject({ code: 'draft_conflict', message: expect.stringContaining('Timeline t1 has 1 clip; position 2 is not between 1 and 1.') })
+      .rejects.toMatchObject({ code: 'draft_conflict', message: expect.stringContaining('Clip cl2 does not exist.') })
   })
 })

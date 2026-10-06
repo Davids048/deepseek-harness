@@ -2,18 +2,22 @@
  * The Timeline reducer and the clip checks it shares with the operations: how each finished `timeline.*` record
  * changes the timelines of a project, and why a record cannot apply to a given slice.
  *
- * A clip is named by its 1-based position. The operations check positions against the state before they record
- * anything; `conflict` runs the same check when a draft replays on a `main` that moved.
+ * A clip is named by its ID (`cl1`, `cl2`, …). The operations that add clips (`timeline.create`, `timeline.update`,
+ * `timeline.clip_insert`, `timeline.clip_split`) store the IDs they assigned in the record's `report.clips`, and the
+ * reducer reads them only from there, so a record that accept replay copies onto a moved `main` keeps its IDs. The
+ * operations check a call against the state before they record anything; `conflict` runs the same checks when a draft
+ * replays on a `main` that moved.
  *
  * @module @dv/timeline/reducer
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AssetId, ProjectRecord, Reducer } from '@dv/project'
-import type { Clip, Timeline, TimelineId, TimelineState } from './types.ts'
+import type { Clip, ClipId, Timeline, TimelineId, TimelineState } from './types.ts'
 
-/** The nine Timeline operations by verb. */
+/** The ten Timeline operations by verb. */
 export const OPERATIONS = {
   create: 'timeline.create',
+  update: 'timeline.update',
   rename: 'timeline.rename',
   delete: 'timeline.delete',
   insert: 'timeline.clip_insert',
@@ -24,13 +28,13 @@ export const OPERATIONS = {
   replace: 'timeline.clip_replace',
 } as const
 
-/** The ID the first timeline gets when a `timeline.create` or `timeline.clip_insert` names none. */
+/** The ID a `timeline.create` without a `timeline` param creates, and the timeline an insert into an empty project adds. */
 export const FIRST_TIMELINE_ID = brandString<TimelineId>('t1')
 
 type Slice = TimelineState
 
-/** The part of a record the reducer and the checks read. */
-type TimelineCall = Pick<ProjectRecord, 'operation' | 'params' | 'inputs'>
+/** The part of a record the reducer and the checks read; `report` is absent until the record finishes. */
+type TimelineCall = Pick<ProjectRecord, 'operation' | 'params' | 'inputs'> & Partial<Pick<ProjectRecord, 'report'>>
 
 /** A params field as text, or null when it is absent, empty, or not a string. */
 function text(value: unknown): string | null {
@@ -48,33 +52,58 @@ export function namedTimeline(params: Record<string, unknown>): TimelineId | nul
   return id === null ? null : brandString<TimelineId>(id)
 }
 
-/** The name a timeline gets when its creating call names none: 第 N 集, N counting the timelines after it. */
-function defaultName(timelines: Timeline[]): string {
-  return `第 ${String(timelines.length + 1)} 集`
-}
-
 /** The ID of the timeline a call edits: its `timeline` param, else the first timeline, else null. */
 function targetOf(slice: Slice, params: Record<string, unknown>): TimelineId | null {
   return namedTimeline(params) ?? slice.timelines[0]?.id ?? null
 }
 
-/** A clip that plays the whole asset. */
-function wholeClip(asset: AssetId): Clip {
-  return { asset, in_sec: null, out_sec: null }
+/** The ID of the timeline a `timeline.create` call creates: its `timeline` param, else `t1`. */
+function createdTimeline(params: Record<string, unknown>): TimelineId {
+  return namedTimeline(params) ?? FIRST_TIMELINE_ID
 }
 
 /**
- * The clips a `timeline.create` lays out: its `assets` param, else the resolved assets of its `clip` inputs in order
- * (a scheduled create names the outputs of renders that had not finished when it was recorded).
- * @param call - the create call.
- * @returns the clips.
+ * The assets a `timeline.create` or `timeline.update` lays out as clips: its `assets` param, else the resolved assets of
+ * its `clip` inputs in order (a scheduled call names the outputs of renders that had not finished when it was recorded).
+ * @param call - the create or update call.
+ * @returns the assets in playback order.
  */
-function createdClips(call: TimelineCall): Clip[] {
-  const assets = Array.isArray(call.params['assets'])
+function laidOutAssets(call: TimelineCall): AssetId[] {
+  return Array.isArray(call.params['assets'])
     ? call.params['assets'].filter((asset): asset is string => typeof asset === 'string').map(asset => brandString<AssetId>(asset))
     : call.inputs.filter(input => input.role === 'clip').map(input => input.resolved_asset)
       .filter((asset): asset is AssetId => asset !== null)
-  return assets.map(wholeClip)
+}
+
+/**
+ * How many clips a call adds, each of which needs a new clip ID: one per laid-out asset for `timeline.create` and
+ * `timeline.update`, one for `timeline.clip_insert` and for `timeline.clip_split` (the second part), none otherwise.
+ * @param call - a Timeline call.
+ * @returns the number of clip IDs the call assigns.
+ */
+export function addedClipCount(call: TimelineCall): number {
+  if (call.operation === OPERATIONS.create || call.operation === OPERATIONS.update) return laidOutAssets(call).length
+  return call.operation === OPERATIONS.insert || call.operation === OPERATIONS.split ? 1 : 0
+}
+
+/** The clip IDs a finished record assigned (its `report.clips`), or an empty list when it stored none. */
+export function reportedClips(record: Pick<ProjectRecord, 'report'>): ClipId[] {
+  const clips = record.report?.['clips']
+  return Array.isArray(clips) ? clips.filter((id): id is string => typeof id === 'string').map(id => brandString<ClipId>(id)) : []
+}
+
+/** A clip that plays the whole asset. */
+function wholeClip(id: ClipId, asset: AssetId): Clip {
+  return { id, asset, in_sec: null, out_sec: null }
+}
+
+/** The timeline that holds a clip and the clip's index in it, or null when no timeline holds it. */
+function findClip(slice: Slice, id: string | null): { timeline: Timeline; index: number } | null {
+  for (const timeline of slice.timelines) {
+    const index = timeline.clips.findIndex(clip => clip.id === id)
+    if (index !== -1) return { timeline, index }
+  }
+  return null
 }
 
 /**
@@ -91,35 +120,56 @@ function positionProblem(timeline: Timeline, position: number | null, last: numb
 }
 
 /**
- * Why a `timeline.*` call cannot apply to a slice: an unknown timeline, a clip position outside the timeline, a split
+ * Why a call that names a whole timeline cannot apply: `timeline.create` of an ID that exists, or another call of a
+ * timeline that does not exist. An insert into a timeline that does not exist creates it, so the only valid position is 1.
+ * @param slice - the slice the call applies to.
+ * @param call - a whole-timeline call or an insert.
+ * @returns the reason, or null when the call applies.
+ */
+function timelineProblem(slice: Slice, call: TimelineCall): string | null {
+  const params = call.params
+  if (call.operation === OPERATIONS.create) {
+    const id = createdTimeline(params)
+    return slice.timelines.some(timeline => timeline.id === id)
+      ? `Timeline ${id} exists; call dv_timeline_update to replace its clips.`
+      : null
+  }
+  const id = targetOf(slice, params)
+  const timeline = slice.timelines.find(candidate => candidate.id === id)
+  if (call.operation === OPERATIONS.insert) {
+    const into = timeline ?? { id: id ?? FIRST_TIMELINE_ID, name: '', clips: [] }
+    return positionProblem(into, number(params['at']), into.clips.length + 1)
+  }
+  if (timeline === undefined) return id === null ? 'The project has no timeline.' : `Timeline ${id} does not exist.`
+  return null
+}
+
+/**
+ * Why a `timeline.*` call cannot apply to a slice: a timeline that a create finds or another call misses, an insert
+ * position outside the timeline, a clip ID that no timeline holds, a move position outside the clip's timeline, a split
  * time outside the clip, or an empty trim range. The operations throw it before they record; accept replay reports it
- * as the conflict of a draft record.
+ * as the conflict of a draft record (a clip that `main` removed).
  * @param slice - the slice the call applies to.
  * @param call - the call's operation and params.
  * @returns the reason a creator can read, or null when the call applies.
  */
 export function clipProblem(slice: Slice, call: TimelineCall): string | null {
   const operation = call.operation
-  if (!isTimelineCall(call) || operation === OPERATIONS.create) return null
-  const params = call.params
-  const id = targetOf(slice, params)
-  const timeline = slice.timelines.find(candidate => candidate.id === id)
-  if (operation === OPERATIONS.insert) {
-    // Inserting into a timeline that does not exist creates it, so the only valid position is 1.
-    const into = timeline ?? { id: id ?? FIRST_TIMELINE_ID, name: '', clips: [] }
-    return positionProblem(into, number(params['at']), into.clips.length + 1)
+  if (!isTimelineCall(call)) return null
+  if ([OPERATIONS.create, OPERATIONS.update, OPERATIONS.rename, OPERATIONS.delete, OPERATIONS.insert].includes(operation as never)) {
+    return timelineProblem(slice, call)
   }
-  if (timeline === undefined) return id === null ? 'The project has no timeline.' : `Timeline ${id} does not exist.`
-  if (operation === OPERATIONS.rename || operation === OPERATIONS.delete) return null
-  const count = timeline.clips.length
-  const problem = positionProblem(timeline, number(params['clip']), count)
-    ?? (operation === OPERATIONS.move ? positionProblem(timeline, number(params['to']), count) : null)
-  if (problem !== null) return problem
-  const clip = timeline.clips[Number(params['clip']) - 1] as Clip
+  const params = call.params
+  const id = text(params['clip'])
+  const found = findClip(slice, id)
+  if (found === null) return `Clip ${String(id)} does not exist.`
+  const { timeline, index } = found
+  if (operation === OPERATIONS.move) return positionProblem(timeline, number(params['to']), timeline.clips.length)
+  const clip = timeline.clips[index] as Clip
   if (operation === OPERATIONS.split) {
     const at = number(params['at_sec'])
     const inside = at !== null && at > (clip.in_sec ?? 0) && (clip.out_sec === null || at < clip.out_sec)
-    return inside ? null : `Clip ${String(params['clip'])} of timeline ${timeline.id} does not play ${String(at)}s of its asset; split inside its in and out points.`
+    return inside ? null : `Clip ${clip.id} of timeline ${timeline.id} does not play ${String(at)}s of its asset; split inside its in and out points.`
   }
   if (operation === OPERATIONS.trim) {
     const inSec = number(params['in_sec'])
@@ -131,72 +181,98 @@ export function clipProblem(slice: Slice, call: TimelineCall): string | null {
 }
 
 /**
- * Apply one clip edit to the clips of one timeline. The call has passed `clipProblem`, so its positions are valid.
+ * Why the clip IDs of a finished record cannot apply: the record stored fewer or more IDs than the clips it adds (a
+ * record written before clips had IDs), or an ID that a clip of the slice already has.
+ * @param slice - the slice the record applies to.
+ * @param record - a finished Timeline record.
+ * @returns the reason, or null when the IDs apply.
+ */
+function clipIdProblem(slice: Slice, record: TimelineCall & Pick<ProjectRecord, 'report'>): string | null {
+  const ids = reportedClips(record)
+  const count = addedClipCount(record)
+  if (ids.length !== count) return `The record stored ${String(ids.length)} clip IDs for the ${String(count)} clips it adds.`
+  const taken = new Set(slice.timelines.flatMap(timeline => timeline.clips.map(clip => clip.id)))
+  for (const id of ids) {
+    if (taken.has(id)) return `Clip ${id} already exists.`
+    taken.add(id)
+  }
+  return null
+}
+
+/**
+ * Apply one clip edit to the clips of the timeline that holds the clip. The call has passed `clipProblem`.
  * @param clips - the clips before the call.
- * @param call - a clip operation call.
+ * @param call - a move, remove, split, trim or replace call.
+ * @param added - the IDs the call assigned (the second part of a split).
  * @returns the clips after it.
  */
-function editClips(clips: Clip[], call: TimelineCall): Clip[] {
+function editClips(clips: Clip[], call: TimelineCall, added: ClipId[]): Clip[] {
   const params = call.params
-  const index = Number(params['clip']) - 1
+  const index = clips.findIndex(clip => clip.id === params['clip'])
+  const clip = clips[index] as Clip
   const edited = [...clips]
   switch (call.operation) {
-    case OPERATIONS.insert:
-      edited.splice(Number(params['at']) - 1, 0, wholeClip(brandString<AssetId>(String(params['asset']))))
+    case OPERATIONS.move:
+      edited.splice(index, 1)
+      edited.splice(Number(params['to']) - 1, 0, clip)
       return edited
-    case OPERATIONS.move: {
-      const [clip] = edited.splice(index, 1)
-      if (clip !== undefined) edited.splice(Number(params['to']) - 1, 0, clip)
-      return edited
-    }
     case OPERATIONS.remove:
       edited.splice(index, 1)
       return edited
     case OPERATIONS.split: {
-      // `at_sec` is a time inside the clip's asset, so both parts play the same asset: the first ends there and the
-      // second starts there.
-      const clip = clips[index] as Clip
+      // `at_sec` is a time inside the clip's asset, so both parts play the same asset: the first keeps the clip's ID
+      // and ends there, the second gets the assigned ID and starts there.
       const at = Number(params['at_sec'])
-      edited.splice(index, 1, { ...clip, out_sec: at }, { ...clip, in_sec: at })
+      edited.splice(index, 1, { ...clip, out_sec: at }, { ...clip, id: added[0] as ClipId, in_sec: at })
       return edited
     }
     case OPERATIONS.trim:
-      edited[index] = { ...clips[index] as Clip, in_sec: number(params['in_sec']), out_sec: number(params['out_sec']) }
+      edited[index] = { ...clip, in_sec: number(params['in_sec']), out_sec: number(params['out_sec']) }
       return edited
     case OPERATIONS.replace:
-      edited[index] = wholeClip(brandString<AssetId>(String(params['asset'])))
+      edited[index] = wholeClip(clip.id, brandString<AssetId>(String(params['asset'])))
       return edited
-    /* v8 ignore next 2 -- `reduce` passes only the six clip operations. */
+    /* v8 ignore next 2 -- `applyCall` passes only the five clip operations that name a clip. */
     default:
       return clips
   }
 }
 
 /**
- * Apply one finished `timeline.*` call to the timelines. `timeline.create` with a new ID adds a timeline, with a known
- * ID replaces its clips, and without an ID replaces the first timeline's clips (adding `t1` when there is none).
- * `timeline.clip_insert` into a timeline that does not exist adds it. The other operations edit the timeline their
- * `timeline` param names, else the first timeline.
- * @param timelines - the timelines before the call.
- * @param call - a valid call.
+ * Apply one finished `timeline.*` call to the timelines. `timeline.create` adds a timeline, `timeline.update` replaces
+ * the clips of the timeline it names, and `timeline.clip_insert` into a timeline that does not exist adds it. Rename,
+ * delete and insert act on the timeline their `timeline` param names, else the first timeline; the other clip
+ * operations act on the timeline that holds the clip.
+ * @param slice - the slice before the call.
+ * @param call - a valid finished call.
  * @returns the timelines after it.
  */
-function applyCall(timelines: Timeline[], call: TimelineCall): Timeline[] {
+function applyCall(slice: Slice, call: TimelineCall): Timeline[] {
+  const { timelines } = slice
   const params = call.params
-  const id = namedTimeline(params) ?? timelines[0]?.id ?? FIRST_TIMELINE_ID
-  const existing = timelines.find(timeline => timeline.id === id)
+  const added = reportedClips(call)
+  const assets = laidOutAssets(call)
+  const laidOut = (): Clip[] => assets.map((asset, index) => wholeClip(added[index] as ClipId, asset))
+  const id = call.operation === OPERATIONS.create ? createdTimeline(params) : targetOf(slice, params) ?? FIRST_TIMELINE_ID
   switch (call.operation) {
-    case OPERATIONS.create: {
-      const created: Timeline = { id, name: text(params['name']) ?? existing?.name ?? defaultName(timelines), clips: createdClips(call) }
-      return existing === undefined ? [...timelines, created] : timelines.map(timeline => timeline.id === id ? created : timeline)
-    }
+    case OPERATIONS.create:
+      return [...timelines, { id, name: text(params['name']) ?? '', clips: laidOut() }]
+    case OPERATIONS.update:
+      return timelines.map(timeline => timeline.id === id ? { ...timeline, clips: laidOut() } : timeline)
     case OPERATIONS.rename:
       return timelines.map(timeline => timeline.id === id ? { ...timeline, name: String(params['name']) } : timeline)
     case OPERATIONS.delete:
       return timelines.filter(timeline => timeline.id !== id)
-    default:
-      if (existing === undefined) return [...timelines, { id, name: defaultName(timelines), clips: editClips([], call) }]
-      return timelines.map(timeline => timeline.id === id ? { ...timeline, clips: editClips(timeline.clips, call) } : timeline)
+    case OPERATIONS.insert: {
+      const clip = wholeClip(added[0] as ClipId, brandString<AssetId>(String(params['asset'])))
+      const at = Number(params['at']) - 1
+      if (!timelines.some(timeline => timeline.id === id)) return [...timelines, { id, name: '', clips: [clip] }]
+      return timelines.map(timeline => timeline.id === id ? { ...timeline, clips: timeline.clips.toSpliced(at, 0, clip) } : timeline)
+    }
+    default: {
+      const holder = findClip(slice, text(params['clip']))?.timeline.id
+      return timelines.map(timeline => timeline.id === holder ? { ...timeline, clips: editClips(timeline.clips, call, added) } : timeline)
+    }
   }
 }
 
@@ -207,24 +283,28 @@ function isTimelineCall(record: TimelineCall): boolean {
 
 /**
  * The `timeline` reducer: the timelines and their clips, from the finished `timeline.*` records. A record that does
- * not apply to the slice it reaches (a replayed record whose clip `main` removed) leaves the slice unchanged.
+ * not apply to the slice it reaches (a replayed record whose clip `main` removed, or a record without the clip IDs it
+ * needs) leaves the slice unchanged.
  */
 export const timelineReducer: Reducer<'timeline'> = {
   initial: () => ({ timelines: [] }),
   reduce(slice, record) {
-    if (record.status !== 'done' || !isTimelineCall(record) || clipProblem(slice, record) !== null) return slice
-    return { timelines: applyCall(slice.timelines, record) }
+    if (record.status !== 'done' || !isTimelineCall(record)) return slice
+    if (clipProblem(slice, record) !== null || clipIdProblem(slice, record) !== null) return slice
+    return { timelines: applyCall(slice, record) }
   },
   conflict(slice, record) {
-    return isTimelineCall(record) ? clipProblem(slice, record) : null
+    // A record that did not finish done changes no slice, so it cannot conflict.
+    if (record.status !== 'done' || !isTimelineCall(record)) return null
+    return clipProblem(slice, record) ?? clipIdProblem(slice, record)
   },
   agentSummary(slice, assets) {
-    // Clips are named by their 1-based position, the way the `clip` param of the timeline operations names them.
+    // Clips are named by their ID, the way the `clip` param of the timeline operations names them.
     return {
       timelines: slice.timelines.map(entry => ({
         id: entry.id, name: entry.name,
-        clips: entry.clips.map((clip, index) => ({
-          clip: index + 1, asset: clip.asset, url: assets.url(clip.asset), in_sec: clip.in_sec, out_sec: clip.out_sec,
+        clips: entry.clips.map(clip => ({
+          clip: clip.id, asset: clip.asset, url: assets.url(clip.asset), in_sec: clip.in_sec, out_sec: clip.out_sec,
         })),
       })),
     }

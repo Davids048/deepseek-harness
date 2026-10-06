@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-用这个包在生成任何内容之前规划一段视频。它向 `dvProject` 注册三个操作：`plan.create` 把分镜计划（带提示词和时长的镜头、参考和连续性）存为 JSON 素材，`plan.update` 存储一份较早分镜计划的修改副本，`plan.approve` 记录用户的同意，并为每个镜头调度一条 `shot.render`，再为生成的片段调度一条 `timeline.create`。`dvProject` 把它们变成智能体工具 `dv_plan_create`、`dv_plan_update` 和 `dv_plan_approve`。归约函数维护 `plan` 切片：每个已完成的分镜计划和批准它的记录。
+用这个包在生成任何内容之前规划一段视频。它向 `dvProject` 注册三个操作：`plan.create` 把分镜计划（带提示词和时长的镜头、参考和连续性）存为 JSON 素材，`plan.update` 存储一份较早分镜计划的修改副本，`plan.approve` 记录用户的同意，并为每个镜头调度一条 `shot.render`，再调度一条 `timeline.update` 或 `timeline.create` 来排列生成的片段。`dvProject` 把它们变成智能体工具 `dv_plan_create`、`dv_plan_update` 和 `dv_plan_approve`。归约函数维护 `plan` 切片：每个已完成的分镜计划和批准它的记录。
 
 ## 目录
 
@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `@dv/project` 之后挂载本插件。批准需要操作 `shot.render`（镜头生成）和 `timeline.create`（时间线），素材库存储分镜计划文件。
+在 `@dv/project` 之后挂载本插件。批准需要操作 `shot.render`（镜头渲染）、`timeline.create` 和 `timeline.update`（时间线），并读取 `timeline` 切片，素材库存储分镜计划文件。
 
 ```yaml
 - id: dv-shot-plan
@@ -46,7 +46,7 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-`plan.create` 和 `plan.update` 由 runner 校验参数，没有镜头的分镜计划会失败，并通过 `context.importAsset` 把分镜计划导入为 `plan.json`。`getPlan` 从记录的参数读取分镜计划，这些参数与文件的字段相同。`plan.approve` 读取分镜计划，并以 `system` actor、在批准记录的界面、会话和轮次中，为每个镜头运行一条 `shot.render`，参数为 `prompt`、`plan`、`shot`（位置）、`duration_sec`、`aspect_ratio`、`resolution`、`generation_mode` 和 `seed`，`reference` 输入取镜头自己的参考，否则取分镜计划的参考。`chained` 连续性下，第一个之后的每个镜头还把前一个镜头的最后静帧（`{record, output: 1}`）作为 `first_frame` 输入并等待它。最后一条带参数 `plan` 的 `timeline.create` 把各镜头的视频作为 `clip` 输入，并等待所有镜头。参考用 `dvProject.parseInputs('shot.render', …)` 解析，所以未知版本会在调度任何生成之前让批准失败。对任何调用方，在写下 `plan.approve` 记录之前，它的 `precondition` 用同样的方式构造每个镜头的 `shot.render` 参数和参考输入，并调用已注册的 `shot.render`（经 `dvProject.listOperations()` 找到）的 `precondition`；有镜头被拒绝时，批准以一个错误被拒绝，错误列出全部这些镜头，例如 "Shot 2, 3 of the plan have no reference image."，后接镜头生成给出的原因。未知的分镜计划记录或未知版本也在这里被拒绝。智能体工具在 `prepareToolCall` 中运行同一个前置条件，所以智能体在提问规则询问用户之前就被拒绝。没有注册 `shot.render` 时不做检查。本组件只以字符串命名其他操作，并通过 `dvProject.run` 运行它们。
+`plan.create` 和 `plan.update` 由 runner 校验参数，没有镜头的分镜计划会失败，并通过 `context.importAsset` 把分镜计划导入为 `plan.json`。`getPlan` 从记录的参数读取分镜计划，这些参数与文件的字段相同。`plan.approve` 读取分镜计划，并以 `system` actor、在批准记录的界面、会话和轮次中，为每个镜头运行一条 `shot.render`，参数为 `prompt`、`plan`、`shot`（位置）、`duration_sec`、`aspect_ratio`、`resolution`、`generation_mode` 和 `seed`，`reference` 输入取镜头自己的参考，否则取分镜计划的参考。`chained` 连续性下，第一个之后的每个镜头还把前一个镜头的最后静帧（`{record, output: 1}`）作为 `first_frame` 输入并等待它。最后一条带参数 `timeline` 和 `plan` 的时间线调用把各镜头的视频作为 `clip` 输入，并等待所有镜头：对分镜计划的时间线（其最新一条已完成的 `timeline.create` 或 `timeline.update` 记录在 `params.plan` 中指定本分镜计划，或沿 `plan.update` 记录的 `based_on` 链找到的它的较早版本的时间线）调用 `timeline.update`，否则以下一个空闲 ID（已用最大编号之后的 `t<n>`，项目没有时间线时为 `t1`）调用 `timeline.create` 新建时间线。因此再次批准同一个分镜计划会替换其时间线的片段，批准另一个分镜计划会添加一条时间线。参考用 `dvProject.parseInputs('shot.render', …)` 解析，所以未知版本会在调度任何生成之前让批准失败。对任何调用方，在写下 `plan.approve` 记录之前，它的 `precondition` 用同样的方式构造每个镜头的 `shot.render` 参数和参考输入，并调用已注册的 `shot.render`（经 `dvProject.listOperations()` 找到）的 `precondition`；有镜头被拒绝时，批准以一个错误被拒绝，错误列出全部这些镜头，例如 "Shot 2, 3 of the plan have no reference image."，后接镜头渲染给出的原因。未知的分镜计划记录或未知版本也在这里被拒绝。智能体工具在 `prepareToolCall` 中运行同一个前置条件，所以智能体在提问规则询问用户之前就被拒绝。没有注册 `shot.render` 时不做检查。本组件只以字符串命名其他操作，并通过 `dvProject.run` 运行它们。
 
 归约函数忽略状态不是 `done` 的记录：每条已完成的 `plan.create` 或 `plan.update` 添加一条摘要，一条已完成的 `plan.approve` 标记其 `plan` 参数指向的分镜计划。
 
@@ -80,4 +80,4 @@ kind: "package-reference"
 <a id="known-limitations-and-deferred-work"></a>
 
 - **分镜计划只有文本**：分镜计划是一个 JSON 文件；除记录和画布节点外没有分镜计划编辑器或预览。
-- **批准依赖其他组件的操作**：`plan.approve` 依赖 `shot.render` 和 `timeline.create` 的参数、输入角色和输出顺序；那里的改动需要这里同步修改。
+- **批准依赖其他组件的操作**：`plan.approve` 依赖 `shot.render`、`timeline.create` 和 `timeline.update` 的参数、输入角色和输出顺序；那里的改动需要这里同步修改。

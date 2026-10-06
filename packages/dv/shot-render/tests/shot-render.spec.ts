@@ -32,11 +32,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import DvShotRender from '../src/index.ts'
 import { assetRecord, backendSeconds, shotGeometry } from '../src/render.ts'
 
-const FFMPEG = process.env['VH_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
-const FFPROBE = process.env['VH_FFPROBE'] ?? 'ffprobe'
+const FFMPEG = process.env['DV_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
+const FFPROBE = process.env['DV_FFPROBE'] ?? 'ffprobe'
 /** The reference image of the opt-in run against a running backend. */
 const REAL_REFERENCE = '/mnt/lustre/vlm-d1su/codes/dsh-dv-hub/elon-musk.jpg'
-const REAL_BACKEND = process.env['VH_BACKEND_URL']
+const REAL_BACKEND = process.env['DV_BACKEND_URL']
 
 const run = promisify(execFile)
 

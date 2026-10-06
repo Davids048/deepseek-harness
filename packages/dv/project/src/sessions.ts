@@ -22,15 +22,15 @@ export interface SessionTurn {
 }
 
 /**
- * The project of a session file, or null for a file without a binding. The file keeps the field name `projectId` that
- * the views plugin's workspace listing reads.
+ * The project of a session file, or null for a file without a binding. The file is `{"project": <ProjectId>}`; the
+ * API's workspace listing reads the same field.
  * @param path - the session file.
  * @returns the bound project, or null.
- * @throws Error when the file is not a JSON object whose `projectId` is a string or null.
+ * @throws Error when the file is not a JSON object whose `project` is a string or null.
  */
 function boundProject(path: string): ProjectId | null {
   const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
-  const value = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>)['projectId'] : undefined
+  const value = typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, unknown>)['project'] : undefined
   if (value === null) return null
   if (typeof value !== 'string') throw new Error(`Session file ${path} is not a session binding.`)
   return brandString<ProjectId>(value)
@@ -55,7 +55,7 @@ export class Sessions {
   bind(session: SessionId, project: ProjectId): void {
     this.projects.set(session, project)
     mkdirSync(this.root, { recursive: true })
-    writeFileSync(this.pathOf(session), JSON.stringify({ projectId: project }))
+    writeFileSync(this.pathOf(session), JSON.stringify({ project }))
   }
 
   /**

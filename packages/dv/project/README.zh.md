@@ -30,8 +30,8 @@ kind: "package-reference"
 - id: dv-project
   name: '@dv/project'
   config:
-    root: $VH_STATE_ROOT/projects
-    sessionRoot: $VH_STATE_ROOT/sessions
+    root: $DV_STATE_ROOT/projects
+    sessionRoot: $DV_STATE_ROOT/sessions
 ```
 
 | 字段 | 默认值 | 含义 |

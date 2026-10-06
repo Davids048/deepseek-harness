@@ -325,7 +325,7 @@ describe('session bindings and the asset store', () => {
     expect(second.project.sessionProject(brandString<SessionId>('s1'))).toBe(projectId)
     expect(second.project.sessionProject(brandString<SessionId>('s2'))).toBeNull()
     expect(second.project.sessionTurn(brandString<SessionId>('s1'))).toBeNull()
-    writeFileSync(join(root, 'sessions', 's3.json'), '{"projectId":null}')
+    writeFileSync(join(root, 'sessions', 's3.json'), '{"project":null}')
     expect(second.project.sessionProject(brandString<SessionId>('s3'))).toBeNull()
     writeFileSync(join(root, 'sessions', 's4.json'), '"text"')
     expect(() => second.project.sessionProject(brandString<SessionId>('s4'))).toThrow('is not a session binding')

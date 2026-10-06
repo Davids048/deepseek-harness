@@ -104,7 +104,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-renderer': { kind: 'none', reason: 'Browser-side render assembly; registers nothing model-facing.' },
   'packages/client/ui-session': { kind: 'none', reason: 'Browser-side Session adapter; registers nothing model-facing.' },
   'packages/client/connection': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
-  'packages/client/file-upload': { kind: 'none', reason: 'Browser-side request-body transport; registers nothing model-facing.' },
+  'packages/client/file-upload': { kind: 'none', reason: 'Browser-side request-body transport; registers nothing model-facing.' }, // names:allow
   'packages/api/remotes': { kind: 'none', reason: 'The Remote BFF selects business methods and forwarded events; selected services own any model-visible effect.' },
   'packages/experimental/client-ui-agent-team': { kind: 'none', reason: 'The browser projection and task controls register no model-facing input.' },
   'packages/client/ui-layout': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
@@ -236,12 +236,12 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/dreamverse-ui/multiverse': { kind: 'indirect', reason: 'Browser-side multiverse page; dreamverse-multiverse turns chosen branches into model requests.' },
   'packages/bundle/dreamverse': { kind: 'indirect', reason: 'The bundle mounts and configures DreamVerse packages, which own every model request.' },
   'packages/bundle/dreamverse-multiverse': { kind: 'indirect', reason: 'The bundle mounts the multiverse packages and selects the branch-proposal model; the packages own every model request.' },
-  'packages/bundle/video-harness': { kind: 'indirect', reason: 'The bundle composes the harness plugins; the tools, the agent section, and the skills they mount own every model request.' },
-  'packages/video-harness/views': { kind: 'indirect', reason: 'The routes record view gestures as user records; the agent layer decides what the model learns about them.' },
+  'packages/bundle/dv': { kind: 'indirect', reason: "The bundle composes the DreamVerse plugins; the tools, the agent integration's project prompt section, and the skills they mount own every model request." },
+  'packages/dv/api': { kind: 'indirect', reason: 'The routes record view gestures as user records; the agent integration decides what the model learns about them.' },
   'packages/video-harness/stream': { kind: 'none', reason: 'The service relays media bytes to browsers; no model request reads them.' },
-  'packages/video-harness/ui-kit': { kind: 'none', reason: 'Browser-side graph, form, and track helpers; they touch no prompt, schema, or tool result.' },
-  'packages/video-harness/ui-canvas': { kind: 'indirect', reason: 'Browser-side canvas; the records its gestures write reach the model only through the project prompt section of the agent layer.' },
-  'packages/video-harness/ui-timeline': { kind: 'indirect', reason: 'Browser-side timeline; the records its gestures write reach the model only through the project prompt section of the agent layer.' },
+  'packages/dv/ui-kit': { kind: 'none', reason: 'Browser-side graph, form, and track helpers; they touch no prompt, schema, or tool result.' },
+  'packages/dv/ui-canvas': { kind: 'indirect', reason: 'Browser-side canvas; the records its gestures write reach the model only through the agent integration (@dv/agent-integration).' },
+  'packages/dv/ui-timeline': { kind: 'indirect', reason: 'Browser-side timeline; the records its gestures write reach the model only through the agent integration (@dv/agent-integration).' },
 }
 
 interface Failure {

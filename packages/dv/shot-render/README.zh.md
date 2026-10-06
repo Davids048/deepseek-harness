@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse 的镜头生成组件：dvShotRender 服务，它用 DreamVerse 生成后端生成一个镜头的一个版本的 shot.render 操作，记录版本的 shot 归约函数，以及智能体工具 dv_shot_render。"
+description: "DreamVerse 的镜头渲染组件：dvShotRender 服务，它用 DreamVerse 生成后端生成一个镜头的一个版本的 shot.render 操作，记录版本的 shot 归约函数，以及智能体工具 dv_shot_render。"
 kind: "package-reference"
 ---
 

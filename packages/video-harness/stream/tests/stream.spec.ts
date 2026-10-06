@@ -6,7 +6,7 @@ import type { WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { AssetId, CharacterId, ProjectId, RecordId } from '@dv/project'
 import { afterEach, describe, expect, it } from 'vitest'
 import VhStream, { SegmentBroadcaster, type StreamFrame } from '../src/index.ts'
-import { startBase } from '../../views/tests/support.ts'
+import { startBase } from '../../../dv/api/tests/support.ts'
 
 const PROJECT = brandString<ProjectId>('p1')
 const OP = brandString<RecordId>('op-1')

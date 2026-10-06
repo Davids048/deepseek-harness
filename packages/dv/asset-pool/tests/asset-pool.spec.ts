@@ -24,8 +24,8 @@ import DvProject, {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DvAssetPool from '../src/index.ts'
 
-const FFMPEG = process.env['VH_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
-const FFPROBE = process.env['VH_FFPROBE'] ?? 'ffprobe'
+const FFMPEG = process.env['DV_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
+const FFPROBE = process.env['DV_FFPROBE'] ?? 'ffprobe'
 
 /** A stand-in for the DSH web server that keeps the registered prefix routes and serves them on a local port. */
 class FakeWebServer {

@@ -1,0 +1,43 @@
+{
+  "name": "@dv/bundle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The DreamVerse profile layer: the generation client, the components, the API, the agent integration, the interface plugins, the directing skills, and the model routes, stacked on dsh-base and dsh-web-app or dsh-headless.",
+  "exports": {
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@dreamverse/generation-client": "workspace:*",
+    "@dv/agent-integration": "workspace:*",
+    "@dv/api": "workspace:*",
+    "@dv/asset-pool": "workspace:*",
+    "@dv/deliver": "workspace:*",
+    "@dv/ffmpeg": "workspace:*",
+    "@dv/inspector": "workspace:*",
+    "@dv/project": "workspace:*",
+    "@dv/shot-plan": "workspace:*",
+    "@dv/shot-render": "workspace:*",
+    "@dv/story-bible": "workspace:*",
+    "@dv/timeline": "workspace:*",
+    "@dv/ui-asset-pool": "workspace:*",
+    "@dv/ui-canvas": "workspace:*",
+    "@dv/ui-composer": "workspace:*",
+    "@dv/ui-shell": "workspace:*",
+    "@dv/ui-timeline": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-include": "workspace:~",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*"
+  }
+}

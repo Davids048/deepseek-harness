@@ -12,8 +12,15 @@ import type { AssetId } from '@dv/project'
 /** The ID of a timeline, such as `t1`; the operations name it in their `timeline` param. */
 export type TimelineId = Branded<'DvTimelineId'>
 
-/** One clip of a timeline: an asset that plays from `in_sec` to `out_sec`. A clip is named by its 1-based position. */
+/**
+ * The ID of a clip, such as `cl3`: unique within the project and never reused; the clip operations name a clip by it in
+ * their `clip` param.
+ */
+export type ClipId = Branded<'DvClipId'>
+
+/** One clip of a timeline: an asset that plays from `in_sec` to `out_sec`. */
 export interface Clip {
+  id: ClipId
   asset: AssetId
   /** Where playback starts inside the asset, in seconds; null for the asset's start. */
   in_sec: number | null
@@ -21,7 +28,7 @@ export interface Clip {
   out_sec: number | null
 }
 
-/** One edited video of a project: its clips in playback order and the name the interface shows, such as 第 1 集. */
+/** One edited video of a project: its clips in playback order and its name; an empty name shows as 时间线 {n} for ID t<n>. */
 export interface Timeline {
   id: TimelineId
   name: string

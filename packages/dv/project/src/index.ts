@@ -72,13 +72,13 @@ declare module '@deepseek-ai/cordis' {
 
 /** `dvProject` plugin configuration. */
 export interface Config {
-  /** The directory holding one `<ProjectId>/` per project (`$VH_STATE_ROOT/projects`); created when missing. */
+  /** The directory holding one `<ProjectId>/` per project (`$DV_STATE_ROOT/projects`); created when missing. */
   root: string
   /** Scheduled records of `cpu` operations that may run at the same time. */
   cpuConcurrency: number
   /** Scheduled records of `gpu` operations that may run at the same time. */
   gpuConcurrency: number
-  /** The directory holding one file per chat session with the project it is bound to (`$VH_STATE_ROOT/sessions`). */
+  /** The directory holding one file per chat session with the project it is bound to (`$DV_STATE_ROOT/sessions`). */
   sessionRoot: string
 }
 

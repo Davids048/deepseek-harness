@@ -8,8 +8,8 @@ import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-sub
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DvFfmpeg, { FfmpegError } from '../src/index.ts'
 
-const FFMPEG = process.env['VH_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
-const FFPROBE = process.env['VH_FFPROBE'] ?? 'ffprobe'
+const FFMPEG = process.env['DV_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
+const FFPROBE = process.env['DV_FFPROBE'] ?? 'ffprobe'
 const hasFfmpeg = existsSync(FFMPEG)
 
 /** The part of a subprocess handle that `dvFfmpeg` reads. */

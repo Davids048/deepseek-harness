@@ -1,0 +1,196 @@
+/**
+ * Browser state the DreamVerse shell shares between its center panel and its left navigator: the open project, the
+ * center view, the main chat session, and the project ↔ Workspace links read from
+ * `/api/dv/workspaces`. Both components live in this one bundle, so a module-level store is enough.
+ *
+ * The location (project, view, timeline, chat session) is mirrored into the URL hash, for example
+ * `#project=<id>&view=timeline&timeline=t2&session=<id>`, so a reload restores it. Every change of the open project is published to
+ * the other DreamVerse bundles through `publishCurrentProject`.
+ *
+ * @module @dv/ui-shell/store
+ */
+import { useSyncExternalStore } from 'react'
+import { DvClient } from '@dv/ui-kit/api.ts'
+import { publishCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
+import { publishCurrentProject } from '@dv/ui-kit/current-project.ts'
+import type { WireProjectLink, WireWorkspaces } from '@dv/ui-kit/types.ts'
+
+/** The client of every `/api/dv` call the shell makes. */
+export const shellClient = new DvClient()
+
+/** The project list before the links arrive; one instance so selectors return a stable value. */
+export const NO_PROJECTS: WireProjectLink[] = []
+
+/** What the shell components share. */
+export interface ShellState {
+  /** The main session, as the center panel last saw it. */
+  sessionId: string | undefined
+  /** The project open in the center, or null on the entry page. The main session follows it. */
+  projectId: string | null
+  /** The center view while a project is open. */
+  view: 'canvas' | 'timeline'
+  /** The timeline selected in the open project, or null before the timeline editor or the URL names one. */
+  timeline: string | null
+  links: WireWorkspaces | null
+}
+
+/** The location fields of the URL hash. */
+export interface ShellLocation {
+  projectId: string | null
+  view: 'canvas' | 'timeline'
+  timeline: string | null
+  sessionId: string | undefined
+}
+
+/**
+ * Parse the URL hash.
+ * @param hash - `location.hash`.
+ * @returns the location it names; missing fields take the entry-page values.
+ */
+export function parseLocation(hash: string): ShellLocation {
+  const params = new URLSearchParams(hash.replace(/^#/, ''))
+  return {
+    projectId: params.get('project'),
+    view: params.get('view') === 'timeline' ? 'timeline' : 'canvas',
+    timeline: params.get('timeline'),
+    sessionId: params.get('session') ?? undefined,
+  }
+}
+
+/**
+ * Format a location as a URL hash; the entry page has no hash.
+ * @param location - the location.
+ * @returns `#project=…` with the non-default fields, or the empty string.
+ */
+export function formatLocation(location: ShellLocation): string {
+  const params = new URLSearchParams()
+  if (location.projectId !== null) {
+    params.set('project', location.projectId)
+    if (location.view !== 'canvas') params.set('view', location.view)
+    if (location.timeline !== null) params.set('timeline', location.timeline)
+  }
+  if (location.sessionId !== undefined) params.set('session', location.sessionId)
+  const text = params.toString()
+  return text === '' ? '' : `#${text}`
+}
+
+/** The location the page was loaded with, which the center restores once the client lists are ready. */
+export const initialLocation: ShellLocation = parseLocation(window.location.hash)
+// The timeline view mounts from this state before the restore runs, so the URL's timeline is published right away.
+if (initialLocation.projectId !== null && initialLocation.timeline !== null) {
+  publishCurrentTimeline(initialLocation.projectId, initialLocation.timeline)
+}
+
+// The main session is unknown until the center panel reports it; the URL's session is a restore target only.
+let state: ShellState = { ...initialLocation, sessionId: undefined, links: null }
+const listeners = new Set<() => void>()
+publishCurrentProject(state.projectId)
+
+/** Whether the next main-session change is a user's session choice, which gets its own browser history entry. */
+let sessionChoice = false
+/** Whether the shell is applying a location from the URL, which must not add browser history entries. */
+let applyingUrl = false
+/**
+ * Whether the shell state is mirrored into the URL. Until the page-load restore runs, the URL keeps what the user
+ * opened or typed (a hash edited during startup included), so the restore reads it.
+ */
+let mirrorUrl = false
+
+/** Start mirroring the shell state into the URL; the page-load restore calls this before it applies the URL. */
+export function startUrlMirror(): void {
+  mirrorUrl = true
+}
+
+/** Mark the next main-session change as the user's choice, so browser Back returns to the previous session. */
+export function markSessionChoice(): void {
+  sessionChoice = true
+}
+
+/**
+ * Run navigation that applies a location the URL already names (reload, Back, Forward, an edited hash), so the hash
+ * writes it causes replace the current history entry.
+ * @param apply - the navigation; its synchronous part runs inside the scope.
+ */
+export function applyingLocation(apply: () => void): void {
+  applyingUrl = true
+  try {
+    apply()
+  } finally {
+    applyingUrl = false
+  }
+}
+
+/**
+ * Merge fields into the shared state, mirror the location into the URL hash, publish a changed open project, and
+ * notify subscribers when something changed. A change of project or center view, and a session the user chose, add a
+ * browser history entry; other changes (a session the shell opened for a project, the timeline) replace the current
+ * entry.
+ * @param patch - the fields to set.
+ */
+export function setShell(patch: Partial<ShellState>): void {
+  const next = { ...state, ...patch }
+  // A timeline belongs to its project.
+  if (next.projectId !== state.projectId && patch.timeline === undefined) next.timeline = null
+  if ((Object.keys(next) as Array<keyof ShellState>).every(key => Object.is(next[key], state[key]))) return
+  const previous = state
+  state = next
+  const hash = formatLocation(next)
+  if (mirrorUrl && (hash !== formatLocation(previous) || hash !== window.location.hash)) {
+    const moved = next.projectId !== previous.projectId || next.view !== previous.view
+      || (sessionChoice && next.sessionId !== previous.sessionId)
+    const url = `${window.location.pathname}${window.location.search}${hash}`
+    if (moved && !applyingUrl && hash !== window.location.hash) window.history.pushState(null, '', url)
+    else window.history.replaceState(window.history.state, '', url)
+  }
+  if (next.sessionId !== previous.sessionId) sessionChoice = false
+  if (next.projectId !== previous.projectId) publishCurrentProject(next.projectId)
+  for (const listener of listeners) listener()
+}
+
+/** @returns the current shared state. */
+export function getShell(): ShellState {
+  return state
+}
+
+/**
+ * Select a value of the shared state and re-render when it changes.
+ * @param select - the selector.
+ * @returns the selected value.
+ */
+export function useShell<T>(select: (value: ShellState) => T): T {
+  return useSyncExternalStore(
+    (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    () => select(state),
+  )
+}
+
+/**
+ * Fetch `/api/dv/workspaces` into the shared state.
+ * @returns the links.
+ */
+export async function refreshLinks(): Promise<WireWorkspaces> {
+  const links = await shellClient.listWorkspaces()
+  setShell({ links })
+  return links
+}
+
+/**
+ * The project a session works on: its saved binding, else the project whose Workspace holds it.
+ * @param links - the links.
+ * @param sessionId - the session.
+ * @param workspace - the session's Workspace, when known.
+ * @returns the project ID, and whether it came only from the Workspace so the binding still has to be saved.
+ */
+export function projectOfSession(
+  links: WireWorkspaces | null,
+  sessionId: string | undefined,
+  workspace: { workspaceId: string; path: string } | undefined,
+): { projectId: string | null; needsBind: boolean } {
+  if (links === null || sessionId === undefined) return { projectId: null, needsBind: false }
+  const fromWorkspace = workspace === undefined
+    ? undefined
+    : links.projects.find(p => p.workspace_id === workspace.workspaceId || p.path === workspace.path)?.id
+  const bound = links.bindings[sessionId]
+  if (bound !== undefined) return { projectId: bound, needsBind: false }
+  return { projectId: fromWorkspace ?? null, needsBind: fromWorkspace !== undefined }
+}

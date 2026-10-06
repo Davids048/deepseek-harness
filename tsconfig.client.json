@@ -137,12 +137,12 @@
     { "path": "./packages/dreamverse-ui/assets" },
     { "path": "./packages/dreamverse-ui/project-history" },
     { "path": "./packages/dreamverse-ui/multiverse" },
-    { "path": "./packages/video-harness/ui-kit" },
-    { "path": "./packages/video-harness/ui-canvas" },
-    { "path": "./packages/video-harness/ui-timeline" },
-    { "path": "./packages/video-harness/ui-assets" },
-    { "path": "./packages/video-harness/ui-shell" },
-    { "path": "./packages/video-harness/ui-composer" },
+    { "path": "./packages/dv/ui-kit" },
+    { "path": "./packages/dv/ui-canvas" },
+    { "path": "./packages/dv/ui-timeline" },
+    { "path": "./packages/dv/ui-asset-pool" },
+    { "path": "./packages/dv/ui-shell" },
+    { "path": "./packages/dv/ui-composer" },
     { "path": "./apps/web" }
   ]
 }

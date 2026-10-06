@@ -1,0 +1,118 @@
+---
+description: "DreamVerse 的浏览器 API：经认证的路由读取分支状态、把画布、时间线和素材库面板的操作写成人的记录、接受或丢弃草稿、撤销和重做、开分支、接受过期记录，并以事件流推送项目变化。"
+kind: "package-reference"
+---
+
+# @dv/api
+
+[English](README.md) | 中文
+
+## 概述
+
+使用本包让浏览器视图通过 HTTP 而不是通过智能体读取和修改 DreamVerse 项目。`dvApi` 在 `/api/dv/` 下注册经认证的 Fetch 路由：列出、新建、重命名和删除项目，把一条分支的状态读成 JSON，列出操作声明，以人的身份运行一个操作，把文件导入素材库，接受或丢弃一个对话的草稿，撤销和重做，新建和切换分支，接受一条过期记录，保存画布布局，把项目关联到 DSH Workspace，以及记住视图选中了什么。原始路由 `GET /dv/events` 以 server-sent events 推送每一次项目变化，用同一个 Connection cookie 放行。`@dv/ui-*` 各包是它的消费者；浏览器客户端是 `@dv/ui-kit` 的 `DvClient`。
+
+## 目录
+
+- [使用本包](#use-this-package)
+- [理解实现](#understand-the-implementation)
+- [进一步探索](#further-exploration)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+
+-----
+
+<a id="use-this-package"></a>
+## 使用本包
+
+在 `@dv/project` 和 `@dv/asset-pool` 之后挂载插件，并且 profile 还要挂载 `dsh-web-app`（提供 `connection` 和 `webServer` 服务）。没有 `connection` 时 Fetch 路由不会注册；没有 `webServer` 时事件流不会注册。
+
+```yaml
+- id: dv-api
+  name: '@dv/api'
+  config:
+    keepaliveMs: 15000
+    stateRoot: /home/me/.local/state/dv
+```
+
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `keepaliveMs` | `15000` | 空闲事件流多久发一行注释，让代理保持连接 |
+| `stateRoot` | 必填 | 状态目录：`canvas-layout/` 里的画布布局、`workspaces.json` 里的项目 → Workspace 关联、`entry/` 里的入口 Workspace，以及 `sessions/` 里 `@dv/project` 的会话绑定文件；bundle 用 `DV_STATE_ROOT` 设置它 |
+
+| 路由 | 方法 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| `/api/dv/projects` | GET | 可选 `session`（对话 ID） | `WireProject[]`（`{id, title, created_at, heads, current}`），最新在前；给出 `session` 时该对话绑定的项目排第一并带 `current: true` |
+| `/api/dv/projects` | POST | `{title, surface}` | 从视图新建的项目：`ProjectInfo` `{id, title, created_at}` |
+| `/api/dv/projects/rename` | POST | `{project, title}` | `{title}`，重名时追加 ` 2`、` 3`…… 使其唯一 |
+| `/api/dv/projects/delete` | POST | `{project}` | `{ok, workspace_id}`；项目移进 Project 存储的回收目录，它的画布布局文件被删除 |
+| `/api/dv/state` | GET | `project`，可选 `branch`（默认 `main`） | `WireState`：`{project, branch, head, heads, branches, components, assets}`，每个组件状态切片与 Project 算出的一致，外加每个被提到的素材在素材库里的条目 |
+| `/api/dv/operations` | GET | — | `WireOperation[]`：每个不是 `readOnly` 的已注册操作，不含执行器 |
+| `/api/dv/operation` | POST | `OperationRequest` `{project, operation, inputs?, params?, intent?, surface, session?, based_on?, supersedes?}`；`inputs` = `[{role, ref}]`，`ref` 是引用文本 | `ProjectRecord`，已完成或 `pending` |
+| `/api/dv/assets/import` | POST | 原始文件作为请求体；查询参数 `project`、`name`、`mime`、`surface`（`canvas \| asset_pool`，其他值回 `400` `invalid_params`）、`session?` | `{asset, record}`：`AssetId` 和 `asset.import` 记录 |
+| `/api/dv/drafts/accept` | POST | `{project, session \| branch, surface}` | `{record, heads}`，带 `proj.draft_accept` 记录 |
+| `/api/dv/drafts/discard` | POST | `{project, session \| branch, surface, counts?}` | 不带 `counts`：`{draft, counts}`；带已确认的计数：`{draft, counts, heads}` |
+| `/api/dv/undo` | POST | `{project, session?, surface}` | `{record, heads}`，带 `proj.undo` 记录 |
+| `/api/dv/redo` | POST | `{project, session?, surface}` | `{record, heads}`，带 `proj.redo` 记录 |
+| `/api/dv/branches/create` | POST | `{project, name, at, session?, surface}` | 分支 `explore/<name>` 的 `{branch, heads}` |
+| `/api/dv/branches/switch` | POST | `{project, branch, session, surface}` | 对话所在分支的 `{branch, heads}` |
+| `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}`，带 `proj.stale_accept` 记录 |
+| `/api/dv/selection` | GET / POST | GET：`project`；POST：`{project, kind, id, surface}`，`kind` 为 `record \| clip \| asset \| character \| location \| style` | `ViewSelection` `{kind, id, surface, at}`（GET 也可能是 null） |
+| `/api/dv/layout` | GET / POST | GET：`project`；POST：`{project, positions?, viewport?}` | `{positions, viewport}`；POST 合并以画布节点 ID 为键的位置 |
+| `/api/dv/workspaces` | GET / POST | POST：`{project, workspace_id}` | GET：`{entry_path, projects: [{id, title, created_at, path, workspace_id}], bindings}`；POST：`{ok}` |
+| `/api/dv/workspaces/bind` | POST | `{session, project}` | `{ok}` |
+| `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`，最新在前；`updated_at` 是 ISO-8601 UTC |
+| `/dv/events?project=<id>` | GET | — | `text/event-stream`：先 `ready`，再是 `record`、`update` 和 `branch` 事件，每个事件带一个 `ProjectEvent` |
+
+`surface` 是 `canvas`、`timeline` 或 `asset_pool`；其他值都按 `canvas` 处理，素材导入除外：它只接受 `canvas` 或 `asset_pool`。一次运行以人的身份调用 `dvProject.run`，写在请求所属对话的当前分支上（没有对话时是 `main`）；当某个输入指向尚未完成的记录时改为排队。请求体不合法回 `400`，项目、分支、记录、素材或操作不存在回 `404`，被拒绝的变更（例如丢弃一个计数已变化的草稿）回 `409`；每个错误体都是 `{error, code?, ...details}`，`code` 是 `ProjectError` 的错误码。智能体集成通过 `dvApi.selection(projectId)` 读到项目的最近一次选择，让智能体的项目块能提到用户指向的东西。
+
+-----
+
+<a id="understand-the-implementation"></a>
+## 理解实现
+
+<details>
+<summary>实现内部——点击展开</summary>
+
+`DvApi` 在 `dvProject` 和 `dvAssetPool` 之上构造一个 `ApiHandlers`；操作列表和一次运行的操作来自 `dvProject.listOperations()`，运行的 `inputs` 由 `dvProject.parseInputs` 解析，工作区路由用 `dvProject.bindSession` 把对话绑定到项目，并为列表读回绑定文件（`{"project": <ProjectId>}`）。在 `ctx.inject(['connection'])` 里它用 `connection.fetch.register` 注册各条 Fetch 路由，每条都经过同一个 `answer` 包装，把 `ApiRequestError` 映射成状态码。在 `ctx.inject(['webServer'])` 里它注册 `/dv/events` 前缀路由，通过 `requestRejection` 询问 Connection 请求是否带有效 cookie，再把响应交给 `serveEventStream`；后者订阅 `dvProject.subscribe(projectId)`，每次变化写一帧 `event:`/`data:`，直到请求关闭。`toWireState` 原样发送 `ProjectState` 及其 `components`，再加上各分支头、分支和素材列表：已创建的素材、每条记录的输出和已解析输入、每个角色、场景和风格版本的参考图，以及每个时间线片段的并集。
+
+| 文件 | 内容 |
+| --- | --- |
+| [`src/wire.ts`](src/wire.ts) | `WireState`、`WireOperation`、`ViewSelection`、`toWireState`、`toWireOperation`、`mentionedAssets`、`projectIdOf` |
+| [`src/api.ts`](src/api.ts) | `ApiHandlers`、`ApiRequestError`、`OperationRequest`、`WireProject`：每条路由背后的校验和 `dvProject` 调用 |
+| [`src/asset-import.ts`](src/asset-import.ts) | 素材导入路由 |
+| [`src/layout.ts`](src/layout.ts) | `CanvasLayoutStore` 和布局路由 |
+| [`src/workspaces.ts`](src/workspaces.ts) | 项目 → Workspace 关联、对话绑定，以及项目的 DSH 会话 |
+| [`src/projects-admin.ts`](src/projects-admin.ts) | 项目重命名和删除 |
+| [`src/events.ts`](src/events.ts) | `frameOf` 和 `serveEventStream` |
+| [`src/index.ts`](src/index.ts) | `DvApi`、`Config`、`ROUTES`、`EVENTS_PATH` |
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## 进一步探索
+
+- [DreamVerse 各包](../../../docs/subsystems/video-harness.zh.md) — 记录、草稿、过期标记，以及每个视图遵守的规则。
+- [`@dv/project`](../project/README.zh.md) — 路由背后的记录、草稿、分支、撤销和过期标记。
+- [`@dv/agent-integration`](../agent-integration/README.zh.md) — 为智能体的项目块读取视图选择。
+- [`@dv/ui-canvas`](../ui-canvas/README.zh.md) 与 [`@dv/ui-timeline`](../ui-timeline/README.zh.md) — 其中两个浏览器消费者。
+
+-----
+
+<a id="model-experience"></a>
+## 模型体验
+
+间接地，通过路由把视图手势记成用户记录；智能体集成决定模型从中了解什么。
+
+#### KV Cache 影响
+
+无；路由不向模型发送任何内容。
+
+## 已知限制与延期工作
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- **选择只在内存里** — 每个项目的最近一次选择重启即丢，也不是记录。
+- **整份状态读取** — 每次变化视图都重新拉取完整状态；没有增量状态路由。
+- **缺少 `connection` 时事件流不认证** — 此时路由放行所有请求；profile 应挂载 `dsh-web-app`。
