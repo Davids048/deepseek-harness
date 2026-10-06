@@ -10,7 +10,7 @@ A branching story is a tree of 5-second shots. Every node continues from its par
 ## Procedure
 
 1. Project and characters as in `video-directing`. Ask for the depth the user wants (default 3 levels) and whether they will choose or want `random`.
-2. Root: `dv_plan_create` with one shot (the opening), approval, `dv_plan_approve` with `user_approved: true`, `dv_proj_wait`.
+2. Root: `dv_plan_create` with one shot (the opening), approval, `dv_plan_approve` with `plan` = the plan ID from its report and `user_approved: true`, `dv_proj_wait`.
 3. At every node:
    1. Write two one-sentence directions in the user's language ("跟着蓝光走" / "回头看站台").
    2. Expand each into a full shot prompt that starts from the current node's end state.

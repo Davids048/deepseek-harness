@@ -25,8 +25,8 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@dv/asset-pool'
 import type {} from '@dv/api'
-import type { ApprovalChannel, AssetId, PendingApproval, ProjectId, SessionId } from '@dv/project'
-import type { Plan } from '@dv/shot-plan'
+import type { ApprovalChannel, AssetId, PendingApproval, ProjectState, SessionId } from '@dv/project'
+import type { PlanVersion } from '@dv/shot-plan'
 import {
   ApprovalCards, ComposerModes, composerRoutes, expansionMessage, type ApprovalCard, type ComposerMode,
 } from './composer.ts'
@@ -86,7 +86,7 @@ export default class DvAgentIntegration extends Service implements ApprovalChann
     this.cards = new ApprovalCards(ctx)
     ctx.on('session/event', (session: Session, event: SessionEvent) => { this.onSessionEvent(session, event) })
     ctx.effect(() => ctx.dvProject.registerToolCallCheck(questionRule({
-      project: ctx.dvProject, planOf: (project, plan) => this.planOf(project, plan),
+      project: ctx.dvProject, planOf: (state, plan, version) => this.planOf(state, plan, version),
       confirmGpuSecondsThreshold: config.confirmGpuSecondsThreshold, ask: request => this.confirm(request),
     })), 'dvAgentIntegration question rule')
     ctx.effect(() => ctx.dvProject.registerApprovalChannel(this), 'dvAgentIntegration approval channel')
@@ -280,16 +280,21 @@ export default class DvAgentIntegration extends Service implements ApprovalChann
   }
 
   /**
-   * The plan a `plan.approve` call names, for the approval question.
-   * @param projectId - the project.
+   * The plan version a `plan.approve` call names and the shots it would render, for the approval question.
+   * @param state - the state of the branch the call writes to.
    * @param plan - the call's `plan` param.
-   * @returns the plan, or null when the Shot plan component is not mounted or the param names no finished plan record.
+   * @param version - the call's `version` param.
+   * @returns the version and the shot positions, or null when the Shot plan component is not mounted or the params name
+   *   no known plan version.
    */
-  private planOf(projectId: ProjectId, plan: unknown): Plan | null {
+  private planOf(state: ProjectState, plan: unknown, version: unknown): { version: PlanVersion; render: number[] } | null {
+    const shotPlan = this.ctx.get('dvShotPlan')
+    if (shotPlan === undefined) return null
+    const number = typeof version === 'number' ? version : undefined
     try {
-      return this.ctx.get('dvShotPlan')?.getPlan(projectId, String(plan)) ?? null
+      return { version: shotPlan.getPlan(state, String(plan), number), render: shotPlan.shotsToRender(state, String(plan), number) }
     } catch (error: unknown) {
-      // An unknown plan record is refused by the approval's precondition; the question then uses the call's params.
+      // An unknown plan or version is refused by the approval's precondition; the question then uses the call's params.
       void error
       return null
     }

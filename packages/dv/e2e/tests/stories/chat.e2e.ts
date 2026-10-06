@@ -6,7 +6,7 @@ import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
 import { bootHarness, playwright, waitFor, type BootedHarness } from '../harness.ts'
-import { assetIdOf, recordIdOf, startScriptedModel, textOf, type ChatRequest, type ScriptedModel, type ScriptedRule } from '../scripted-model.ts'
+import { assetIdOf, startScriptedModel, textOf, type ChatRequest, type ScriptedModel, type ScriptedRule } from '../scripted-model.ts'
 
 /** A 1×1 opaque PNG. */
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
@@ -69,7 +69,8 @@ const RULES: ScriptedRule[] = [
         reason: '规划', title: '产品广告', continuity: 'independent', references: [assetIdOf(view.toolResults[0], 'asset')],
         shots: [{ prompt: '产品特写', duration_sec: 1 }, { prompt: '产品使用场景', duration_sec: 2 }],
       } }] }),
-      view => ({ calls: [{ name: 'dv_plan_approve', args: { reason: '用户同意', plan: recordIdOf(view.toolResults[1]), user_approved: true } }] }),
+      // The story's project is new, so its first plan is p1.
+      { calls: [{ name: 'dv_plan_approve', args: { reason: '用户同意', plan: 'p1', user_approved: true } }] },
       { calls: [{ name: 'dv_proj_wait', args: {} }] },
     ],
     endText: '两个镜头已渲染。草稿待确认',
@@ -527,7 +528,7 @@ describe('chat with the agent', () => {
   it('让智能体改 on a canvas take prefills the open project\'s chat composer with a reference the agent can resolve', async () => {
     const { projectId, assetId } = await seedProject('改片段', 'ref.png')
     const plan = await runOperation(projectId, 'plan.create', { title: '改片段', continuity: 'independent', references: [assetId], shots: [{ prompt: '镜头甲', duration_sec: 1 }] })
-    await runOperation(projectId, 'plan.approve', { plan: plan.id })
+    await runOperation(projectId, 'plan.approve', { plan: plan.report?.['plan'] })
     const done = await waitFor(async () => {
       const state = await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as WireState
       return state.components.proj.records.find(record => record.operation === 'shot.render' && record.status === 'done')

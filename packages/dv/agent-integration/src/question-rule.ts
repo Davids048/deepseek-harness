@@ -11,9 +11,9 @@ import type { ParameterSchemaSpec, ToolRunContext } from '@deepseek-ai/dsh-tools
 import type DvProject from '@dv/project'
 import { toolNameOf } from '@dv/project'
 import type {
-  OperationSpec, OperationToolCall, ProjectId, ProjectState, RunRequest, ToolCallCheck, TurnId,
+  OperationSpec, OperationToolCall, ProjectState, RunRequest, ToolCallCheck, TurnId,
 } from '@dv/project'
-import type { Plan } from '@dv/shot-plan'
+import type { PlanVersion } from '@dv/shot-plan'
 
 /** A question the rule asks when a call needs the user's agreement and no `user_approved` argument carried it. */
 export interface ConfirmRequest {
@@ -53,8 +53,11 @@ const PLAN_SHOT_SECONDS = 5
 /** What the rule reads: the Project service, the Shot plan reader when mounted, the budget, and the question channel. */
 export interface QuestionRuleOptions {
   project: DvProject
-  /** The plan a `plan.approve` call names, or null when the Shot plan component is not mounted or the record holds none. */
-  planOf(project: ProjectId, plan: unknown): Plan | null
+  /**
+   * The plan version a `plan.approve` call names and the shot positions it would render, or null when the Shot plan
+   * component is not mounted or the call names no known plan version.
+   */
+  planOf(state: ProjectState, plan: unknown, version: unknown): { version: PlanVersion; render: number[] } | null
   /** Estimated GPU seconds a turn may spend on `cost` operations before the user must agree. */
   confirmGpuSecondsThreshold: number
   ask: ConfirmPolicy
@@ -112,14 +115,14 @@ function spentGpuSeconds(state: ProjectState, turn: TurnId | null): number {
  */
 async function confirm(options: QuestionRuleOptions, spec: OperationSpec, call: OperationToolCall): Promise<void> {
   const { args, state, exec } = call
-  const { params, inputs, turn, project: projectId } = call.request
+  const { params, inputs, turn } = call.request
   const rule = QUESTION_RULES[spec.name]
   if (rule === undefined) return
   if (rule === 'always' && args['user_approved'] === true) return
   if (rule === 'cost' && args['user_requested'] === true) return
   const threshold = options.confirmGpuSecondsThreshold
-  // A plan approval stands for every shot of the plan: the question shows the shots and their cost.
-  const plan = spec.name === PLAN_APPROVE ? planShots(options, projectId, state, params['plan']) : null
+  // A plan approval stands for the shots it renders: the question shows those shots and their cost.
+  const plan = spec.name === PLAN_APPROVE ? planShots(options, state, params['plan'], params['version']) : null
   const estimate = (plan === null ? spec.estimate?.(params).gpu_seconds ?? 0 : plan.estimate) + spentGpuSeconds(state, turn)
   if (rule === 'cost' && estimate <= threshold) return
   const summary = `${toolNameOf(spec)}: ${String(args['reason'])}`
@@ -136,25 +139,31 @@ async function confirm(options: QuestionRuleOptions, spec: OperationSpec, call: 
 }
 
 /**
- * What approving a plan will render, for the approval question: one numbered line per shot as the prompt, the total
- * duration, the plan's references, and the `shot.render` GPU estimate of every shot.
+ * What approving a plan version will render, for the approval question: one line per new or changed shot as the
+ * prompt, numbered by its shot position, their total duration and references, and their `shot.render` GPU estimate.
+ * Shots that keep their takes are left out.
  * @param options - the services.
- * @param projectId - the project.
  * @param state - the state of the session's working branch, which the plan's references are read against.
  * @param plan - the `plan` param of the `plan.approve` call.
- * @returns the question details, or null when the param names no plan.
+ * @param version - the `version` param of the call; the latest version when absent.
+ * @returns the question details, or null when the params name no known plan version.
  */
 function planShots(
-  options: QuestionRuleOptions, projectId: ProjectId, state: ProjectState, plan: unknown,
+  options: QuestionRuleOptions, state: ProjectState, plan: unknown, version: unknown,
 ): { params: Record<string, unknown>; inputs: RunRequest['inputs']; estimate: number } | null {
-  const document = options.planOf(projectId, plan)
-  if (document === null) return null
-  const seconds = document.shots.map(shot => shot.duration_sec ?? PLAN_SHOT_SECONDS)
-  const prompt = document.shots.map((shot, index) => `${index + 1}. ${shot.prompt} (${seconds[index]} s)`).join('\n')
-  const references = [...new Set(document.shots.flatMap(shot => shot.references ?? document.references ?? []))]
+  const found = options.planOf(state, plan, version)
+  if (found === null) return null
+  const document = found.version
+  const shots = found.render.flatMap((position) => {
+    const shot = document.shots[position - 1]
+    return shot === undefined ? [] : [{ position, shot }]
+  })
+  const seconds = shots.map(entry => entry.shot.duration_sec ?? PLAN_SHOT_SECONDS)
+  const prompt = shots.map((entry, index) => `${entry.position}. ${entry.shot.prompt} (${seconds[index]} s)`).join('\n')
+  const references = [...new Set(shots.flatMap(entry => entry.shot.references ?? document.references ?? []))]
   const total = seconds.reduce((sum, value) => sum + value, 0)
   return {
-    params: { prompt, duration_sec: total, plan },
+    params: { prompt, duration_sec: total, plan, version: document.version },
     inputs: references.flatMap((ref) => {
       try {
         return options.project.parseInputs(SHOT_RENDER, { reference: ref }, state)

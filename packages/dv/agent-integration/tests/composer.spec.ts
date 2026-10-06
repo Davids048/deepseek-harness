@@ -28,7 +28,7 @@ async function start(): Promise<{ fixture: BaseFixture; composer: DvAgentIntegra
 }
 
 describe('approval channel', () => {
-  it('holds an agent render in ask mode until the card is approved or skipped, and lists every shot of a plan', async () => {
+  it('holds an agent render in ask mode until the card is approved or skipped, and lists the shots a plan approval renders', async () => {
     const { fixture, composer } = await start()
     const session = brandString<SessionId>('s1')
     composer.updateComposerMode('s1', { confirm: 'ask' })
@@ -68,7 +68,7 @@ describe('approval channel', () => {
 
     const shots = [{ prompt: 'one', duration_sec: 1 }, { prompt: 'two', duration_sec: 2 }]
     const plan = await agent('propose', 'plan.create', { references: ['c1@1'], shots })
-    const approval = agent('go', 'plan.approve', { plan: plan.record?.id })
+    const approval = agent('go', 'plan.approve', { plan: plan.record?.report?.['plan'] })
     await vi.waitFor(() => { expect(composer.approvals('s1')).toHaveLength(1) })
     expect(composer.approvals('s1')[0]).toMatchObject({
       operation: 'plan.approve', prompt: '1. one (1 s)\n2. two (2 s)', duration_sec: 3, gpu_seconds: 12,

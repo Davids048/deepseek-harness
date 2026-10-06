@@ -19,12 +19,20 @@ Every `dv_*` call becomes a record the user sees as a chat card, a canvas node, 
 1. Shot count = requested duration divided by the shot length (default 5 s, whole seconds inside the model range). "15 秒" is three shots; "30 秒" is six.
 2. Choose `continuity`: `chained` when the shots tell one continuous story (each shot starts from the previous last frame); `independent` when they are separate angles or scenes.
 3. Write every shot prompt with the rules in section 6.
-4. `dv_plan_create` with `title`, `continuity`, `references` (character, location or style versions such as `c1@1`), and `shots` (`prompt`, `duration_sec`). This call needs no confirmation; it records the proposal.
+4. `dv_plan_create` with `title`, `continuity`, `references` (character, location or style versions such as `c1@1`), and `shots` (`prompt`, `duration_sec`). This call needs no confirmation; it records the proposal as version 1, and its report names the plan ID (such as `p1`).
 5. Reply with a table (shot, duration, one line of action, camera), the continuity choice, and the cost: about 4 GPU seconds per video second, so "3 × 5 s ≈ 60 GPU 秒". End the turn with one question: start or change something. Do not call `dv_plan_approve` in this turn.
-6. Next turn, when the user agrees: `dv_plan_approve` with `plan` = the plan record id and `user_approved: true`, then `dv_proj_wait`, then `dv_proj_state`. The plan approval renders every shot and builds the timeline in this conversation's draft.
+6. Next turn, when the user agrees: `dv_plan_approve` with `plan` = the plan ID and `user_approved: true`, then `dv_proj_wait`, then `dv_proj_state`. The plan approval renders every shot and builds the plan's timeline in this conversation's draft.
 7. Report each finished shot with its last frame (you receive it as an image) and its link. Inside an approved plan, never ask again.
 
-If the user changes the plan before approving it, call `dv_plan_update` with the changed shots, show the changed plan, and call `dv_plan_approve` only after the user agreed to the changed version.
+If the user changes the plan before approving it, call `dv_plan_update` with `plan` = the plan ID and the changed shots, show the changed plan, and call `dv_plan_approve` only after the user agreed to the changed version.
+
+### Extend, shorten or change the story
+
+One story is one plan. To extend, shorten or change it, also after it was approved, update that plan; create a new plan with `dv_plan_create` only for a separate story.
+
+1. `dv_plan_update` with `plan` = the plan ID from the project block and the complete next version: every shot in order, the unchanged shots copied exactly (same prompt, duration, references and seed) so their takes are kept. A shot added after six shots is shot 7.
+2. Show only the new or changed shots and their cost, and ask.
+3. When the user agrees: `dv_plan_approve` with `plan` and `user_approved: true` (it approves the latest version unless you pass `version`). Only new or changed shots render, and a chained shot after a changed shot renders too; the plan's timeline gets every shot in order. Never lay a plan's shots onto a timeline by hand.
 
 ## 3. Edits the user asks for
 
@@ -81,7 +89,7 @@ Reference images reach the model as `Picture 1 … Picture N` in `inputs.referen
 
 - `dv_asset_grab_still` `at`: pass a number of seconds, or the word `first` or `last`. Never a numeric string such as `"6.3"`.
 - `dv_shot_render` requires `prompt` and `inputs.reference`; `continue_from` is a record id, not an asset id; `duration_sec` is a whole number.
-- `dv_plan_approve` needs the plan record id and `user_approved: true`; while the user's composer asks first, the call waits for the user's approval card.
+- `dv_plan_approve` needs the plan ID (such as `p1`), optionally `version`, and `user_approved: true`; while the user's composer asks first, the call waits for the user's approval card.
 - `dv_proj_wait` before `dv_proj_state` when a call returned `scheduled` records.
 
 ## 9. Do not
@@ -90,4 +98,5 @@ Reference images reach the model as `Picture 1 … Picture N` in `inputs.referen
 - Do not describe faces or invent appearance details.
 - Do not accept or discard a draft unless the user asks.
 - Do not change references, style, shot count, or continuity on your own; propose and stop.
+- Do not create a second plan to extend or change a story; update its plan.
 - Do not resolve an ambiguous "这个" by guessing.

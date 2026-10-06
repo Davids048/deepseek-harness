@@ -102,6 +102,8 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown }: NodeC
   let marker: string | null = null
   if (flags.rendering) marker = take ? t('node.rendering') : t('node.running')
   else if (flags.failed) marker = take ? t('node.renderFailed') : t('node.failed')
+  // A plan node shows its latest version, which the `plan.create` or `plan.update` record reports.
+  const planVersion = node.kind === 'plan' ? node.record?.report?.['version'] : undefined
   return (
     <div
       style={style}
@@ -120,6 +122,7 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown }: NodeC
         <span style={{ fontWeight: 600 }}>{kindLabel(node, t)}</span>
         {flags.draft ? <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('node.draft')}</span> : null}
         {flags.stale ? <span style={{ color: 'var(--dsw-alias-state-error-primary)' }}>{t('node.stale')}</span> : null}
+        {typeof planVersion === 'number' ? <span>{t('node.planVersion', { version: planVersion })}</span> : null}
         <span style={{ flex: 1 }} />
         {node.durationSec !== null ? <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{node.durationSec.toFixed(1)}s</span> : null}
       </div>

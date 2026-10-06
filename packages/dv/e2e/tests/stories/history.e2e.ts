@@ -1,7 +1,8 @@
 // User stories of the History panel (历史), walked in Chromium against the shipped profile with a fake video backend that
 // renders playable VP9 videos and a scripted agent model. Projects are seeded through the `/api/dv` routes; agent turns
-// go through the chat. Every story checks the rows the creator sees: their order, turn groups, marks, filters, the
-// focus a selected row gives the canvas or the timeline, and live updates.
+// go through the chat. Every story checks the action rows the creator sees: their order, labels, who, thumbnails, marks,
+// the renders folded under a plan approval, filters, the focus a selected row gives the canvas or the timeline, and live
+// updates.
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Branch, DraftCounts, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
@@ -231,7 +232,7 @@ afterAll(async () => {
 })
 
 describe('History panel', () => {
-  it('a seeded project shows its records newest first, with actor, surface, label, status and thumbnails', async () => {
+  it('a seeded project shows one row per action, newest first, with label, who, status and one loaded thumbnail', async () => {
     const project = await seedProject('history-rows')
     const page = await openPage()
     await gotoProject(page, project.id)
@@ -243,24 +244,28 @@ describe('History panel', () => {
     expect(await render.getAttribute('data-status')).toBe('done')
     expect(await render.getAttribute('data-mark')).toBe('main')
     const text = await render.innerText()
-    for (const word of ['用户', '画布', '渲染镜头', '完成']) expect(text).toContain(word)
-    // The reference image it read and the take it made.
-    expect(await render.locator('img').count()).toBeGreaterThan(0)
-    expect(await render.locator('video').count()).toBeGreaterThan(0)
+    for (const word of ['你', '渲染镜头']) expect(text).toContain(word)
+    // One thumbnail per row: the take's still, which the browser loads.
+    const thumb = render.locator('[data-testid="dv-history-thumb"]')
+    expect(await thumb.count()).toBe(1)
+    await expect.poll(() => thumb.evaluate(element => element instanceof HTMLImageElement && element.complete && element.naturalWidth > 0))
+      .toBe(true)
+    expect(await historyPanel(page).locator('[data-testid="dv-history-turn"]').count()).toBe(0)
     expect(await rowOf(page, project.timeline.id).innerText()).toContain('新建时间线')
     expect(page.errors).toEqual([])
   })
 
-  it('an agent turn\'s records sit under its request text; a human edit on the draft shows 草稿, then 已接受 after accept', async () => {
+  it('an agent row shows its turn\'s request words; a human edit on the draft shows 草稿, then 已接受 after accept', async () => {
     const project = await seedProject('history-turn')
     const page = await openPage()
     await gotoProject(page, project.id)
     await openHistory(page)
     const draft = await openAgentDraft(page, project.id, 'history-turn-request')
-    const turn = historyPanel(page).locator('[data-testid="dv-history-turn"]', { hasText: 'history-turn-request' })
-    await expect.poll(() => turn.locator('[data-testid="dv-history-row"][data-actor="agent"]').count(), { timeout: 30_000 }).toBe(1)
-    const agentRow = turn.locator('[data-testid="dv-history-row"]').first()
-    expect(await agentRow.innerText()).toContain('对话')
+    const agentRow = historyPanel(page).locator('[data-testid="dv-history-row"][data-actor="agent"]')
+    await expect.poll(() => agentRow.count(), { timeout: 30_000 }).toBe(1)
+    await expect.poll(() => agentRow.innerText()).toContain('history-turn-request')
+    expect(await agentRow.innerText()).toContain('智能体')
+    expect(await agentRow.getAttribute('data-surface')).toBe('chat')
     expect(await agentRow.getAttribute('data-mark')).toBe('draft')
     const edit = await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: '人工改名' }, [], draft.session)
     await expect.poll(() => rowOf(page, edit.id).getAttribute('data-mark')).toBe('draft')
@@ -296,6 +301,40 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
+  it('a plan approval folds the renders it scheduled under its row; the toggle shows them', async () => {
+    const id = await createProject('history-fold')
+    const imported = await runOperation(id, 'asset.import', { base64: PNG_BASE64, mime: 'image/png', name: 'ref.png' })
+    const shots = [{ prompt: 'history-fold shot 1', duration_sec: 1 }, { prompt: 'history-fold shot 2', duration_sec: 1 }]
+    const plan = await runOperation(id, 'plan.create', { title: '折叠', references: [imported.outputs[0] ?? ''], shots })
+    expect(plan.report?.['plan']).toBe('p1')
+    const approval = await runOperation(id, 'plan.approve', { plan: 'p1' })
+    const scheduled = approval.report?.['scheduled'] as string[]
+    expect(scheduled).toHaveLength(3)
+    const page = await openPage()
+    await gotoProject(page, id)
+    await openHistory(page)
+    const approvalRow = rowOf(page, approval.id)
+    await expect.poll(() => approvalRow.innerText()).toContain('批准分镜计划 p1 v1')
+    expect(await rowOf(page, plan.id).innerText()).toContain('新建分镜计划《折叠》')
+    // Folded: the scheduled renders and the timeline are not rows until the toggle opens them.
+    for (const record of scheduled) expect(await rowOf(page, record).count()).toBe(0)
+    const fold = historyPanel(page).locator('[data-testid="dv-history-fold"]')
+    await expect.poll(() => fold.innerText(), { timeout: 30_000 }).toMatch(/^▸ 渲染 2 个镜头$/)
+    await fold.click()
+    await expect.poll(() => fold.getAttribute('aria-expanded')).toBe('true')
+    // The folded rows follow the approval's scheduled order: 渲染镜头 1, 渲染镜头 2, then 新建时间线.
+    expect(await shownRecords(page)).toEqual([approval.id, ...scheduled, plan.id, imported.id, expect.any(String)])
+    expect(await rowOf(page, scheduled[2] ?? '').innerText()).toContain('新建时间线')
+    const firstShot = rowOf(page, scheduled[0] ?? '')
+    expect(await firstShot.innerText()).toContain('渲染镜头 1')
+    expect(await firstShot.getAttribute('data-actor')).toBe('system')
+    expect(await firstShot.innerText()).toContain('自动')
+    // The approval's thumbnail is its first render's still.
+    const thumb = approvalRow.locator('[data-testid="dv-history-thumb"]')
+    await expect.poll(() => thumb.evaluate(element => element instanceof HTMLImageElement && element.naturalWidth > 0)).toBe(true)
+    expect(page.errors).toEqual([])
+  })
+
   it('the actor, branch, operation kind and timeline filters each narrow the rows', async () => {
     const project = await seedProject('history-filters')
     const t2 = await runOperation(project.id, 'timeline.create', { timeline: 't2', assets: [project.renders[0]?.outputs[0] ?? ''] })
@@ -306,11 +345,12 @@ describe('History panel', () => {
     await expect.poll(() => rowAttributes(page, 'data-actor'), { timeout: 30_000 }).toContain('agent')
     const all = (await shownRecords(page)).length
     const filter = (name: string): Locator => historyPanel(page).locator(`[data-testid="dv-history-filter-${name}"]`)
-    const reset = async (name: string): Promise<void> => { await filter(name).selectOption({ label: '全部' }) }
+    // Each filter's empty option names the filter and shows every row.
+    const reset = async (name: string): Promise<void> => { await filter(name).selectOption('') }
     // Actor.
     await filter('actor').selectOption({ label: '智能体' })
     await expect.poll(() => rowAttributes(page, 'data-actor')).toEqual(['agent'])
-    await filter('actor').selectOption({ label: '用户' })
+    await filter('actor').selectOption({ label: '你' })
     await expect.poll(async () => new Set(await rowAttributes(page, 'data-actor'))).toEqual(new Set(['user']))
     await reset('actor')
     // Branch: `main` leaves the draft out; the draft option shows only its records.
@@ -383,7 +423,7 @@ describe('History panel', () => {
     const reference = [{ role: 'reference', ref: imported.outputs[0] ?? '' }]
     const render = await runOperation(id, 'shot.render', { prompt: 'history-live shot', duration_sec: 1 }, reference)
     await expect.poll(() => rowOf(page, render.id).getAttribute('data-status'), { timeout: 30_000 }).toBe('done')
-    await expect.poll(() => rowOf(page, render.id).locator('video').count()).toBeGreaterThan(0)
+    await expect.poll(() => rowOf(page, render.id).locator('[data-testid="dv-history-thumb"]').count()).toBe(1)
     expect(page.errors).toEqual([])
   })
 
@@ -395,6 +435,8 @@ describe('History panel', () => {
     await openHistory(page)
     const agentRow = historyPanel(page).locator('[data-testid="dv-history-row"][data-actor="agent"]')
     await expect.poll(() => agentRow.count(), { timeout: 30_000 }).toBe(1)
+    // The link sits in the details of the selected row.
+    await agentRow.click()
     await agentRow.locator('[data-testid="dv-history-open-trajectory"]').click()
     // 轨迹 comes to the front and selects the row of the tool call that wrote the record.
     const selected = page.locator('[data-dv-trajectory]:visible tr[data-selected]')

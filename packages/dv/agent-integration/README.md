@@ -64,9 +64,9 @@ While a Connection is mounted, the plugin serves two authenticated routes for `@
 | File | Role |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | `DvAgentIntegration`: the `session/event` listener (`turn/start` notes the turn on `dvProject`, a `user/message` the user typed notes the human's words on that turn and imports its images), the question rule's registration, the confirmation channel, the approval channel, the composer routes, the `agent/pre-step` mention expansion, and the prompt section |
-| [`src/composer.ts`](src/composer.ts) | The composer modes file, the pending approval cards (a plan approval's card lists every shot), the composer Fetch routes, and the `dv-mentions` context message |
+| [`src/composer.ts`](src/composer.ts) | The composer modes file, the pending approval cards (a plan approval's card lists the shots of the approved version that render, by shot number), the composer Fetch routes, and the `dv-mentions` context message |
 | [`src/expand.ts`](src/expand.ts) | `parseMentions` and `describeMention`: the `dv:asset`, `dv:record`, `dv:character`, `dv:location`, `dv:style`, and `dv:clip` mention URIs described with concrete IDs |
-| [`src/question-rule.ts`](src/question-rule.ts) | `questionRule`: the `ToolCallCheck` with `QUESTION_RULES`, the `user_approved` and `user_requested` arguments, the turn's GPU budget, and the plan approval question that lists every shot |
+| [`src/question-rule.ts`](src/question-rule.ts) | `questionRule`: the `ToolCallCheck` with `QUESTION_RULES`, the `user_approved` and `user_requested` arguments, the turn's GPU budget, and the plan approval question that lists the shots a plan version renders, with their cost |
 | [`src/resolver.ts`](src/resolver.ts) | `renderResolverBlock`: the rules plus the project snapshot of the session's working branch |
 | [`skills/video-directing/SKILL.md`](skills/video-directing/SKILL.md) | Plan, approval, rendering, trims, retakes, reference changes, branches, and the reference-to-video prompt rules |
 | [`skills/timeline-editing/SKILL.md`](skills/timeline-editing/SKILL.md) | The user's editing requests mapped to the exact tool calls and their arguments |
@@ -90,7 +90,7 @@ The draft belongs to the chat session: the session's first agent record opens `d
 
 #### What the model sees
 
-One system-prompt section named `dv:project`: eight rule lines, then the bound project's working branch, whether a draft is open with its counts of agent changes and human edits, characters, locations and styles with versions and references, every timeline with its clips by position, their clip IDs, assets and producing records, takes, stale records with the record that replaced their input, plans with approval state, and one line with the session's composer preference. Without a bound project the section is the rules plus one line saying so.
+One system-prompt section named `dv:project`: nine rule lines (one tells the agent to extend, shorten or change a story with `dv_plan_update` on its plan and to create a plan only for a separate story), then the bound project's working branch, whether a draft is open with its counts of agent changes and human edits, characters, locations and styles with versions and references, every timeline with its clips by position, their clip IDs, assets and producing records, takes, stale records with the record that replaced their input, each plan once with its latest version, latest approved version and shot count (`- p1 "title": latest v2 (7 shots), v1 approved`), and one line with the session's composer preference. Without a bound project the section is the rules plus one line saying so.
 
 #### Token effect
 

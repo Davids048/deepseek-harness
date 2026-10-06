@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The History panel over a scripted API: rows and turn groups, marks, filters, selection, actions, and empty states. */
+/** The History panel over a scripted API: action rows, approval folds, marks, filters, selection, actions, and empty states. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { DvClient } from '@dv/ui-kit/api.ts'
@@ -60,20 +60,45 @@ function mount(entries: HistoryEntry[] = ENTRIES) {
 }
 
 describe('HistoryPanel', () => {
-  it('shows one row per operation record, newest first, with the turn\'s request as its heading and the marks', async () => {
+  it('shows one row per operation record, newest first, with who, the turn\'s request words, the marks and one thumbnail', async () => {
     const { view, row } = mount()
     await waitFor(() => { expect(view.container.querySelectorAll('[data-testid="dv-history-row"]').length).toBe(3) })
     const ids = [...view.container.querySelectorAll('[data-testid="dv-history-row"]')].map(element => element.getAttribute('data-record'))
     expect(ids).toEqual(['m1', 'g1', 'p1'])
-    const turn = view.container.querySelector('[data-testid="dv-history-turn"]')
-    expect(turn?.getAttribute('data-turn')).toBe('t3')
-    expect(turn?.textContent).toContain('render the hero')
+    expect(view.container.querySelector('[data-testid="dv-history-turn"]')).toBeNull()
+    expect(row('g1').textContent).toContain('render the hero')
+    expect(row('g1').textContent).toContain('Agent')
     expect(row('m1').textContent).toContain('Move clip')
+    expect(row('m1').textContent).toContain('You')
+    expect(row('m1').textContent).not.toContain('render the hero')
     expect(row('g1').textContent).toContain('Accepted')
     expect(row('g1').getAttribute('data-actor')).toBe('agent')
     expect(row('p1').getAttribute('data-mark')).toBe('undone')
     expect(row('p1').textContent).toContain('Undone')
-    expect(row('g1').querySelectorAll('img, video').length).toBe(2)
+    expect(row('g1').querySelectorAll('[data-testid="dv-history-thumb"]').length).toBe(1)
+    // A plan's JSON file has no thumbnail.
+    expect(row('p1').querySelector('[data-testid="dv-history-thumb"]')).toBeNull()
+  })
+
+  it('folds the renders a plan approval scheduled under its row until the toggle opens them', async () => {
+    const approval: HistoryEntry[] = [
+      { record: record({ id: 'g2', actor: 'system', operation: 'shot.render', params: { plan: 'p1', shot: 2 }, status: 'running' }), mark: 'main' },
+      { record: record({ id: 'g1', actor: 'system', operation: 'shot.render', params: { plan: 'p1', shot: 1 }, outputs: ['shot1.mp4'] }), mark: 'main' },
+      { record: record({ id: 'ap', actor: 'agent', operation: 'plan.approve', params: { plan: 'p1' }, report: { plan: 'p1', version: 1, scheduled: ['g1', 'g2'] } }), mark: 'main' },
+    ]
+    const { view, row } = mount(approval)
+    await waitFor(() => { row('ap') })
+    expect(view.container.querySelectorAll('[data-testid="dv-history-row"]').length).toBe(1)
+    expect(row('ap').textContent).toContain('Approve plan p1 v1')
+    const fold = view.getByTestId('dv-history-fold')
+    expect(fold.textContent).toContain('Render 2 shots (1/2)')
+    fireEvent.click(fold)
+    expect(fold.getAttribute('aria-expanded')).toBe('true')
+    expect(row('g1').textContent).toContain('Render shot 1')
+    expect(row('g2').textContent).toContain('Automatic')
+    // Folded rows follow `report.scheduled`: shot 1, then shot 2.
+    const folded = [...view.container.querySelectorAll('[data-testid="dv-history-row"]')].map(element => element.getAttribute('data-record'))
+    expect(folded).toEqual(['ap', 'g1', 'g2'])
   })
 
   it('sends the filters as query fields', async () => {

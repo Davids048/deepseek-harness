@@ -1,10 +1,11 @@
 /**
- * The History panel: every record of a project, newest first and grouped by agent turn, read through
- * `POST /api/dv/history`. Each row shows time, actor, surface, intent, the operation's tool label, status, input and
- * output thumbnails, and the record's mark (草稿, 已接受, 已撤销, 已丢弃, 已重放, or an exploration branch). Filters narrow by
- * actor, branch, operation kind, and timeline. Selecting a row plays its output under the row and focuses the record on
- * the canvas or its clip on the timeline. The panel writes nothing except accept, discard, undo, and redo of the chat
- * session's working branch in its header.
+ * The History panel: the edit history of a project, one row per action, newest first, read through
+ * `POST /api/dv/history`. Each row shows the action with its subject (修改分镜计划 p1 → v2, 渲染镜头 7), who did it
+ * (你, 智能体, 自动), how long ago, its status, one thumbnail, the record's mark (草稿, 已接受, 已撤销, 已丢弃, 已重放, or
+ * an exploration branch), and for an agent action the human's words of its turn. The renders a plan approval scheduled
+ * fold under the approval's row. One bar holds the filters (actor, branch, operation kind, timeline) and the actions on
+ * the chat session's working branch (accept, discard, undo, redo), which are the panel's only writes. Selecting a row
+ * plays its output under the row and focuses the record on the canvas or its clip on the timeline.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
@@ -18,13 +19,14 @@ import { useText } from '@dv/ui-kit/locale.ts'
 import type { PickText } from '@dv/ui-kit/locale.ts'
 import { openDrafts, sessionDraft } from '@dv/ui-kit/state.ts'
 import { timelineName } from '@dv/ui-kit/timeline.ts'
-import type { Actor, Asset, HistoryEntry, HistoryQuery, ProjectRecord, RecordStatus, Surface, WireHistory } from '@dv/ui-kit/types.ts'
+import type { Actor, Asset, HistoryEntry, HistoryQuery, ProjectRecord, RecordStatus, WireHistory } from '@dv/ui-kit/types.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
   DV_HISTORY_FOCUS_EVENT, DV_TRAJECTORY_FOCUS_EVENT, dispatchWorkspaceEvent, type DvWorkspaceEventMap,
 } from '@dv/ui-kit/workspace-events.ts'
 import {
-  branchQuery, centerFocus, clipTimelines, groupByTurn, markBadge, markStyle, operationLabel, timelineRecords, turnToolCall,
+  actionLabel, actionRows, branchQuery, centerFocus, clipTimelines, markBadge, markStyle, relativeTime, thumbnailOf, timelineRecords,
+  type ActionRow, type Thumbnail,
 } from './rows.ts'
 
 /** Props of {@link HistoryPanel}. */
@@ -60,11 +62,8 @@ interface Loaded {
   more: boolean
 }
 
-const ACTORS: Record<Actor, [string, string]> = { user: ['用户', 'User'], agent: ['智能体', 'Agent'], system: ['系统', 'System'] }
-const SURFACES: Record<Surface, [string, string]> = {
-  chat: ['对话', 'Chat'], canvas: ['画布', 'Canvas'], timeline: ['时间线', 'Timeline'], asset_pool: ['素材库', 'Asset pool'],
-  api: ['接口', 'API'], history: ['历史', 'History'],
-}
+/** Who did an action: the creator at the screen, the agent, or the project on its own (renders an approval scheduled). */
+const ACTORS: Record<Actor, [string, string]> = { user: ['你', 'You'], agent: ['智能体', 'Agent'], system: ['自动', 'Automatic'] }
 const STATUSES: Record<RecordStatus, [string, string]> = {
   pending: ['等待中', 'Pending'], running: ['运行中', 'Running'], done: ['完成', 'Done'], failed: ['失败', 'Failed'],
   cancelled: ['已取消', 'Cancelled'],
@@ -78,8 +77,13 @@ const line = 'var(--dv-line, rgba(127, 127, 127, 0.25))'
 const muted = 'var(--dv-muted, rgba(127, 127, 127, 0.95))'
 const accent = 'var(--dv-accent, #7c5cff)'
 const danger = 'var(--dv-danger, #e5484d)'
+const success = 'var(--dv-success, #30a46c)'
+/** The relative time's gray: opaque, so the small text draws as one plain glyph run. */
+const timeColor = 'var(--dv-muted, #8b8b8b)'
+/** The dot color of each status. */
+const STATUS_COLORS: Record<RecordStatus, string> = { pending: muted, running: accent, done: success, failed: danger, cancelled: muted }
 const button: CSSProperties = {
-  border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '3px 10px', fontSize: 12, cursor: 'pointer',
+  border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '2px 8px', fontSize: 12, cursor: 'pointer',
 }
 const select: CSSProperties = { border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, fontSize: 12, padding: '2px 4px' }
 const link: CSSProperties = { border: 'none', background: 'transparent', color: accent, fontSize: 11, padding: 0, cursor: 'pointer' }
@@ -96,17 +100,6 @@ if (typeof window !== 'undefined') {
     pendingFocus = focus
     for (const listener of focusListeners) listener(focus)
   })
-}
-
-/**
- * Format a record time: `HH:MM` today, else the date and `HH:MM`.
- * @param iso - an ISO time.
- * @returns the text.
- */
-function shortTime(iso: string): string {
-  const time = new Date(iso)
-  const clock = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
-  return time.toDateString() === new Date().toDateString() ? clock : `${time.toLocaleDateString()} ${clock}`
 }
 
 /**
@@ -215,7 +208,14 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   const [selected, setSelected] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [focusRecord, setFocusRecord] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const rowRefs = useRef(new Map<string, HTMLElement>())
+  // The relative times refresh every half minute.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => { setNow(Date.now()) }, 30_000)
+    return () => { clearInterval(timer) }
+  }, [])
 
   const records = working.value?.components.proj.records
   const owner = useMemo(() => clipTimelines(records ?? []), [records])
@@ -237,6 +237,8 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     }
   }, [projectId, filters.branch, filters.actor, filters.component, timelineSet])
   const { loaded, error, loadMore } = useHistory(client, query)
+  const rows = useMemo(() => actionRows(loaded?.entries ?? []), [loaded])
+  const recordsById = useMemo(() => new Map((loaded?.entries ?? []).map(entry => [entry.record.id, entry.record])), [loaded])
 
   // A `dv:history-focus` request: clear the filters, find the record the tool call wrote, then select it once loaded.
   const takeFocus = useCallback((focus: DvWorkspaceEventMap['dv:history-focus']) => {
@@ -257,18 +259,32 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   useEffect(() => {
     if (focusRecord === null || loaded === null || query === null || JSON.stringify(filters) !== JSON.stringify(NO_FILTERS)) return
     if (loaded.entries.some(entry => entry.record.id === focusRecord)) {
+      // A record folded under an approval shows once its approval's row is expanded.
+      const parent = rows.find(row => row.children.some(child => child.record.id === focusRecord))
+      if (parent !== undefined) setExpanded(shown => new Set([...shown, parent.entry.record.id]))
       setSelected(focusRecord)
       setFocusRecord(null)
       requestAnimationFrame(() => { rowRefs.current.get(focusRecord)?.scrollIntoView({ block: 'nearest' }) })
     } else if (loaded.more) void loadMore()
     else setFocusRecord(null)
-  }, [focusRecord, loaded, query, filters, loadMore])
+  }, [focusRecord, loaded, rows, query, filters, loadMore])
 
   const choose = (entry: HistoryEntry): void => {
     setSelected(entry.record.id)
     const target = centerFocus(entry, owner)
     // The focus names its own event and detail, so it is dispatched as is.
     if (target !== null) window.dispatchEvent(new CustomEvent(target.event, { detail: target.detail }))
+  }
+  const toggle = (record: string): void => {
+    setExpanded((shown) => {
+      const next = new Set(shown)
+      if (!next.delete(record)) next.add(record)
+      return next
+    })
+  }
+  const rowRef = (record: string) => (element: HTMLElement | null): void => {
+    if (element === null) rowRefs.current.delete(record)
+    else rowRefs.current.set(record, element)
   }
 
   const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS)
@@ -279,27 +295,8 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     // Every project starts with its `proj.create` record, so a project without other operation records counts as empty;
     // its creation row stays listed below the notice.
     const changes = loaded.entries.filter(entry => entry.record.kind === 'operation' && entry.record.operation !== 'proj.create')
-    const empty = filtered ? loaded.entries.every(entry => entry.record.kind === 'request') : changes.length === 0
-    const groups = groupByTurn(loaded.entries).map((group) => {
-      const rows = group.entries.map(entry => (
-        <Row
-          key={entry.record.id} entry={entry} assets={loaded.assets} selected={selected === entry.record.id}
-          onChoose={choose}
-          rowRef={(element) => {
-            if (element === null) rowRefs.current.delete(entry.record.id)
-            else rowRefs.current.set(entry.record.id, element)
-          }}
-        />
-      ))
-      if (group.turn === null) return rows
-      return (
-        <TurnSection
-          key={`${group.turn}:${group.entries[0]?.record.id ?? ''}`} turn={group.turn} entries={group.entries} request={loaded.requests[group.turn]}
-        >
-          {rows}
-        </TurnSection>
-      )
-    })
+    const empty = filtered ? rows.length === 0 : changes.length === 0
+    const shared = { assets: loaded.assets, records: recordsById, requests: loaded.requests, now, selected, onChoose: choose, rowRef }
     body = (
       <>
         {empty
@@ -311,20 +308,27 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
             </p>
           )
           : null}
-        {groups}
+        {rows.map(row => (
+          <Row
+            key={row.entry.record.id} {...shared} row={row}
+            expanded={expanded.has(row.entry.record.id)} onToggle={() => { toggle(row.entry.record.id) }}
+          />
+        ))}
       </>
     )
   }
   return (
-    <div data-testid="dv-history-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: 12, gap: 8 }}>
-      <Actions client={client} projectId={projectId} session={session} draftOpen={draft !== null} />
-      <FilterBar filters={filters} onChange={setFilters} state={main.value} timelines={timelines} t={t} />
+    <div data-testid="dv-history-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: '8px 8px 0', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <FilterBar filters={filters} onChange={setFilters} state={main.value} timelines={timelines} t={t} />
+        <Actions client={client} projectId={projectId} session={session} draftOpen={draft !== null} />
+      </div>
       {notice === null ? null : <p style={{ color: muted, fontSize: 12, margin: 0 }}>{notice}</p>}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <div role="listbox" style={{ flex: 1, minHeight: 0, overflowY: 'auto', borderTop: `1px solid ${line}` }}>
         {body}
         {loaded?.more === true
           ? (
-            <button type="button" data-testid="dv-history-more" style={{ ...button, marginTop: 8 }} onClick={() => { void loadMore() }}>
+            <button type="button" data-testid="dv-history-more" style={{ ...button, margin: '8px 0' }} onClick={() => { void loadMore() }}>
               {t('加载更多', 'Load more')}
             </button>
           )
@@ -335,9 +339,10 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
 }
 
 /**
- * The header actions on the chat session's working branch: accept and discard while its draft is open, undo and redo.
+ * The actions on the chat session's working branch: accept and discard while its draft is open, undo and redo. They sit
+ * at the end of the filter bar.
  * @param props - the client, the project, the chat session, and whether the session has an open draft.
- * @returns the action bar.
+ * @returns the buttons.
  */
 function Actions(props: { client: DvClient; projectId: string; session: string | null; draftOpen: boolean }): ReactNode {
   const { client, projectId, session } = props
@@ -349,7 +354,7 @@ function Actions(props: { client: DvClient; projectId: string; session: string |
     work().catch((error: unknown) => { setFailure(error instanceof Error ? error.message : String(error)) })
   }
   return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginLeft: 'auto' }}>
       {props.draftOpen && session !== null
         ? (
           <>
@@ -367,10 +372,10 @@ function Actions(props: { client: DvClient; projectId: string; session: string |
 }
 
 /**
- * The four filter selects.
+ * The four filter selects. Each names its filter in its empty option, so the bar needs no separate labels.
  * @param props - the filters, the change callback, the state of `main` (for branches), the working branch's timelines,
  *   and the string picker.
- * @returns the filter bar.
+ * @returns the selects.
  */
 function FilterBar(props: {
   filters: Filters
@@ -382,64 +387,42 @@ function FilterBar(props: {
   const { filters, onChange, state, t } = props
   const explorations = state === null ? [] : Object.keys(state.heads).filter(name => name !== 'main' && !name.startsWith('draft/')).sort()
   const drafts = state === null ? [] : openDrafts(state)
-  const labelled = (zh: string, en: string, control: ReactNode): ReactNode => (
-    <label style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 12, color: muted }}>{t(zh, en)}{control}</label>
-  )
+  const styled = (value: string): CSSProperties => ({ ...select, color: value === '' ? muted : 'inherit', maxWidth: 110 })
   return (
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      {labelled('发起者', 'Actor', (
-        <select data-testid="dv-history-filter-actor" style={select} value={filters.actor} onChange={(event) => { onChange({ ...filters, actor: event.currentTarget.value as Filters['actor'] }) }}>
-          <option value="">{t('全部', 'All')}</option>
-          {(Object.keys(ACTORS) as Actor[]).map(actor => <option key={actor} value={actor}>{t(...ACTORS[actor])}</option>)}
-        </select>
-      ))}
-      {labelled('分支', 'Branch', (
-        <select data-testid="dv-history-filter-branch" style={select} value={filters.branch} onChange={(event) => { onChange({ ...filters, branch: event.currentTarget.value }) }}>
-          <option value="">{t('全部', 'All')}</option>
-          <option value="main">main</option>
-          {drafts.map(draft => <option key={draft.branch} value={draft.branch}>{t(`草稿 · ${draft.session}`, `Draft · ${draft.session}`)}</option>)}
-          {explorations.map(name => <option key={name} value={name}>{name}</option>)}
-        </select>
-      ))}
-      {labelled('操作类型', 'Operation kind', (
-        <select data-testid="dv-history-filter-component" style={select} value={filters.component} onChange={(event) => { onChange({ ...filters, component: event.currentTarget.value }) }}>
-          <option value="">{t('全部', 'All')}</option>
-          {COMPONENTS.map(([key, zh, en]) => <option key={key} value={key}>{t(zh, en)}</option>)}
-        </select>
-      ))}
-      {labelled('时间线', 'Timeline', (
-        <select data-testid="dv-history-filter-timeline" style={select} value={filters.timeline} onChange={(event) => { onChange({ ...filters, timeline: event.currentTarget.value }) }}>
-          <option value="">{t('全部', 'All')}</option>
-          {props.timelines.map(timeline => (
-            <option key={timeline.id} value={timeline.id}>{timelineName(timeline, n => t(`时间线 ${String(n)}`, `Timeline ${String(n)}`))}</option>
-          ))}
-        </select>
-      ))}
-    </div>
-  )
-}
-
-/**
- * One turn group: the human's request as the heading, its time, the link into the trajectory, and the turn's rows.
- * @param props - the turn, its entries, its request record when known, and the rendered rows.
- * @returns the group.
- */
-function TurnSection(props: { turn: string; entries: HistoryEntry[]; request: ProjectRecord | undefined; children: ReactNode }): ReactNode {
-  const t = useText()
-  const call = turnToolCall(props.entries)
-  const time = props.request?.created_at ?? props.entries.at(-1)?.record.created_at ?? ''
-  const text = props.request?.intent ?? ''
-  return (
-    <section data-testid="dv-history-turn" data-turn={props.turn} style={{ borderLeft: `2px solid ${line}`, paddingLeft: 8, margin: '0 0 10px' }}>
-      <header style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 12, margin: '0 0 4px' }}>
-        <span title={text} style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {text === '' ? t('智能体轮次', 'Agent turn') : text}
-        </span>
-        <span title={time} style={{ color: muted }}>{time === '' ? '' : shortTime(time)}</span>
-        {call === null ? null : <TrajectoryLink session={call.session} toolCall={call.toolCall} />}
-      </header>
-      {props.children}
-    </section>
+    <>
+      <select
+        data-testid="dv-history-filter-actor" aria-label={t('发起者', 'Actor')} style={styled(filters.actor)} value={filters.actor}
+        onChange={(event) => { onChange({ ...filters, actor: event.currentTarget.value as Filters['actor'] }) }}
+      >
+        <option value="">{t('发起者', 'Actor')}</option>
+        {(Object.keys(ACTORS) as Actor[]).map(actor => <option key={actor} value={actor}>{t(...ACTORS[actor])}</option>)}
+      </select>
+      <select
+        data-testid="dv-history-filter-branch" aria-label={t('分支', 'Branch')} style={styled(filters.branch)} value={filters.branch}
+        onChange={(event) => { onChange({ ...filters, branch: event.currentTarget.value }) }}
+      >
+        <option value="">{t('分支', 'Branch')}</option>
+        <option value="main">main</option>
+        {drafts.map(draft => <option key={draft.branch} value={draft.branch}>{t(`草稿 · ${draft.session}`, `Draft · ${draft.session}`)}</option>)}
+        {explorations.map(name => <option key={name} value={name}>{name}</option>)}
+      </select>
+      <select
+        data-testid="dv-history-filter-component" aria-label={t('操作类型', 'Operation kind')} style={styled(filters.component)}
+        value={filters.component} onChange={(event) => { onChange({ ...filters, component: event.currentTarget.value }) }}
+      >
+        <option value="">{t('操作类型', 'Operation kind')}</option>
+        {COMPONENTS.map(([key, zh, en]) => <option key={key} value={key}>{t(zh, en)}</option>)}
+      </select>
+      <select
+        data-testid="dv-history-filter-timeline" aria-label={t('时间线', 'Timeline')} style={styled(filters.timeline)}
+        value={filters.timeline} onChange={(event) => { onChange({ ...filters, timeline: event.currentTarget.value }) }}
+      >
+        <option value="">{t('时间线', 'Timeline')}</option>
+        {props.timelines.map(timeline => (
+          <option key={timeline.id} value={timeline.id}>{timelineName(timeline, n => t(`时间线 ${String(n)}`, `Timeline ${String(n)}`))}</option>
+        ))}
+      </select>
+    </>
   )
 }
 
@@ -459,89 +442,165 @@ function TrajectoryLink(props: { session: string; toolCall: string }): ReactNode
   )
 }
 
-/**
- * One record row, with its output preview while selected.
- * @param props - the entry, the known assets, whether it is selected, the selection callback, and the row element ref.
- * @returns the row.
- */
-function Row(props: {
-  entry: HistoryEntry
+/** What every row reads besides its own entry. */
+interface RowContext {
   assets: ReadonlyMap<string, Asset>
-  selected: boolean
+  records: ReadonlyMap<string, ProjectRecord>
+  requests: Readonly<Record<string, ProjectRecord>>
+  now: number
+  selected: string | null
   onChoose: (entry: HistoryEntry) => void
-  rowRef: (element: HTMLElement | null) => void
-}): ReactNode {
-  const { entry, assets } = props
-  const { record } = entry
+  rowRef: (record: string) => (element: HTMLElement | null) => void
+}
+
+/**
+ * One action row: the thumbnail, the action label and the time on the first line; who, the status, the mark and the
+ * human's words on the second. A plan approval adds the toggle that shows the renders it scheduled, nested below it.
+ * @param props - the row, the shared row context, and the approval's expanded state and toggle.
+ * @returns the row and, while expanded, its nested rows.
+ */
+function Row(props: RowContext & { row: ActionRow; expanded: boolean; onToggle: () => void }): ReactNode {
+  const { row, expanded } = props
   const t = useText()
-  const badge = markBadge(entry)
-  const style = markStyle(entry.mark)
-  const label = operationLabel(record.operation)
-  const status = t(...STATUSES[record.status])
-  const inputs = record.inputs.map(input => input.resolved_asset).filter((id): id is string => id !== null).slice(0, 3)
-  const outputs = record.outputs.slice(0, 3)
+  const children = row.children
+  const renders = children.filter(child => child.record.operation === 'shot.render')
+  const doneRenders = renders.filter(child => child.record.status === 'done').length
+  const foldText = renders.length === 0
+    ? t(...actionLabel(children[0]?.record ?? row.entry.record))
+    : t(`渲染 ${String(renders.length)} 个镜头`, `Render ${String(renders.length)} shots`)
   return (
-    <div
-      ref={props.rowRef} role="option" tabIndex={0} aria-selected={props.selected}
-      data-testid="dv-history-row" data-record={record.id} data-mark={entry.mark} data-status={record.status} data-actor={record.actor}
-      onClick={() => { props.onChoose(entry) }}
-      onKeyDown={(event) => { if (event.key === 'Enter') props.onChoose(entry) }}
-      style={{
-        padding: '6px 6px', borderRadius: 6, cursor: 'pointer', fontSize: 12, marginBottom: 2,
-        background: props.selected ? 'var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12))' : 'transparent',
-        opacity: style === 'normal' ? 1 : 0.55,
-      }}
-    >
-      <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
-        <span title={record.created_at} style={{ color: muted }}>{shortTime(record.created_at)}</span>
-        <span>{t(...ACTORS[record.actor])}</span>
-        <span style={{ color: muted }}>· {t(...SURFACES[record.surface])}</span>
-        <span style={{ fontWeight: 600, textDecoration: style === 'struck' ? 'line-through' : 'none' }}>{t(...label)}</span>
-        <span title={record.error?.message ?? status} style={{ color: record.status === 'failed' ? danger : muted }}>{status}</span>
-        {badge === null
-          ? null
-          : <span style={{ fontSize: 10, border: `1px solid ${accent}`, color: accent, borderRadius: 3, padding: '0 4px' }}>{'branch' in badge ? badge.branch : t(badge.zh, badge.en)}</span>}
-        {record.session !== null && record.tool_call !== null
-          ? <TrajectoryLink session={record.session} toolCall={record.tool_call} />
-          : null}
-      </div>
-      {record.intent === ''
-        ? null
-        : <div title={record.intent} style={{ color: muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{record.intent}</div>}
-      {inputs.length + outputs.length === 0
+    <div style={{ borderBottom: `1px solid ${line}` }}>
+      <EntryRow {...props} entry={row.entry} nested={false} folded={children} />
+      {children.length === 0
         ? null
         : (
-          <div style={{ display: 'flex', gap: 4, marginTop: 4, alignItems: 'center' }}>
-            {inputs.map(id => <Thumb key={`in:${id}`} id={id} asset={assets.get(id)} />)}
-            {inputs.length > 0 && outputs.length > 0 ? <span style={{ color: muted }}>→</span> : null}
-            {outputs.map(id => <Thumb key={`out:${id}`} id={id} asset={assets.get(id)} />)}
-          </div>
+          <button
+            type="button" data-testid="dv-history-fold" aria-expanded={expanded} onClick={props.onToggle}
+            style={{ ...link, color: muted, display: 'block', padding: '0 0 6px 56px', fontSize: 11 }}
+          >
+            {expanded ? '▾' : '▸'} {foldText}
+            {doneRenders < renders.length ? ` (${String(doneRenders)}/${String(renders.length)})` : ''}
+          </button>
         )}
-      {props.selected ? <Preview record={record} assets={assets} /> : null}
+      {expanded ? children.map(child => <EntryRow key={child.record.id} {...props} entry={child} nested />) : null}
     </div>
   )
 }
 
-/** One input or output thumbnail. */
-function Thumb(props: { id: string; asset: Asset | undefined }): ReactNode {
-  const media: CSSProperties = { width: 40, height: 40, objectFit: 'cover', borderRadius: 4, border: `1px solid ${line}`, display: 'block' }
-  return props.asset?.mime.startsWith('video/') === true
-    ? <video src={`${assetUrl(props.id)}#t=0.1`} preload="metadata" muted style={media} />
-    : <img src={assetUrl(props.id)} alt={props.asset?.name ?? props.id} loading="lazy" style={media} />
+/**
+ * One record's line pair, with its output preview, full words and trajectory link while selected.
+ * @param props - the entry, the shared row context, whether it is nested under an approval, and the records folded under it (`folded`).
+ * @returns the row.
+ */
+function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; folded?: HistoryEntry[] }): ReactNode {
+  const { entry, assets, nested } = props
+  const { record } = entry
+  const t = useText()
+  const badge = markBadge(entry)
+  const style = markStyle(entry.mark)
+  const selected = props.selected === record.id
+  const status = t(...STATUSES[record.status])
+  const thumbnail = thumbnailOf(record, assets, props.records, (props.folded ?? []).map(child => child.record))
+  // The human's words: the request of the agent turn; a human action's own intent stays in the tooltip.
+  const words = record.actor === 'agent' && record.turn !== null ? props.requests[record.turn]?.intent ?? '' : ''
+  const size = nested ? 28 : 40
+  return (
+    <div
+      ref={props.rowRef(record.id)} role="option" tabIndex={0} aria-selected={selected} title={record.intent}
+      data-testid="dv-history-row" data-record={record.id} data-mark={entry.mark} data-status={record.status} data-actor={record.actor}
+      data-surface={record.surface}
+      onClick={() => { props.onChoose(entry) }}
+      onKeyDown={(event) => { if (event.key === 'Enter') props.onChoose(entry) }}
+      style={{
+        padding: nested ? '4px 8px 4px 56px' : '6px 8px', cursor: 'pointer', fontSize: 12,
+        background: selected ? 'var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12))' : 'transparent',
+        opacity: style === 'normal' ? 1 : 0.55,
+      }}
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: `${String(size)}px minmax(0, 1fr)`, columnGap: 8, alignItems: 'center' }}>
+        <Thumb thumbnail={thumbnail} size={size} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+            <span
+              style={{
+                flex: 1, minWidth: 0, fontWeight: nested ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                textDecoration: style === 'struck' ? 'line-through' : 'none',
+              }}
+            >
+              {t(...actionLabel(record))}
+            </span>
+            <span
+              data-testid="dv-history-time" title={new Date(record.created_at).toLocaleString()}
+              style={{ flex: 'none', color: timeColor, fontSize: 12, fontWeight: 400, whiteSpace: 'nowrap', textAlign: 'right' }}
+            >
+              {t(...relativeTime(record.created_at, props.now))}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', color: muted, fontSize: 11, minWidth: 0, whiteSpace: 'nowrap' }}>
+            <span>{t(...ACTORS[record.actor])}</span>
+            <span title={record.error?.message ?? status} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ width: 6, height: 6, borderRadius: 3, background: STATUS_COLORS[record.status], display: 'inline-block' }} />
+              {record.status === 'done' ? null : <span style={{ color: record.status === 'failed' ? danger : muted }}>{status}</span>}
+            </span>
+            {badge === null
+              ? null
+              : <span style={{ border: `1px solid ${accent}`, color: accent, borderRadius: 3, padding: '0 4px', lineHeight: '14px' }}>{'branch' in badge ? badge.branch : t(badge.zh, badge.en)}</span>}
+            {words === '' ? null : <span title={words} style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>“{words}”</span>}
+          </div>
+        </div>
+      </div>
+      {selected ? <Details record={record} assets={assets} words={words} /> : null}
+    </div>
+  )
 }
 
-/** The inline player of a selected row: its first video output, else its first image output; nothing without outputs. */
-function Preview(props: { record: ProjectRecord; assets: ReadonlyMap<string, Asset> }): ReactNode {
-  const outputs = props.record.outputs.map(id => ({ id, mime: props.assets.get(id)?.mime ?? '' }))
+/**
+ * A row's one thumbnail: an image, a video's first frame, or an empty square that keeps the rows aligned. An image that
+ * fails to load falls back to the empty square instead of the browser's broken-image icon.
+ * @param props - the thumbnail, or null, and its edge in pixels.
+ * @returns the thumbnail.
+ */
+function Thumb(props: { thumbnail: Thumbnail | null; size: number }): ReactNode {
+  const [failed, setFailed] = useState<string | null>(null)
+  const media: CSSProperties = {
+    width: props.size, height: props.size, objectFit: 'cover', borderRadius: 4, display: 'block',
+    background: 'var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12))',
+  }
+  const { thumbnail } = props
+  if (thumbnail === null || failed === thumbnail.asset) return <span style={media} />
+  const shared = { 'data-testid': 'dv-history-thumb', 'data-asset': thumbnail.asset, style: media }
+  return thumbnail.kind === 'video'
+    ? <video {...shared} src={assetUrl(thumbnail.asset)} preload="metadata" muted playsInline onError={() => { setFailed(thumbnail.asset) }} />
+    : <img {...shared} src={assetUrl(thumbnail.asset)} alt="" loading="lazy" onError={() => { setFailed(thumbnail.asset) }} />
+}
+
+/**
+ * What a selected row adds below it: the inline player of its first video output (else its first image output), the
+ * human's words in full, and the link into the trajectory for an agent action.
+ * @param props - the record, the known assets, and the human's words.
+ * @returns the details, or null when there is nothing to add.
+ */
+function Details(props: { record: ProjectRecord; assets: ReadonlyMap<string, Asset>; words: string }): ReactNode {
+  const { record } = props
+  const outputs = record.outputs.map(id => ({ id, mime: props.assets.get(id)?.mime ?? '' }))
   const video = outputs.find(output => output.mime.startsWith('video/'))
   const image = outputs.find(output => output.mime.startsWith('image/'))
-  if (video === undefined && image === undefined) return null
-  const style: CSSProperties = { maxWidth: '100%', maxHeight: 220, borderRadius: 6, marginTop: 6, display: 'block' }
+  const call = record.session !== null && record.tool_call !== null ? { session: record.session, toolCall: record.tool_call } : null
+  if (video === undefined && image === undefined && call === null && props.words === '') return null
+  const style: CSSProperties = { maxWidth: '100%', maxHeight: 220, borderRadius: 6, display: 'block' }
   return (
-    <div data-testid="dv-history-preview" onClick={(event) => { event.stopPropagation() }}>
-      {video === undefined
-        ? <img src={assetUrl(image?.id ?? '')} alt="" style={style} />
-        : <video src={assetUrl(video.id)} autoPlay muted controls style={style} />}
+    <div onClick={(event) => { event.stopPropagation() }} style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
+      {video === undefined && image === undefined
+        ? null
+        : (
+          <div data-testid="dv-history-preview">
+            {video === undefined
+              ? <img src={assetUrl(image?.id ?? '')} alt="" style={style} />
+              : <video src={assetUrl(video.id)} autoPlay muted controls style={style} />}
+          </div>
+        )}
+      {props.words === '' ? null : <div style={{ color: muted, fontSize: 11, whiteSpace: 'pre-wrap' }}>“{props.words}”</div>}
+      {call === null ? null : <div><TrajectoryLink session={call.session} toolCall={call.toolCall} /></div>}
     </div>
   )
 }

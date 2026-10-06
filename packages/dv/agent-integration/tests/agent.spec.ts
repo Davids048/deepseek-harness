@@ -4,6 +4,7 @@ import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AssetId, Branch, CharacterId, ProjectId, ProjectState, RecordId, SessionId } from '@dv/project'
 import type { ClipId, TimelineId } from '@dv/timeline'
+import type { PlanId } from '@dv/shot-plan'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DvAgentIntegration, { PROMPT_SECTION } from '../src/index.ts'
 import { renderResolverBlock } from '../src/resolver.ts'
@@ -114,7 +115,7 @@ function plainState(components: Partial<{ [K in keyof ProjectState['components']
       proj: { records: [], stale: {}, superseded: {}, created_by: {}, ...components.proj },
       timeline: { timelines: [], ...components.timeline },
       bible: { characters: {}, locations: {}, styles: {}, ...components.bible },
-      plan: { plans: [], ...components.plan },
+      plan: { plans: {}, ...components.plan },
       shot: { takes: {}, roots: {}, ...components.shot },
     },
   }
@@ -146,8 +147,9 @@ describe('resolver block', () => {
     expect(block).toContain('Timelines: none.')
     // The imported picture is listed, so a chat attachment can be used as a reference.
     expect(block).toMatch(/Imported images \(newest last\):\n- asset \S+ \/dv\/assets\//)
-    expect(block).toContain(`${plan['record']}: proposed, waiting for the user`)
-    ok(await second.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'], user_approved: true }))
+    expect(plan['report']).toEqual({ plan: 'p1', version: 1 })
+    expect(block).toContain('Plans:\n- p1: latest v1 (2 shots), not approved yet')
+    ok(await second.callAs('dv_plan_approve', { reason: 'go', plan: 'p1', user_approved: true }))
     ok(await second.callAs('dv_proj_wait', {}))
     const recent = ok(await second.callAs('dv_proj_state', {}))['recent'] as Array<{ operation: string; record: string }>
     const firstShot = recent.find(entry => entry.operation === 'shot.render')?.record
@@ -162,7 +164,7 @@ describe('resolver block', () => {
     expect(after).toContain(String(retake['record']))
     expect(after).toContain('Stale records')
     expect(after).toContain('STALE')
-    expect(after).toContain('approved by')
+    expect(after).toContain('- p1: latest v1 (2 shots), v1 approved')
     // After the user's accept the session works on main again.
     ok(await second.callAs('dv_proj_draft_accept', {}))
     expect(second.agent.promptBlock('s1')).toContain('No draft is open.')
@@ -180,7 +182,7 @@ describe('resolver block', () => {
     expect(text).toContain('Characters, locations and styles: none.')
     expect(text).not.toContain('Takes')
     // Imported assets have no producing record, a trimmed clip shows its range, a stale producer is flagged, and a plan
-    // approved by an unnamed actor says "user".
+    // is listed once with its latest and approved versions.
     const g1 = brandString<RecordId>('g1')
     const a1 = 'a1' as never
     const a2 = 'a2' as never
@@ -195,12 +197,20 @@ describe('resolver block', () => {
           ],
         }],
       },
-      plan: { plans: [{ record: brandString<RecordId>('p1'), approved: true, approved_by: null }] },
+      plan: {
+        plans: {
+          [brandString<PlanId>('p1')]: [
+            { title: 'Dance', shots: [{ prompt: 'a' }], version: 1, created_by: g1, approved_by: brandString<RecordId>('g3') },
+            { title: 'Dance', shots: [{ prompt: 'a' }, { prompt: 'b' }], version: 2, created_by: g1, approved_by: null },
+          ],
+          [brandString<PlanId>('p2')]: [],
+        },
+      },
     })
     const lines = renderResolverBlock({ projectId, state: marked, branch: branchOf('main'), url })
     expect(lines).toContain('Timelines:\n- t1 "Opening": 2 clips\n  - clip 1 cl1: asset a1 range 0s-4 /u/a1\n  - clip 2 cl2: asset a2 from record g1 STALE /u/a2')
     expect(lines).toContain('g1 (input replaced by g2)')
-    expect(lines).toContain('p1: approved by user')
+    expect(lines.endsWith('Plans:\n- p1 "Dance": latest v2 (2 shots), v1 approved')).toBe(true)
     const lead = { id: brandString<CharacterId>('c1'), version: 1, name: 'Lead', references: [], description: '', created_by: brandString<RecordId>('u1') }
     const noRefs = plainState({ bible: { characters: { [lead.id]: [lead] } } })
     expect(renderResolverBlock({ projectId, state: noRefs, branch: branchOf('main'), url })).toContain('- c1@1 character "Lead" references none')
@@ -261,11 +271,11 @@ describe('confirmation', () => {
   it('requires the argument protocol when no question channel applies', async () => {
     const fixture = await start()
     await boundProject(fixture)
-    const plan = ok(await fixture.callAs('dv_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
-    const refused = await fixture.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'] })
+    ok(await fixture.callAs('dv_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
+    const refused = await fixture.callAs('dv_plan_approve', { reason: 'go', plan: 'p1' })
     expect(refused.isError).toBe(true)
     expect(resultText(refused)).toContain('user_approved: true')
-    const approved = ok(await fixture.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'], user_approved: true }))
+    const approved = ok(await fixture.callAs('dv_plan_approve', { reason: 'go', plan: 'p1', user_approved: true }))
     const projectId = fixture.project.sessionProject(brandString<SessionId>('s1')) as ProjectId
     expect(fixture.project.getRecord(projectId, approved['record'] as RecordId).params['user_approved']).toBe(true)
     ok(await fixture.callAs('dv_proj_wait', {}))
@@ -277,13 +287,13 @@ describe('confirmation', () => {
     const asked: string[] = []
     const fixture = await start({ registry: true, questions: (question) => { asked.push(question); return question.includes('decline-me') ? ['Not now'] : ['Run it'] } })
     await boundProject(fixture)
-    const plan = ok(await fixture.callAs('dv_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
-    ok(await fixture.callAs('dv_plan_approve', { reason: 'approve the plan', plan: plan['record'] }))
+    ok(await fixture.callAs('dv_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
+    ok(await fixture.callAs('dv_plan_approve', { reason: 'approve the plan', plan: 'p1' }))
     expect(asked[0]).toContain('dv_plan_approve: approve the plan')
     // A plan approval states what the plan's shots will cost.
     expect(asked[0]).toContain('Estimated GPU time for this turn: about 4 s')
     ok(await fixture.callAs('dv_proj_wait', {}))
-    const declined = await fixture.callAs('dv_plan_approve', { reason: 'decline-me', plan: plan['record'] })
+    const declined = await fixture.callAs('dv_plan_approve', { reason: 'decline-me', plan: 'p1' })
     expect(declined.isError).toBe(true)
     expect(resultText(declined)).toContain('declined')
   })
@@ -310,8 +320,8 @@ describe('confirmation', () => {
   it('falls back to the argument protocol when the channel throws or the agent is not a root', async () => {
     const fixture = await start({ registry: true, questions: () => new Error('ASK_ABORTED') })
     await boundProject(fixture)
-    const plan = ok(await fixture.callAs('dv_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
-    const refused = await fixture.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'] })
+    ok(await fixture.callAs('dv_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
+    const refused = await fixture.callAs('dv_plan_approve', { reason: 'go', plan: 'p1' })
     expect(resultText(refused)).toContain('user_approved: true')
     const child = { id: 's1', session: fixture.live.session }
     expect(await fixture.agent.confirm({ spec: fixture.project.listOperations().find(spec => spec.name === 'plan.approve') as never, summary: 's', gpuSeconds: 0, exec: { agent: child, signal: new AbortController().signal } as never })).toBeNull()
@@ -368,35 +378,43 @@ describe('question rule', () => {
     expect(resultText(refused)).toContain('user_requested: true')
   })
 
-  it('asks one question for a plan approval, listing every shot with the plan\'s cost', async () => {
+  it('asks one question per plan version, listing the shots it renders with their cost', async () => {
     const fixture = await start()
     await boundProject(fixture)
     const asked = vi.spyOn(fixture.agent, 'confirm').mockResolvedValue(true)
-    const plan = ok(await fixture.callAs('dv_plan_create', {
+    ok(await fixture.callAs('dv_plan_create', {
       reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'walks', duration_sec: 1 }, { prompt: 'turns', duration_sec: 2 }],
     }))
-    const approved = ok(await fixture.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'] }))
-    expect(approved['params']).toEqual({ plan: plan['record'] })
+    const approved = ok(await fixture.callAs('dv_plan_approve', { reason: 'go', plan: 'p1' }))
+    expect(approved['params']).toEqual({ plan: 'p1' })
     expect(asked).toHaveBeenCalledTimes(1)
     expect(asked.mock.calls[0]?.[0]).toMatchObject({
-      gpuSeconds: 12, params: { prompt: '1. walks (1 s)\n2. turns (2 s)', duration_sec: 3 },
+      gpuSeconds: 12, params: { prompt: '1. walks (1 s)\n2. turns (2 s)', duration_sec: 3, plan: 'p1', version: 1 },
       inputs: [{ role: 'reference', ref: { character: 'c1', version: 1 } }],
     })
     ok(await fixture.callAs('dv_proj_wait', {}))
+    // Version 2 appends shot 3: the question lists only that shot and its cost.
+    ok(await fixture.callAs('dv_plan_update', {
+      reason: 'longer', plan: 'p1', references: ['c1@1'],
+      shots: [{ prompt: 'walks', duration_sec: 1 }, { prompt: 'turns', duration_sec: 2 }, { prompt: 'jumps', duration_sec: 1 }],
+    }))
+    ok(await fixture.callAs('dv_plan_approve', { reason: 'go on', plan: 'p1' }))
+    expect(asked.mock.calls[1]?.[0]).toMatchObject({ gpuSeconds: 4, params: { prompt: '3. jumps (1 s)', duration_sec: 1, plan: 'p1', version: 2 } })
+    ok(await fixture.callAs('dv_proj_wait', {}))
     // A declined question refuses the call before any record.
     asked.mockResolvedValue(false)
-    expect(resultText(await fixture.callAs('dv_plan_approve', { reason: 'again', plan: plan['record'] }))).toContain('The user declined dv_plan_approve')
+    expect(resultText(await fixture.callAs('dv_plan_approve', { reason: 'again', plan: 'p1' }))).toContain('The user declined dv_plan_approve')
   })
 
   it('refuses a plan approval without reference images before asking the user', async () => {
     const asked: string[] = []
     const fixture = await start({ registry: true, questions: (question) => { asked.push(question); return ['Run it'] } })
     const projectId = brandString<ProjectId>(await boundProject(fixture))
-    const plan = ok(await fixture.callAs('dv_plan_create', {
+    ok(await fixture.callAs('dv_plan_create', {
       reason: 'propose', shots: [{ prompt: 'one', duration_sec: 1, references: ['c1@1'] }, { prompt: 'two', duration_sec: 1 }],
     }))
     const records = fixture.project.listHistory({ project: projectId }).length
-    const refused = await fixture.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'] })
+    const refused = await fixture.callAs('dv_plan_approve', { reason: 'go', plan: 'p1' })
     expect(resultText(refused)).toContain('Shot 2 of the plan has no reference image. The video model renders every shot from 1 to 2')
     expect(asked).toEqual([])
     expect(fixture.project.listHistory({ project: projectId })).toHaveLength(records)

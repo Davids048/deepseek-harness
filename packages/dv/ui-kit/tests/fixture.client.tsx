@@ -49,7 +49,10 @@ export function fixtureState(): WireState {
     record({ id: 'i1', kind: 'request', intent: 'make a hero film' }),
     record({ id: 'u1', operation: 'asset.import', params: { name: 'ref.png' }, outputs: ['ref.png'] }),
     record({ id: 'e1', operation: 'bible.character_create', params: { character: 'hero', name: 'Hero' } }),
-    record({ id: 'p1', turn: 't2', actor: 'agent', operation: 'plan.create', params: { shots: [{ prompt: 'hero walks' }, { prompt: 'hero turns' }] } }),
+    record({
+      id: 'p1', turn: 't2', actor: 'agent', operation: 'plan.create', params: { shots: [{ prompt: 'hero walks' }, { prompt: 'hero turns' }] },
+      report: { plan: 'p1', version: 1 },
+    }),
     record({ id: 'a1', turn: 't3', operation: 'plan.approve', params: { plan: 'p1' } }),
     record({
       id: 'g1', turn: 't3', actor: 'agent', operation: 'shot.render', deterministic: false, inputs: [hero],
@@ -100,7 +103,7 @@ export function fixtureState(): WireState {
         locations: {},
         styles: {},
       },
-      plan: { plans: [{ record: 'p1', approved: true, approved_by: 'a1' }] },
+      plan: { plans: { p1: [{ version: 1, shots: [{ prompt: 'hero walks' }, { prompt: 'hero turns' }], created_by: 'p1', approved_by: 'a1' }] } },
       shot: { takes: { g1: ['g1', 'g3'] }, roots: { g3: 'g1' } },
       timeline: {
         timelines: [{

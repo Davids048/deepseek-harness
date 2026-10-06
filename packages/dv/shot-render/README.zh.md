@@ -39,7 +39,7 @@ kind: "package-reference"
 
 | 操作 | 工具 | 输入和参数 | 输出和报告 |
 | --- | --- | --- | --- |
-| `shot.render` | `dv_shot_render` | 输入 `reference`（图片，或角色、场景、风格版本 `<id>@<n>`，按提示词顺序）和 `first_frame`（一张图片）；参数 `prompt`（必填）、`duration_sec`、`aspect_ratio`、`resolution`、`generation_mode`、`seed`，以及 `plan` 和 `shot`（分镜计划记录和镜头位置，已批准的分镜计划调度生成时设置）；仅工具参数 `continue_from`（一条 `shot.render` 记录，其输出 `#1` 成为 `first_frame`） | 输出 `video`、`last_still`；报告 `{seed, model, generation_mode, aspect_ratio, resolution, duration_sec, frame_width, frame_height, num_frames, image_labels, timings}`；成本 `gpu_seconds` 取自后端的计时 |
+| `shot.render` | `dv_shot_render` | 输入 `reference`（图片，或角色、场景、风格版本 `<id>@<n>`，按提示词顺序）和 `first_frame`（一张图片）；参数 `prompt`（必填）、`duration_sec`、`aspect_ratio`、`resolution`、`generation_mode`、`seed`，以及 `plan`、`plan_version` 和 `shot`（PlanId、已批准的版本和镜头在该版本中的位置，已批准的分镜计划调度生成时设置）；仅工具参数 `continue_from`（一条 `shot.render` 记录，其输出 `#1` 成为 `first_frame`） | 输出 `video`、`last_still`；报告 `{seed, model, generation_mode, aspect_ratio, resolution, duration_sec, frame_width, frame_height, num_frames, image_labels, timings}`；成本 `gpu_seconds` 取自后端的计时 |
 
 `shot.render` 使用 GPU，不是确定性的，并且先问（`confirm: agent_ask_first`）：会话的输入框处于先问模式时，智能体的调用等待输入框的批准卡片。省略的参数取模型的第一个生成模式、画面比例和分辨率以及最短时长；调用未给出种子时抽取一个。`based_on` 一条更早生成记录的调用是该镜头的新版本；`shot` 切片把每个镜头的根记录映射到它的版本（`takes`），并把每个版本映射到它的根（`roots`）。其他调用方使用服务方法 `renderShot(context)`。
 
@@ -50,7 +50,7 @@ kind: "package-reference"
 
 `renderShot` 从 `dreamverseGeneration.model()` 读取模型事实，按参数解析帧尺寸和帧数，用 DreamVerse 规则校验参考图数量，用 `segmentRequestImages` 排列请求图片（先参考图，再首帧），把后端的片段流写入临时文件，然后经 `context.importAsset` 导入视频和 PNG 最后静帧。挂载了 `@video-harness/stream` 的可选实时流服务时，视频分块到达时也送到它的 `openSegment`，以计划的 `shot` 序号作为片段索引。
 
-对任何调用方，在写下任何记录之前，操作的 `precondition` 在所服务的模型依据参考图生成而调用不带任何参考图时拒绝它：一个素材或一条记录输出算一张参考图，一个角色、场景或风格版本算 `dvProject.assetsOf` 为它返回的素材数。分镜计划调度的调用（参数 `plan`）会被告知更新分镜计划，`plan.approve` 在写下自己的记录之前为每个镜头运行这个前置条件。智能体调用之前，`prepareToolCall` 运行同一个前置条件，所以智能体在提问规则询问用户之前就被拒绝；然后它把 `continue_from` 变成 `first_frame` 输入 `{record, output: 1}`。
+对任何调用方，在写下任何记录之前，操作的 `precondition` 在所服务的模型依据参考图生成而调用不带任何参考图时拒绝它：一个素材或一条记录输出算一张参考图，一个角色、场景或风格版本算 `dvProject.assetsOf` 为它返回的素材数。分镜计划调度的调用（参数 `plan`）会被告知用 `dv_plan_update` 更新分镜计划，`plan.approve` 在写下自己的记录之前为每个镜头运行这个前置条件。智能体调用之前，`prepareToolCall` 运行同一个前置条件，所以智能体在提问规则询问用户之前就被拒绝；然后它把 `continue_from` 变成 `first_frame` 输入 `{record, output: 1}`。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -74,7 +74,7 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-一个工具 `dv_shot_render`，格式与 `@dv/project` 给每个操作工具的一样，另有仅工具参数 `continue_from`。它的描述说明参考图输入、`continue_from`、两个输出，以及每次调用都是新版本、修改提示词时传 `based_on`。一次调用返回一个文本块，含记录、状态、摘要 `shot "<prompt>" (<n>s, seed <seed>)`、带 URL 的输出、参数和报告；挂载了附件服务时最后静帧还以图片块到达。不带参考图的调用在写任何记录之前被拒绝，消息让智能体向用户要一张参考图："The video model renders every shot from 1 to <n> reference images, and this shot has none. Nothing was rendered. …"。
+一个工具 `dv_shot_render`，格式与 `@dv/project` 给每个操作工具的一样，另有仅工具参数 `continue_from`。它的描述说明参考图输入、`continue_from`、两个输出，以及每次调用都是新版本、修改提示词时传 `based_on`。一次调用返回一个文本块，含记录、状态、摘要 `shot "<prompt>" (<n>s, seed <seed>)`（已批准的分镜计划调度时为 `shot <n> of plan <plan> v<version> "<prompt>" …`）、带 URL 的输出、参数和报告；挂载了附件服务时最后静帧还以图片块到达。不带参考图的调用在写任何记录之前被拒绝，消息让智能体向用户要一张参考图："The video model renders every shot from 1 to <n> reference images, and this shot has none. Nothing was rendered. …"。
 
 #### KV Cache 影响
 

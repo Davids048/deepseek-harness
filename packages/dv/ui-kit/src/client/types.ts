@@ -160,12 +160,30 @@ export interface Timeline {
   clips: Clip[]
 }
 
-/** One plan of the shot plan slice. */
-export interface PlanSummary {
-  /** The `plan.create` or `plan.update` record that holds the plan. */
-  record: string
-  approved: boolean
-  /** The `plan.approve` record; null while the plan is not approved. */
+/** One shot of a plan version; its number is its 1-based position in the version. */
+export interface Shot {
+  prompt: string
+  duration_sec?: number
+  /** Character, location or style versions (`c1@1`) or asset IDs this shot uses instead of the plan's references. */
+  references?: string[]
+  seed?: number
+}
+
+/** One version of a plan: what a `plan.create` (version 1) or `plan.update` record stored. */
+export interface PlanVersion {
+  /** The 1-based version number; reference text `p1@2` names version 2 of plan `p1`. */
+  version: number
+  title?: string
+  continuity?: 'independent' | 'chained'
+  references?: string[]
+  aspect_ratio?: string
+  resolution?: string
+  generation_mode?: string
+  seed?: number
+  shots: Shot[]
+  /** The `plan.create` or `plan.update` record that wrote the version. */
+  created_by: string
+  /** The latest finished `plan.approve` record of the version; null while the version is not approved. */
   approved_by: string | null
 }
 
@@ -176,9 +194,9 @@ export interface StoryBibleState {
   styles: Record<string, Style[]>
 }
 
-/** The `plan` slice. */
+/** The `plan` slice: every version of every plan, by `PlanId` (`p1`), oldest first. */
 export interface PlanState {
-  plans: PlanSummary[]
+  plans: Record<string, PlanVersion[]>
 }
 
 /** The `shot` slice: the takes of each shot. */

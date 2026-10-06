@@ -1,38 +1,55 @@
 /**
- * Pure readings behind the History panel: turn groups of history entries, the badge of a mark, the label of an
- * operation, the query of the branch filter, the record set of a timeline, and where selecting a record focuses the
+ * Pure readings behind the History panel: the action rows of history entries (a plan approval folds the renders it
+ * scheduled), the label of an action with its subject, the thumbnail of a record, relative times, the badge of a mark,
+ * the query of the branch filter, the record set of a timeline, and where selecting a record focuses the
  * center. Nothing here touches the DOM or the network, so the unit tests cover it directly.
  *
  * @module @dv/ui-history/rows
  */
 import { DV_TOOL_LABELS } from '@dv/ui-kit/tool-labels.ts'
-import type { HistoryEntry, HistoryQuery, ProjectRecord } from '@dv/ui-kit/types.ts'
+import type { Asset, HistoryEntry, HistoryQuery, ProjectRecord } from '@dv/ui-kit/types.ts'
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
 
-/** One turn group of the panel: consecutive operation entries of one agent turn, or one entry without a turn. */
-export interface TurnGroup {
-  /** The turn; null for an entry that no agent turn made. */
-  turn: string | null
-  /** The entries, newest first. */
-  entries: HistoryEntry[]
+/** One row of the panel: an operation entry and, for a plan approval, the entries of the records it scheduled. */
+export interface ActionRow {
+  entry: HistoryEntry
+  /** The loaded records the approval scheduled, in `report.scheduled` order; empty for other records. */
+  children: HistoryEntry[]
+}
+
+/** @returns the IDs a finished `plan.approve` record scheduled (`report.scheduled`). */
+function scheduledBy(record: ProjectRecord): string[] {
+  const scheduled = record.operation === 'plan.approve' ? record.report?.['scheduled'] : undefined
+  return Array.isArray(scheduled) ? scheduled.filter((id): id is string => typeof id === 'string') : []
 }
 
 /**
- * Group history entries for the panel. Request records head their turn group and are not rows; consecutive entries
- * with the same non-null turn form one group, so a turn interleaved with other records shows as more than one group.
+ * Turn history entries into panel rows: one row per operation record, newest first. Request records are not rows. The
+ * records a loaded plan approval scheduled fold under the approval's row instead of standing alone.
  * @param entries - history entries, newest first.
- * @returns the groups, newest first.
+ * @returns the rows, newest first.
  */
-export function groupByTurn(entries: readonly HistoryEntry[]): TurnGroup[] {
-  const groups: TurnGroup[] = []
-  for (const entry of entries) {
-    if (entry.record.kind === 'request') continue
-    const turn = entry.record.turn
-    const last = groups.at(-1)
-    if (turn !== null && last !== undefined && last.turn === turn) last.entries.push(entry)
-    else groups.push({ turn, entries: [entry] })
+export function actionRows(entries: readonly HistoryEntry[]): ActionRow[] {
+  const operations = entries.filter(entry => entry.record.kind === 'operation')
+  const loaded = new Map(operations.map(entry => [entry.record.id, entry]))
+  const folded = new Map<string, string>()
+  for (const { record } of operations) {
+    for (const id of scheduledBy(record)) if (loaded.has(id)) folded.set(id, record.id)
   }
-  return groups
+  const rows: ActionRow[] = []
+  for (const entry of operations) {
+    if (folded.has(entry.record.id)) continue
+    const row: ActionRow = { entry, children: [] }
+    rows.push(row)
+  }
+  // Folded records keep the approval's `report.scheduled` order: the shot renders in shot order, then the timeline.
+  for (const row of rows) {
+    for (const id of scheduledBy(row.entry.record)) {
+      const child = folded.get(id) === row.entry.record.id ? loaded.get(id) : undefined
+      if (child !== undefined) row.children.push(child)
+    }
+  }
+  return rows
 }
 
 /**
@@ -52,6 +69,111 @@ function toolNameOf(operation: string): string {
 export function operationLabel(operation: string | null): readonly [string, string] {
   if (operation === null) return ['', '']
   return DV_TOOL_LABELS[toolNameOf(operation)] ?? [operation, operation]
+}
+
+/** @returns the text of a record field, or null. */
+function field(fields: Record<string, unknown> | undefined, key: string): string | null {
+  const value = fields?.[key]
+  if (typeof value === 'number') return String(value)
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
+/**
+ * The label a row shows for its action: the tool label followed by its subject. Plans name their title or PlanId and
+ * version (`report.plan`, `report.version`), a plan's shot render names its shot number (`params.shot`), and story bible
+ * records name the character, location or style.
+ * @param record - the operation record.
+ * @returns the Chinese and English label.
+ */
+export function actionLabel(record: ProjectRecord): readonly [string, string] {
+  const [zh, en] = operationLabel(record.operation)
+  // A PlanId (`p1`); a plan named by its record ID comes from a project made before plans had IDs and is not shown.
+  const named = field(record.report, 'plan') ?? field(record.params, 'plan')
+  const plan = named !== null && /^p\d+$/.test(named) ? named : null
+  const version = field(record.report, 'version') ?? field(record.params, 'version')
+  switch (record.operation) {
+    case 'plan.create': {
+      const title = field(record.params, 'title')
+      if (title !== null) return [`${zh}《${title}》`, `${en} “${title}”`]
+      return plan === null ? [zh, en] : [`${zh} ${plan}`, `${en} ${plan}`]
+    }
+    case 'plan.update': {
+      if (plan === null) return [zh, en]
+      return version === null ? [`${zh} ${plan}`, `${en} ${plan}`] : [`${zh} ${plan} → v${version}`, `${en} ${plan} → v${version}`]
+    }
+    case 'plan.approve': {
+      if (plan === null) return [zh, en]
+      return version === null ? [`${zh} ${plan}`, `${en} ${plan}`] : [`${zh} ${plan} v${version}`, `${en} ${plan} v${version}`]
+    }
+    case 'shot.render': {
+      const shot = field(record.params, 'shot')
+      return shot === null ? [zh, en] : [`${zh} ${shot}`, `${en} ${shot}`]
+    }
+  }
+  if (record.component === 'bible') {
+    const name = field(record.params, 'name') ?? field(record.params, 'character') ?? field(record.params, 'location')
+      ?? field(record.params, 'style')
+    if (name !== null) return [`${zh}「${name}」`, `${en} “${name}”`]
+  }
+  return [zh, en]
+}
+
+/** The asset a row's thumbnail shows, and whether it is drawn as an image or as a video frame. */
+export interface Thumbnail {
+  asset: string
+  kind: 'image' | 'video'
+}
+
+/**
+ * The one thumbnail of a row. An image among the record's outputs, then its inputs, comes first. A video is shown by
+ * an image output of the record that made it (a take's still), else as a video frame. Files that are neither images
+ * nor videos (a plan's JSON) and assets of unknown type have no thumbnail. A row without media of its own shows the
+ * thumbnail of the first record folded under it.
+ * @param record - the record.
+ * @param assets - the known assets by ID.
+ * @param records - the loaded records by ID, to find the still of a video's maker.
+ * @param children - the records folded under the row, in `report.scheduled` order.
+ * @returns the thumbnail, or null.
+ */
+export function thumbnailOf(
+  record: ProjectRecord,
+  assets: ReadonlyMap<string, Asset>,
+  records: ReadonlyMap<string, ProjectRecord>,
+  children: readonly ProjectRecord[] = [],
+): Thumbnail | null {
+  const named = [...record.outputs, ...record.inputs.flatMap(input => input.resolved_asset === null ? [] : [input.resolved_asset])]
+  const mime = (id: string): string => assets.get(id)?.mime ?? ''
+  const image = named.find(id => mime(id).startsWith('image/'))
+  if (image !== undefined) return { asset: image, kind: 'image' }
+  const video = named.find(id => mime(id).startsWith('video/'))
+  if (video !== undefined) {
+    const maker = records.get(assets.get(video)?.created_by ?? '')
+    const still = maker?.outputs.find(id => mime(id).startsWith('image/'))
+    return still === undefined ? { asset: video, kind: 'video' } : { asset: still, kind: 'image' }
+  }
+  for (const child of children) {
+    const shown = thumbnailOf(child, assets, records)
+    if (shown !== null) return shown
+  }
+  return null
+}
+
+/**
+ * How long ago a time was, in words: 刚刚 under a minute, minutes under an hour, hours under a day, else the date and
+ * `HH:MM`.
+ * @param iso - an ISO time.
+ * @param now - the current time in milliseconds.
+ * @returns the Chinese and English text.
+ */
+export function relativeTime(iso: string, now: number): readonly [string, string] {
+  const time = new Date(iso)
+  const minutes = Math.floor((now - time.getTime()) / 60_000)
+  if (minutes < 1) return ['刚刚', 'just now']
+  if (minutes < 60) return [`${String(minutes)} 分钟前`, `${String(minutes)} min ago`]
+  if (minutes < 24 * 60) return [`${String(Math.floor(minutes / 60))} 小时前`, `${String(Math.floor(minutes / 60))} h ago`]
+  const clock = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
+  const date = `${String(time.getMonth() + 1)}/${String(time.getDate())} ${clock}`
+  return [date, date]
 }
 
 /** What a mark badge says: a fixed word pair, or a branch name shown as is. */
@@ -188,17 +310,4 @@ export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, stri
     return { event: 'dv:timeline-focus', detail: { timelineId, clipId } }
   }
   return { event: 'dv:canvas-focus', detail: { recordId: record.id } }
-}
-
-/**
- * The tool call a turn header's 在轨迹中查看 opens: the turn's oldest loaded record with a session and a tool call.
- * @param entries - the turn group's entries, newest first.
- * @returns the session and tool call, or null when no loaded record of the turn has them.
- */
-export function turnToolCall(entries: readonly HistoryEntry[]): { session: string; toolCall: string } | null {
-  for (let index = entries.length - 1; index >= 0; index--) {
-    const record = entries[index]?.record
-    if (record?.session != null && record.tool_call !== null) return { session: record.session, toolCall: record.tool_call }
-  }
-  return null
 }

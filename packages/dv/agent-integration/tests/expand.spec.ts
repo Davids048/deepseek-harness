@@ -35,7 +35,7 @@ const sources: ExpansionSources = {
         }],
       },
       bible: { characters: { [lead.id]: [lead] }, locations: {}, styles: {} },
-      plan: { plans: [] },
+      plan: { plans: {} },
       shot: { takes: {}, roots: {} },
     },
   }),

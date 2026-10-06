@@ -235,7 +235,8 @@ export default class DvShotRender extends Service {
    * Refuse a `shot.render` call of any caller when the served model renders from reference images and the call carries
    * no reference image. Character, location and style versions count their reference images, so a character created
    * without reference images adds nothing. The refusal comes before any record, so no failed take reaches the project. A call
-   * that a plan scheduled (param `plan`) is told to update the plan; `plan.approve` names the shots in front of it.
+   * that a plan scheduled (param `plan`) is told to update the plan with `dv_plan_update`; `plan.approve` names the shots
+   * in front of it.
    * @param request - the call, with its input references.
    * @param state - the state of the working branch the call writes to.
    * @throws Error telling the model to ask the user for a reference image first.
@@ -254,7 +255,7 @@ export default class DvShotRender extends Service {
     const planned = request.params['plan'] !== undefined
     throw new Error(`The video model renders every shot from 1 to ${limit} reference images${planned ? '' : ', and this shot has none'}. `
       + 'Nothing was rendered. Ask the user for a reference image of the subject (they can attach one in the chat; it '
-      + `appears under Imported images), add it as a reference or to the character, ${planned ? 'update the plan, ' : ''}then call again.`)
+      + `appears under Imported images), add it as a reference or to the character, ${planned ? 'update the plan with dv_plan_update, ' : ''}then call again.`)
   }
 
   /**
@@ -298,8 +299,9 @@ export default class DvShotRender extends Service {
         generation_mode: { type: 'string', description: 'One of the model generation modes; default the first.' },
         seed: { type: 'integer', description: 'Fixed seed; omitted, a random seed is drawn and recorded.' },
         // Set when an approved plan schedules the render; the live stream shows the shot position.
-        plan: { type: 'string', description: 'The plan record whose approval scheduled this render; set by dv_plan_approve.' },
-        shot: { type: 'integer', description: 'The shot position in that plan, 1 = first; set by dv_plan_approve.' },
+        plan: { type: 'string', description: 'The plan ID (p1, p2, …) whose approval scheduled this render; set by dv_plan_approve.' },
+        plan_version: { type: 'integer', description: 'The approved version of that plan; set by dv_plan_approve.' },
+        shot: { type: 'integer', description: 'The shot position in that version, 1 = first; set by dv_plan_approve.' },
       },
       outputs: [{ role: 'video', type: 'video' }, { role: 'last_still', type: 'image' }],
       deterministic: false,
@@ -310,7 +312,7 @@ export default class DvShotRender extends Service {
         const durationSec = number(params['duration_sec'], 0)
         return { gpu_seconds: (durationSec > 0 ? durationSec : ESTIMATE_DURATION_SEC) * this.config.gpuSecondsPerVideoSecond }
       },
-      summarize: record => `shot "${text(record.params['prompt']).slice(0, 60)}" `
+      summarize: record => `${planShot(record.params)} "${text(record.params['prompt']).slice(0, 60)}" `
         + `(${label(record.report?.['duration_sec'] ?? record.params['duration_sec'])}s, seed ${label(record.report?.['seed'])})`,
       toolParams: CONTINUE_FROM_PARAM,
       prepareToolCall: call => this.prepareToolCall(call),
@@ -318,6 +320,12 @@ export default class DvShotRender extends Service {
       execute: context => this.renderShot(context),
     }
   }
+}
+
+/** How a summary names the shot: `shot 7 of plan p1 v2` for a render an approved plan scheduled, else `shot`. */
+function planShot(params: Record<string, unknown>): string {
+  if (typeof params['plan'] !== 'string') return 'shot'
+  return `shot ${label(params['shot'])} of plan ${params['plan']} v${label(params['plan_version'])}`
 }
 
 /** A number or string field as display text, or `?` for anything else. */

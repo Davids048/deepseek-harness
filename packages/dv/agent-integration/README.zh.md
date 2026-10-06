@@ -64,9 +64,9 @@ kind: "package-reference"
 | 文件 | 作用 |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | `DvAgentIntegration`：`session/event` 监听（`turn/start` 把轮次记到 `dvProject` 上，用户输入的 `user/message` 把用户原话记到该轮次并导入其中的图片）、提问规则的注册、确认通道、批准通道、输入框路由、`agent/pre-step` 提及展开、提示词节 |
-| [`src/composer.ts`](src/composer.ts) | 输入框模式文件、待批准卡片（分镜计划批准的卡片列出每个镜头）、输入框 Fetch 路由，以及 `dv-mentions` 上下文消息 |
+| [`src/composer.ts`](src/composer.ts) | 输入框模式文件、待批准卡片（分镜计划批准的卡片按镜头编号列出所批准版本中要生成的镜头）、输入框 Fetch 路由，以及 `dv-mentions` 上下文消息 |
 | [`src/expand.ts`](src/expand.ts) | `parseMentions` 与 `describeMention`：用具体 ID 描述 `dv:asset`、`dv:record`、`dv:character`、`dv:location`、`dv:style`、`dv:clip` 提及 URI |
-| [`src/question-rule.ts`](src/question-rule.ts) | `questionRule`：带 `QUESTION_RULES`、`user_approved` 与 `user_requested` 参数、本轮 GPU 预算、以及列出每个镜头的分镜计划批准问题的 `ToolCallCheck` |
+| [`src/question-rule.ts`](src/question-rule.ts) | `questionRule`：带 `QUESTION_RULES`、`user_approved` 与 `user_requested` 参数、本轮 GPU 预算、以及列出分镜计划版本要生成的镜头及其成本的分镜计划批准问题的 `ToolCallCheck` |
 | [`src/resolver.ts`](src/resolver.ts) | `renderResolverBlock`：规则加上对话当前分支的项目快照 |
 | [`skills/video-directing/SKILL.md`](skills/video-directing/SKILL.md) | 计划、批准、渲染、裁剪、重拍、换参考图、分支，以及参考图生视频的 prompt 规则 |
 | [`skills/timeline-editing/SKILL.md`](skills/timeline-editing/SKILL.md) | 把用户的编辑请求对应到确切的工具调用及其参数 |
@@ -90,7 +90,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-一节名为 `dv:project` 的系统提示词：八行规则，然后是绑定项目的当前分支、是否有打开的草稿及其智能体修改数和人工编辑数、带版本和参考图的角色/场景/风格、每条时间线及其按位置排列的片段（带片段 ID、素材和产生记录）、版本、带替代记录的过期记录、带批准状态的分镜计划，以及一行对话的输入框偏好。没有绑定项目时，这一节只有规则加一行说明。
+一节名为 `dv:project` 的系统提示词：九行规则（其中一行告诉智能体用 `dv_plan_update` 在故事的分镜计划上延长、缩短或修改故事，只有另一个故事才新建分镜计划），然后是绑定项目的当前分支、是否有打开的草稿及其智能体修改数和人工编辑数、带版本和参考图的角色/场景/风格、每条时间线及其按位置排列的片段（带片段 ID、素材和产生记录）、版本、带替代记录的过期记录、每个分镜计划一行及其最新版本、最新的已批准版本和镜头数（`- p1 "title": latest v2 (7 shots), v1 approved`），以及一行对话的输入框偏好。没有绑定项目时，这一节只有规则加一行说明。
 
 #### Token 影响
 

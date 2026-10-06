@@ -1,9 +1,9 @@
 /**
  * Canvas nodes and edges derived from a branch state. A node is an item a creator works with: a character, a location
- * or a style, an imported asset, a plan, or a rendered take. Deterministic edits (still grabs, timeline records) do not
- * become nodes; a timeline trim shows as a badge on the take it shortened.
+ * or a style, an imported asset, a plan with all of its versions, or a rendered take. Deterministic edits (still grabs,
+ * timeline records) do not become nodes; a timeline trim shows as a badge on the take it shortened.
  */
-import type { Character, Location, ProjectRecord, RecordInputRef, StoryBibleState, Style, WireState } from '@dv/ui-kit/types.ts'
+import type { Character, Location, PlanState, ProjectRecord, RecordInputRef, StoryBibleState, Style, WireState } from '@dv/ui-kit/types.ts'
 
 /** What a node represents; the canvas colors nodes by it. */
 export type CanvasNodeKind = 'bible' | 'asset' | 'plan' | 'take'
@@ -27,13 +27,15 @@ export interface CanvasNodeFlags {
 
 /** One canvas node. */
 export interface CanvasNode {
-  /** `bible:<id>` for characters, locations and styles, else the record ID. */
+  /** `bible:<id>` for characters, locations and styles, `plan:<PlanId>` for plans, else the record ID. */
   id: string
   kind: CanvasNodeKind
   /** For story bible nodes, whether the node is a character, a location or a style. */
   bibleKind?: BibleKind
   /** For story bible nodes, the character, location or style ID. */
   bibleId?: string
+  /** For plan nodes, the `PlanId` (`p1`). */
+  planId?: string
   title: string
   subtitle: string
   /** An image asset shown as the thumbnail. */
@@ -41,7 +43,7 @@ export interface CanvasNode {
   /** A video asset the editor plays. */
   video: string | null
   durationSec: number | null
-  /** The record behind the node; for story bible nodes, the record that wrote the latest version. */
+  /** The record behind the node; for story bible and plan nodes, the record that wrote the latest version. */
   record: ProjectRecord | null
   flags: CanvasNodeFlags
   /** Short labels of deterministic edits applied to the node's asset, such as `trim`. */
@@ -80,11 +82,6 @@ export const ROW = 380
 /** A `shot.render` record, whose outputs are the takes the creator judges. */
 function isRender(record: ProjectRecord): boolean {
   return record.operation === 'shot.render'
-}
-
-/** A plan record. */
-function isPlan(record: ProjectRecord): boolean {
-  return record.operation === 'plan.create' || record.operation === 'plan.update'
 }
 
 /**
@@ -153,7 +150,7 @@ export function withImportNames(state: WireState): WireState {
 }
 
 /**
- * Merge an open draft's state into the base state: records, assets, and story bible versions the base lacks. A record
+ * Merge an open draft's state into the base state: records, assets, and story bible and plan versions the base lacks. A record
  * the draft holds carries the draft's stale mark, because the draft is the working branch where "keep anyway" clears it.
  * @param base - the state of the viewed branch.
  * @param draft - the state of an open draft branch, or null.
@@ -174,12 +171,17 @@ export function overlayDraft(base: WireState, draft: WireState | null): WireStat
     }
     bible[key] = merged
   }
+  const plans: PlanState['plans'] = { ...base.components.plan.plans }
+  for (const [id, versions] of Object.entries(draft.components.plan.plans)) {
+    if ((plans[id]?.length ?? 0) < versions.length) plans[id] = versions
+  }
   return {
     ...base,
     assets: [...base.assets, ...draft.assets.filter(asset => !assets.has(asset.id))],
     components: {
       ...base.components,
       bible,
+      plan: { plans },
       proj: {
         ...proj,
         records: [...proj.records, ...draftProj.records.filter(record => !known.has(record.id))],
@@ -226,6 +228,16 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
       flags: flagsOf(record), badges: [], take: null, x: 0, y: 0,
     })
   }
+  // One node per plan, showing its latest version; the editor switches between versions.
+  for (const [planId, versions] of Object.entries(state.components.plan.plans)) {
+    const latest = versions.at(-1)
+    if (latest === undefined) continue
+    const record = records.get(latest.created_by) ?? null
+    nodes.push({
+      id: `plan:${planId}`, kind: 'plan', planId, title: latest.title ?? '', subtitle: String(latest.shots.length), thumb: null, video: null,
+      durationSec: null, record, flags: flagsOf(record), badges: [], take: null, x: 0, y: 0,
+    })
+  }
   for (const record of proj.records) {
     if (record.operation === 'asset.import') {
       const imported = record.outputs.find(id => isImage(id) || isVideo(id))
@@ -234,13 +246,6 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
         id: record.id, kind: 'asset', title: assets.get(imported)?.name ?? imported, subtitle: '', thumb: isImage(imported) ? imported : null,
         video: isVideo(imported) ? imported : null, durationSec: assets.get(imported)?.duration_sec ?? null,
         record, flags: flagsOf(record), badges: [], take: null, x: 0, y: 0,
-      })
-    } else if (isPlan(record)) {
-      const shots = Array.isArray(record.params['shots']) ? record.params['shots'].length : 0
-      const title = typeof record.params['title'] === 'string' ? record.params['title'] : ''
-      nodes.push({
-        id: record.id, kind: 'plan', title, subtitle: String(shots), thumb: null, video: null, durationSec: null, record, flags: flagsOf(record),
-        badges: [], take: null, x: 0, y: 0,
       })
     } else if (isRender(record)) {
       const video = record.outputs.find(id => isVideo(id)) ?? null
@@ -284,7 +289,8 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
       const from = bibleId !== undefined && nodeIds.has(`bible:${bibleId}`) ? `bible:${bibleId}` : nodeOfAsset(input.resolved_asset)
       addEdge(from, node.id, input.role === 'first_frame' ? 'first_frame' : 'reference')
     }
-    if (typeof record.params['plan'] === 'string') addEdge(record.params['plan'], node.id, 'plan')
+    // A take an approved plan scheduled hangs off that plan's node; an unchanged shot keeps the take an earlier version rendered.
+    if (typeof record.params['plan'] === 'string') addEdge(`plan:${record.params['plan']}`, node.id, 'plan')
     if (record.based_on !== null) addEdge(record.based_on, node.id, 'take')
   }
   addBadges(state, nodes, nodeOfAsset)

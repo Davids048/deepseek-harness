@@ -73,7 +73,7 @@ async function seedProject(title: string, shots = 3, timelines: number[] = []): 
     title, continuity: 'independent', references: ['c1@1'],
     shots: Array.from({ length: shots }, (_, index) => ({ prompt: `${title} shot ${String(index + 1)}`, duration_sec: 1 + (index % 2) })),
   })
-  await runOperation(id, 'plan.approve', { plan: plan.id })
+  await runOperation(id, 'plan.approve', { plan: plan.report?.['plan'] })
   const state = await waitFor(async () => {
     const current = await stateOf(id)
     const done = current.components.proj.records.filter(record => record.operation === 'shot.render' && record.status === 'done')
@@ -409,6 +409,49 @@ describe('canvas stories', () => {
     // Two cards that both read 镜头 1 leave the creator guessing which is the new version.
     const titles = await takes.evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')))
     expect(new Set(titles).size).toBe(titles.length)
+  })
+
+  it('a plan updated from 2 to 3 shots stays one plan node with v1 and v2, renders only 镜头 3, and the timeline reuses the first two takes', async () => {
+    const project = await seedProject('canvas-plan-versions', 2)
+    const v1 = (await stateOf(project.id)).components.plan.plans['p1']?.[0]
+    if (v1 === undefined) throw new Error('the seeded plan is not p1')
+    await runOperation(project.id, 'plan.update', {
+      plan: 'p1', title: v1.title, continuity: v1.continuity, references: v1.references,
+      shots: [...v1.shots, { prompt: 'canvas-plan-versions shot 3', duration_sec: 1 }],
+    })
+    await runOperation(project.id, 'plan.approve', { plan: 'p1' })
+    const state = await waitFor(async () => {
+      const current = await stateOf(project.id)
+      const done = current.components.proj.records.filter(record => record.operation === 'shot.render' && record.status === 'done')
+      return done.length === 3 && (current.components.timeline.timelines[0]?.clips.length ?? 0) === 3 ? current : null
+    }, 'shot 3 of plan p1 v2 renders onto timeline t1', 120_000)
+    // The approval of v2 renders only the added shot and puts all three takes on the plan's one timeline.
+    expect(state.components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1'])
+    expect(state.components.timeline.timelines[0]?.clips.map(clip => clip.asset).slice(0, 2)).toEqual(project.clipAssets)
+    const renders = state.components.proj.records.filter(record => record.operation === 'shot.render')
+    expect(renders.map(record => [record.params['plan'], record.params['plan_version'], record.params['shot']])).toEqual([
+      ['p1', 1, 1], ['p1', 1, 2], ['p1', 2, 3],
+    ])
+    const page = await openPage()
+    await gotoProject(page, project.id)
+    const plans = page.locator('[data-node-kind="plan"]')
+    await expect.poll(() => plans.count()).toBe(1)
+    expect(await plans.getAttribute('data-node-id')).toBe('plan:p1')
+    expect(await plans.textContent()).toContain('v2')
+    const takes = page.locator('[data-node-kind="take"]')
+    await expect.poll(() => takes.count()).toBe(3)
+    expect(await takes.evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')))).toEqual(['镜头 1', '镜头 2', '镜头 3'])
+    // Each take hangs off the one plan node.
+    for (const render of renders) expect(await page.locator(`path[data-edge="plan:p1>${render.id}"]`).count()).toBe(1)
+    await plans.click()
+    const editor = page.locator('[data-testid="dv-canvas-node-editor"]')
+    const versions = editor.getByRole('group', { name: '分镜计划版次' }).getByRole('button')
+    expect(await versions.allTextContents()).toEqual(['v1', 'v2'])
+    expect(await editor.getByRole('button', { name: 'v2' }).getAttribute('aria-pressed')).toBe('true')
+    await expect.poll(() => editor.locator('ol > li').count()).toBe(3)
+    await editor.getByRole('button', { name: 'v1' }).click()
+    await expect.poll(() => editor.locator('ol > li').count()).toBe(2)
+    expect(page.errors).toEqual([])
   })
 
   it('让智能体改 prefills the chat with a reference to the node and closes the editor', async () => {

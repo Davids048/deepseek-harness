@@ -2,8 +2,8 @@
  * The floating editor a canvas node opens in the middle of the canvas. A take shows a large player, its prompt,
  * reference chips, duration, and seed, and offers "渲染新版本" (a user `shot.render` record whose `based_on` is the take)
  * and "让智能体改" (a `dv:compose` event that prefills the chat composer). A character, location or style can replace
- * its reference image; a plan lists its shots. A stale node offers "仍然保留", which keeps its record as it is
- * (`proj.stale_accept`).
+ * its reference image; a plan switches between its versions (v1, v2, …) and lists the shots of the chosen one. A stale
+ * node offers "仍然保留", which keeps its record as it is (`proj.stale_accept`).
  */
 import { useState } from 'react'
 import type { ChangeEvent, CSSProperties, ReactNode } from 'react'
@@ -309,22 +309,37 @@ function BibleForm({ node, state, client, project, session, readOnly, t, run }: 
 }
 
 /**
- * A plan: approval status and its shots.
+ * A plan: a switch between its versions (latest first selected), and the approval status and shots of the chosen version.
  * @param props - editor props.
  * @returns the element.
  */
 function PlanList({ node, state, t }: NodeEditorProps): ReactNode {
-  const shots = Array.isArray(node.record?.params['shots']) ? node.record.params['shots'] as Array<Record<string, unknown>> : []
-  const approved = state.components.plan.plans.find(plan => plan.record === node.record?.id)?.approved === true
+  const versions = state.components.plan.plans[node.planId ?? ''] ?? []
+  const [chosen, setChosen] = useState<number | null>(null)
+  const plan = versions.find(version => version.version === chosen) ?? versions.at(-1)
+  const approved = plan !== undefined && plan.approved_by !== null
   return (
     <div>
+      <div role="group" aria-label={t('editor.planVersions')} style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+        {versions.map((version) => {
+          const pressed = version === plan
+          return (
+            <button
+              key={version.version} type="button" aria-pressed={pressed} onClick={() => { setChosen(version.version) }}
+              style={{ ...secondaryButton, padding: '4px 12px', fontWeight: pressed ? 600 : 400, outline: pressed ? `2px solid ${KIND_COLOR.plan}` : 'none' }}
+            >
+              {t('node.planVersion', { version: version.version })}
+            </button>
+          )
+        })}
+      </div>
       <p style={{ margin: 0, color: approved ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-state-warn-primary)' }}>{approved ? t('editor.planApproved') : t('editor.planPending')}</p>
       <span style={label}>{t('editor.shots')}</span>
       <ol style={{ margin: 0, paddingLeft: 20 }}>
-        {shots.map((shot, index) => (
+        {(plan?.shots ?? []).map((shot, index) => (
           <li key={index} style={{ marginBottom: 6 }}>
-            {typeof shot['prompt'] === 'string' ? shot['prompt'] : ''}
-            {typeof shot['duration_sec'] === 'number' ? <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{` · ${String(shot['duration_sec'])}s`}</span> : null}
+            {shot.prompt}
+            {shot.duration_sec === undefined ? null : <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{` · ${String(shot.duration_sec)}s`}</span>}
           </li>
         ))}
       </ol>

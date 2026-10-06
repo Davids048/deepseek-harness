@@ -271,8 +271,8 @@ describe.skipIf(!existsSync(FFMPEG))('dvShotRender', () => {
     const schema = fixture.ctx.tools.schemas().find(tool => tool.name === 'dv_shot_render')
     expect(schema?.description).toContain('Uses the GPU.')
     expect(JSON.stringify(schema?.parameters)).toContain('continue_from')
-    // An approved plan schedules renders with the params `plan` and `shot`, so the spec declares both.
-    expect(Object.keys(renderSpec(fixture)?.params ?? {})).toEqual(expect.arrayContaining(['plan', 'shot']))
+    // An approved plan schedules renders with the params `plan`, `plan_version` and `shot`, so the spec declares them.
+    expect(Object.keys(renderSpec(fixture)?.params ?? {})).toEqual(expect.arrayContaining(['plan', 'plan_version', 'shot']))
     const entry = [...fixture.ctx.loader.entries()].find(candidate => candidate.options.name.endsWith('/dv-shot-render.mjs'))
     await entry?.fiber?.dispose()
     expect(renderSpec(fixture)).toBeUndefined()
@@ -307,6 +307,8 @@ describe.skipIf(!existsSync(FFMPEG))('dvShotRender', () => {
     expect(renderSpec(fixture)?.summarize(shot)).toBe('shot "Picture 1 waves" (2s, seed 42)')
     const { report: _report, ...withoutReport } = shot
     expect(renderSpec(fixture)?.summarize({ ...withoutReport, params: {} })).toBe('shot "" (?s, seed ?)')
+    expect(renderSpec(fixture)?.summarize({ ...withoutReport, params: { prompt: 'x', plan: 'p1', plan_version: 2, shot: 7 } }))
+      .toBe('shot 7 of plan p1 v2 "x" (?s, seed ?)')
     // The next shot continues from the last still; the still goes last in the request and gets the next label.
     const next = await fixture.record('shot.render', { prompt: 'keeps waving' }, [c1(), { role: 'first_frame', ref: { record: shot.id, output: 1 } }])
     expect(fixture.generation.requests[1]?.referenceImages).toHaveLength(2)
@@ -367,10 +369,10 @@ describe.skipIf(!existsSync(FFMPEG))('dvShotRender', () => {
       + 'to the character, then call again.',
     )
     // A render that a plan scheduled is told to update the plan; the plan approval names its shots.
-    await expect(fixture.record('shot.render', { prompt: 'a cat', plan: 'p1', shot: 2 }, [c2]))
+    await expect(fixture.record('shot.render', { prompt: 'a cat', plan: 'p1', plan_version: 1, shot: 2 }, [c2]))
       .rejects.toThrow('from 1 to 2 reference images. Nothing was rendered.')
-    await expect(fixture.record('shot.render', { prompt: 'a cat', plan: 'p1', shot: 2 }, [c2]))
-      .rejects.toThrow('to the character, update the plan, then call again.')
+    await expect(fixture.record('shot.render', { prompt: 'a cat', plan: 'p1', plan_version: 1, shot: 2 }, [c2]))
+      .rejects.toThrow('to the character, update the plan with dv_plan_update, then call again.')
     expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before)
     expect(fixture.generation.requests).toHaveLength(0)
     // The precondition counts a character version's reference images: one image is enough.

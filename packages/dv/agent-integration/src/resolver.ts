@@ -33,6 +33,8 @@ const RULES = [
   '- Propose first: dv_plan_create records the plan; show the shots, durations, and estimated GPU seconds to the user; '
     + 'call dv_plan_approve with user_approved: true only after the user agreed in the conversation. Then dv_proj_wait, then read dv_proj_state.',
   '- A change the user asked for by name (one retake, one trim, one reorder) runs at once; pass user_requested: true on a dv_shot_render call. A change you want to make to an approved plan is proposed first.',
+  '- To extend, shorten or change the story, call dv_plan_update on the existing plan (its plan ID from the project block, with every shot in order: a shot added after six shots is shot 7), then dv_plan_approve that version: '
+    + 'only new or changed shots render, and the plan\'s timeline gets every shot. Create a new plan only for a separate story.',
   '- Every call of yours lands on this conversation\'s draft, which stays open across turns and holds the user\'s own edits too. '
     + 'Only the user accepts or discards it: call dv_proj_draft_accept or dv_proj_draft_discard only when the user asks you to. '
     + 'When the draft holds results the user has not judged yet, end your reply with "草稿待确认" and say what is waiting.',
@@ -142,10 +144,16 @@ function staleLines(state: ProjectState): string[] {
   return [`Stale records (inputs were replaced; nothing is redone until the user agrees): ${marks}`]
 }
 
-/** Plans and whether each was approved. */
+/** Each plan once: its latest version, its latest approved version, and the shot count of the latest version. */
 function planLines(state: ProjectState): string[] {
-  const plans = state.components.plan.plans
+  const plans = Object.entries(state.components.plan.plans)
   if (plans.length === 0) return []
-  const status = (plan: (typeof plans)[number]): string => plan.approved ? `approved by ${plan.approved_by ?? 'user'}` : 'proposed, waiting for the user'
-  return ['Plans:', ...plans.map(plan => `- ${plan.record}: ${status(plan)}`)]
+  return ['Plans:', ...plans.flatMap(([plan, versions]) => {
+    const latest = versions.at(-1)
+    if (latest === undefined) return []
+    const approved = versions.findLast(version => version.approved_by !== null)
+    const title = latest.title === undefined ? '' : ` "${latest.title}"`
+    const approval = approved === undefined ? 'not approved yet' : `v${approved.version} approved`
+    return [`- ${plan}${title}: latest v${latest.version} (${latest.shots.length} shots), ${approval}`]
+  })]
 }

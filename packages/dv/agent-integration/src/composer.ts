@@ -22,7 +22,7 @@ import {
   formatInputRef, type AssetId, type PendingApproval, type ProjectId, type ProjectRecord, type RecordId, type SessionId,
 } from '@dv/project'
 import type {} from '@dv/asset-pool'
-import type { Plan } from '@dv/shot-plan'
+import type { PlanVersion } from '@dv/shot-plan'
 import type { Character, CharacterId, Location, LocationId, Style, StyleId } from '@dv/story-bible'
 import { expansionBlock, parseMentions, type ExpansionSources } from './expand.ts'
 
@@ -134,7 +134,8 @@ export class ApprovalCards {
 
   /**
    * Hold an agent's pending call until the user approves or skips its card; an aborted turn skips it. A plan approval's
-   * card shows every shot of the plan, their total duration, the plan's references, and the GPU estimate of all shots.
+   * card shows the shots of the approved version that render, their total duration and references, and their GPU
+   * estimate.
    * @param approval - the pending record and its estimate.
    * @returns true when approved.
    */
@@ -195,33 +196,45 @@ export class ApprovalCards {
   }
 
   /**
-   * What a plan approval's card shows: one numbered line per shot as the prompt, the total duration, the plan's
-   * references, and the estimate of rendering every shot.
+   * What a plan approval's card shows: one line per new or changed shot of the approved version as the prompt, numbered
+   * by its shot position (shots that keep their takes are left out), their total duration and references, and the
+   * estimate of rendering them.
    * @param projectId - the project.
    * @param record - the pending `plan.approve` record.
-   * @returns the card fields, or null when the Shot plan component is not mounted or the record names no plan.
+   * @returns the card fields, or null when the Shot plan component is not mounted or the record names no known plan
+   *   version.
    */
   private planCard(
     projectId: ProjectId, record: ProjectRecord,
   ): { params: Record<string, unknown>; inputs: CardInput[]; estimate: number } | null {
-    let document: Plan | undefined
+    const shotPlan = this.ctx.get('dvShotPlan')
+    if (shotPlan === undefined) return null
+    const plan = String(record.params['plan'])
+    const requested = typeof record.params['version'] === 'number' ? record.params['version'] : undefined
+    let document: PlanVersion
+    let render: number[]
     try {
-      document = this.ctx.get('dvShotPlan')?.getPlan(projectId, String(record.params['plan']))
+      const state = this.ctx.dvProject.getState(projectId, record.branch)
+      document = shotPlan.getPlan(state, plan, requested)
+      render = shotPlan.shotsToRender(state, plan, requested)
     } catch {
       // An unreadable plan leaves the card with the record's own params; the call fails when it runs.
       return null
     }
-    if (document === undefined) return null
-    const seconds = document.shots.map(shot => shot.duration_sec ?? PLAN_SHOT_SECONDS)
+    const shots = render.flatMap((position) => {
+      const shot = document.shots[position - 1]
+      return shot === undefined ? [] : [{ position, shot }]
+    })
+    const seconds = shots.map(entry => entry.shot.duration_sec ?? PLAN_SHOT_SECONDS)
     const total = seconds.reduce((sum, value) => sum + value, 0)
-    const references = [...new Set(document.shots.flatMap(shot => shot.references ?? document.references ?? []))]
-    const render = this.ctx.dvProject.listOperations().find(spec => spec.name === 'shot.render')
+    const references = [...new Set(shots.flatMap(entry => entry.shot.references ?? document.references ?? []))]
+    const renderSpec = this.ctx.dvProject.listOperations().find(spec => spec.name === 'shot.render')
     return {
       params: {
-        prompt: document.shots.map((shot, index) => `${index + 1}. ${shot.prompt} (${seconds[index]} s)`).join('\n'), duration_sec: total,
+        prompt: shots.map((entry, index) => `${entry.position}. ${entry.shot.prompt} (${seconds[index]} s)`).join('\n'), duration_sec: total,
       },
       inputs: references.map(ref => ({ role: 'reference', ref, asset: null })),
-      estimate: render?.estimate?.({ duration_sec: total }).gpu_seconds ?? 0,
+      estimate: renderSpec?.estimate?.({ duration_sec: total }).gpu_seconds ?? 0,
     }
   }
 

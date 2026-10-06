@@ -1,11 +1,18 @@
 /**
- * Types of the Shot plan component: the plan a `plan.create` or `plan.update` record stores, its shots, and the `plan`
- * state slice. A plan is identified by the record ID of the `plan.create` or `plan.update` record that stored it, and a
- * shot by its 1-based position in the plan.
+ * Types of the Shot plan component: the plan versions that `plan.create` and `plan.update` records store, their shots,
+ * and the `plan` state slice. A plan is identified by its `PlanId` (`p1`, `p2`, …), a version by its 1-based number,
+ * and a shot by its 1-based position in the version.
  *
  * @module @dv/shot-plan/types
  */
+import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { RecordId } from '@dv/project'
+
+/**
+ * The ID of a plan, such as `p2`: unique within the project and never reused; `plan.create` assigns it and stores it in
+ * the record's `report.plan`, and `plan.update` and `plan.approve` name the plan by it in their `plan` param.
+ */
+export type PlanId = Branded<'DvPlanId'>
 
 /** One shot of a plan, in the snake_case of tool params. */
 export interface Shot {
@@ -18,7 +25,7 @@ export interface Shot {
   seed?: number
 }
 
-/** The shots and settings a `plan.create` or `plan.update` record stores, and `plan.approve` turns into shot renders. */
+/** The shots and settings of one plan version, which `plan.approve` turns into shot renders. */
 export interface Plan {
   title?: string
   /** `chained`: each shot after the first starts from its predecessor's last still; `independent`: shots only share the references. */
@@ -32,18 +39,19 @@ export interface Plan {
   shots: Shot[]
 }
 
-/** A plan record and whether a finished `plan.approve` record approved it. */
-export interface PlanSummary {
-  /** The `plan.create` or `plan.update` record that stored the plan. */
-  record: RecordId
-  approved: boolean
-  /** The `plan.approve` record that approved the plan, or null while it waits for approval. */
+/** One version of a plan: `plan.create` writes version 1, each `plan.update` the next number. */
+export interface PlanVersion extends Plan {
+  /** 1-based. */
+  version: number
+  /** The `plan.create` or `plan.update` record that wrote the version. */
+  created_by: RecordId
+  /** The latest finished `plan.approve` record of the version, or null while it waits for approval. */
   approved_by: RecordId | null
 }
 
-/** The `plan` slice: every finished plan of the branch, oldest first. */
+/** The `plan` slice: the versions of every plan of the branch, oldest first. */
 export interface PlanState {
-  plans: PlanSummary[]
+  plans: Record<PlanId, PlanVersion[]>
 }
 
 declare module '@dv/project' {

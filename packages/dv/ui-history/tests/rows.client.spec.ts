@@ -1,32 +1,79 @@
-/** The History panel's pure readings: turn groups, mark badges, the branch filter query, timeline record sets, focus. */
+/**
+ * The History panel's pure readings: action rows and approval folds, labels with subjects, thumbnails, relative times,
+ * mark badges, the branch filter query, timeline record sets, focus.
+ */
 import { describe, expect, it } from 'vitest'
 import type { HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
-import { fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
+import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
 import {
-  branchQuery, centerFocus, clipTimelines, groupByTurn, markBadge, markStyle, operationLabel, timelineRecords, turnToolCall,
+  actionLabel, actionRows, branchQuery, centerFocus, clipTimelines, markBadge, markStyle, operationLabel, relativeTime, thumbnailOf,
+  timelineRecords,
 } from '../src/client/rows.ts'
 
 /** An entry of a record with a mark. */
 const entry = (fields: Partial<ProjectRecord> & { id: string }, mark: HistoryEntry['mark'] = 'main'): HistoryEntry => ({ record: record(fields), mark })
 
-describe('groupByTurn', () => {
-  it('drops request records, joins consecutive records of one turn, and keeps records without a turn alone', () => {
-    const groups = groupByTurn([
-      entry({ id: 'a3', turn: 't2', operation: 'shot.render' }),
-      entry({ id: 'a2', turn: 't2', operation: 'plan.approve' }),
+describe('actionRows', () => {
+  it('drops request records and folds the loaded records an approval scheduled under its row, in scheduled order', () => {
+    const rows = actionRows([
+      entry({ id: 'tl', actor: 'system', operation: 'timeline.update' }),
+      entry({ id: 'g2', actor: 'system', operation: 'shot.render' }),
+      entry({ id: 'g1', actor: 'system', operation: 'shot.render' }),
+      entry({ id: 'ap', turn: 't2', operation: 'plan.approve', report: { plan: 'p1', version: 2, scheduled: ['g1', 'g2', 'tl', 'gone'] } }),
       entry({ id: 'r2', turn: 't2', kind: 'request' }),
-      entry({ id: 'h1', turn: null, operation: 'timeline.clip_move' }),
-      entry({ id: 'h0', turn: null, operation: 'timeline.clip_move' }),
-      entry({ id: 'a1', turn: 't1', operation: 'plan.create' }),
+      entry({ id: 'h1', operation: 'timeline.clip_move' }),
     ])
-    expect(groups.map(group => [group.turn, group.entries.map(item => item.record.id)])).toEqual([
-      ['t2', ['a3', 'a2']], [null, ['h1']], [null, ['h0']], ['t1', ['a1']],
+    expect(rows.map(row => [row.entry.record.id, row.children.map(child => child.record.id)])).toEqual([
+      ['ap', ['g1', 'g2', 'tl']], ['h1', []],
     ])
   })
 
-  it('splits a turn interleaved with another record into two groups', () => {
-    const groups = groupByTurn([entry({ id: 'a2', turn: 't1' }), entry({ id: 'h1', turn: null }), entry({ id: 'a1', turn: 't1' })])
-    expect(groups.map(group => group.turn)).toEqual(['t1', null, 't1'])
+  it('keeps scheduled records as rows of their own while their approval is not loaded', () => {
+    expect(actionRows([entry({ id: 'g1', actor: 'system', operation: 'shot.render' })]).map(row => row.entry.record.id)).toEqual(['g1'])
+  })
+})
+
+describe('labels, thumbnails and times', () => {
+  it('names the subject of plan, shot render and story bible actions', () => {
+    expect(actionLabel(record({ id: 'a', operation: 'plan.create', params: { title: '猫' }, report: { plan: 'p1', version: 1 } })))
+      .toEqual(['新建分镜计划《猫》', 'Create plan “猫”'])
+    expect(actionLabel(record({ id: 'b', operation: 'plan.create', params: {}, report: { plan: 'p1', version: 1 } })))
+      .toEqual(['新建分镜计划 p1', 'Create plan p1'])
+    expect(actionLabel(record({ id: 'c', operation: 'plan.update', params: { plan: 'p1' }, report: { plan: 'p1', version: 2 } })))
+      .toEqual(['修改分镜计划 p1 → v2', 'Update plan p1 → v2'])
+    expect(actionLabel(record({ id: 'd', operation: 'plan.approve', params: { plan: 'p1' }, report: { plan: 'p1', version: 2 } })))
+      .toEqual(['批准分镜计划 p1 v2', 'Approve plan p1 v2'])
+    expect(actionLabel(record({ id: 'e', operation: 'shot.render', params: { plan: 'p1', plan_version: 2, shot: 7 } })))
+      .toEqual(['渲染镜头 7', 'Render shot 7'])
+    expect(actionLabel(record({ id: 'f', operation: 'shot.render', params: { prompt: 'x' } }))).toEqual(['渲染镜头', 'Render shot'])
+    expect(actionLabel(record({ id: 'tc', operation: 'timeline.create', params: { timeline: 't2' } }))).toEqual(['新建时间线', 'Create timeline'])
+    expect(actionLabel(record({ id: 'tu', operation: 'timeline.update', params: { timeline: 't2' } }))).toEqual(['修改时间线', 'Update timeline'])
+    expect(actionLabel(record({ id: 'g', component: 'bible', operation: 'bible.character_create', params: { character: 'c1', name: '阿明' } })))
+      .toEqual(['新建角色「阿明」', 'Create character “阿明”'])
+  })
+
+  it('shows an image first, a take\'s still for its video, a video frame without a still, and nothing for other files', () => {
+    const assets = new Map([
+      asset('take.mp4', 'video/mp4', 'g1'), asset('still.png', 'image/png', 'g1'), asset('clip.mp4', 'video/mp4', 'gone'),
+      asset('plan.json', 'application/json', 'p'), asset('ref.png', 'image/png', null),
+    ].map(item => [item.id, item]))
+    const render = record({ id: 'g1', outputs: ['take.mp4', 'still.png'] })
+    const records = new Map([[render.id, render]])
+    expect(thumbnailOf(render, assets, records)).toEqual({ asset: 'still.png', kind: 'image' })
+    const clipRow = record({ id: 'm', inputs: [{ role: 'clip', ref: { record: 'g1', output: 0 }, resolved_asset: 'take.mp4' }] })
+    expect(thumbnailOf(clipRow, assets, records)).toEqual({ asset: 'still.png', kind: 'image' })
+    expect(thumbnailOf(record({ id: 'v', outputs: ['clip.mp4'] }), assets, records)).toEqual({ asset: 'clip.mp4', kind: 'video' })
+    expect(thumbnailOf(record({ id: 'p', outputs: ['plan.json'] }), assets, records)).toBeNull()
+    expect(thumbnailOf(record({ id: 'u', outputs: ['unknown'] }), assets, records)).toBeNull()
+    expect(thumbnailOf(record({ id: 'ap' }), assets, records, [render, record({ id: 'g2' })])).toEqual({ asset: 'still.png', kind: 'image' })
+  })
+
+  it('says how long ago a record was made', () => {
+    const now = Date.parse('2026-10-06T12:00:00Z')
+    expect(relativeTime('2026-10-06T11:59:30Z', now)).toEqual(['刚刚', 'just now'])
+    expect(relativeTime('2026-10-06T11:55:00Z', now)).toEqual(['5 分钟前', '5 min ago'])
+    expect(relativeTime('2026-10-06T09:00:00Z', now)).toEqual(['3 小时前', '3 h ago'])
+    expect(relativeTime('2026-10-01T12:00:00Z', now)[0]).toMatch(/^10\/1 \d\d:\d\d$/)
   })
 })
 
@@ -84,13 +131,5 @@ describe('timelines and focus', () => {
     expect(centerFocus({ record: render, mark: 'main' }, owner)).toEqual({ event: 'dv:canvas-focus', detail: { recordId: 'g1' } })
     expect(centerFocus({ record: render, mark: 'undone' }, owner)).toBeNull()
     expect(centerFocus(entry({ id: 'u', operation: 'proj.undo' }), owner)).toBeNull()
-  })
-
-  it('links a turn header to the turn\'s oldest loaded tool call', () => {
-    const turn = [
-      entry({ id: 'b', session: 's1', tool_call: 'call-2' }), entry({ id: 'a', session: 's1', tool_call: 'call-1' }), entry({ id: 'h' }),
-    ]
-    expect(turnToolCall(turn)).toEqual({ session: 's1', toolCall: 'call-1' })
-    expect(turnToolCall([entry({ id: 'h' })])).toBeNull()
   })
 })
