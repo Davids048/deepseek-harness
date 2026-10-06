@@ -174,7 +174,7 @@ export class Runner {
       for (const record of request.after ?? []) store.getRecord(request.project, record)
       const working = drafts.workingBranch(request.project, request.session)
       const state = reducers.getState(request.project, working.name)
-      const inputs = this.resolveInputs(request, state, request.after !== undefined)
+      const inputs = this.resolveInputs(spec, request, state, request.after !== undefined)
       // The operation's own rule refuses the call before anything is written; the lock keeps the state it read current.
       await spec.precondition?.(request, state)
       // The operation names the records it replaces itself; the caller may name more.
@@ -201,7 +201,7 @@ export class Runner {
     if (declined !== null) return { record: declined, outputs: [], report: null }
 
     if (request.after !== undefined) {
-      scheduler.enqueue(request.project, pending.id, spec.resource, request.after)
+      scheduler.enqueue(request.project, pending.id, spec.resource, request.after, spec.pendingInputRoles ?? [])
       return { record: pending, outputs: [], report: null }
     }
     const final = await this.execute(request.project, pending.id, request.signal)
@@ -226,7 +226,9 @@ export class Runner {
         code: 'operation_failed', message: `Operation ${String(pending.operation)} is not registered.`,
       })
     }
-    const unresolved = pending.inputs.find(input => input.resolved_asset === null)
+    // A pending input role may name a render that is still running or failed: the operation handles the null asset.
+    const pendingRoles = new Set(spec.pendingInputRoles ?? [])
+    const unresolved = pending.inputs.find(input => input.resolved_asset === null && !pendingRoles.has(input.role))
     if (unresolved !== undefined) {
       return await this.finish(project, record, 'failed', {
         code: 'input_failed', message: `Input '${unresolved.role}' has no asset: the record it names did not finish done.`,
@@ -334,7 +336,7 @@ export class Runner {
     const { drafts, reducers, assets } = this.deps
     const branch = drafts.workingBranch(request.project, request.session).name
     const state = reducers.getState(request.project, branch)
-    const inputs = this.resolveInputs(request, state, false)
+    const inputs = this.resolveInputs(spec, request, state, false)
     await spec.precondition?.(request, state)
     const scratchDir = await mkdtemp(join(tmpdir(), 'dv-operation-'))
     try {
@@ -352,13 +354,15 @@ export class Runner {
   /**
    * Turn the request's input refs into record inputs against a state. An asset ref must name a stored asset; a record
    * output ref resolves to the producer's output once the producer is done; a character, location or style ref becomes
-   * one input per asset of that version.
+   * one input per asset of that version. A record output ref of one of the operation's `pendingInputRoles` may name a
+   * producer in any status: it resolves to null until the producer is done.
+   * @param spec - the operation.
    * @param request - the call.
    * @param state - the state the record's inputs resolve against.
    * @param allowUnfinished - whether a pending or running producer is allowed (a scheduled run).
    * @returns the record inputs.
    */
-  private resolveInputs(request: RunRequest, state: ProjectState, allowUnfinished: boolean): RecordInput[] {
+  private resolveInputs(spec: OperationSpec, request: RunRequest, state: ProjectState, allowUnfinished: boolean): RecordInput[] {
     const { store, reducers, assets } = this.deps
     return request.inputs.flatMap(({ role, ref }): RecordInput[] => {
       if ('asset' in ref) {
@@ -377,6 +381,7 @@ export class Runner {
           }
           return [{ role, ref, resolved_asset: asset }]
         }
+        if (spec.pendingInputRoles?.includes(role) === true) return [{ role, ref, resolved_asset: null }]
         if (producer.status === 'failed' || producer.status === 'cancelled') {
           throw new ProjectError('invalid_inputs', `Input '${role}': record ${ref.record} ended ${producer.status}.`)
         }

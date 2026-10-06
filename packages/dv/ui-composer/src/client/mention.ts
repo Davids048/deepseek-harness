@@ -77,7 +77,8 @@ export function projectItems(state: WireState): Item[] {
   const proj = state.components.proj
   const records = new Map(proj.records.map(record => [record.id, record]))
   const clips = state.components.timeline.timelines.flatMap(timeline => timeline.clips.map((clip, position): Item => {
-    const producer = records.get(proj.created_by[clip.asset] ?? '')
+    // A placeholder clip (no asset yet) takes its prompt from the render it waits for and shows no thumbnail.
+    const producer = records.get(clip.asset === null ? clip.source?.record ?? '' : proj.created_by[clip.asset] ?? '')
     const frame = producer?.outputs.find(id => assetsById.get(id)?.mime.startsWith('image/') === true)
     const name = timelineName(timeline, n => pickText(`时间线 ${String(n)}`, `Timeline ${String(n)}`))
     const prompt = typeof producer?.params['prompt'] === 'string' ? producer.params['prompt'] : ''
@@ -86,7 +87,9 @@ export function projectItems(state: WireState): Item[] {
       label: pickText(`${name} · 片段 ${String(position + 1)}`, `${name} · Clip ${String(position + 1)}`),
       section: pickText('片段', 'Clips'),
       ...prompt === '' ? {} : { description: prompt.slice(0, 40) },
-      icon: frame === undefined ? thumbnail(assetUrl(clip.asset), true) : thumbnail(assetUrl(frame), false),
+      ...frame !== undefined
+        ? { icon: thumbnail(assetUrl(frame), false) }
+        : clip.asset === null ? {} : { icon: thumbnail(assetUrl(clip.asset), true) },
     }
   }))
   const bible = state.components.bible

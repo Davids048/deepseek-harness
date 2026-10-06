@@ -29,8 +29,9 @@ const sources: ExpansionSources = {
         timelines: [{
           id: brandString<TimelineId>('t1'), name: '',
           clips: [
-            { id: brandString<ClipId>('cl1'), asset: img, in_sec: null, out_sec: null },
-            { id: brandString<ClipId>('cl2'), asset: vid, in_sec: null, out_sec: null },
+            { id: brandString<ClipId>('cl1'), asset: img, source: null, in_sec: null, out_sec: null },
+            { id: brandString<ClipId>('cl2'), asset: vid, source: null, in_sec: null, out_sec: null },
+            { id: brandString<ClipId>('cl3'), asset: null, source: { record: shot.id, output: 0 }, in_sec: null, out_sec: null },
           ],
         }],
       },
@@ -48,13 +49,15 @@ describe('dv mentions', () => {
     expect(parseMentions(text)).toEqual([{ label: '时间线 1·片段 2', uri: 'dv:clip/cl2' }])
   })
 
-  it('names the timeline, position, producing record, prompt, inputs, and duration of a clip', () => {
+  it('names the timeline, position, producing record, prompt, inputs, and duration of a clip, and a placeholder clip\'s render', () => {
     const block = expansionBlock('@[时间线 1·片段 2](dv:clip/cl2)', project, sources)
     expect(block).toContain('(dv:clip/cl2): clip cl2, clip 2 of timeline t1, asset vid1')
     expect(block).toContain('asset vid1 made by record rec-shot (dv_shot_render, done)')
     expect(block).toContain('prompt "a cat walks", duration 5 s')
     expect(block).toContain('inputs [reference=img1, reference=c1@2]')
     expect(expansionBlock('@[x](dv:clip/cl9)', project, sources)).toContain('no clip cl9 on main')
+    expect(expansionBlock('@[x](dv:clip/cl3)', project, sources))
+      .toContain('clip cl3, clip 3 of timeline t1, a placeholder clip (no asset until its render is done), its render made by record rec-shot')
   })
 
   it('describes assets, characters, records, and unknown mentions', () => {

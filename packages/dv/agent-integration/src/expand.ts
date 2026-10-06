@@ -91,16 +91,18 @@ export function describeMention(mention: Mention, projectId: ProjectId, sources:
 
 /**
  * A clip of a timeline on the working branch: its timeline (with its name when it has one), its 1-based position, its
- * asset, and the record that produced the asset.
+ * asset, and the record that produced the asset. A placeholder clip names the render record it waits for, whose
+ * status tells whether the render is still running or failed.
  */
 function clipText(state: ProjectState, clipId: string, projectId: ProjectId, sources: ExpansionSources): string {
   for (const timeline of state.components.timeline.timelines) {
     const index = timeline.clips.findIndex(clip => clip.id === clipId)
     const clip = timeline.clips[index]
     if (clip === undefined) continue
-    const producer = state.components.proj.created_by[clip.asset]
+    const producer = clip.asset === null ? clip.source?.record : state.components.proj.created_by[clip.asset]
     const name = timeline.name === '' ? '' : ` "${timeline.name}"`
-    return `clip ${clipId}, clip ${String(index + 1)} of timeline ${timeline.id}${name}, asset ${clip.asset}`
+    return `clip ${clipId}, clip ${String(index + 1)} of timeline ${timeline.id}${name}, `
+      + `${clip.asset === null ? 'a placeholder clip (no asset until its render is done), its render' : `asset ${clip.asset}`}`
       + producerText(projectId, producer, sources)
   }
   return `no clip ${clipId} on ${state.branch}`

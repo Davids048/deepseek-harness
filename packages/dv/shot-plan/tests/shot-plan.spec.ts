@@ -23,7 +23,7 @@ import DvProject, {
   type SessionId,
 } from '@dv/project'
 import DvTimeline from '@dv/timeline'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import DvShotPlan, { type PlanId } from '../src/index.ts'
 
 const FFMPEG = process.env['DV_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
@@ -58,9 +58,10 @@ afterEach(async () => {
  * The stand-in for the `shot.render` that `plan.approve` schedules: its name, input roles and output order match the
  * real Shot render component.
  * @param precondition - the stand-in render's precondition, when the test needs one.
+ * @param before - awaited before each render imports its outputs, with the shot's prompt; a throw fails the render.
  * @returns the spec.
  */
-function standIns(precondition?: OperationSpec['precondition']): OperationSpec[] {
+function standIns(precondition?: OperationSpec['precondition'], before?: (prompt: string) => Promise<void>): OperationSpec[] {
   const base = { version: '1', description: 'stand-in', deterministic: false, confirm: 'never' as const, summarize: () => 'stand-in' }
   return [
     {
@@ -75,12 +76,15 @@ function standIns(precondition?: OperationSpec['precondition']): OperationSpec[]
       },
       outputs: [{ role: 'video', type: 'video' }, { role: 'last_still', type: 'image' }],
       ...precondition === undefined ? {} : { precondition },
-      execute: context => Promise.resolve({
-        outputs: [
-          context.importAsset(Buffer.from(`video ${String(context.params['prompt'])}`), { mime: 'video/mp4', name: 'shot.mp4' }),
-          context.importAsset(Buffer.from(`frame ${String(context.params['prompt'])}`), { mime: 'image/png', name: 'last.png' }),
-        ],
-      }),
+      execute: async (context) => {
+        await before?.(String(context.params['prompt']))
+        return {
+          outputs: [
+            context.importAsset(Buffer.from(`video ${String(context.params['prompt'])}`), { mime: 'video/mp4', name: 'shot.mp4' }),
+            context.importAsset(Buffer.from(`frame ${String(context.params['prompt'])}`), { mime: 'image/png', name: 'last.png' }),
+          ],
+        }
+      },
     },
   ]
 }
@@ -88,9 +92,10 @@ function standIns(precondition?: OperationSpec['precondition']): OperationSpec[]
 /**
  * Boot the composition from a test-only `cordis.yml`, with the stand-ins registered beside it.
  * @param precondition - the stand-in render's precondition, when the test needs one.
+ * @param before - the stand-in render's wait before it imports its outputs, when the test needs one.
  * @returns the fixture, with a project bound to chat session `s1`.
  */
-async function start(precondition?: OperationSpec['precondition']): Promise<Fixture> {
+async function start(precondition?: OperationSpec['precondition'], before?: (prompt: string) => Promise<void>): Promise<Fixture> {
   const dir = mkdtempSync(join(tmpdir(), 'dv-shot-plan-'))
   const globals = globalThis as typeof globalThis & { __dvShotPlanComposition?: typeof PLUGINS }
   globals.__dvShotPlanComposition = PLUGINS
@@ -113,7 +118,7 @@ async function start(precondition?: OperationSpec['precondition']): Promise<Fixt
   ctx.loader.builtins.include = Include
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })
   await ctx.loader.await()
-  const removers = standIns(precondition).map(spec => ctx.dvProject.registerOperation(spec))
+  const removers = standIns(precondition, before).map(spec => ctx.dvProject.registerOperation(spec))
   disposers.push(async () => {
     for (const remove of removers) remove()
     await ctx.fiber.dispose()
@@ -225,6 +230,36 @@ describe('dvShotPlan', () => {
     expect(approved.report).toEqual({ plan: 'p1', version: 1, scheduled: approved.scheduled })
     expect(state.components.timeline.timelines[0]?.clips.map(clip => clip.asset)).toEqual(shots.map(shot => shot.outputs[0]))
     expect(state.components.plan.plans['p1' as PlanId]?.[0]?.approved_by).toBe(approved.record)
+  })
+
+  it('lays out the timeline at approval with placeholder clips that fill as each render finishes', async () => {
+    const releases = new Map<string, () => void>()
+    const fixture = await start(undefined, async (prompt) => {
+      await new Promise<void>((resolve) => { releases.set(prompt, resolve) })
+      if (prompt === 'two') throw new Error('The renderer ran out of memory.')
+    })
+    const picture = fixture.put('face', 'image/png', 'face.png')
+    await fixture.record('plan.create', { references: [picture], shots: [{ prompt: 'one' }, { prompt: 'two' }] })
+    await fixture.record('plan.approve', { plan: 'p1' })
+    const clips = (): unknown => fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines
+      .map(timeline => [timeline.id, timeline.clips.map(clip => [clip.id, clip.asset, clip.source?.record])])
+    const [one, two] = fixture.recordsOf('shot.render')
+
+    // The timeline exists at once, done, with one placeholder clip per shot.
+    expect(fixture.recordsOf('timeline.create').map(record => record.status)).toEqual(['done'])
+    expect(clips()).toEqual([['t1', [['cl1', null, one?.id], ['cl2', null, two?.id]]]])
+
+    // Each finished render fills its clip; a failed render leaves its placeholder and the timeline stays.
+    await vi.waitFor(() => { expect(releases.has('one')).toBe(true) })
+    releases.get('one')?.()
+    await fixture.ctx.dvProject.wait(fixture.project, [one?.id as RecordId])
+    const take = fixture.recordsOf('shot.render')[0]?.outputs[0]
+    expect(clips()).toEqual([['t1', [['cl1', take, one?.id], ['cl2', null, two?.id]]]])
+    await vi.waitFor(() => { expect(releases.has('two')).toBe(true) })
+    releases.get('two')?.()
+    await fixture.ctx.dvProject.wait(fixture.project)
+    expect(fixture.recordsOf('shot.render')[1]?.status).toBe('failed')
+    expect(clips()).toEqual([['t1', [['cl1', take, one?.id], ['cl2', null, two?.id]]]])
   })
 
   it('renders only new or changed shots of a later version, reuses the other takes, and updates the plan\'s timeline', async () => {

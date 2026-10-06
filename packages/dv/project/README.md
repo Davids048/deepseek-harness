@@ -24,7 +24,7 @@ Use this package to change and read DreamVerse projects. Every change is a recor
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin with the projects directory and the session directory. The asset pool registers its store with `registerAssetStore` when it loads, chat sessions are bound to projects with `bindSession`, and the agent integration checks every agent tool call through `registerToolCallCheck`. Each reducer adds its slice's fields to the project summary through `Reducer.agentSummary`.
+Mount the plugin with the projects directory and the session directory. The asset pool registers its store with `registerAssetStore` when it loads, chat sessions are bound to projects with `bindSession`, and the agent integration checks every agent tool call through `registerToolCallCheck`. Each reducer adds its slice's fields to the project summary through `Reducer.agentSummary`. An operation lists in `OperationSpec.pendingInputRoles` the input roles that may name the output of a record that is not done yet: the runner records and executes such a call at once with a null `resolved_asset`, which the record's current form fills when the producer finishes (Timeline clips that wait for their render use it).
 
 ```yaml
 - id: dv-project

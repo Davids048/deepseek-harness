@@ -7,7 +7,9 @@
  *   `timeline.clip_replace` edit its clips, each named by its ID (`cl1`, `cl2`, …) in the `clip` param.
  *
  * The operations that add clips assign the new clip IDs and store them in the record's `report.clips`; the `timeline`
- * reducer folds the records into the `timeline` slice. `dvProject` turns each operation into its agent tool
+ * reducer folds the records into the `timeline` slice. `timeline.create` and `timeline.update` declare the `clip` input
+ * role in `pendingInputRoles`: a clip input may name a render that is not done, and the clip is a placeholder until
+ * the render is done. `dvProject` turns each operation into its agent tool
  * (`dv_timeline_create`, `dv_timeline_clip_move`, ...). Exporting a timeline to a file belongs to Deliver.
  *
  * @module @dv/timeline
@@ -19,7 +21,7 @@ import type { OperationContext, OperationResult, OperationSpec, ProjectId, Proje
 import { addedClipCount, clipProblem, namedTimeline, OPERATIONS, reportedClips, timelineReducer } from './reducer.ts'
 import type { ClipId } from './types.ts'
 
-export type { Clip, ClipId, Timeline, TimelineId, TimelineState } from './types.ts'
+export type { Clip, ClipId, ClipStatus, Timeline, TimelineId, TimelineState } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -44,9 +46,18 @@ const CLIP_PARAM = {
   clip: { type: 'string', required: true, description: 'The clip ID, such as cl3 (see `clips` of `timelines` in dv_proj_state).' },
 } as const
 
-/** The params and the input role of `timeline.create` and `timeline.update`: the clips in playback order. */
+/**
+ * The params and the input role of `timeline.create` and `timeline.update`: the clips in playback order. The `clip` role
+ * is a pending input role, so a clip may name a render that has not finished.
+ */
 const LAYOUT = {
-  inputs: { clip: { type: 'video', many: true, description: 'The clips in order, when the assets are outputs of scheduled records.' } },
+  inputs: {
+    clip: {
+      type: 'video', many: true,
+      description: 'The clips in order, as render outputs; a render that is not done yet becomes a placeholder clip until it is done.',
+    },
+  },
+  pendingInputRoles: ['clip'],
   params: {
     assets: { type: 'array', items: { type: 'string' }, description: 'Clip asset IDs in playback order.' },
     plan: { type: 'string', description: 'The plan record whose shots the timeline holds.' },
@@ -83,7 +94,8 @@ function shown(value: unknown): string {
  * @returns the operation spec.
  */
 function edit(
-  spec: Pick<OperationSpec, 'name' | 'description' | 'params' | 'summarize'> & Partial<Pick<OperationSpec, 'inputs' | 'version'>>,
+  spec: Pick<OperationSpec, 'name' | 'description' | 'params' | 'summarize'>
+    & Partial<Pick<OperationSpec, 'inputs' | 'version' | 'pendingInputRoles'>>,
   execute: OperationSpec['execute'],
 ): OperationSpec {
   return {
@@ -151,6 +163,7 @@ export default class DvTimeline extends Service {
           + 'and a `name`; omit the ID for the project\'s first timeline, t1. To replace the clips of an existing timeline, call '
           + 'dv_timeline_update. An empty `assets` list makes an empty timeline.',
         inputs: LAYOUT.inputs,
+        pendingInputRoles: [...LAYOUT.pendingInputRoles],
         params: {
           timeline: { type: 'string', description: 'The ID of the timeline to create, such as t2. Defaults to t1.' },
           name: { type: 'string', description: 'The name the interface shows, such as 片尾. Without a name the interface shows 时间线 2 for t2.' },
@@ -162,6 +175,7 @@ export default class DvTimeline extends Service {
         name: OPERATIONS.update,
         description: 'Replace all clips of an existing timeline with clips in order; its name stays. Every clip gets a new clip ID.',
         inputs: LAYOUT.inputs,
+        pendingInputRoles: [...LAYOUT.pendingInputRoles],
         params: { timeline: { type: 'string', required: true, description: 'The timeline to update, such as t1.' }, ...LAYOUT.params },
         summarize: record => `${prefix(record)}timeline updated (${String(laidOut(record))} clips)`,
       }, execute),

@@ -2,8 +2,8 @@ import { join } from 'node:path'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { AssetId, Branch, CharacterId, ProjectId, ProjectState, RecordId, SessionId } from '@dv/project'
-import type { ClipId, TimelineId } from '@dv/timeline'
+import type { AssetId, Branch, CharacterId, ProjectId, ProjectRecord, ProjectState, RecordId, SessionId } from '@dv/project'
+import type { Clip, ClipId, TimelineId } from '@dv/timeline'
 import type { PlanId } from '@dv/shot-plan'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DvAgentIntegration, { PROMPT_SECTION } from '../src/index.ts'
@@ -181,20 +181,26 @@ describe('resolver block', () => {
     expect(renderResolverBlock({ projectId: null, state: null, branch: null, url })).toContain('start the work with dv_proj_create')
     expect(text).toContain('Characters, locations and styles: none.')
     expect(text).not.toContain('Takes')
-    // Imported assets have no producing record, a trimmed clip shows its range, a stale producer is flagged, and a plan
-    // is listed once with its latest and approved versions.
+    // Imported assets have no producing record, a trimmed clip shows its range, a stale producer is flagged, a placeholder
+    // clip shows its render's status, and a plan is listed once with its latest and approved versions.
     const g1 = brandString<RecordId>('g1')
+    const rendering = { id: brandString<RecordId>('g4'), status: 'running' } as ProjectRecord
+    const placeholder = (id: string, record: RecordId): Clip => ({
+      id: brandString<ClipId>(id), asset: null, source: { record, output: 0 }, in_sec: null, out_sec: null,
+    })
     const a1 = 'a1' as never
     const a2 = 'a2' as never
     const marked = plainState({
-      proj: { created_by: { [a2]: g1 }, stale: { [g1]: brandString<RecordId>('g2') } },
+      proj: { records: [rendering], created_by: { [a2]: g1 }, stale: { [g1]: brandString<RecordId>('g2') } },
       timeline: {
         timelines: [{
           id: brandString<TimelineId>('t1'), name: 'Opening',
           clips: [
-            { id: brandString<ClipId>('cl1'), asset: a1, in_sec: null, out_sec: 4 },
-            { id: brandString<ClipId>('cl2'), asset: a2, in_sec: null, out_sec: null },
+            { id: brandString<ClipId>('cl1'), asset: a1, source: null, in_sec: null, out_sec: 4 },
+            { id: brandString<ClipId>('cl2'), asset: a2, source: null, in_sec: null, out_sec: null },
           ],
+        }, {
+          id: brandString<TimelineId>('t2'), name: '', clips: [placeholder('cl3', rendering.id), placeholder('cl4', brandString<RecordId>('g5'))],
         }],
       },
       plan: {
@@ -209,6 +215,7 @@ describe('resolver block', () => {
     })
     const lines = renderResolverBlock({ projectId, state: marked, branch: branchOf('main'), url })
     expect(lines).toContain('Timelines:\n- t1 "Opening": 2 clips\n  - clip 1 cl1: asset a1 range 0s-4 /u/a1\n  - clip 2 cl2: asset a2 from record g1 STALE /u/a2')
+    expect(lines).toContain('- t2: 2 clips\n  - clip 1 cl3: rendering, record g4\n  - clip 2 cl4: render failed, record g5')
     expect(lines).toContain('g1 (input replaced by g2)')
     expect(lines.endsWith('Plans:\n- p1 "Dance": latest v2 (2 shots), v1 approved')).toBe(true)
     const lead = { id: brandString<CharacterId>('c1'), version: 1, name: 'Lead', references: [], description: '', created_by: brandString<RecordId>('u1') }

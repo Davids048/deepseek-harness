@@ -227,7 +227,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     if (filters.timeline === '' || working.value === null) return null
     if (timeline === undefined) return []
     const { records: branchRecords, created_by: createdBy } = working.value.components.proj
-    return timelineRecords(branchRecords, createdBy, timeline.id, timeline.clips.map(clip => clip.asset))
+    return timelineRecords(branchRecords, createdBy, timeline.id, timeline.clips.flatMap(clip => clip.asset === null ? [] : [clip.asset]))
   }, [filters.timeline, timelines, working.value])
   const query = useMemo((): HistoryQuery | null => {
     if (timelineSet !== null && timelineSet.length === 0) return null

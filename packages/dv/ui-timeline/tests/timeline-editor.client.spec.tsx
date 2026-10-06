@@ -5,7 +5,8 @@ import { act, cleanup, fireEvent, render, waitFor, within } from '@testing-libra
 import { DvClient } from '@dv/ui-kit/api.ts'
 import { getCurrentTimeline, publishCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
 import type { WireState } from '@dv/ui-kit/types.ts'
-import { asset, fixtureState, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
+import { asset, fixtureState, record, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
+import { FALLBACK_CLIP_SECONDS } from '@dv/ui-kit/timeline.ts'
 import { TimelineView } from '../src/client/TimelineView.tsx'
 import { placeTimeline } from '../src/client/timelines.ts'
 
@@ -17,7 +18,7 @@ function twoTimelines(): WireState {
   const state = fixtureState()
   state.heads = { main: state.heads['main'] ?? 's1' }
   state.assets.push(asset('imported.mp4', 'video/mp4', null, 3))
-  state.components.timeline.timelines.push({ id: 't2', name: '片尾', clips: [{ id: 'cl3', asset: 'imported.mp4', in_sec: null, out_sec: null }] })
+  state.components.timeline.timelines.push({ id: 't2', name: '片尾', clips: [{ id: 'cl3', asset: 'imported.mp4', source: null, in_sec: null, out_sec: null }] })
   return state
 }
 
@@ -194,10 +195,33 @@ describe('TimelineView', () => {
   it('marks only the clips a shown draft adds, and none on main', () => {
     const state = twoTimelines()
     const base = state.components.timeline.timelines[0]?.clips ?? []
-    const added = { id: 'cl9', asset: 'imported.mp4', in_sec: null, out_sec: null }
+    const added = { id: 'cl9', asset: 'imported.mp4', source: null, in_sec: null, out_sec: null }
     const timeline = { id: 't1', name: '', clips: [...base, added] }
     expect(placeTimeline(state, timeline, 'draft/s9', base).clips.map(clip => clip.draft)).toEqual([...base.map(() => false), true])
     expect(placeTimeline(state, timeline, 'main', base).clips.some(clip => clip.draft)).toBe(false)
+  })
+
+  it('places a placeholder clip at its render length, marks it rendering or failed, and holds export until it is ready', async () => {
+    const state = twoTimelines()
+    state.components.proj.records.push(
+      record({ id: 'r8', operation: 'shot.render', status: 'running', params: { duration_sec: 2 } }),
+      record({ id: 'r9', operation: 'shot.render', status: 'failed', params: {} }),
+    )
+    const timeline = state.components.timeline.timelines[0]
+    timeline?.clips.push(
+      { id: 'cl8', asset: null, source: { record: 'r8', output: 0 }, in_sec: null, out_sec: null },
+      { id: 'cl9', asset: null, source: { record: 'r9', output: 0 }, in_sec: null, out_sec: null },
+    )
+    const placed = placeTimeline(state, timeline ?? null).clips.slice(-2)
+    expect(placed.map(clip => [clip.status, clip.seconds])).toEqual([['rendering', 2], ['failed', FALLBACK_CLIP_SECONDS]])
+    const { fetch } = scriptedFetch({ state: () => state })
+    const view = render(<TimelineView projectId="p1" branch="main" client={new DvClient(fetch)} />)
+    await view.findByRole('list', { name: '视频轨道' })
+    expect(view.container.querySelector('[data-clip="cl8"]')?.getAttribute('title')).toContain('渲染中…')
+    expect(view.container.querySelector('[data-clip="cl9"]')?.getAttribute('title')).toContain('渲染失败')
+    expect(view.container.querySelectorAll('[data-clip="cl8"] [data-trim]')).toHaveLength(0)
+    expect(view.getByTestId('dv-timeline-export-waiting').textContent).toBe('片段 3, 4 还没就绪，全部就绪后才能导出')
+    expect((view.getByText('导出') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('shows English copy and default timeline names when the DSH language is English', async () => {

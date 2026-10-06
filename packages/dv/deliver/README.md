@@ -35,7 +35,7 @@ Mount the plugin after `@dv/project`, `@dv/ffmpeg`, and the asset pool `@dv/asse
 | --- | --- | --- | --- |
 | `deliver.timeline_export` | `dv_deliver_timeline_export` | no inputs; param `timeline` (the timeline ID, such as `t1`; default: the first timeline) | `video` (MP4) |
 
-The operation is not deterministic, because its output depends on the timeline's clips in the project state, which the params do not name; every call exports again. It runs in the `cpu` resource class and never asks for confirmation. A call fails its record for an unknown timeline, for a project without timelines, and for a timeline without clips. The service method `exportTimeline(timeline, dir)` writes the joined file into `dir` for other callers and returns its path.
+The operation is not deterministic, because its output depends on the timeline's clips in the project state, which the params do not name; every call exports again. It runs in the `cpu` resource class and never asks for confirmation. A call fails its record for an unknown timeline, for a project without timelines, and for a timeline without clips. While a clip of the timeline is a placeholder (its render is not done, so it has no asset), the call is refused before its record with the clip positions, such as "Clips 3, 5 of timeline t1 are not ready yet."; `exportTimeline` throws the same error. The service method `exportTimeline(timeline, dir)` writes the joined file into `dir` for other callers and returns its path.
 
 -----
 

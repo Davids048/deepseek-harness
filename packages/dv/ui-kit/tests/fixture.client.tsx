@@ -108,8 +108,8 @@ export function fixtureState(): WireState {
       timeline: {
         timelines: [{
           id: 't1', name: '', clips: [
-            { id: 'cl1', asset: 'shot1.mp4', in_sec: null, out_sec: null },
-            { id: 'cl2', asset: 'shot2.mp4', in_sec: 1, out_sec: 4 },
+            { id: 'cl1', asset: 'shot1.mp4', source: null, in_sec: null, out_sec: null },
+            { id: 'cl2', asset: 'shot2.mp4', source: null, in_sec: 1, out_sec: 4 },
           ],
         }],
       },

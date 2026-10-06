@@ -35,6 +35,12 @@ const CAPABILITIES_BODY = {
 export interface FakeBackend {
   url: string
   requests: Record<string, unknown>[]
+  /** Hold render requests: each one waits until {@link FakeBackend.release} lets it through. */
+  hold(): void
+  /** Let the oldest held render request finish; with none waiting, the next request to arrive passes. */
+  release(): void
+  /** Stop holding and let every waiting render request finish. */
+  releaseAll(): void
   close(): Promise<void>
 }
 
@@ -85,6 +91,19 @@ export async function startFakeBackend(
   // ffmpeg writes the encoded video into `dir` and does not create it.
   mkdirSync(dir, { recursive: true })
   const requests: Record<string, unknown>[] = []
+  // While `held`, a render request waits in `waiting` unless a `release` left a pass in `passes`.
+  let held = false
+  let passes = 0
+  const waiting: Array<() => void> = []
+  const gate = (): Promise<void> | undefined => {
+    if (!held) return undefined
+    if (passes > 0) { passes -= 1; return undefined }
+    return new Promise<void>((resolve) => { waiting.push(resolve) })
+  }
+  const releaseAll = (): void => {
+    held = false
+    for (const resolve of waiting.splice(0)) resolve()
+  }
   const server: Server = createServer((request: IncomingMessage, response: ServerResponse) => {
     const path = request.url ?? ''
     if (request.method !== 'POST') {
@@ -98,6 +117,7 @@ export async function startFakeBackend(
       void (async () => {
         const body = JSON.parse(Buffer.concat(parts).toString('utf8')) as Record<string, unknown>
         requests.push(body)
+        await gate()
         const rendered = options.playable === true
           ? await encodePlayableVideo(dir, Number(body['width']), Number(body['height']), Number(body['num_frames']), String(body['prompt'] ?? ''))
           : await encodeClip(dir, Number(body['width']), Number(body['height']), Number(body['num_frames']))
@@ -119,7 +139,15 @@ export async function startFakeBackend(
   return {
     url: `http://127.0.0.1:${String(port)}`,
     requests,
+    hold: () => { held = true },
+    release: () => {
+      const resolve = waiting.shift()
+      if (resolve === undefined) passes += 1
+      else resolve()
+    },
+    releaseAll,
     close: async () => {
+      releaseAll()
       server.closeAllConnections()
       await new Promise<void>(resolve => server.close(() => { resolve() }))
     },

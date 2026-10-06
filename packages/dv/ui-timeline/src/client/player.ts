@@ -1,12 +1,13 @@
 /**
  * Continuous playback of one timeline's clips through two stacked `<video>` elements. The front element plays the
  * current clip from its in point; the back element holds the next clip, already seeked to its in point, so the switch
- * at the out point does not wait for a load.
+ * at the out point does not wait for a load. Placeholder clips, whose render is not done, have no video: playback jumps
+ * over them to the next ready clip, and a seek onto one blanks the viewer.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { assetUrl } from '@dv/ui-kit/api.ts'
-import { clipIndexAt } from './timelines.ts'
+import { clipIndexAt, readyIndexFrom } from './timelines.ts'
 import type { TrackClip } from './timelines.ts'
 
 /** What the viewer and the toolbar read and call. */
@@ -23,13 +24,13 @@ export interface TimelinePlayer {
 }
 
 /**
- * Point an element at a clip and seek it.
+ * Point an element at a ready clip and seek it.
  * @param element - the video element.
- * @param clip - the clip.
+ * @param assetId - the clip's asset.
  * @param assetTime - time inside the clip's asset.
  */
-function cue(element: HTMLVideoElement, clip: TrackClip, assetTime: number): void {
-  const src = assetUrl(clip.assetId)
+function cue(element: HTMLVideoElement, assetId: string, assetTime: number): void {
+  const src = assetUrl(assetId)
   if (element.getAttribute('src') !== src) element.setAttribute('src', src)
   try {
     element.currentTime = assetTime
@@ -89,10 +90,11 @@ export function useTimelinePlayer(timelineId: string | null, clips: TrackClip[],
   const [playing, setPlaying] = useState(false)
   const element = (which: 0 | 1): HTMLVideoElement | null => (which === 0 ? first : second).current
 
+  // The back element holds the next ready clip at or after `index`.
   const preload = useCallback((index: number) => {
     const back = element(frontRef.current === 0 ? 1 : 0)
-    const clip = clipsRef.current[index]
-    if (back !== null && clip !== undefined) cue(back, clip, clip.inSec)
+    const clip = clipsRef.current[readyIndexFrom(clipsRef.current, index)]
+    if (back !== null && clip !== undefined && clip.assetId !== null) cue(back, clip.assetId, clip.inSec)
   }, [])
 
   const seek = useCallback((next: number) => {
@@ -107,7 +109,8 @@ export function useTimelinePlayer(timelineId: string | null, clips: TrackClip[],
     const shown = element(frontRef.current)
     if (clip === undefined || shown === null) return
     current.current = index
-    cue(shown, clip, clip.inSec + Math.min(clamped - clip.startSec, clip.seconds))
+    if (clip.assetId === null) blank(shown)
+    else cue(shown, clip.assetId, clip.inSec + Math.min(clamped - clip.startSec, clip.seconds))
     preload(index + 1)
   }, [total, preload])
 
@@ -117,8 +120,14 @@ export function useTimelinePlayer(timelineId: string | null, clips: TrackClip[],
   }, [])
 
   const play = useCallback(() => {
-    if (clipsRef.current.length === 0) return
+    const list = clipsRef.current
+    if (readyIndexFrom(list, 0) === -1) return
     if (position >= total - 0.05 || current.current === -1) seek(position >= total - 0.05 ? 0 : position)
+    // From a placeholder, playback starts at the next ready clip, or at the first one when none follows.
+    if (list[current.current]?.status !== 'ready') {
+      const later = readyIndexFrom(list, current.current + 1)
+      seek(list[later === -1 ? readyIndexFrom(list, 0) : later]?.startSec ?? 0)
+    }
     const shown = element(frontRef.current)
     if (shown !== null) start(shown)
     setPlaying(true)
@@ -135,17 +144,18 @@ export function useTimelinePlayer(timelineId: string | null, clips: TrackClip[],
       if (shown === null || clip === undefined) { setPlaying(false); return }
       setPosition(clip.startSec + Math.max(0, shown.currentTime - clip.inSec))
       if (shown.currentTime >= clip.outSec - 0.03 || shown.ended) {
-        const next = list[current.current + 1]
+        const nextIndex = readyIndexFrom(list, current.current + 1)
+        const next = list[nextIndex]
         shown.pause()
-        if (next === undefined) { setPosition(total); setPlaying(false); return }
+        if (next === undefined || next.assetId === null) { setPosition(total); setPlaying(false); return }
         const back: 0 | 1 = frontRef.current === 0 ? 1 : 0
         const incoming = element(back)
         if (incoming === null) { setPlaying(false); return }
-        if (incoming.getAttribute('src') !== assetUrl(next.assetId)) cue(incoming, next, next.inSec)
+        if (incoming.getAttribute('src') !== assetUrl(next.assetId)) cue(incoming, next.assetId, next.inSec)
         start(incoming)
         frontRef.current = back
         setFront(back)
-        current.current += 1
+        current.current = nextIndex
         preload(current.current + 1)
       }
       frame = requestAnimationFrame(tick)
@@ -155,7 +165,7 @@ export function useTimelinePlayer(timelineId: string | null, clips: TrackClip[],
   }, [playing, total, preload])
 
   // An edit changes the clips under the playhead; show the frame at the same time again. Another timeline starts at 0.
-  const layout = clips.map(clip => `${clip.assetId}@${String(clip.inSec)}-${String(clip.outSec)}`).join('|')
+  const layout = clips.map(clip => `${clip.assetId ?? clip.status}@${String(clip.inSec)}-${String(clip.outSec)}`).join('|')
   const shownTimeline = useRef(timelineId)
   useEffect(() => {
     const switched = shownTimeline.current !== timelineId

@@ -1,6 +1,6 @@
 /** The pure `plan` reducer: plan versions, their approval, the agent summary, and records it ignores. */
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { ProjectRecord, RecordId } from '@dv/project'
+import type { ProjectRecord, ProjectState, RecordId } from '@dv/project'
 import { describe, expect, it } from 'vitest'
 import { planReducer } from '../src/reducer.ts'
 
@@ -57,7 +57,8 @@ describe('plan reducer', () => {
     const approved = record('plan.approve', { plan: 'p1' })
     const revised = record('plan.update', { plan: 'p1', title: 'dance', shots: [{ prompt: 'a' }, { prompt: 'b' }] })
     const other = record('plan.create', { shots: [{ prompt: 'c' }] }, { report: { plan: 'p2', version: 1 } })
-    expect(planReducer.agentSummary?.(reduceAll([created, approved, revised, other]), { url: asset => asset })).toEqual({
+    const slice = reduceAll([created, approved, revised, other])
+    expect(planReducer.agentSummary?.(slice, { url: asset => asset }, {} as ProjectState)).toEqual({
       plans: [
         { plan: 'p1', title: 'dance', version: 2, approved_version: 1, shots: 2 },
         { plan: 'p2', title: null, version: 1, approved_version: null, shots: 1 },

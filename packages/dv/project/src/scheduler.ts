@@ -2,7 +2,8 @@
  * The scheduler: scheduled runs (a run request with `after`) wait here until the records they depend on are done,
  * then run through the runner's `execute` under one concurrency limit per resource class.
  *
- * A queued record depends on every record in its `after` list and on the record of every `{record, output}` input.
+ * A queued record depends on every record in its `after` list and on the record of every `{record, output}` input,
+ * except the inputs of the operation's `pendingInputRoles`, whose producers it neither waits for nor fails with.
  * Rules:
  * - When every dependency is `done`, the record is ready. Ready records start in enqueue order (first in, first out
  *   across all projects) while their resource class has room: at most `gpu` running `gpu` records, at most `cpu`
@@ -33,6 +34,8 @@ interface ScheduledRecord {
   record: RecordId
   resource: OperationSpec['resource']
   after: RecordId[]
+  /** The operation's `pendingInputRoles`: inputs of these roles are not dependencies. */
+  pendingInputRoles: readonly string[]
 }
 
 /** Whether a queued record can start, must wait, or can never run because a dependency did not finish `done`. */
@@ -72,9 +75,12 @@ export class Scheduler {
    * @param record - a `pending` record the runner just wrote.
    * @param resource - the operation's resource class.
    * @param after - records that must be done first, besides the records of its `{record, output}` inputs.
+   * @param pendingInputRoles - the operation's `pendingInputRoles`; the records of those inputs are not waited for.
    */
-  enqueue(project: ProjectId, record: RecordId, resource: OperationSpec['resource'], after: RecordId[]): void {
-    this.queue.push({ project, record, resource, after })
+  enqueue(
+    project: ProjectId, record: RecordId, resource: OperationSpec['resource'], after: RecordId[], pendingInputRoles: readonly string[] = [],
+  ): void {
+    this.queue.push({ project, record, resource, after, pendingInputRoles })
     this.pump()
   }
 
@@ -161,7 +167,8 @@ export class Scheduler {
    */
   private readiness(item: ScheduledRecord): Readiness {
     const record = this.store.getRecord(item.project, item.record)
-    const producers = record.inputs.flatMap(input => ('record' in input.ref ? [input.ref.record] : []))
+    const producers = record.inputs.flatMap(input => (
+      'record' in input.ref && !item.pendingInputRoles.includes(input.role) ? [input.ref.record] : []))
     let waiting = false
     for (const dependency of [...item.after, ...producers]) {
       const { status, error } = this.store.getRecord(item.project, dependency)

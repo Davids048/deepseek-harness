@@ -238,9 +238,11 @@ export default class DvShotPlan extends Service {
    * its done take), and one `timeline.update` of the plan's timeline with every shot's take in shot order, or a
    * `timeline.create` of a new timeline when the plan has none (see `timelineCall`), written by the `system` actor in the
    * approving record's surface, session and turn. A rendered chained shot names its predecessor's last still (output 1)
-   * as its `first_frame` input; each render waits for the render scheduled before it.
+   * as its `first_frame` input; each render waits for the render scheduled before it. The timeline call runs at once:
+   * its `clip` inputs name each shot's render output or kept take (`{record, output: 0}`), and a clip whose render is
+   * not done is a placeholder until it is.
    * @param context - the running `plan.approve` call.
-   * @returns the approved version, and the scheduled records: the shot renders in shot order, then the timeline.
+   * @returns the approved version, and the records it wrote: the scheduled shot renders in shot order, then the timeline.
    * @throws Error when the param names no known plan or version, or a reference names an unknown character, location
    *   or style version.
    */
@@ -279,7 +281,7 @@ export default class DvShotPlan extends Service {
     const timeline = await project.run({
       ...origin, project: context.project, operation: layout.operation, params: { timeline: layout.timeline, plan },
       inputs: takes.map(id => ({ role: 'clip', ref: { record: id, output: 0 } })),
-      intent: `${verb} timeline ${layout.timeline} of plan ${plan}`, after: scheduled,
+      intent: `${verb} timeline ${layout.timeline} of plan ${plan}`,
     })
     return { version: version.version, scheduled: timeline.record === null ? scheduled : [...scheduled, timeline.record.id] }
   }

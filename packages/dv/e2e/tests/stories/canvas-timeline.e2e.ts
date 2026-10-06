@@ -77,9 +77,10 @@ async function seedProject(title: string, shots = 3, timelines: number[] = []): 
   const state = await waitFor(async () => {
     const current = await stateOf(id)
     const done = current.components.proj.records.filter(record => record.operation === 'shot.render' && record.status === 'done')
-    return done.length === shots && (current.components.timeline.timelines[0]?.clips.length ?? 0) === shots ? current : null
+    const clips = current.components.timeline.timelines[0]?.clips ?? []
+    return done.length === shots && clips.length === shots && clips.every(clip => clip.asset !== null) ? current : null
   }, `${String(shots)} rendered shots of ${title}`, 120_000)
-  const clipAssets = (state.components.timeline.timelines[0]?.clips ?? []).map(clip => clip.asset)
+  const clipAssets = (state.components.timeline.timelines[0]?.clips ?? []).flatMap(clip => clip.asset === null ? [] : [clip.asset])
   for (const [index, count] of timelines.entries()) {
     await runOperation(id, 'timeline.create', { timeline: `t${String(index + 2)}`, assets: clipAssets.slice(0, count) })
   }
@@ -186,7 +187,7 @@ async function pxPerSecond(page: Page): Promise<number> {
 /** @returns the clips of one timeline as `assetId[in-out]` strings in playback order. */
 async function timelineClips(project: string, timelineId = 't1'): Promise<string[]> {
   const timeline = (await stateOf(project)).components.timeline.timelines.find(entry => entry.id === timelineId)
-  return (timeline?.clips ?? []).map(clip => `${clip.asset.slice(0, 8)}[${String(clip.in_sec ?? '')}-${String(clip.out_sec ?? '')}]`)
+  return (timeline?.clips ?? []).map(clip => `${(clip.asset ?? 'pending').slice(0, 8)}[${String(clip.in_sec ?? '')}-${String(clip.out_sec ?? '')}]`)
 }
 
 /** Click 适配 on the canvas toolbar. */
@@ -938,6 +939,68 @@ describe('timeline stories', () => {
     // The export link belongs to this timeline only.
     await page.locator('[data-testid="dv-timeline-editor"]').getByRole('button', { name: '＋ 新建' }).click()
     await expect.poll(() => link.count()).toBe(0)
+  })
+
+  it('an approved 3-shot plan shows 3 placeholder clips at once, each becomes playable as its render finishes, and export waits for all', async () => {
+    const created = await harness.api.post('/api/dv/projects', { title: 'timeline-pending', surface: 'canvas' }) as { id: string }
+    const project = created.id
+    const imported = await runOperation(project, 'asset.import', { base64: PNG_BASE64, mime: 'image/png', name: 'ref.png' })
+    await runOperation(project, 'bible.character_create', { character: 'c1', name: 'Dancer' }, [{ role: 'reference', ref: imported.outputs[0] ?? '' }])
+    const plan = await runOperation(project, 'plan.create', {
+      title: 'timeline-pending', continuity: 'independent', references: ['c1@1'],
+      shots: [1, 2, 3].map(shot => ({ prompt: `timeline-pending shot ${String(shot)}`, duration_sec: shot === 2 ? 2 : 1 })),
+    })
+    harness.backend.hold()
+    try {
+      await runOperation(project, 'plan.approve', { plan: plan.report?.['plan'] })
+      // The approval puts all three shots on timeline t1 right away, as placeholders of their running renders.
+      const pending = await stateOf(project)
+      expect(pending.components.timeline.timelines[0]?.clips.map(clip => clip.asset)).toEqual([null, null, null])
+      const page = await openPage()
+      await gotoProject(page, project)
+      const takes = page.locator('[data-node-kind="take"]')
+      await expect.poll(() => takes.count()).toBe(3)
+      expect(await takes.allTextContents()).toEqual([expect.stringContaining('渲染中…'), expect.stringContaining('渲染中…'), expect.stringContaining('渲染中…')])
+      await viewToggle(page, '时间线').click()
+      const status = (): Promise<string[]> => page.locator('[data-clip-position]').evaluateAll(clips => clips.map(clip => clip.getAttribute('data-clip-status') ?? ''))
+      await expect.poll(status).toEqual(['rendering', 'rendering', 'rendering'])
+      // Each placeholder keeps the length of its shot, so the timeline is as long as the plan.
+      expect((await timelineTime(page))[1]).toBeCloseTo(4, 1)
+      expect(await page.locator('[data-clip-position="1"]').getAttribute('title')).toContain('渲染中…')
+      expect(await page.locator('[data-clip-position="1"] [data-trim]').count()).toBe(0)
+      expect(await page.locator('[data-testid="dv-timeline-viewer-placeholder"]').textContent()).toBe('片段 1：渲染中…')
+      const exportButton = page.getByRole('button', { name: '导出' })
+      expect(await exportButton.isDisabled()).toBe(true)
+      expect(await page.locator('[data-testid="dv-timeline-export-waiting"]').textContent()).toBe('片段 1, 2, 3 还没就绪，全部就绪后才能导出')
+      // Deliver refuses the export too, naming the clips that are not ready.
+      const refused = await harness.api.post('/api/dv/operation', {
+        project, operation: 'deliver.timeline_export', params: { timeline: 't1' }, inputs: [], surface: 'timeline', intent: 'export early',
+      }).then(() => '', (error: unknown) => String(error))
+      expect(refused).toContain('Clips 1, 2, 3 of timeline t1 are not ready yet.')
+      // Each finished render turns its placeholder into a clip the viewer plays; the others stay placeholders.
+      for (let finished = 1; finished <= 3; finished += 1) {
+        harness.backend.release()
+        await expect.poll(async () => (await status()).filter(entry => entry === 'ready').length, { timeout: 60_000 }).toBe(finished)
+        const clips = (await stateOf(project)).components.timeline.timelines[0]?.clips ?? []
+        const ready = (await status()).flatMap((entry, index) => entry === 'ready' ? [index] : [])
+        for (const index of ready) {
+          const clip = page.locator(`[data-clip-position="${String(index + 1)}"]`)
+          const box = await clip.boundingBox()
+          const ruler = await page.locator('[data-testid="dv-timeline-ruler"]').boundingBox()
+          if (box === null || ruler === null) throw new Error(`clip ${String(index + 1)} or the ruler is not on screen`)
+          await page.mouse.click(box.x + box.width / 2, ruler.y + ruler.height / 2)
+          await expect.poll(() => viewerAsset(page)).toBe(clips[index]?.asset)
+        }
+        expect(await exportButton.isDisabled()).toBe(finished < 3)
+      }
+      expect(await page.locator('[data-testid="dv-timeline-export-waiting"]').count()).toBe(0)
+      expect((await timelineTime(page))[1]).toBeCloseTo(4, 1)
+      await exportButton.click()
+      await page.locator('[data-testid="dv-timeline-exported"]').waitFor({ timeout: 60_000 })
+      expect(page.errors).toEqual([])
+    } finally {
+      harness.backend.releaseAll()
+    }
   })
 
   it('a timeline the agent creates appears as a tab without moving the creator off the open timeline', async () => {

@@ -153,6 +153,43 @@ describe('Scheduler', () => {
     expect(executed).toEqual(['A'])
   })
 
+  it('does not wait for the producers of pending input roles', async () => {
+    const m = startModules()
+    const project = await createTestProject(m)
+    const held = gate()
+    const seen: Array<string | null> = []
+    m.runner.registerOperation(operation({
+      name: 'shot.render', component: 'shot',
+      execute: async () => {
+        await held.promise
+        throw new Error('The renderer ran out of memory.')
+      },
+    }))
+    m.runner.registerOperation(operation({
+      name: 'timeline.create', component: 'timeline', pendingInputRoles: ['reference'],
+      execute: (context) => {
+        seen.push(...context.inputs.map(input => input.resolved_asset))
+        return Promise.resolve({ outputs: [] })
+      },
+    }))
+    const render = await schedule(m, project, 'shot.render', 'A')
+    const inputs = [{ role: 'reference', ref: { record: render.id, output: 0 } }]
+
+    // Without `after`, the call executes at once; with `after`, it starts before the render finishes.
+    const immediate = await m.runner.run({ project, operation: 'timeline.create', params: {}, inputs, ...userOrigin() })
+    expect(immediate.record).toMatchObject({ status: 'done', inputs: [{ resolved_asset: null }] })
+    const scheduled = await schedule(m, project, 'timeline.create', 'B', { inputs })
+    await m.scheduler.wait(project, [scheduled.id])
+    expect(m.store.getRecord(project, render.id).status).toBe('running')
+
+    // The render's failure leaves both calls done.
+    held.resolve()
+    await m.scheduler.wait(project)
+    expect(m.store.getRecord(project, render.id).status).toBe('failed')
+    expect(m.store.getRecord(project, scheduled.id).status).toBe('done')
+    expect(seen).toEqual([null, null])
+  })
+
   it('waits for every scheduled record of a project', async () => {
     const m = startModules()
     const project = await createTestProject(m)

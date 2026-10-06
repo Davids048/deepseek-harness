@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-用项目目录和会话目录挂载插件。素材库加载时用 `registerAssetStore` 注册它的存储，聊天会话用 `bindSession` 绑定到项目，智能体集成经 `registerToolCallCheck` 检查每次智能体工具调用。每个归约函数经 `Reducer.agentSummary` 把自己切片的字段加入项目摘要。
+用项目目录和会话目录挂载插件。素材库加载时用 `registerAssetStore` 注册它的存储，聊天会话用 `bindSession` 绑定到项目，智能体集成经 `registerToolCallCheck` 检查每次智能体工具调用。每个归约函数经 `Reducer.agentSummary` 把自己切片的字段加入项目摘要。操作在 `OperationSpec.pendingInputRoles` 中列出可以指向尚未完成的记录输出的输入角色：运行器立即记录并执行这样的调用，`resolved_asset` 为 null，生产记录完成后由记录的当前形式填入（时间线中等待渲染的片段使用它）。
 
 ```yaml
 - id: dv-project

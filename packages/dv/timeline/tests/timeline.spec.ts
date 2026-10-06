@@ -17,8 +17,10 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import DvAssetPool from '@dv/asset-pool'
 import DvFfmpeg from '@dv/ffmpeg'
-import DvProject, { type OperationToolValue, type ProjectId, type ProjectRecord, type RecordId, type RunRequest, type SessionId } from '@dv/project'
-import { afterEach, describe, expect, it } from 'vitest'
+import DvProject, {
+  type OperationToolValue, type ProjectId, type ProjectRecord, type RecordId, type RunRequest, type RunResult, type SessionId,
+} from '@dv/project'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import DvTimeline from '../src/index.ts'
 
 /** The plugin classes the fixture rows resolve through `globalThis`, because Node imports the rows outside Vite. */
@@ -94,6 +96,13 @@ async function start(): Promise<Fixture> {
   }
 }
 
+/** A promise with its resolver, to hold a stand-in render until the test releases it. */
+function gate(): { promise: Promise<void>; resolve: () => void } {
+  let resolve: () => void = () => undefined
+  const promise = new Promise<void>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
 /** The value of a successful operation tool call. */
 function value(result: ToolExecutionResult): OperationToolValue {
   if (result.isError) throw new Error(result.error.message)
@@ -143,8 +152,8 @@ describe('dvTimeline', () => {
     const draft = fixture.ctx.dvProject.getState(fixture.project, 'draft/s1').components.timeline.timelines
     expect(draft.map(timeline => [timeline.id, timeline.name])).toEqual([['t1', '开场'], ['t2', '片尾']])
     expect(draft[0]?.clips).toEqual([
-      { id: 'cl3', asset: 'a3', in_sec: 0.5, out_sec: 2 }, { id: 'cl1', asset: 'b1', in_sec: null, out_sec: null },
-      { id: 'cl4', asset: 'a1', in_sec: 1, out_sec: null }, { id: 'cl5', asset: 'b2', in_sec: null, out_sec: null },
+      { id: 'cl3', asset: 'a3', source: null, in_sec: 0.5, out_sec: 2 }, { id: 'cl1', asset: 'b1', source: null, in_sec: null, out_sec: null },
+      { id: 'cl4', asset: 'a1', source: null, in_sec: 1, out_sec: null }, { id: 'cl5', asset: 'b2', source: null, in_sec: null, out_sec: null },
     ])
     expect(value(await fixture.call('dv_timeline_delete', { reason: 'not needed', timeline: 't2' })).summary).toBe('t2 deleted')
     expect(fixture.ctx.dvProject.getState(fixture.project, 'draft/s1').components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1'])
@@ -216,6 +225,86 @@ describe('dvTimeline', () => {
     // The replayed insert keeps cl3, so the replayed move still finds it on the moved main.
     expect(fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines[0]?.clips.map(clip => [clip.id, clip.asset]))
       .toEqual([['cl3', 'd1'], ['cl1', 'a1'], ['cl2', 'a2'], ['cl4', 'm1']])
+  })
+
+  it('lays out a render that is not done as a placeholder clip that becomes ready when the render is done', async () => {
+    const fixture = await start()
+    const renders = [gate(), gate()]
+    const render = (index: number): Promise<RunResult> => fixture.ctx.dvProject.run({
+      actor: 'user', surface: 'timeline', session: null, turn: null, tool_call: null, intent: 'render', project: fixture.project,
+      operation: 'shot.render', params: { shot: index }, inputs: [],
+    })
+    fixture.ctx.dvProject.registerOperation({
+      name: 'shot.render', component: 'shot', version: '1', description: 'stand-in', params: {}, inputs: {},
+      outputs: [{ role: 'video', type: 'video' }], confirm: 'never', deterministic: false, resource: 'none', summarize: () => 'stand-in',
+      execute: async (context) => {
+        const index = Number(context.params['shot'])
+        await renders[index]?.promise
+        if (index === 1) throw new Error('The renderer ran out of memory.')
+        return { outputs: [context.importAsset(Buffer.from('take'), { mime: 'video/mp4', name: 'take.mp4' })] }
+      },
+    })
+    const running = [render(0), render(1)]
+    // The history lists the newest record first.
+    const [first, second] = await vi.waitFor(() => {
+      const found = fixture.ctx.dvProject.listHistory({ project: fixture.project, operation: 'shot.render' }).map(entry => entry.record.id)
+      expect(found).toHaveLength(2)
+      return found.reverse()
+    })
+    if (first === undefined || second === undefined) throw new Error('the renders wrote no records')
+
+    // The create is done at once with one placeholder clip per render; trim and split refuse a placeholder.
+    const inputs = [first, second].map(record => ({ role: 'clip', ref: { record, output: 0 } }))
+    expect(await fixture.run('timeline.create', { plan: 'p1' }, inputs)).toMatchObject({ status: 'done', report: { clips: ['cl1', 'cl2'] } })
+    const clips = (): unknown => fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines[0]?.clips
+      .map(clip => [clip.id, clip.asset === null ? null : 'ready', clip.source?.record])
+    expect(clips()).toEqual([['cl1', null, first], ['cl2', null, second]])
+    expect(await fixture.run('timeline.clip_trim', { clip: 'cl1', in_sec: 1 })).toMatchObject({
+      status: 'failed', error: { message: 'Clip cl1 is still rendering.' },
+    })
+    expect(await fixture.run('timeline.clip_split', { clip: 'cl2', at_sec: 1 })).toMatchObject({
+      status: 'failed', error: { message: 'Clip cl2 is still rendering.' },
+    })
+
+    // A done render fills its clip; a failed render leaves its clip a placeholder and the timeline in place.
+    for (const held of renders) held.resolve()
+    await Promise.all(running)
+    expect(clips()).toEqual([['cl1', 'ready', first], ['cl2', null, second]])
+    expect(fixture.ctx.dvProject.getRecord(fixture.project, second).status).toBe('failed')
+  })
+
+  it('keeps placeholder clips and their clip IDs through accept replay', async () => {
+    const fixture = await start()
+    const held = gate()
+    fixture.ctx.dvProject.registerOperation({
+      name: 'shot.render', component: 'shot', version: '1', description: 'stand-in', params: {}, inputs: {},
+      outputs: [{ role: 'video', type: 'video' }], confirm: 'never', deterministic: false, resource: 'none', summarize: () => 'stand-in',
+      execute: async (context) => {
+        await held.promise
+        return { outputs: [context.importAsset(Buffer.from('take'), { mime: 'video/mp4', name: 'take.mp4' })] }
+      },
+    })
+    const running = fixture.ctx.dvProject.run({
+      actor: 'user', surface: 'timeline', session: null, turn: null, tool_call: null, intent: 'render', project: fixture.project,
+      operation: 'shot.render', params: {}, inputs: [],
+    })
+    const render = await vi.waitFor(() => {
+      const [found] = fixture.ctx.dvProject.listHistory({ project: fixture.project, operation: 'shot.render' })
+      if (found === undefined) throw new Error('the render wrote no record')
+      return found.record.id
+    })
+    // The agent lays the render out on its draft; main moves meanwhile, so accept replays the create.
+    const laidOut = await fixture.call('dv_timeline_create', { reason: 'lay out', inputs: { clip: [`${render}#0`] } })
+    expect(value(laidOut)).toMatchObject({ status: 'done', scheduled: [], report: { clips: ['cl1'] } })
+    await fixture.run('timeline.create', { timeline: 't2', assets: ['m1'] })
+    const origin = { actor: 'user' as const, surface: 'timeline' as const, session: brandString<SessionId>('s1'), turn: null, tool_call: null, intent: 'accept' }
+    await fixture.ctx.dvProject.acceptDraft(fixture.project, origin)
+    const t1 = (): unknown => fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines.find(entry => entry.id === 't1')?.clips
+    expect(t1()).toEqual([{ id: 'cl1', asset: null, source: { record: render, output: 0 }, in_sec: null, out_sec: null }])
+    held.resolve()
+    await running
+    const [take] = fixture.ctx.dvProject.getRecord(fixture.project, render).outputs
+    expect(t1()).toEqual([{ id: 'cl1', asset: take, source: { record: render, output: 0 }, in_sec: null, out_sec: null }])
   })
 
   it('stops accepting a draft whose clip edit names a clip that main removed', async () => {

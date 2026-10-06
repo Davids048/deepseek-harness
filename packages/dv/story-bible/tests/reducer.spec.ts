@@ -1,6 +1,6 @@
 /** The pure `bible` reducer: versions from `bible.*` records, the two version lookups, and the accept-replay conflict. */
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { AssetId, ProjectRecord, RecordId, RecordInput } from '@dv/project'
+import type { AssetId, ProjectRecord, ProjectState, RecordId, RecordInput } from '@dv/project'
 import { describe, expect, it } from 'vitest'
 import { bibleReducer, type CharacterId, type LocationId, type StoryBibleState, type StyleId } from '../src/index.ts'
 
@@ -110,7 +110,7 @@ describe('bibleReducer', () => {
       record('u', 'bible.character_update', { character: 'c1', description: 'blue coat' }),
       record('l', 'bible.location_create', { location: 'l1', name: 'Pier' }, [COAT]),
     ])
-    expect(bibleReducer.agentSummary?.(slice, { url: asset => `/dv/assets/${asset}` })).toEqual({
+    expect(bibleReducer.agentSummary?.(slice, { url: asset => `/dv/assets/${asset}` }, {} as ProjectState)).toEqual({
       characters: [{ id: 'c1', version: 2, name: 'Hero', description: 'blue coat', references: [FACE] }],
       locations: [{ id: 'l1', version: 1, name: 'Pier', description: '', references: [COAT] }],
       styles: [],

@@ -320,7 +320,7 @@ describe('The asset pool panel', () => {
       await openProject(page, project.title)
       const draft = await openDraft(page, project.id)
       // The approved plan's timeline exists only on the draft, so the insert must read the draft to find it.
-      const draftClips = async (): Promise<Array<{ asset: string }>> =>
+      const draftClips = async (): Promise<Array<{ asset: string | null }>> =>
         (await stateOf(project.id, draft.branch)).components.timeline.timelines[0]?.clips ?? []
       const before = (await draftClips()).length
       expect(before).toBeGreaterThan(0)

@@ -5,13 +5,21 @@
 import { FALLBACK_CLIP_SECONDS } from '@dv/ui-kit/timeline.ts'
 import type { Clip, Timeline, WireState } from '@dv/ui-kit/types.ts'
 
+/**
+ * Whether a clip can play: `ready` when it has its asset, `rendering` while the render it waits for is pending or
+ * running, `failed` when that render ended without the asset. Derived from the clip's source record, never stored.
+ */
+export type ClipStatus = 'ready' | 'rendering' | 'failed'
+
 /** One clip placed on the track, with its in and out points resolved to numbers. */
 export interface TrackClip {
   /** The 1-based position of the clip on its timeline. */
   position: number
   /** The clip ID, which the clip operations take in their `clip` param. */
   clip: string
-  assetId: string
+  /** The asset the clip plays; null for a placeholder clip, whose render is not done. */
+  assetId: string | null
+  status: ClipStatus
   /** The recorded in point, or null when the clip starts at the asset's start. */
   rawIn: number | null
   /** The recorded out point, or null when the clip ends at the asset's end. */
@@ -20,7 +28,7 @@ export interface TrackClip {
   inSec: number
   /** Asset time where the clip stops playing. */
   outSec: number
-  /** Length of the whole asset. */
+  /** Length of the whole asset; for a placeholder clip, the `duration_sec` param of the render it waits for. */
   assetSeconds: number
   /** Seconds the clip plays: `outSec - inSec`. */
   seconds: number
@@ -57,7 +65,8 @@ export function nextTimelineId(timelines: Timeline[]): string {
  * Place the clips of one timeline on the track in playback order. A clip is a draft when the shown branch is a draft
  * branch and the clip is new there: the draft produced its asset, or the same timeline on `main` has no matching clip
  * (same asset, in point, and out point). Records of an accepted draft keep their `draft/` branch name but are on
- * `main`, so nothing on `main` is a draft.
+ * `main`, so nothing on `main` is a draft. A placeholder clip (no asset yet) takes its length and its status from the
+ * render record it waits for.
  * @param state - the branch state, for asset durations, thumbnails, and stale marks.
  * @param timeline - the timeline, or null when the project has none.
  * @param branch - the shown branch: `main`, an exploration branch, or a `draft/<session>` branch.
@@ -72,21 +81,27 @@ export function placeTimeline(state: WireState, timeline: Timeline | null, branc
   let cursor = 0
   // Each clip on `main` matches at most one clip of the draft.
   const unmatched = new Map<string, number>()
-  const keyOf = (clip: Clip): string => `${clip.asset}|${String(clip.in_sec)}|${String(clip.out_sec)}`
+  const keyOf = (clip: Clip): string => `${clip.asset ?? clip.source?.record ?? ''}|${String(clip.in_sec)}|${String(clip.out_sec)}`
   for (const clip of baseClips) unmatched.set(keyOf(clip), (unmatched.get(keyOf(clip)) ?? 0) + 1)
   for (const [index, clip] of (timeline?.clips ?? []).entries()) {
-    const assetSeconds = assets.get(clip.asset)?.duration_sec ?? FALLBACK_CLIP_SECONDS
+    const source = clip.source === null ? undefined : records.get(clip.source.record)
+    const renderSeconds = source?.params['duration_sec']
+    const assetSeconds = clip.asset === null
+      ? typeof renderSeconds === 'number' ? renderSeconds : FALLBACK_CLIP_SECONDS
+      : assets.get(clip.asset)?.duration_sec ?? FALLBACK_CLIP_SECONDS
     const inSec = clip.in_sec ?? 0
     const outSec = clip.out_sec ?? assetSeconds
     const seconds = Math.max(0.1, outSec - inSec)
-    const producerId = proj.created_by[clip.asset] ?? null
+    const rendering = source === undefined || source.status === 'pending' || source.status === 'running'
+    const status: ClipStatus = clip.asset !== null ? 'ready' : rendering ? 'rendering' : 'failed'
+    const producerId = (clip.asset === null ? clip.source?.record : proj.created_by[clip.asset]) ?? null
     const producer = producerId === null ? undefined : records.get(producerId)
     const thumbnail = producer?.outputs.find(id => assets.get(id)?.mime.startsWith('image/')) ?? null
     const left = unmatched.get(keyOf(clip)) ?? 0
     if (left > 0) unmatched.set(keyOf(clip), left - 1)
     clips.push({
-      position: index + 1, clip: clip.id, assetId: clip.asset, rawIn: clip.in_sec, rawOut: clip.out_sec, inSec, outSec, assetSeconds,
-      seconds, startSec: cursor, thumbnail, stale: producerId !== null && producerId in proj.stale,
+      position: index + 1, clip: clip.id, assetId: clip.asset, status, rawIn: clip.in_sec, rawOut: clip.out_sec, inSec, outSec,
+      assetSeconds, seconds, startSec: cursor, thumbnail, stale: producerId !== null && producerId in proj.stale,
       draft: branch.startsWith('draft/') && (producer?.branch === branch || left === 0),
     })
     cursor += seconds
@@ -103,6 +118,16 @@ export function placeTimeline(state: WireState, timeline: Timeline | null, branc
 export function clipIndexAt(clips: TrackClip[], position: number): number {
   const index = clips.findIndex(clip => position < clip.startSec + clip.seconds)
   return index === -1 ? clips.length - 1 : index
+}
+
+/**
+ * The first clip at or after an index that can play.
+ * @param clips - the placed clips.
+ * @param from - the index to start at.
+ * @returns the clip's index, or -1 when no later clip is ready.
+ */
+export function readyIndexFrom(clips: TrackClip[], from: number): number {
+  return clips.findIndex((clip, at) => at >= from && clip.status === 'ready')
 }
 
 /**

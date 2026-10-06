@@ -8,11 +8,15 @@
  * operations check a call against the state before they record anything; `conflict` runs the same checks when a draft
  * replays on a `main` that moved.
  *
+ * A `clip` input of `timeline.create` or `timeline.update` that names a render output (`{record, output}`) becomes a
+ * clip with that `source`; while the render is not done, its `resolved_asset` is null and the clip is a placeholder that
+ * keeps its ID. Trim and split refuse a placeholder; move, remove and replace work on it.
+ *
  * @module @dv/timeline/reducer
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AssetId, ProjectRecord, Reducer } from '@dv/project'
-import type { Clip, ClipId, Timeline, TimelineId, TimelineState } from './types.ts'
+import type { Clip, ClipId, ClipStatus, Timeline, TimelineId, TimelineState } from './types.ts'
 
 /** The ten Timeline operations by verb. */
 export const OPERATIONS = {
@@ -63,16 +67,21 @@ function createdTimeline(params: Record<string, unknown>): TimelineId {
 }
 
 /**
- * The assets a `timeline.create` or `timeline.update` lays out as clips: its `assets` param, else the resolved assets of
- * its `clip` inputs in order (a scheduled call names the outputs of renders that had not finished when it was recorded).
+ * The clips a `timeline.create` or `timeline.update` lays out, without their IDs: its `assets` param, else its `clip`
+ * inputs in order. An input that names a render output keeps it as `source`, and its asset is null until the render is
+ * done (the call is recorded while the render runs, and a failed render leaves it null).
  * @param call - the create or update call.
- * @returns the assets in playback order.
+ * @returns the assets and sources in playback order.
  */
-function laidOutAssets(call: TimelineCall): AssetId[] {
-  return Array.isArray(call.params['assets'])
-    ? call.params['assets'].filter((asset): asset is string => typeof asset === 'string').map(asset => brandString<AssetId>(asset))
-    : call.inputs.filter(input => input.role === 'clip').map(input => input.resolved_asset)
-      .filter((asset): asset is AssetId => asset !== null)
+function laidOutClips(call: TimelineCall): Array<Pick<Clip, 'asset' | 'source'>> {
+  if (Array.isArray(call.params['assets'])) {
+    return call.params['assets'].filter((asset): asset is string => typeof asset === 'string')
+      .map(asset => ({ asset: brandString<AssetId>(asset), source: null }))
+  }
+  return call.inputs.filter(input => input.role === 'clip').map(input => ({
+    asset: input.resolved_asset,
+    source: 'record' in input.ref ? { record: input.ref.record, output: input.ref.output } : null,
+  }))
 }
 
 /**
@@ -82,7 +91,7 @@ function laidOutAssets(call: TimelineCall): AssetId[] {
  * @returns the number of clip IDs the call assigns.
  */
 export function addedClipCount(call: TimelineCall): number {
-  if (call.operation === OPERATIONS.create || call.operation === OPERATIONS.update) return laidOutAssets(call).length
+  if (call.operation === OPERATIONS.create || call.operation === OPERATIONS.update) return laidOutClips(call).length
   return call.operation === OPERATIONS.insert || call.operation === OPERATIONS.split ? 1 : 0
 }
 
@@ -92,9 +101,22 @@ export function reportedClips(record: Pick<ProjectRecord, 'report'>): ClipId[] {
   return Array.isArray(clips) ? clips.filter((id): id is string => typeof id === 'string').map(id => brandString<ClipId>(id)) : []
 }
 
-/** A clip that plays the whole asset. */
-function wholeClip(id: ClipId, asset: AssetId): Clip {
-  return { id, asset, in_sec: null, out_sec: null }
+/** A clip that plays the whole asset; a null asset makes a placeholder that waits for `source`. */
+function wholeClip(id: ClipId, asset: AssetId | null, source: Clip['source'] = null): Clip {
+  return { id, asset, source, in_sec: null, out_sec: null }
+}
+
+/**
+ * The status of a clip: `ready` with an asset, `rendering` while its source record is pending or running, else `failed`
+ * (the source record ended without the output, or the branch does not hold it).
+ * @param clip - a clip.
+ * @param records - the records of the branch, in their current form.
+ * @returns the status.
+ */
+function clipStatusOf(clip: Clip, records: ProjectRecord[]): ClipStatus {
+  if (clip.asset !== null) return 'ready'
+  const status = records.find(record => record.id === clip.source?.record)?.status
+  return status === 'pending' || status === 'running' ? 'rendering' : 'failed'
 }
 
 /** The timeline that holds a clip and the clip's index in it, or null when no timeline holds it. */
@@ -166,6 +188,7 @@ export function clipProblem(slice: Slice, call: TimelineCall): string | null {
   const { timeline, index } = found
   if (operation === OPERATIONS.move) return positionProblem(timeline, number(params['to']), timeline.clips.length)
   const clip = timeline.clips[index] as Clip
+  if ((operation === OPERATIONS.split || operation === OPERATIONS.trim) && clip.asset === null) return `Clip ${clip.id} is still rendering.`
   if (operation === OPERATIONS.split) {
     const at = number(params['at_sec'])
     const inside = at !== null && at > (clip.in_sec ?? 0) && (clip.out_sec === null || at < clip.out_sec)
@@ -251,8 +274,8 @@ function applyCall(slice: Slice, call: TimelineCall): Timeline[] {
   const { timelines } = slice
   const params = call.params
   const added = reportedClips(call)
-  const assets = laidOutAssets(call)
-  const laidOut = (): Clip[] => assets.map((asset, index) => wholeClip(added[index] as ClipId, asset))
+  const layout = laidOutClips(call)
+  const laidOut = (): Clip[] => layout.map((clip, index) => wholeClip(added[index] as ClipId, clip.asset, clip.source))
   const id = call.operation === OPERATIONS.create ? createdTimeline(params) : targetOf(slice, params) ?? FIRST_TIMELINE_ID
   switch (call.operation) {
     case OPERATIONS.create:
@@ -298,14 +321,18 @@ export const timelineReducer: Reducer<'timeline'> = {
     if (record.status !== 'done' || !isTimelineCall(record)) return null
     return clipProblem(slice, record) ?? clipIdProblem(slice, record)
   },
-  agentSummary(slice, assets) {
-    // Clips are named by their ID, the way the `clip` param of the timeline operations names them.
+  agentSummary(slice, assets, state) {
+    // Clips are named by their ID, the way the `clip` param of the timeline operations names them; a placeholder clip
+    // shows its status and the render record it waits for instead of an asset.
     return {
       timelines: slice.timelines.map(entry => ({
         id: entry.id, name: entry.name,
-        clips: entry.clips.map(clip => ({
-          clip: clip.id, asset: clip.asset, url: assets.url(clip.asset), in_sec: clip.in_sec, out_sec: clip.out_sec,
-        })),
+        clips: entry.clips.map(clip => clip.asset === null
+          ? {
+            clip: clip.id, asset: null, status: clipStatusOf(clip, state.components.proj.records), record: clip.source?.record ?? null,
+            in_sec: clip.in_sec, out_sec: clip.out_sec,
+          }
+          : { clip: clip.id, asset: clip.asset, url: assets.url(clip.asset), in_sec: clip.in_sec, out_sec: clip.out_sec }),
       })),
     }
   },

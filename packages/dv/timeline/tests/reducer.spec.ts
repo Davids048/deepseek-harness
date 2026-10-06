@@ -1,6 +1,6 @@
 /** The pure `timeline` reducer: every operation's effect on the slice, the clip and clip ID checks, and replay conflicts. */
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { AssetId, ComponentStates, ProjectRecord, RecordId } from '@dv/project'
+import type { AssetId, ComponentStates, ProjectRecord, ProjectState, RecordId } from '@dv/project'
 import { describe, expect, it } from 'vitest'
 import { FIRST_TIMELINE_ID, timelineReducer } from '../src/reducer.ts'
 import type {} from '../src/types.ts'
@@ -56,17 +56,33 @@ describe('timeline reducer', () => {
     expect(reduceAll([adding('timeline.create', { timeline: 't3' }, [])], slice).timelines[2]).toEqual({ id: 't3', name: '', clips: [] })
   })
 
-  it('assembles a scheduled create or update from the resolved assets of its clip inputs', () => {
+  it('keeps a clip input whose render is not done as a placeholder clip with its clip ID', () => {
     const producer = brandString<RecordId>('shot')
     const asset = brandString<AssetId>('v')
     const inputs = [
       { role: 'clip', ref: { record: producer, output: 0 }, resolved_asset: asset },
-      { role: 'clip', ref: { record: producer, output: 0 }, resolved_asset: null },
+      { role: 'clip', ref: { record: producer, output: 1 }, resolved_asset: null },
       { role: 'other', ref: { asset }, resolved_asset: asset },
     ]
-    const created = reduceAll([adding('timeline.create', { plan: 'p1' }, ['cl1'], { inputs })])
-    expect(clipsOf(created)).toEqual(['cl1 v null-null'])
-    expect(clipsOf(reduceAll([adding('timeline.update', { timeline: 't1', plan: 'p1' }, ['cl2'], { inputs })], created))).toEqual(['cl2 v null-null'])
+    const created = reduceAll([adding('timeline.create', { plan: 'p1' }, ['cl1', 'cl2'], { inputs })])
+    expect(clipsOf(created)).toEqual(['cl1 v null-null', 'cl2 null null-null'])
+    expect(created.timelines[0]?.clips.map(clip => clip.source)).toEqual([{ record: producer, output: 0 }, { record: producer, output: 1 }])
+    const updated = reduceAll([adding('timeline.update', { timeline: 't1', plan: 'p1' }, ['cl3', 'cl4'], { inputs })], created)
+    expect(clipsOf(updated)).toEqual(['cl3 v null-null', 'cl4 null null-null'])
+    // A clip of an asset param has no source.
+    expect(base().timelines[0]?.clips[0]?.source).toBeNull()
+  })
+
+  it('refuses to trim or split a placeholder clip, and moves, removes and replaces it', () => {
+    const inputs = [{ role: 'clip', ref: { record: brandString<RecordId>('shot'), output: 0 }, resolved_asset: null }]
+    const slice = reduceAll([adding('timeline.create', { assets: ['a'] }, ['cl1']), adding('timeline.update', { timeline: 't1' }, ['cl2'], { inputs })])
+    const placeholder = reduceAll([adding('timeline.clip_insert', { at: 1, asset: 'a' }, ['cl3'])], slice)
+    expect(conflict(placeholder, edit('timeline.clip_trim', { clip: 'cl2', in_sec: 1 }))).toBe('Clip cl2 is still rendering.')
+    expect(conflict(placeholder, adding('timeline.clip_split', { clip: 'cl2', at_sec: 1 }, ['cl4']))).toBe('Clip cl2 is still rendering.')
+    expect(clipsOf(reduceAll([edit('timeline.clip_move', { clip: 'cl2', to: 1 })], placeholder))).toEqual(['cl2 null null-null', 'cl3 a null-null'])
+    expect(clipsOf(reduceAll([edit('timeline.clip_remove', { clip: 'cl2' })], placeholder))).toEqual(['cl3 a null-null'])
+    const replaced = reduceAll([edit('timeline.clip_replace', { clip: 'cl2', asset: 'z' })], placeholder)
+    expect(replaced.timelines[0]?.clips[1]).toEqual({ id: 'cl2', asset: 'z', source: null, in_sec: null, out_sec: null })
   })
 
   it('inserts, moves, removes, splits, trims and replaces clips by clip ID', () => {
@@ -91,7 +107,7 @@ describe('timeline reducer', () => {
     const removed = reduceAll([edit('timeline.clip_remove', { clip: 'cl2' })], slice)
     expect([clipsOf(removed), clipsOf(removed, 't2')]).toEqual([['cl1 a null-null'], []])
     expect(reduceAll([adding('timeline.clip_insert', { at: 1, asset: 'a' }, ['cl1'])]).timelines).toEqual([
-      { id: FIRST_TIMELINE_ID, name: '', clips: [{ id: 'cl1', asset: 'a', in_sec: null, out_sec: null }] },
+      { id: FIRST_TIMELINE_ID, name: '', clips: [{ id: 'cl1', asset: 'a', source: null, in_sec: null, out_sec: null }] },
     ])
     expect(clipsOf(reduceAll([adding('timeline.clip_insert', { timeline: 't9', at: 1, asset: 'c' }, ['cl3'])], slice), 't9')).toEqual(['cl3 c null-null'])
   })
@@ -143,15 +159,26 @@ describe('timeline reducer', () => {
     expect(conflict(main, edit('timeline.clip_trim', { clip: 'cl1', out_sec: 2 }))).toBeNull()
   })
 
-  it('lists every timeline with its clips by clip ID and their URLs in the agent summary', () => {
+  it('lists every timeline with its clips by clip ID, their URLs, and the status of placeholder clips in the agent summary', () => {
+    const running = edit('shot.render', {}, { status: 'running' })
+    const failed = edit('shot.render', {}, { status: 'failed' })
+    const inputs = [running, failed].map(producer => ({ role: 'clip', ref: { record: producer.id, output: 0 }, resolved_asset: null }))
     const slice = reduceAll([
       adding('timeline.create', { assets: ['a', 'b'] }, ['cl1', 'cl2']), edit('timeline.clip_trim', { clip: 'cl2', in_sec: 1, out_sec: 2 }),
+      adding('timeline.create', { timeline: 't2' }, ['cl3', 'cl4'], { inputs }),
     ])
-    expect(timelineReducer.agentSummary?.(slice, { url: asset => `/dv/assets/${asset}` })).toEqual({
+    // The summary reads only the records of the state, for the status of each placeholder's render.
+    const state = { components: { proj: { records: [running, failed] } } } as unknown as ProjectState
+    expect(timelineReducer.agentSummary?.(slice, { url: asset => `/dv/assets/${asset}` }, state)).toEqual({
       timelines: [{
         id: FIRST_TIMELINE_ID, name: '', clips: [
           { clip: 'cl1', asset: 'a', url: '/dv/assets/a', in_sec: null, out_sec: null },
           { clip: 'cl2', asset: 'b', url: '/dv/assets/b', in_sec: 1, out_sec: 2 },
+        ],
+      }, {
+        id: 't2', name: '', clips: [
+          { clip: 'cl3', asset: null, status: 'rendering', record: running.id, in_sec: null, out_sec: null },
+          { clip: 'cl4', asset: null, status: 'failed', record: failed.id, in_sec: null, out_sec: null },
         ],
       }],
     })

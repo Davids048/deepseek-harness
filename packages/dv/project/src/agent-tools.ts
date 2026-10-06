@@ -331,7 +331,7 @@ export class AgentTools {
     }
     await spec.prepareToolCall?.({ args, request, state, exec })
     await check?.check(spec, { args, request, state, exec })
-    if (this.waitsForProducer(project, request.inputs)) request.after = []
+    if (this.waitsForProducer(project, spec, request.inputs)) request.after = []
     const before = new Set(this.deps.listHistory({ project }).map(entry => entry.record.id))
     const result = await this.deps.run(request)
     const record = result.record
@@ -350,10 +350,13 @@ export class AgentTools {
     return await this.valueOf(spec, record, scheduled)
   }
 
-  /** Whether an input names the output of a record that has not finished, so the call must be scheduled behind it. */
-  private waitsForProducer(project: ProjectId, inputs: RunRequest['inputs']): boolean {
+  /**
+   * Whether an input names the output of a record that has not finished, so the call must be scheduled behind it; an
+   * input of one of the operation's `pendingInputRoles` never makes the call wait.
+   */
+  private waitsForProducer(project: ProjectId, spec: OperationSpec, inputs: RunRequest['inputs']): boolean {
     return inputs.some((input) => {
-      if (!('record' in input.ref)) return false
+      if (!('record' in input.ref) || spec.pendingInputRoles?.includes(input.role) === true) return false
       try {
         return this.deps.getRecord(project, input.ref.record).status !== 'done'
       } catch {

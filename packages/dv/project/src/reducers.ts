@@ -269,7 +269,8 @@ export class ReducerRegistry {
     const order = [...COMPONENT_KEYS]
     const rank = (key: string): number => (order.includes(key) ? order.indexOf(key) : order.length)
     return [...this.reducers].sort(([a], [b]) => rank(String(a)) - rank(String(b)))
-      .flatMap(([key, reducer]) => reducer.agentSummary === undefined ? [] : [reducer.agentSummary(sliceOf(state, key, reducer), assets)])
+      .flatMap(([key, reducer]) => (
+        reducer.agentSummary === undefined ? [] : [reducer.agentSummary(sliceOf(state, key, reducer), assets, state)]))
   }
 
   /**

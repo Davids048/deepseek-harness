@@ -81,7 +81,10 @@ export function mentionedAssets(state: ProjectState): AssetId[] {
   for (const versions of [...Object.values(characters), ...Object.values(locations), ...Object.values(styles)]) {
     for (const version of versions) for (const id of version.references) seen.add(id)
   }
-  for (const timeline of state.components.timeline.timelines) for (const clip of timeline.clips) seen.add(clip.asset)
+  // A placeholder clip has no asset until its render is done.
+  for (const timeline of state.components.timeline.timelines) {
+    for (const clip of timeline.clips) if (clip.asset !== null) seen.add(clip.asset)
+  }
   return [...seen]
 }
 

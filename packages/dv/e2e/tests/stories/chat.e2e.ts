@@ -10,9 +10,10 @@ import { assetIdOf, startScriptedModel, textOf, type ChatRequest, type ScriptedM
 
 /** A 1×1 opaque PNG. */
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
-/** Two more 1×1 PNGs with other colors: assets are stored by content, so each seeded project gets its own bytes. */
+/** Three more 1×1 PNGs with other colors: assets are stored by content, so each seeded project gets its own bytes. */
 const RED_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGM4IScHAAK2AQU0pnWqAAAAAElFTkSuQmCC'
 const GREEN_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGOQOyEHAAIMAQUtuDZBAAAAAElFTkSuQmCC'
+const BLUE_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQcLgAAAG0ATF+kRwWAAAAAElFTkSuQmCC'
 
 /**
  * The scripted agent. `只回复<X>` answers `收到<X>`; `慢慢想` streams for six seconds; `加人物` registers a character;
@@ -522,6 +523,24 @@ describe('chat with the agent', () => {
     const expansion = referencesOf(requestFor('用这个') as ChatRequest)
     // The expansion names the asset and its import record in this project.
     expect(expansion).toContain(`asset ${target.assetId} made by record`)
+    expect(errors).toEqual([])
+  })
+
+  it('the composer\'s ＋ menu offers 引用, which lists the open project\'s items, and a pick reaches the agent as a reference', async () => {
+    const target = await seedProject('加号引用', 'plus-only.png', BLUE_PNG)
+    const { page, errors } = await openPage('zh', `#project=${target.projectId}`)
+    await composer(page).waitFor({ timeout: 30_000 })
+    await composer(page).click()
+    await page.keyboard.type('用这个只回复十一')
+    await chat(page).getByRole('button', { name: '添加文件或调用指令' }).click()
+    await page.locator('[role="listbox"] [role="option"]').filter({ hasText: '引用' }).first().click()
+    const candidate = page.locator('[role="listbox"] [role="option"]').filter({ hasText: 'plus-only.png' })
+    await candidate.first().waitFor({ timeout: 15_000 })
+    await candidate.first().click()
+    expect(await composer(page).locator('[data-composer-chip="dv-project"]').count(), 'a reference chip in the composer').toBe(1)
+    await page.keyboard.press('Enter')
+    await waitChat(page, '收到十一')
+    expect(referencesOf(requestFor('用这个只回复十一') as ChatRequest)).toContain(`asset ${target.assetId} made by record`)
     expect(errors).toEqual([])
   })
 

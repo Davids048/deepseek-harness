@@ -215,8 +215,8 @@ describe('dvApi', () => {
     expect(moved.intent).toBe('drag clip 2 before clip 1')
     const state = fixture.handlers.getState(projectId)
     expect(state.components.timeline.timelines[0]?.clips).toEqual([
-      { id: 'cl2', asset: b.outputs[0], in_sec: null, out_sec: null },
-      { id: 'cl1', asset: a.outputs[0], in_sec: null, out_sec: null },
+      { id: 'cl2', asset: b.outputs[0], source: null, in_sec: null, out_sec: null },
+      { id: 'cl1', asset: a.outputs[0], source: null, in_sec: null, out_sec: null },
     ])
     expect(state.components.proj.records.every(record => record.actor === 'user' && record.turn === null && record.branch === 'main')).toBe(true)
 

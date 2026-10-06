@@ -1,6 +1,7 @@
 /**
  * Browser half of the DreamVerse composer additions:
  * - an `@` source listing the bound project's clips, characters, and assets;
+ * - a 引用 row in the composer's ＋ menu that opens that `@` list at the end of the draft;
  * - the 渲染前先问 / 直接渲染 and 质量 / 速度 toggles in `conversation.input.left`;
  * - the `dv_shot_render` tool card, which shows the prompt, status, and rendered video;
  * - creator-facing names for the other `dv_*` tools in their chat rows and in the running group title;
@@ -15,14 +16,17 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionInput } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type {} from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import type { ClientSessionContext } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
+import { IconLinkOutlineRegular, type IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import { createElement, useCallback } from 'react'
+import { createElement, useCallback, type ComponentType } from 'react'
 import { DV_COMPOSE_EVENT, type DvComposeDetail } from '@dv/ui-kit/compose.ts'
+import { getCurrentProject } from '@dv/ui-kit/current-project.ts'
+import { pickText } from '@dv/ui-kit/locale.ts'
 import { deliverCompose, mountComposer } from './compose.ts'
-import { projectMentionSource } from './mention.ts'
+import { MENTION_SOURCE, projectMentionSource } from './mention.ts'
 import { DV_TOOL_LABELS } from '@dv/ui-kit/tool-labels.ts'
 import { addToolNames } from './tool-labels.ts'
 import { ModeControls, PendingBar, RenderCard, ToolLabelRow } from './views.tsx'
@@ -40,6 +44,21 @@ const RENDER_TOOL = 'dv_shot_render'
 export const inject = ['inputTriggers', 'sessions', 'slots', 'sidebarRight']
 
 /**
+ * The part of DSH's `ctx.commandUi` service (`@deepseek-ai/dsh-client-ui-commands`) that adds an action row to the
+ * composer's ＋ menu; this package does not depend on `ui-commands`, so the face is declared here.
+ */
+interface CommandMenu {
+  register(contribution: {
+    readonly name: string
+    label(): string
+    description(): string
+    readonly icon: ComponentType<IconProps>
+    available(session: ClientSessionContext): boolean
+    readonly ui: { readonly kind: 'action'; run(session: ClientSessionContext): void }
+  }): () => void
+}
+
+/**
  * Register the composer additions.
  * @param ctx - client root context.
  */
@@ -51,6 +70,33 @@ export function apply(ctx: ClientContext): void {
     const scope = ctx.sessions.scope(sessionId)
     return scope?.get('conversation')?.input.for(scope)
   }
+
+  /**
+   * Open the `@` project-item list of one session's composer at the end of its draft; a pick inserts its chip there.
+   * @param sessionId - the session whose ＋ menu row was picked.
+   */
+  function openMentionMenu(sessionId: SessionId): void {
+    const scope = ctx.sessions.scope(sessionId)
+    const input = inputOf(sessionId)
+    if (scope === undefined || input === undefined) return
+    const { draft, draftRev } = input.state.getSnapshot()
+    ctx.inputTriggers.sessionOf(scope).toggleSource(MENTION_SOURCE, {
+      trigger: '@', query: '', quoted: false, position: draft.trim() === '' ? 'leading' : 'inline',
+      span: { start: draft.length, end: draft.length, draftRev },
+    })
+  }
+  ctx.inject(['commandUi'], (scope) => {
+    const commands = scope.get('commandUi') as CommandMenu
+    scope.effect(() => commands.register({
+      name: 'reference',
+      label: () => pickText('引用', 'Reference'),
+      description: () => pickText('项目里的片段、角色、场景、风格或素材', 'A clip, character, location, style, or asset of the project'),
+      icon: IconLinkOutlineRegular,
+      available: () => getCurrentProject() !== null,
+      // The ＋ menu closes itself after running the action, so the `@` list opens on the next task.
+      ui: { kind: 'action', run: (session) => { setTimeout(() => { openMentionMenu(session.sessionId) }, 0) } },
+    }), 'dv-composer: ＋ menu reference row')
+  })
 
   function Controls(props: { sessionId: SessionId }) {
     const { sessionId } = props
@@ -90,7 +136,7 @@ export function apply(ctx: ClientContext): void {
 
   ctx.effect(() => {
     const onCompose = (event: Event): void => {
-      const detail = (event as CustomEvent<DvComposeDetail>).detail
+      const detail = (event as CustomEvent<DvComposeDetail | null>).detail
       if (typeof detail !== 'object' || detail === null || !Array.isArray(detail.refs)) return
       // Bring 对话 to the front so the user sees the prefilled draft; a closed chat tab reopens and takes the event.
       if (ctx.sidebarRight.mounted.getSnapshot() !== undefined) ctx.sidebarRight.openTab('dv-chat')

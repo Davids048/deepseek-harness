@@ -146,7 +146,10 @@ export type Style = Character
 export interface Clip {
   /** The clip ID, such as `cl3`, unique in the project; the clip operations name the clip by it. */
   id: string
-  asset: string
+  /** The asset the clip plays; null while the render the clip waits for is not done (a placeholder clip). */
+  asset: string | null
+  /** The render output the clip waits for, `{record, output}`; null for a clip of an existing asset. */
+  source: { record: string; output: number } | null
   in_sec: number | null
   out_sec: number | null
 }

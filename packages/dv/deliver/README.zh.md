@@ -35,7 +35,7 @@ kind: "package-reference"
 | --- | --- | --- | --- |
 | `deliver.timeline_export` | `dv_deliver_timeline_export` | 无输入；参数 `timeline`（时间线 ID，例如 `t1`；默认第一条时间线） | `video`（MP4） |
 
-该操作不是确定性的，因为它的输出取决于项目状态中时间线的片段，而参数并不指明这些片段；每次调用都重新导出。它在 `cpu` 资源类别中运行，从不请求确认。时间线未知、项目没有时间线或时间线没有片段时，调用让记录失败。服务方法 `exportTimeline(timeline, dir)` 为其他调用方把拼好的文件写入 `dir` 并返回其路径。
+该操作不是确定性的，因为它的输出取决于项目状态中时间线的片段，而参数并不指明这些片段；每次调用都重新导出。它在 `cpu` 资源类别中运行，从不请求确认。时间线未知、项目没有时间线或时间线没有片段时，调用让记录失败。时间线中有占位片段（渲染尚未完成，所以没有素材）时，调用在写下记录之前被拒绝，并列出片段位置，例如 "Clips 3, 5 of timeline t1 are not ready yet."；`exportTimeline` 抛出同样的错误。服务方法 `exportTimeline(timeline, dir)` 为其他调用方把拼好的文件写入 `dir` 并返回其路径。
 
 -----
 

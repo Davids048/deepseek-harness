@@ -133,6 +133,41 @@ describe('dvDeliver', () => {
     expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(records)
   })
 
+  it('refuses to export a timeline while a clip waits for its render, naming the clip positions', async () => {
+    const fixture = await start()
+    let release: () => void = () => undefined
+    const held = new Promise<void>((resolve) => { release = resolve })
+    fixture.ctx.dvProject.registerOperation({
+      name: 'shot.render', component: 'shot', version: '1', description: 'stand-in', params: {}, inputs: {},
+      outputs: [{ role: 'video', type: 'video' }], confirm: 'never', deterministic: false, resource: 'none', summarize: () => 'stand-in',
+      execute: async (context) => {
+        await held
+        return { outputs: [context.importAsset(Buffer.from('take'), { mime: 'video/mp4', name: 'take.mp4' })] }
+      },
+    })
+    const origin = { actor: 'user' as const, surface: 'timeline' as const, session: null, turn: null, tool_call: null, intent: 'test' }
+    const renders = [fixture.ctx.dvProject.run({ ...origin, project: fixture.project, operation: 'shot.render', params: {}, inputs: [] })]
+    renders.push(fixture.ctx.dvProject.run({ ...origin, project: fixture.project, operation: 'shot.render', params: {}, inputs: [] }))
+    const pending = await vi.waitFor(() => {
+      const found = fixture.ctx.dvProject.listHistory({ project: fixture.project, operation: 'shot.render' }).map(entry => entry.record.id)
+      expect(found).toHaveLength(2)
+      return found
+    })
+    const ready = fixture.ctx.dvAssetPool.importAsset(Buffer.from('ready'), { mime: 'video/mp4', name: 'ready.mp4' }, null)
+    await fixture.ctx.dvProject.run({
+      ...origin, project: fixture.project, operation: 'timeline.create', params: { timeline: 't1' },
+      inputs: [{ role: 'clip', ref: { asset: ready } }, ...pending.reverse().map(record => ({ role: 'clip', ref: { record, output: 0 } }))],
+    })
+    const records = fixture.ctx.dvProject.listHistory({ project: fixture.project }).length
+    await expect(fixture.run('deliver.timeline_export', { timeline: 't1' })).rejects.toThrow('Clips 2, 3 of timeline t1 are not ready yet.')
+    expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(records)
+    const [timeline] = fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines
+    if (timeline === undefined) throw new Error('timeline t1 is missing')
+    await expect(fixture.ctx.dvDeliver.exportTimeline(timeline, fixture.dir)).rejects.toThrow('Clips 2, 3 of timeline t1')
+    release()
+    await Promise.all(renders)
+  })
+
   it.skipIf(!existsSync(FFMPEG))('exports a timeline for the agent, trimming a clip with an in and out point to its range', async () => {
     const fixture = await start()
     const red = await fixture.clip('red', '160x90', 1)

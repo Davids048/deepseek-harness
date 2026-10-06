@@ -303,6 +303,12 @@ export interface OperationSpec {
   params: ParameterSchemaSpec
   /** The input roles the operation accepts; the runner refuses an input with any other role. */
   inputs: Record<string, OperationInput>
+  /**
+   * Input roles whose `{record, output}` reference may name a record that has not finished `done`. The runner and the
+   * scheduler do not wait for those producers and do not fail the record on a null `resolved_asset` for those roles;
+   * the record's current form fills `resolved_asset` when the producer is done, and a failed producer leaves it null.
+   */
+  pendingInputRoles?: string[]
   /** The outputs, in the order `execute` returns them. */
   outputs: OperationOutput[]
   /**
@@ -435,9 +441,10 @@ export interface Reducer<K extends ComponentKey = ComponentKey> {
    * throws `invalid_params`.
    * @param slice - the slice at the branch head.
    * @param assets - the asset store, for the URLs of the assets the slice names.
+   * @param state - the whole state at the branch head, for the records the slice refers to.
    * @returns the fields by name.
    */
-  agentSummary?(slice: ComponentStates[K], assets: Pick<AssetStore, 'url'>): Record<string, JsonValue>
+  agentSummary?(slice: ComponentStates[K], assets: Pick<AssetStore, 'url'>, state: ProjectState): Record<string, JsonValue>
 }
 
 /** The state of one branch at its head. */

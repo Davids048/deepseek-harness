@@ -46,14 +46,16 @@ kind: "package-reference"
 | `timeline.clip_trim` | `dv_timeline_clip_trim` | `clip`、`in_sec`、`out_sec` | 设置入点和出点；省略的点表示从素材开头播放或播放到素材结尾 |
 | `timeline.clip_replace` | `dv_timeline_clip_replace` | `clip`、`asset` | 把片段换成另一个素材，保留其片段 ID 并重置入点和出点 |
 
-`timeline` 切片为 `{timelines: Timeline[]}`；`Timeline` 为 `{id, name, clips}`，`Clip` 为 `{id, asset, in_sec, out_sec}`，其中 `id` 是片段 ID，入点或出点为 null 表示素材的开头或结尾。本包导出类型 `Timeline`、`Clip`、`ClipId`、`TimelineId` 和 `TimelineState`（切片）。
+`timeline` 切片为 `{timelines: Timeline[]}`；`Timeline` 为 `{id, name, clips}`，`Clip` 为 `{id, asset, source, in_sec, out_sec}`，其中 `id` 是片段 ID，`source` 是片段所来自的渲染输出 `{record, output}`（已有素材的片段为 null），入点或出点为 null 表示素材的开头或结尾。`asset` 不为 null 时片段就绪；`asset` 为 null 的片段是尚未完成的渲染的占位片段。它的 `ClipStatus` 由来源记录推导，从不存储：`ready`；来源记录为 pending 或 running 时为 `rendering`；否则为 `failed`。本包导出类型 `Timeline`、`Clip`、`ClipId`、`ClipStatus`、`TimelineId` 和 `TimelineState`（切片）。
 
 -----
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-这些操作只写记录。每个操作的 `execute` 用记录父节点处的状态检查调用；当要创建的时间线已存在、指定的其他时间线或片段不存在、位置超出时间线、分割时间不在片段内或裁剪范围为空时，它以原因使记录失败。这些操作不是 `deterministic` 的，因此运行器每次调用都执行这项检查，而不复用先前的记录。归约函数应用每条已完成的记录，并忽略无法应用的记录；它的 `conflict` 执行同一项检查，因此在已移动的 `main` 上接受草稿时，会停在其片段已被 `main` 移除的片段编辑处。
+这些操作只写记录。每个操作的 `execute` 用记录父节点处的状态检查调用；当要创建的时间线已存在、指定的其他时间线或片段不存在、位置超出时间线、分割或裁剪指定了占位片段（"Clip cl3 is still rendering."）、分割时间不在片段内或裁剪范围为空时，它以原因使记录失败。这些操作不是 `deterministic` 的，因此运行器每次调用都执行这项检查，而不复用先前的记录。归约函数应用每条已完成的记录，并忽略无法应用的记录；它的 `conflict` 执行同一项检查，因此在已移动的 `main` 上接受草稿时，会停在其片段已被 `main` 移除的片段编辑处。
+
+**占位片段。** `timeline.create` 和 `timeline.update` 在 `OperationSpec.pendingInputRoles` 中声明输入角色 `clip`，因此 `clip` 输入可以指向尚未完成的渲染的输出：调用立即运行，渲染进行时其记录已完成。归约函数把每个 `clip` 输入排成带该 `source` 的片段；在渲染完成前，输入的 `resolved_asset` 以及片段的 `asset` 为 null，渲染完成后由记录的当前形式填入。渲染失败时片段仍是占位片段。移动、移除和替换可用于占位片段；替换会放入素材并清空其 `source`。智能体摘要把占位片段列为 `{clip, asset: null, status, record, in_sec, out_sec}`，其中 `record` 是它等待的渲染。
 
 **片段 ID。** 添加片段的操作在 `execute` 中分配片段 ID，并按片段顺序存入记录的 `report.clips`：`timeline.create` 和 `timeline.update` 每个片段一个，`timeline.clip_insert` 一个，`timeline.clip_split` 为后一部分分配一个（前一部分保留原片段 ID）。`cl` 之后的数字比项目在任何分支上（包括已撤销和已丢弃的记录）任一时间线记录的 `report.clips` 中的最大数字大 1，也大于分配给仍在运行的调用的任何数字，因此项目中不会有两个片段共用一个 ID。归约函数只从 `report.clips` 读取片段 ID；接受草稿时的重放会在每个副本上重复报告，因此重放的记录保留其片段 ID，之后指定这些 ID 的草稿记录仍然适用。已完成的记录如果其 `report.clips` 与它添加的片段不符，或指定了已在使用的 ID，则不产生任何效果，并在重放时冲突。
 
@@ -95,7 +97,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-一次调用返回一个文本块，包含记录状态和一行摘要，例如 `clip cl3 moved to 1`；添加片段的调用还在 `report.clips` 中返回这些片段的 ID，不适用于时间线的调用返回带失败记录原因的工具错误。`dv_proj_state` 按片段 ID（字段 `clip`）列出每条时间线及其片段，智能体的项目块也列出它们，并附上每个片段的产生记录。
+一次调用返回一个文本块，包含记录状态和一行摘要，例如 `clip cl3 moved to 1`；添加片段的调用还在 `report.clips` 中返回这些片段的 ID，不适用于时间线的调用返回带失败记录原因的工具错误。`dv_proj_state` 按片段 ID（字段 `clip`）列出每条时间线及其片段，智能体的项目块也列出它们，并附上每个片段的产生记录；占位片段不显示素材，而显示其状态（`rendering` 或 `failed`）和它等待的渲染记录。
 
 #### Token 影响
 

@@ -111,18 +111,24 @@ function bibleLines(state: ProjectState): string[] {
 
 /**
  * Every timeline (with its name when it has one) with one line per clip, naming the clip's position, its clip ID, its
- * asset, and the record that produced it.
+ * asset, and the record that produced it. A placeholder clip shows `rendering` or `render failed` and the render record
+ * it waits for instead of an asset.
  */
 function timelineLines(state: ProjectState, url: (id: string) => string): string[] {
   const timelines = state.components.timeline.timelines
   if (timelines.length === 0) return ['Timelines: none.']
-  const { created_by: createdBy, stale } = state.components.proj
+  const { created_by: createdBy, stale, records } = state.components.proj
   return ['Timelines:', ...timelines.flatMap(timeline => [
     `- ${timeline.id}${timeline.name === '' ? '' : ` "${timeline.name}"`}: ${timeline.clips.length === 0 ? 'no clips' : `${String(timeline.clips.length)} clips`}`,
     ...timeline.clips.map((clip, index) => {
+      const range = clip.in_sec === null && clip.out_sec === null ? '' : ` range ${clip.in_sec ?? 0}s-${clip.out_sec ?? 'end'}`
+      if (clip.asset === null) {
+        const status = records.find(record => record.id === clip.source?.record)?.status
+        const progress = status === 'pending' || status === 'running' ? 'rendering' : 'render failed'
+        return `  - clip ${String(index + 1)} ${clip.id}: ${progress}, record ${String(clip.source?.record)}${range}`
+      }
       const producer = createdBy[clip.asset]
       const from = producer === undefined ? '' : ` from record ${producer}`
-      const range = clip.in_sec === null && clip.out_sec === null ? '' : ` range ${clip.in_sec ?? 0}s-${clip.out_sec ?? 'end'}`
       const flag = producer !== undefined && stale[producer] !== undefined ? ' STALE' : ''
       return `  - clip ${String(index + 1)} ${clip.id}: asset ${clip.asset}${from}${range}${flag} ${url(clip.asset)}`
     }),
