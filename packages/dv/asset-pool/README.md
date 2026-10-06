@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to keep every image, video, audio, and text file of a project exactly once and never change it. An asset's ID is the SHA-256 of its bytes, so the same file imported twice is one asset, and a record that names an asset always names the same bytes. The service registers itself as Project's asset store (`dvProject.registerAssetStore`) and registers two operations with `dvProject`: `asset.import`, where a file or base64 bytes become an asset, and `asset.grab_still`, where one frame of a video becomes a PNG still through `dvFfmpeg`. `dvProject` turns them into the agent tools `dv_asset_import` and `dv_asset_grab_still`. While the DSH web server runs, the service serves asset files at `/dv/assets/<AssetId>`. The component has no reducer: the `proj` slice's `created_by` names the record that created each asset.
+Use this package to keep every image, video, audio, and text file of a project exactly once and never change it. An asset's ID is the SHA-256 of its bytes, so a record that names an asset always names the same bytes. The service is Project's asset store and registers two operations with `dvProject`: `asset.import`, where a file or base64 bytes become an asset, and `asset.grab_still`, where one frame of a video becomes a PNG still. While the DSH web server runs, the service serves asset files at `/dv/assets/<AssetId>`.
 
 ## Table of Contents
 
@@ -24,7 +24,7 @@ Use this package to keep every image, video, audio, and text file of a project e
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvAssetPool`.
+Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvAssetPool`. The service registers itself with `dvProject.registerAssetStore`, so the same file imported twice is one asset. `asset.grab_still` runs through `dvFfmpeg`, and `dvProject` turns the two operations into the agent tools `dv_asset_import` and `dv_asset_grab_still`. The component has no reducer: the `proj` slice's `created_by` names the record that created each asset.
 
 ```yaml
 - id: dv-asset-pool
@@ -80,11 +80,33 @@ Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvA
 <a id="model-experience"></a>
 ## Model Experience
 
-Two tools, `dv_asset_import` and `dv_asset_grab_still`, in the format `@dv/project` gives every operation tool. A call returns one text block: the status and summary (`imported face.png`, `still at last`), the params, and the outputs with their asset IDs, media types, and `/dv/assets/<AssetId>` URLs. Image outputs also arrive as image blocks when an attachment service is mounted.
+### Tool definitions
+
+#### What the model sees
+
+Two tools, `dv_asset_import` and `dv_asset_grab_still`, in the format `@dv/project` gives every operation tool. `dv_asset_import` says "Bring a file into the asset pool: a path on this machine, or base64 bytes. Returns the asset ID to reference later." and takes `path`, `base64`, `mime` (required) and `name`. `dv_asset_grab_still` says "Grab one frame of a video as a PNG still, to look at it or to use it as a reference." and "Runs on the CPU.", and takes the input `video` and the param `at` (`'first'`, `'last'`, or a time in seconds; default last). Both descriptions end with "Repeating a call with the same inputs and params reuses the earlier result."
+
+#### Token effect
+
+About 600 tokens for the two definitions, fixed while the plugin is mounted; the shared arguments of `@dv/project` add about 200 tokens to each definition.
 
 #### KV Cache effect
 
-The two tool schemas are part of every agent request while the plugin is mounted. Tool results enter the conversation like any other tool result.
+The definitions sit in the stable tool section of every agent request; mounting or removing the plugin changes the tool list and invalidates the cached prefix from the tool section on.
+
+### Tool results
+
+#### What the model sees
+
+A call returns one text block: `done <record>: <summary>` (`imported face.png`, `still at last`), one line per output with its asset ID (the SHA-256 of its bytes), media type and `/dv/assets/<AssetId>` URL, and the params. Image outputs also arrive as image blocks while an attachment service is mounted.
+
+#### Token effect
+
+About 80 tokens of text per call, most of it the 64-character asset ID and the URL. A `dv_asset_import` call with `base64` repeats the bytes in the echoed params, so its result costs about as much as its argument again. Each image block costs what the model charges for one image.
+
+#### KV Cache effect
+
+The result is appended to the conversation after the call; the cached prefix stays intact.
 
 ## Known Limitations and Deferred Work
 

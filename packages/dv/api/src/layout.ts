@@ -5,6 +5,8 @@
  *
  * Route: `GET /api/dv/layout?project=<id>` returns the stored layout; `POST /api/dv/layout` with
  * `{project, positions?, viewport?}` merges the given node positions into the stored ones and replaces the viewport.
+ * Errors use the body `{error, code}` of every `/api/dv` route: 400 `invalid_params` for a malformed project or too many
+ * positions, 404 `unknown_project` for an unknown project.
  *
  * @module @dv/api/layout
  */
@@ -13,7 +15,7 @@ import { join } from 'node:path'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type DvProject from '@dv/project'
 import type { ProjectId } from '@dv/project'
-import { projectIdOf } from './wire.ts'
+import { answer, ApiRequestError, requireProject } from './api.ts'
 
 /** The Fetch route path. */
 export const LAYOUT_ROUTE = '/api/dv/layout'
@@ -70,7 +72,9 @@ export class CanvasLayoutStore {
       positions: { ...current.positions, ...patch.positions },
       viewport: patch.viewport === undefined ? current.viewport : patch.viewport,
     }
-    if (Object.keys(next.positions).length > MAX_POSITIONS) throw new LayoutRequestError(400, `A layout keeps at most ${String(MAX_POSITIONS)} positions.`)
+    if (Object.keys(next.positions).length > MAX_POSITIONS) {
+      throw new ApiRequestError(400, `A layout keeps at most ${String(MAX_POSITIONS)} positions.`, 'invalid_params')
+    }
     mkdirSync(this.root, { recursive: true })
     const target = this.path(projectId)
     writeFileSync(`${target}.tmp`, JSON.stringify(next))
@@ -90,14 +94,6 @@ export class CanvasLayoutStore {
 
   private path(projectId: ProjectId): string {
     return join(this.root, `${projectId}.json`)
-  }
-}
-
-/** A layout request the route refuses, with its status. */
-export class LayoutRequestError extends Error {
-  constructor(readonly status: 400 | 404, message: string) {
-    super(message)
-    this.name = 'LayoutRequestError'
   }
 }
 
@@ -128,45 +124,19 @@ export function layoutOf(value: unknown): CanvasLayout | null {
 }
 
 /**
- * A JSON response with no caching.
- * @param value - the body.
- * @param status - the HTTP status.
- * @returns the response.
- */
-function json(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
-}
-
-/**
  * The layout Fetch route. GET reads, POST merges; both answer 404 for an unknown project.
  * @param project - the Project service, used to check that the project exists.
  * @param store - the layout files.
  * @returns the route.
  */
 export function layoutRoutes(project: Pick<DvProject, 'openProject'>, store: CanvasLayoutStore): ConnectionFetchRoute[] {
-  const projectOf = (value: unknown): ProjectId => {
-    const projectId = projectIdOf(value)
-    if (projectId === null) throw new LayoutRequestError(400, "'project' must name a project.")
-    try {
-      project.openProject(projectId)
-    } catch {
-      // Project throws for an unknown project; the route reports it as 404.
-      throw new LayoutRequestError(404, `Unknown project '${projectId}'.`)
-    }
-    return projectId
-  }
-  const handle = async (request: Request): Promise<Response> => {
-    try {
-      if (request.method === 'GET') return json(store.read(projectOf(new URL(request.url).searchParams.get('project'))))
-      const body: unknown = await request.json().catch(() => ({}))
-      const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
-      const projectId = projectOf(record['project'])
-      const parsed = layoutOf(record) ?? { positions: {}, viewport: null }
-      return json(store.write(projectId, { positions: parsed.positions, ...record['viewport'] === undefined ? {} : { viewport: parsed.viewport } }))
-    } catch (error) {
-      if (error instanceof LayoutRequestError) return json({ error: error.message }, error.status)
-      return json({ error: error instanceof Error ? error.message : String(error) }, 500)
-    }
-  }
+  const handle = (request: Request): Promise<Response> => answer(async () => {
+    if (request.method === 'GET') return store.read(requireProject(project, new URL(request.url).searchParams.get('project')))
+    const body: unknown = await request.json().catch(() => ({}))
+    const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+    const projectId: ProjectId = requireProject(project, record['project'])
+    const parsed = layoutOf(record) ?? { positions: {}, viewport: null }
+    return store.write(projectId, { positions: parsed.positions, ...record['viewport'] === undefined ? {} : { viewport: parsed.viewport } })
+  })
   return [{ path: LAYOUT_ROUTE, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: handle }]
 }

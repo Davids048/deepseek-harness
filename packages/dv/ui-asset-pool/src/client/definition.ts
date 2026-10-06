@@ -1,5 +1,7 @@
 /**
  * What the `dv-asset-pool` tab type is: a page type the guide offers, with no resource address.
+ *
+ * @module @dv/ui-asset-pool/definition
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { pickText } from '@dv/ui-kit/locale.ts'

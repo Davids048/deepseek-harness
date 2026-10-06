@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包修改和读取 DreamVerse 项目。每次修改都是一条记录，由 `dvProject.run`（组件操作）或某个 `proj.*` 方法（草稿、撤销、重做、分支）写入。组件用 `registerOperation` 注册操作，用 `registerReducer` 注册状态归约函数；挂载了 DSH `tools` 注册表时，每个已注册的操作还成为它的智能体工具 `dv_<把点换成下划线的操作名>`，项目还加上自己的 `dv_proj_*` 工具，它们把聊天会话绑定到项目并返回项目摘要；每个归约函数经 `Reducer.agentSummary` 把自己切片的字段加入该摘要。素材库用 `registerAssetStore` 注册自己，聊天会话用 `bindSession` 绑定到项目，智能体集成经 `registerToolCallCheck` 检查每次智能体工具调用。`CONTRACTS.md` 规定了每个内部模块。
+使用本包修改和读取 DreamVerse 项目。每次修改都是一条记录，由 `dvProject.run`（组件操作）或某个 `proj.*` 方法（草稿、撤销、重做、分支）写入。组件用 `registerOperation` 注册操作，用 `registerReducer` 注册状态归约函数。挂载了 DSH `tools` 注册表时，每个已注册的操作还成为它的智能体工具 `dv_<把点换成下划线的操作名>`，项目还加上自己的 `dv_proj_*` 工具，它们把聊天会话绑定到项目并返回项目摘要。`CONTRACTS.md` 规定了每个内部模块。
 
 ## 目录
 
@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-用项目目录和会话目录挂载插件。素材库加载时注册它的存储。
+用项目目录和会话目录挂载插件。素材库加载时用 `registerAssetStore` 注册它的存储，聊天会话用 `bindSession` 绑定到项目，智能体集成经 `registerToolCallCheck` 检查每次智能体工具调用。每个归约函数经 `Reducer.agentSummary` 把自己切片的字段加入项目摘要。
 
 ```yaml
 - id: dv-project
@@ -54,13 +54,47 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-每个已注册的操作以一个工具 `dv_<把点换成下划线的操作名>` 到达模型：操作的 `description`，后接资源提示（"Uses the GPU."、"Runs on the CPU."）以及只读操作（不写记录）和确定性操作（重复调用复用先前结果）的说明，它的 `params` 加 `toolParams`，以及共享参数 `reason`（记录的 intent）、`project_id`、`inputs`（按角色给出 `<asset>`、`<record>#<output>`，或角色、场景、风格版本的 `<id>@<version>`）、`supersedes` 和 `based_on`（后两个只用于写记录的操作）。结果是一个文本块（`<status> <record>: <summary>`、每个输出一行带 URL、调度的记录、参数和报告），挂载了附件服务时每个图片输出再加一个图片块。
+### 操作工具定义
 
-项目自己的工具有 `dv_proj_create`、`dv_proj_open`、`dv_proj_state`、`dv_proj_history_list`、`dv_proj_draft_accept`、`dv_proj_draft_discard`、`dv_proj_undo`、`dv_proj_redo`、`dv_proj_stale_accept`、`dv_proj_branch_create`、`dv_proj_branch_switch` 和 `dv_proj_wait`。`dv_proj_history_list` 按从新到旧返回记录及其标记；其他工具以缩进 JSON 返回一条分支的项目摘要：`project_id`、`head`、`branch`、`draft`（计数或 null）、`branches`、`records`（数量），然后按组件键顺序是各组件的 `agentSummary` 字段（设定库 `characters`、`locations`、`styles`；分镜 `plans`；时间线 `timelines`），最后是 `stale` 和 `recent`（最多十二条操作记录，带摘要和输出 URL）。摘要随项目增长。
+#### 模型看到什么
+
+挂载了 DSH `tools` 注册表时，每个已注册的操作以一个工具 `dv_<把点换成下划线的操作名>` 到达模型：操作的 `description`，后接资源提示（"Uses the GPU." 或 "Runs on the CPU."）以及只读操作（"A read that writes no record."）和确定性操作（"Repeating a call with the same inputs and params reuses the earlier result."）的说明；它的 `params` 加 `toolParams`，以及智能体集成的提问规则加上的参数；还有共享参数 `reason`（记录的 intent）、`project_id`、`inputs`（按角色给出 `<asset>`、`<record>#<output>`，或角色、场景、风格版本的 `<id>@<version>`；只用于有输入的操作）、`supersedes` 和 `based_on`（后两个只用于写记录的操作）。
+
+#### Token 影响
+
+共享参数给每个定义最多增加约 200 个 token；其余来自操作的描述和参数，每个组件的 README 给出其工具的总量。
 
 #### KV Cache 影响
 
-每个已注册的操作给挂载了 DSH 工具注册表的智能体的每次请求加一个工具 schema，十二个 `dv_proj_*` 工具加一组固定的 schema；注册或移除操作会改变工具列表，使从工具段开始的缓存前缀失效。
+这些定义位于挂载了 DSH 工具注册表的智能体每次请求固定的工具段中；注册或移除操作会改变工具列表，使从工具段开始的缓存前缀失效。
+
+### 操作工具结果
+
+#### 模型看到什么
+
+一次调用返回一个文本块：`<status> <record>: <summary>`（只读操作不写记录，为 `<status>: <summary>`）、每个输出一行带素材 ID、媒体类型和 URL、调度的记录、参数和报告；挂载了附件服务时，每个图片输出再跟一个图片块。失败或取消的记录返回带其消息的工具错误，用户拒绝的调用返回 "The user declined dv_<name>. Do not retry it unchanged."。
+
+#### Token 影响
+
+每次调用约 50 到 200 个 token 的文本，另加图片块。
+
+#### KV Cache 影响
+
+每个结果在调用之后追加到对话中；已缓存的前缀保持不变。
+
+### 项目工具
+
+#### 模型看到什么
+
+十二个工具：`dv_proj_create`、`dv_proj_open`、`dv_proj_state`、`dv_proj_history_list`、`dv_proj_draft_accept`、`dv_proj_draft_discard`、`dv_proj_undo`、`dv_proj_redo`、`dv_proj_stale_accept`、`dv_proj_branch_create`、`dv_proj_branch_switch` 和 `dv_proj_wait`。`dv_proj_history_list` 按从新到旧返回记录及其标记（默认 20 条）；其他工具以缩进 JSON 返回一条分支的项目摘要：`record`（只在写记录的工具之后出现：该调用写下的最新记录）、`project_id`、`head`、`branch`、`draft`（计数或 null）、`branches`、`records`（数量），然后按组件键顺序是各组件的 `agentSummary` 字段（设定库 `characters`、`locations`、`styles`；分镜 `plans`；时间线 `timelines`），最后是 `stale` 和 `recent`（最多十二条操作记录，带摘要和输出 URL）。
+
+#### Token 影响
+
+插件挂载期间，十二个定义固定约 1,000 个 token。项目摘要起始约 150 个 token，并随项目增长：每条最近记录、每个角色、场景、风格、分镜计划和片段都加上自己的字段。
+
+#### KV Cache 影响
+
+十二个定义是固定工具段中不变的一部分；每个结果在调用之后追加到对话中，所以已缓存的前缀保持不变。
 
 ## 已知限制与延期工作
 

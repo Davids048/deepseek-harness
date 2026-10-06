@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the web application a History panel beside the chat. `HistoryPanel` lists the actions of the open project from every actor, surface, and chat session, newest first, one row per operation record: the tool label with its subject (修改分镜计划 p1 → v2, 渲染镜头 7, 新建角色「name」), who did it (你 / You, 智能体 / Agent, 自动 / Automatic), how long ago, the status, and one thumbnail (an image, a take's still for a video, else a video frame; other files have none). An agent row also shows its turn's request words on its second line. The renders and the timeline record that a plan approval scheduled (`report.scheduled`) fold under the approval's row behind the toggle 渲染 n 个镜头 / Render n shots. Each row shows its mark: 草稿 / Draft on an open draft, 已接受 / Accepted after the draft was accepted, 已撤销 / Undone, 已丢弃 / Discarded, 已重放 / Replayed, or the exploration branch name; undone and discarded rows stay listed, dimmed and struck. One bar holds the filters (actor, branch, operation kind, timeline) and the header actions; filters narrow the rows. Selecting a row plays its output under the row and focuses the record's node on the canvas or its clip on the timeline. The `dv-history` right-Sidebar tab type shows the panel of the project the shell has open.
+Use this package to give the web application a History panel beside the chat. `HistoryPanel` lists the actions of the open project from every actor, surface, and chat session, newest first, one row per operation record, with who did it, when, the status, a thumbnail, and the mark (草稿 / Draft, 已接受 / Accepted, 已撤销 / Undone, and others). Filters narrow the rows by actor, branch, operation kind, and timeline. Selecting a row plays its output and focuses the record on the canvas or timeline. The `dv-history` right-Sidebar tab type shows the panel of the project the shell has open.
 
 ## Table of Contents
 
@@ -25,6 +25,8 @@ Use this package to give the web application a History panel beside the chat. `H
 ## Use this package
 
 Mount the plugin in a profile that stacks `dsh-web-app` (which provides the right Sidebar and the client module loader) and `@dv/api` (which serves the routes the panel calls). Build the browser bundle first: `pnpm run build` writes `lib/client.js`.
+
+Each row shows the tool label with its subject (修改分镜计划 p1 → v2, 渲染镜头 7, 新建角色「name」), who did it (你 / You, 智能体 / Agent, 自动 / Automatic), how long ago, the status, and one thumbnail (an image, a take's still for a video, else a video frame; other files have none). An agent row also shows its turn's request words on its second line. The renders and the timeline record that a plan approval scheduled (`report.scheduled`) fold under the approval's row behind the toggle 渲染 n 个镜头 / Render n shots. The marks are 草稿 / Draft on an open draft, 已接受 / Accepted after the draft was accepted, 已撤销 / Undone, 已丢弃 / Discarded, 已重放 / Replayed, or the exploration branch name; undone and discarded rows stay listed, dimmed and struck. One bar holds the filters and the header actions.
 
 ```yaml
 - id: dv-ui-history

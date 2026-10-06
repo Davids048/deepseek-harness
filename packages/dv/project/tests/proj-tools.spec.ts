@@ -118,7 +118,8 @@ describe('dv_proj_* tools', () => {
     const created = json(await fixture.call('dv_proj_create', { title: 'dance' }))
     const projectId = brandString<ProjectId>(String(created['project_id']))
     expect(created).toEqual({
-      project_id: projectId, head: expect.any(String), branch: 'main', draft: null, branches: ['main'], records: 1, stale: [],
+      record: created['head'], project_id: projectId, head: expect.any(String), branch: 'main', draft: null, branches: ['main'], records: 1,
+      stale: [],
       recent: [expect.objectContaining({ operation: 'proj.create', status: 'done', summary: 'proj.create', intent: 'create project dance' })],
     })
     expect(fixture.project.sessionProject(brandString<SessionId>('s1'))).toBe(projectId)
@@ -214,6 +215,28 @@ describe('dv_proj_* tools', () => {
     expect(json(await fixture.call('dv_proj_state', {}))['stale']).toEqual([consumer.record])
     expect(json(await fixture.call('dv_proj_stale_accept', { record: consumer.record }))['stale']).toEqual([])
     expect(fixture.project.listHistory({ project: projectId, operation: 'proj.stale_accept' })[0]?.record.intent).toBe(`accept ${consumer.record}`)
+  })
+
+  it('names the record a write tool wrote in its summary and presentation metadata, and gives read tools no metadata', async () => {
+    const fixture = await start()
+    fixture.project.registerOperation(still())
+    const created = json(await fixture.call('dv_proj_create', { title: 'meta' }))
+    const projectId = brandString<ProjectId>(String(created['project_id']))
+    const metaOf = (name: string, result: unknown): unknown =>
+      fixture.context.tools.get(name)?.output?.presentationMeta?.({}, result as never)
+    const newest = (operation: string): string | undefined => fixture.project.listHistory({ project: projectId, operation })[0]?.record.id
+    expect(metaOf('dv_proj_create', created)).toEqual({ record: newest('proj.create') })
+    value(await fixture.call('dv_asset_grab_still', { reason: 'first', prompt: 'one' }))
+    const discarded = json(await fixture.call('dv_proj_draft_discard', {}))
+    expect(discarded['record']).toBe(newest('proj.draft_discard'))
+    expect(metaOf('dv_proj_draft_discard', discarded)).toEqual({ record: newest('proj.draft_discard') })
+    const branched = json(await fixture.call('dv_proj_branch_create', { name: 'alt' }))
+    expect(branched['record']).toBe(newest('proj.branch_switch'))
+    const state = json(await fixture.call('dv_proj_state', {}))
+    expect(state['record']).toBeUndefined()
+    for (const name of ['dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_wait']) {
+      expect(fixture.context.tools.get(name)?.output?.presentationMeta, name).toBeUndefined()
+    }
   })
 
   it('creates and switches branches, and reads another branch', async () => {

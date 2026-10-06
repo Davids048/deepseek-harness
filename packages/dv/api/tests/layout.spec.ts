@@ -33,9 +33,9 @@ describe('layoutRoutes', () => {
     expect((await call('GET', '?project=p1')).json).toEqual({ positions: { g1: { x: 1, y: 2 }, g2: { x: 3, y: 4 } }, viewport: { x: 0, y: 0, zoom: 1 } })
   })
 
-  it('answers 400 without a project and 404 for an unknown one', async () => {
+  it('answers 400 invalid_params without a project and 404 unknown_project for an unknown one', async () => {
     const { call } = route()
-    expect((await call('GET', '')).status).toBe(400)
-    expect((await call('POST', '', { project: 'nope', positions: {} })).status).toBe(404)
+    expect(await call('GET', '')).toEqual({ status: 400, json: { error: "'project' must name a project.", code: 'invalid_params' } })
+    expect(await call('POST', '', { project: 'nope', positions: {} })).toEqual({ status: 404, json: { error: "Unknown project 'nope'.", code: 'unknown_project' } })
   })
 })

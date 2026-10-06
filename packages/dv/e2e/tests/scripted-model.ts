@@ -69,17 +69,6 @@ export function textOf(content: unknown): string {
 }
 
 /**
- * The record ID an operation tool result names: the `record` field of a JSON result, else the ID after `done` in the
- * text rendering (`done <id>: plan with 2 shots`).
- * @param result - one entry of `TurnView.toolResults`.
- * @returns the ID, or the empty string.
- */
-export function recordIdOf(result: unknown): string {
-  if (typeof result === 'object' && result !== null && 'record' in result) return String(result.record)
-  return /\b(?:done|running|queued|scheduled|failed)\s+([0-9a-f-]{36})/.exec(String(result))?.[1] ?? ''
-}
-
-/**
  * The asset ID of one output role in an operation tool result: the `outputs` entry of a JSON result, else the
  * `- <role>: <id>` line of the text rendering.
  * @param result - one entry of `TurnView.toolResults`.

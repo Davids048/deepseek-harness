@@ -95,8 +95,17 @@ function argsOf(raw: string): Record<string, unknown> {
   }
 }
 
-/** Read tools: they write no record, so their rows have no 在历史中查看 link. */
-const READ_TOOLS: ReadonlySet<string> = new Set(['dv_proj_state', 'dv_proj_history_list', 'dv_proj_wait', 'dv_inspect_image', 'dv_inspect_asset'])
+/**
+ * Whether a settled tool call wrote a record, so that its row has a 在历史中查看 link. The result metadata of a tool that
+ * writes records, an operation tool or a `dv_proj_*` tool, names the record it wrote; a read operation such as
+ * `inspect.image` names `record: ''`, and a read `dv_proj_*` tool or a failed call carries no metadata.
+ * @param block - the settled call block.
+ * @returns whether the call wrote a record.
+ */
+function wroteRecord(block: object): boolean {
+  const meta = 'meta' in block ? block.meta : undefined
+  return typeof meta === 'object' && meta !== null && 'record' in meta && typeof meta.record === 'string' && meta.record !== ''
+}
 
 /**
  * 在历史中查看 on a settled tool row: asks the History panel to select the record this tool call wrote.
@@ -174,7 +183,7 @@ export function ToolLabelRow(props: {
   const status = props.phase !== 'result' ? t('进行中…', 'Running…') : failed ? t('未完成', 'Failed') : t('完成', 'Done')
   return <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', margin: '4px 0', fontSize: 13 }} data-tool={props.toolName}>
     <span>{t(props.label[0], props.label[1])}</span><span style={{ opacity: 0.6, fontSize: 12 }}>{status}</span>
-    {props.phase === 'result' && !READ_TOOLS.has(props.toolName) && <HistoryLink sessionId={props.sessionId} callId={props.callId} />}
+    {props.phase === 'result' && wroteRecord(props.block) && <HistoryLink sessionId={props.sessionId} callId={props.callId} />}
   </div>
 }
 

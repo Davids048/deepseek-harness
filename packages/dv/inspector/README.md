@@ -71,11 +71,47 @@ The service methods `inspectImage(asset, question)` and `inspectAsset(asset)` re
 <a id="model-experience"></a>
 ## Model Experience
 
-Two tools, `dv_inspect_image` and `dv_inspect_asset`, in the format `@dv/project` gives every operation tool. Their descriptions say that they are reads that write no record. A call returns one text block: `done: dv_inspect_image answered`, the params, and the report with the model's answer or the probe fields. `inspect.image` also sends the image and the question to the default model in a separate request outside the agent's conversation.
+### Tool definitions
+
+#### What the model sees
+
+Two tools, `dv_inspect_image` and `dv_inspect_asset`, in the format `@dv/project` gives every operation tool; both descriptions end with "A read that writes no record.", and neither takes `supersedes` or `based_on`. `dv_inspect_image` looks at the input `image` and answers the param `question` (default: "Describe this image: the subject, the framing, the lighting, and anything that looks wrong."); its description tells the agent to grab a still with `dv_asset_grab_still` to look at a video. `dv_inspect_asset` reads the duration, frame size, codec, and audio presence of the input `asset`. `dv_inspect_image` is listed only while `llm`, `agentDefaultModel` and `attachments` are mounted.
+
+#### Token effect
+
+About 450 tokens for the two definitions, fixed while the plugin is mounted; the shared arguments of `@dv/project` add about 200 tokens to each definition.
 
 #### KV Cache effect
 
-The two tool schemas are part of every agent request while the plugin is mounted. The model request of `inspect.image` is separate and does not touch the agent's cached prefix.
+The definitions sit in the stable tool section of every agent request; mounting or removing the plugin, or the model services that `dv_inspect_image` needs, changes the tool list and invalidates the cached prefix from the tool section on.
+
+### Tool results
+
+#### What the model sees
+
+A call returns one text block: `done: dv_inspect_image answered` (or `dv_inspect_asset`), the params, and the report: `question`, `answer` and `model` for an image, with `unsupported` instead of an answer when the default model takes no images; `duration_sec`, `video_duration_sec`, `width`, `height`, `has_audio` and `codec` for an asset.
+
+#### Token effect
+
+About 60 tokens per call plus the answer, which the `maxTokens` setting caps (default 1024).
+
+#### KV Cache effect
+
+The result is appended to the conversation after the call; the cached prefix stays intact.
+
+### Image question request
+
+#### What the model sees
+
+`dv_inspect_image` sends the default model of the agent one user message with the image as an attachment and the question as text, with no system prompt and no tools, and puts the text of the reply into the report.
+
+#### Token effect
+
+The image costs what the model charges for one image, the question a few dozen tokens, and the answer at most `maxTokens`. A model without image input, or `imageInput: false`, sends no request.
+
+#### KV Cache effect
+
+An independent request outside the agent's conversation; it does not touch the agent's cached prefix.
 
 ## Known Limitations and Deferred Work
 

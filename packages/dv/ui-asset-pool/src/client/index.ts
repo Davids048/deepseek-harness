@@ -1,6 +1,8 @@
 /**
  * Browser half: register `dv-asset-pool` as a right-Sidebar tab type and its body, and export the asset pool panel for
  * the workspace shell to render directly.
+ *
+ * @module @dv/ui-asset-pool/client
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'

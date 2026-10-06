@@ -71,11 +71,47 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-两个工具 `dv_inspect_image` 和 `dv_inspect_asset`，格式与 `@dv/project` 给每个操作工具的一样。它们的描述说明它们是不写记录的只读操作。一次调用返回一个文本块：`done: dv_inspect_image answered`、参数，以及带模型回答或探测字段的报告。`inspect.image` 还在智能体对话之外，以单独的请求把图片和问题发给默认模型。
+### 工具定义
+
+#### 模型看到什么
+
+两个工具 `dv_inspect_image` 和 `dv_inspect_asset`，格式与 `@dv/project` 给每个操作工具的一样；两个描述都以 "A read that writes no record." 结尾，也都不接受 `supersedes` 和 `based_on`。`dv_inspect_image` 查看输入 `image` 并回答参数 `question`（默认："Describe this image: the subject, the framing, the lighting, and anything that looks wrong."）；它的描述告诉智能体，要看视频就先用 `dv_asset_grab_still` 截一张静帧。`dv_inspect_asset` 读取输入 `asset` 的时长、画面尺寸、编码和是否有音频。只有挂载了 `llm`、`agentDefaultModel` 和 `attachments` 时，才列出 `dv_inspect_image`。
+
+#### Token 影响
+
+两个定义约 450 个 token，插件挂载期间固定不变；`@dv/project` 的共享参数让每个定义多约 200 个 token。
 
 #### KV Cache 影响
 
-插件挂载期间，这两个工具 schema 是每次智能体请求的一部分。`inspect.image` 的模型请求是单独的，不触及智能体的缓存前缀。
+这些定义位于每次智能体请求中固定的工具部分；挂载或移除插件，或 `dv_inspect_image` 需要的模型服务，会改变工具列表，使缓存前缀从工具部分起失效。
+
+### 工具结果
+
+#### 模型看到什么
+
+一次调用返回一个文本块：`done: dv_inspect_image answered`（或 `dv_inspect_asset`）、参数，以及报告：图片的报告是 `question`、`answer` 和 `model`，默认模型不接受图片时以 `unsupported` 代替回答；素材的报告是 `duration_sec`、`video_duration_sec`、`width`、`height`、`has_audio` 和 `codec`。
+
+#### Token 影响
+
+每次调用约 60 个 token，再加上回答，回答以 `maxTokens` 设置为上限（默认 1024）。
+
+#### KV Cache 影响
+
+结果在调用之后追加到对话中；已缓存的前缀保持不变。
+
+### 图片提问请求
+
+#### 模型看到什么
+
+`dv_inspect_image` 向智能体的默认模型发送一条用户消息，图片作为附件、问题作为文本，不带系统提示词和工具，并把回复的文本放进报告。
+
+#### Token 影响
+
+图片按模型对一张图片的计费计算，问题几十个 token，回答至多 `maxTokens`。模型不接受图片输入或设置了 `imageInput: false` 时，不发送请求。
+
+#### KV Cache 影响
+
+这是智能体对话之外的独立请求；它不触及智能体的缓存前缀。
 
 ## 已知限制与延期工作
 

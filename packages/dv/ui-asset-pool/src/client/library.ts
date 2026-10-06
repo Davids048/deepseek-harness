@@ -1,6 +1,8 @@
 /**
  * Sorting of a project's assets into the panel's sections and filters, read from the state of `main` and the states of
  * the project's open drafts.
+ *
+ * @module @dv/ui-asset-pool/library
  */
 import type { Asset, ProjectRecord, StoryBibleState, WireState } from '@dv/ui-kit/types.ts'
 

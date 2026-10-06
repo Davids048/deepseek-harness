@@ -62,11 +62,33 @@ The operation is not deterministic, because its output depends on the timeline's
 <a id="model-experience"></a>
 ## Model Experience
 
-One tool, `dv_deliver_timeline_export`, in the format `@dv/project` gives every operation tool. A call returns one text block: `done: exported timeline t1`, the params, and the output video with its URL, which the agent gives the user as the link.
+### Tool definitions
+
+#### What the model sees
+
+One tool, `dv_deliver_timeline_export`, in the format `@dv/project` gives every operation tool. Its description says "Export a timeline to one video: each clip with an in or out point is trimmed to that range, and all clips are joined in timeline order. Runs on the CPU." Its only own param is `timeline` (the timeline ID, such as `t1`; default: the first timeline).
+
+#### Token effect
+
+About 250 tokens for the definition, fixed while the plugin is mounted; the shared arguments of `@dv/project` add about 200 tokens to each definition.
 
 #### KV Cache effect
 
-The tool schema is part of every agent request while the plugin is mounted. A call adds only its result to the conversation.
+The definition sits in the stable tool section of every agent request; mounting or removing the plugin changes the tool list and invalidates the cached prefix from the tool section on.
+
+### Tool results
+
+#### What the model sees
+
+A call returns one text block: `done <record>: exported timeline t1` (`exported the first timeline` without `timeline`), the line `- video: <AssetId> (video/mp4) <url>`, and the params. The video sends no image block.
+
+#### Token effect
+
+About 80 tokens per call.
+
+#### KV Cache effect
+
+The result is appended to the conversation after the call; the cached prefix stays intact.
 
 ## Known Limitations and Deferred Work
 

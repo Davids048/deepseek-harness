@@ -77,11 +77,33 @@ The operations write only their records. Each one's `execute` checks the call ag
 <a id="model-experience"></a>
 ## Model Experience
 
-Ten tools, `dv_timeline_create` through `dv_timeline_clip_replace`, in the format `@dv/project` gives every operation tool. A call returns one text block with the record's status and a one-line summary such as `clip cl3 moved to 1`; a call that adds clips also returns their clip IDs in `report.clips`, and a call that does not fit the timeline returns the failed record's reason. `dv_proj_state` lists every timeline with its clips by clip ID (field `clip`), and the agent's project block lists them with each clip's producing record.
+### Tool definitions
+
+#### What the model sees
+
+Ten tools, `dv_timeline_create`, `dv_timeline_update`, `dv_timeline_rename`, `dv_timeline_delete`, `dv_timeline_clip_insert`, `dv_timeline_clip_move`, `dv_timeline_clip_remove`, `dv_timeline_clip_split`, `dv_timeline_clip_trim` and `dv_timeline_clip_replace`, in the format `@dv/project` gives every operation tool. The edit tools name a timeline by `timeline` (such as `t1`; default the first timeline) and a clip by `clip` (such as `cl3`), and their parameter descriptions point the agent to `timelines` and their `clips` in `dv_proj_state`.
+
+#### Token effect
+
+About 2,500 tokens for the ten definitions, fixed while the plugin is mounted; the shared arguments of `@dv/project` add up to about 200 tokens to each definition.
 
 #### KV Cache effect
 
-The ten tool schemas are part of every agent request while the plugin is mounted.
+The definitions sit in the stable tool section of every agent request; mounting or removing the plugin changes the tool list and invalidates the cached prefix from the tool section on.
+
+### Tool results
+
+#### What the model sees
+
+A call returns one text block with the record's status and a one-line summary such as `clip cl3 moved to 1`; a call that adds clips also returns their clip IDs in `report.clips`, and a call that does not fit the timeline returns a tool error with the failed record's reason. `dv_proj_state` lists every timeline with its clips by clip ID (field `clip`), and the agent's project block lists them with each clip's producing record.
+
+#### Token effect
+
+Roughly 50 to 150 tokens per call; a create or update with many clips adds its asset list.
+
+#### KV Cache effect
+
+Each result is appended to the conversation after its call; the cached prefix stays intact.
 
 ## Known Limitations and Deferred Work
 

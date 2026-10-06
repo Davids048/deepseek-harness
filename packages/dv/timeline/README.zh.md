@@ -77,11 +77,33 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-十个工具，从 `dv_timeline_create` 到 `dv_timeline_clip_replace`，格式与 `@dv/project` 为每个操作工具提供的格式相同。一次调用返回一个文本块，包含记录状态和一行摘要，例如 `clip cl3 moved to 1`；添加片段的调用还在 `report.clips` 中返回这些片段的 ID，不适用于时间线的调用返回失败记录的原因。`dv_proj_state` 按片段 ID（字段 `clip`）列出每条时间线及其片段，智能体的项目块也列出它们，并附上每个片段的产生记录。
+### 工具定义
+
+#### 模型看到什么
+
+十个工具 `dv_timeline_create`、`dv_timeline_update`、`dv_timeline_rename`、`dv_timeline_delete`、`dv_timeline_clip_insert`、`dv_timeline_clip_move`、`dv_timeline_clip_remove`、`dv_timeline_clip_split`、`dv_timeline_clip_trim` 和 `dv_timeline_clip_replace`，格式与 `@dv/project` 为每个操作工具提供的格式相同。编辑工具用 `timeline` 指定时间线（例如 `t1`；默认第一条时间线），用 `clip` 指定片段（例如 `cl3`），参数描述让智能体去 `dv_proj_state` 的 `timelines` 及其 `clips` 里查找。
+
+#### Token 影响
+
+挂载本插件时，十个定义固定约 2,500 个 token；`@dv/project` 的共享参数给每个定义最多增加约 200 个 token。
 
 #### KV Cache 影响
 
-挂载本插件时，十个工具 schema 是每次智能体请求的一部分。
+这些定义位于每个智能体请求固定的工具段中；挂载或移除插件会改变工具列表，使从工具段开始的缓存前缀失效。
+
+### 工具结果
+
+#### 模型看到什么
+
+一次调用返回一个文本块，包含记录状态和一行摘要，例如 `clip cl3 moved to 1`；添加片段的调用还在 `report.clips` 中返回这些片段的 ID，不适用于时间线的调用返回带失败记录原因的工具错误。`dv_proj_state` 按片段 ID（字段 `clip`）列出每条时间线及其片段，智能体的项目块也列出它们，并附上每个片段的产生记录。
+
+#### Token 影响
+
+每次调用约 50 到 150 个 token；片段多的新建或更新再加上其素材列表。
+
+#### KV Cache 影响
+
+每个结果在调用之后追加到对话中；已缓存的前缀保持不变。
 
 ## 已知限制与延期工作
 

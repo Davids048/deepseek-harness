@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the web application a timeline editor beside the chat. The editor shows one tab per timeline of the project, a viewer that plays the selected timeline across its clips, a toolbar, a ruler, and one video track whose clips are as wide as they play, carry their producer's last frame, and are marked when stale or a draft. Dragging a clip moves it, dragging its edges trims it, the toolbar splits the clip under the playhead, Delete removes the selected clip, and an asset from the asset pool can be dropped on the track or picked with ＋. The `dv-timeline` tab type of the right Sidebar wraps the editor in the branch bar; `TimelineView` is the shell's center 时间线 view.
+Use this package to give the web application a timeline editor beside the chat. The editor shows one tab per timeline, a viewer that plays the selected timeline across its clips, and one video track whose clips are as wide as they play and are marked when stale or a draft. You move, trim, split, and remove clips on the track, and insert assets from the asset pool by dropping them there or choosing them with ＋. The `dv-timeline` tab type of the right Sidebar wraps the editor in the branch bar; `TimelineView` is the shell's center 时间线 view.
 
 ## Table of Contents
 
@@ -25,6 +25,8 @@ Use this package to give the web application a timeline editor beside the chat. 
 ## Use this package
 
 Mount the plugin in a profile that stacks `dsh-web-app` and `@dv/api`, and build the browser bundle first with `pnpm run build`.
+
+The editor also has a toolbar and a ruler, and each clip carries its producer's last frame. Dragging a clip moves it, dragging its edges trims it, the toolbar splits the clip under the playhead, and Delete removes the selected clip.
 
 ```yaml
 - id: dv-ui-timeline

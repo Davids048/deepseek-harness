@@ -159,6 +159,9 @@ describe('agent tools', () => {
     fixture.project.registerOperation(operation({ name: 'shot.render', component: 'shot', execute: () => Promise.reject(new Error('out of memory')) }))
     const failed = await fixture.call('dv_shot_render', { reason: 'render', prompt: 'x' })
     expect(failed.isError && failed.error.message).toBe('out of memory')
+    // An input error of a tool call names the tool, never the operation.
+    const unknownRole = await fixture.call('dv_shot_render', { reason: 'render', prompt: 'x', inputs: { other: 'a1' } })
+    expect(unknownRole.isError && unknownRole.error.message).toBe('Unknown input role "other" for dv_shot_render; roles: reference.')
   })
 
   it('answers a read with its report and writes nothing; lists outputs without images when no attachment service is mounted', async () => {
@@ -298,7 +301,10 @@ describe('agent tools', () => {
       { role: 'reference', ref: { location: 'l1', version: 2 } },
     ])
     expect(() => parse('shot.render', { first_frame: 'a', reference: 'nobody@1' })).toThrow("Unknown character, location, or style version 'nobody@1'")
-    expect(() => parse('shot.render', undefined)).toThrow('needs input "first_frame"')
+    // A view request names the operation by default; the caller can name the call another way, as the agent tool does.
+    expect(() => parse('shot.render', undefined)).toThrow('shot.render needs input "first_frame"')
+    expect(() => fixture.project.parseInputs('shot.render', { first_frame: 'a', other: 'b' }, state, 'dv_shot_render'))
+      .toThrow('Unknown input role "other" for dv_shot_render')
     expect(() => parse('shot.render', 'a')).toThrow('must be an object')
     expect(() => parse('shot.render', ['a'])).toThrow('must be an object')
     expect(() => parse('shot.render', { first_frame: ['a', 'b'] })).toThrow('takes one reference')

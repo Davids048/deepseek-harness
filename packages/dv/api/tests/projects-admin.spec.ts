@@ -60,7 +60,9 @@ it('renames a project to a unique title and deletes it into the Project store\'s
   expect((await call(routes, PROJECT_ADMIN_ROUTES.rename, { json: { project: second, title: '未命名项目' } })).json).toEqual({ title: '未命名项目 2' })
   expect((await call(routes, PROJECT_ADMIN_ROUTES.rename, { json: { project: first, title: '  广告  ' } })).json).toEqual({ title: '广告' })
   expect(fixture.project.openProject(first).title).toBe('广告')
-  expect((await call(routes, PROJECT_ADMIN_ROUTES.rename, { json: { project: first, title: ' ' } })).status).toBe(400)
+  expect(await call(routes, PROJECT_ADMIN_ROUTES.rename, { json: { project: first, title: ' ' } }))
+    .toMatchObject({ status: 400, json: { error: expect.any(String), code: 'invalid_params' } })
+  expect(await call(routes, PROJECT_ADMIN_ROUTES.delete, { json: {} })).toMatchObject({ status: 400, json: { code: 'invalid_params' } })
 
   await call(routes, WORKSPACE_ROUTES.workspaces, { json: { project: second, workspace_id: 'ws-2' } })
   await call(routes, WORKSPACE_ROUTES.bind, { json: { session: 'chat-2', project: second } })
@@ -75,8 +77,10 @@ it('renames a project to a unique title and deletes it into the Project store\'s
   }
   expect(listed.projects.map(row => row.id)).toEqual([first])
   expect(listed.bindings).toEqual({})
-  expect((await call(routes, PROJECT_ADMIN_ROUTES.rename, { json: { project: second, title: 'x' } })).status).toBe(400)
-  expect((await call(routes, PROJECT_ADMIN_ROUTES.delete, { json: { project: second } })).status).toBe(400)
+  // A deleted project is unknown to both routes.
+  expect(await call(routes, PROJECT_ADMIN_ROUTES.rename, { json: { project: second, title: 'x' } }))
+    .toMatchObject({ status: 404, json: { error: expect.any(String), code: 'unknown_project' } })
+  expect(await call(routes, PROJECT_ADMIN_ROUTES.delete, { json: { project: second } })).toMatchObject({ status: 404, json: { code: 'unknown_project' } })
 })
 
 it('lists the DSH sessions stored under a project directory, newest first', async () => {
@@ -93,5 +97,7 @@ it('lists the DSH sessions stored under a project directory, newest first', asyn
     Array<{ session: string; updated_at: string; bytes: number }>
   expect(listed.map(row => [row.session, row.bytes]).sort()).toEqual([['session-a', 10], ['session-b', 3000]])
   expect(listed.every(row => !Number.isNaN(Date.parse(row.updated_at)))).toBe(true)
-  expect((await call(routes, WORKSPACE_ROUTES.sessions, { query: { project: 'missing' } })).status).toBe(400)
+  expect(await call(routes, WORKSPACE_ROUTES.sessions, { query: { project: 'missing' } }))
+    .toMatchObject({ status: 404, json: { error: expect.any(String), code: 'unknown_project' } })
+  expect(await call(routes, WORKSPACE_ROUTES.sessions)).toMatchObject({ status: 400, json: { code: 'invalid_params' } })
 })

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概要
 
-用这个包在 DreamVerse 项目上运行 DSH 智能体。`dvAgentIntegration` 监听会话事件，把每个智能体轮次和开启它的用户原话报告给 `dvProject`（`noteTurn`），使本轮的记录带上轮次，并在本轮第一条记录之前写下本轮的请求记录；它把用户在对话里附上的图片导入为素材（由用户执行的 `asset.import`，对话的下一次工具调用会等它完成）；它把 `plan.approve` 和 `shot.render` 的 DSH 提问规则注册为 `dvProject` 的工具调用检查，当调用方是活着的根智能体时经 `userQuestions` 服务提问；它保存每个对话的输入框模式，并作为 `dvProject` 的批准通道，把智能体先问的调用挡在批准卡片之后；它把新用户消息里的 `dv:` 提及展开为一条带记录和素材 ID 的上下文消息；它还贡献一节系统提示词，内容是对话当前分支的状态：角色、场景和风格，时间线及其片段，版本，过期记录，分镜计划，草稿，以及解析"第二段"这类指代的规则。`skills/` 目录放着 `video-directing`、`timeline-editing` 和 `branching-story` 三个 skill，由 profile 把 `skill-filesystem` 指向它。
+用这个包在 DreamVerse 项目上运行 DSH 智能体。`dvAgentIntegration` 把对话连到 `dvProject`：它记录每个智能体轮次及开启它的用户原话，把对话里附上的图片导入为素材，在批准分镜计划和高成本镜头渲染之前询问用户，把先问的调用挡在批准卡片之后，把 `dv:` 提及展开为记录和素材 ID，并贡献一节系统提示词，内容是对话当前分支的状态。`skills/` 目录放着导演 skill。
 
 ## 目录
 
@@ -23,6 +23,8 @@ kind: "package-reference"
 ## 使用这个包
 
 在 DreamVerse 组件之后挂载 `@dv/agent-integration`；它注入 `dvProject` 和 `dvAssetPool`，并在 `agents`、`attachments`、`connection`、`dvApi`、`dvShotPlan`、`systemPrompt`、`userQuestions` 存在时使用它们。
+
+插件监听会话事件，把每个智能体轮次和开启它的用户原话报告给 `dvProject`（`noteTurn`），使本轮的记录带上轮次，并在本轮第一条记录之前写下本轮的请求记录。它把用户在对话里附上的图片导入为素材（由用户执行的 `asset.import`，对话的下一次工具调用会等它完成）。它把 `plan.approve` 和 `shot.render` 的 DSH 提问规则注册为 `dvProject` 的工具调用检查，当调用方是活着的根智能体时经 `userQuestions` 服务提问。它保存每个对话的输入框模式，并作为 `dvProject` 的批准通道，把智能体先问的调用挡在批准卡片之后。它把新用户消息里的 `dv:` 提及展开为一条带记录和素材 ID 的上下文消息。它的系统提示词节列出角色、场景和风格，时间线及其片段，版本，过期记录，分镜计划，草稿，以及解析"第二段"这类指代的规则。`skills/` 目录放着 `video-directing`、`timeline-editing` 和 `branching-story` 三个 skill，由 profile 把 `skill-filesystem` 指向它。
 
 ```yaml
 - id: dv-agent-integration
@@ -55,6 +57,8 @@ kind: "package-reference"
 | `/api/dv/composer/mode` | POST | `{session, confirm?, speed?}` | `ComposerMode` |
 | `/api/dv/composer/approvals` | GET | 查询参数 `session` | `ApprovalCard[]` `{id, session, tool_call, operation, summary, prompt, duration_sec, gpu_seconds, references, created_at}` |
 | `/api/dv/composer/approvals` | POST | `{session, id? \| all?, action: approve \| skip}` | `{answered}` |
+
+出错时返回与 `@dv/api` 路由相同的 JSON 正文 `{error, code}`：缺少 `session` 时为 400 `invalid_params`，意外失败时为 500 `internal_error`。
 
 `dvAgentIntegration.promptBlock(sessionId)` 返回某个对话的提示词节文本；`confirm(request)` 是提问规则使用的确认通道；`getComposerMode`、`updateComposerMode`、`approvals`、`answer` 读取和修改输入框模式与批准卡片；`asksFirst` 和 `requestApproval` 是 `dvProject` 调用的 `ApprovalChannel`。提及辅助函数 `parseMentions`、`formatMention`、`describeMention` 供其他使用者导出。
 

@@ -15,15 +15,15 @@ import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { ProjectId } from '@dv/project'
 import type {} from '@dv/asset-pool'
-import { ApiHandlers, ApiRequestError, type ApiServices, messageOf } from './api.ts'
+import { answer, ApiHandlers, ApiRequestError, type ApiServices, requireProject } from './api.ts'
 import { assetImportRoutes } from './asset-import.ts'
 import { serveEventStream } from './events.ts'
 import { CanvasLayoutStore, layoutRoutes } from './layout.ts'
 import { projectAdminRoutes } from './projects-admin.ts'
 import { workspaceRoutes } from './workspaces.ts'
-import { projectIdOf, type ViewSelection } from './wire.ts'
+import type { ViewSelection } from './wire.ts'
 
-export { ApiHandlers, ApiRequestError, messageOf, type ApiServices, type OperationRequest, type WireProject } from './api.ts'
+export { answer, ApiHandlers, ApiRequestError, messageOf, type ApiServices, type OperationRequest, type WireProject } from './api.ts'
 export { ASSET_IMPORT_ROUTE } from './asset-import.ts'
 export { frameOf, serveEventStream, type EventStreamSources } from './events.ts'
 export { LAYOUT_ROUTE, type CanvasLayout, type CanvasViewport, type NodePosition } from './layout.ts'
@@ -76,32 +76,6 @@ export const ROUTES = {
   history: '/api/dv/history',
   selection: '/api/dv/selection',
 } as const
-
-/**
- * A JSON response with no caching.
- * @param value - the body.
- * @param status - the HTTP status.
- * @returns the response.
- */
-function json(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
-}
-
-/**
- * Run a route body and translate request errors into their status.
- * @param run - the operation.
- * @returns the JSON response, or the error's status with its message.
- */
-async function answer(run: () => unknown): Promise<Response> {
-  try {
-    return json(await run())
-  } catch (error) {
-    if (error instanceof ApiRequestError) {
-      return json({ ...error.details, error: error.message, ...error.code === null ? {} : { code: error.code } }, error.status)
-    }
-    return json({ error: messageOf(error) }, 500)
-  }
-}
 
 /**
  * The JSON body of a request, or an empty object when the body is absent or not JSON.
@@ -197,8 +171,9 @@ export default class DvApi extends Service {
   }
 
   /**
-   * Serve `/dv/events?project=<id>`: refuse requests the Connection rejects, 400 without a project, 404 for an unknown
-   * one, else stream the project's changes.
+   * Serve `/dv/events?project=<id>`: refuse requests the Connection rejects, answer the JSON error body of the Fetch
+   * routes for a malformed project (400 `invalid_params`) or an unknown one (404 `unknown_project`), else stream the
+   * project's changes.
    * @param web - the context that holds the web server, used to look the Connection up.
    * @param request - the HTTP request.
    * @param response - the HTTP response.
@@ -211,15 +186,13 @@ export default class DvApi extends Service {
       return
     }
     const url = new URL(String(request.url), 'http://localhost')
-    const projectId = projectIdOf(url.searchParams.get('project'))
-    if (projectId === null) {
-      response.writeHead(400, { 'content-type': 'text/plain' }).end("'project' must name a project.")
-      return
-    }
+    let projectId: ProjectId
     try {
-      this.ctx.dvProject.openProject(projectId)
-    } catch {
-      response.writeHead(404, { 'content-type': 'text/plain' }).end(`Unknown project '${projectId}'.`)
+      projectId = requireProject(this.ctx.dvProject, url.searchParams.get('project'))
+    } catch (error) {
+      if (!(error instanceof ApiRequestError)) throw error
+      const body = JSON.stringify({ error: error.message, code: error.code })
+      response.writeHead(error.status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }).end(body)
       return
     }
     serveEventStream(projectId, request, response, {

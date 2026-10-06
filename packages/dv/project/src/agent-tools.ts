@@ -153,12 +153,14 @@ export function formatInputRef(ref: RecordInputRef): string {
  * @param raw - role → reference text or a list of them; undefined for none.
  * @param state - the state the references are read against.
  * @param versionCreatedBy - the version lookup of the reducer that defines `createdBy`.
+ * @param callerName - the name the error messages give the call: the tool name for an agent tool call, the operation
+ *   name for a view request.
  * @returns the inputs in argument order.
- * @throws Error naming the role for an unknown role, a list on a single role, a non-string reference, a missing
- *   required role, or an unknown character, location or style version.
+ * @throws Error naming the role and `callerName` for an unknown role, a list on a single role, a non-string reference,
+ *   or a missing required role; Error for an unknown character, location or style version.
  */
 export function parseInputs(
-  spec: OperationSpec, raw: unknown, state: ProjectState, versionCreatedBy: AgentToolDeps['versionCreatedBy'],
+  spec: OperationSpec, raw: unknown, state: ProjectState, versionCreatedBy: AgentToolDeps['versionCreatedBy'], callerName: string,
 ): RunRequest['inputs'] {
   const inputs: RunRequest['inputs'] = []
   if (raw !== undefined) {
@@ -166,20 +168,20 @@ export function parseInputs(
     for (const [role, value] of Object.entries(raw)) {
       const input = spec.inputs[role]
       if (input === undefined) {
-        throw new Error(`Unknown input role "${role}" for ${spec.name}; roles: ${Object.keys(spec.inputs).join(', ') || 'none'}.`)
+        throw new Error(`Unknown input role "${role}" for ${callerName}; roles: ${Object.keys(spec.inputs).join(', ') || 'none'}.`)
       }
       const refs: unknown[] = Array.isArray(value) ? value : [value]
-      if (refs.length > 1 && input.many !== true) throw new Error(`Input "${role}" of ${spec.name} takes one reference.`)
+      if (refs.length > 1 && input.many !== true) throw new Error(`Input "${role}" of ${callerName} takes one reference.`)
       for (const ref of refs) {
         if (typeof ref !== 'string' || ref === '') {
-          throw new Error(`Input "${role}" of ${spec.name} must be <asset>, <record>#<output>, or <id>@<version>.`)
+          throw new Error(`Input "${role}" of ${callerName} must be <asset>, <record>#<output>, or <id>@<version>.`)
         }
         inputs.push({ role, ref: parseInputRef(ref, state, versionCreatedBy) })
       }
     }
   }
   for (const [role, input] of Object.entries(spec.inputs)) {
-    if (input.required === true && !inputs.some(entry => entry.role === role)) throw new Error(`${spec.name} needs input "${role}".`)
+    if (input.required === true && !inputs.some(entry => entry.role === role)) throw new Error(`${callerName} needs input "${role}".`)
   }
   return inputs
 }
@@ -320,7 +322,8 @@ export class AgentTools {
     const basedOn = optionalString(args['based_on'])
     const supersedes = args['supersedes']
     const request: RunRequest = {
-      ...origin, project, operation: spec.name, params, inputs: parseInputs(spec, args['inputs'], state, this.deps.versionCreatedBy),
+      ...origin, project, operation: spec.name, params,
+      inputs: parseInputs(spec, args['inputs'], state, this.deps.versionCreatedBy, toolNameOf(spec)),
       signal: exec.signal,
       ...turn === undefined || turn.requestText === '' ? {} : { request_text: turn.requestText },
       ...basedOn === undefined ? {} : { based_on: brandString<RecordId>(basedOn) },

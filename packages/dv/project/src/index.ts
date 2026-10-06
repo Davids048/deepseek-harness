@@ -439,13 +439,15 @@ export default class DvProject extends Service {
    * @param operation - a registered operation name.
    * @param raw - role → reference text or a list of them; undefined for none.
    * @param state - the state the references are read against, normally the caller's working branch.
-   * @returns the inputs. Throws `unknown_operation`, or an `Error` naming the role for an unknown role, a list on a
-   *   single role, a missing required role, or an unknown version.
+   * @param callerName - the name the error messages give the call: the tool name for an agent tool call, the operation
+   *   name (the default) for a view request or a call made by another operation.
+   * @returns the inputs. Throws `unknown_operation`, or an `Error` naming the role and `callerName` for an unknown role,
+   *   a list on a single role, or a missing required role, or an `Error` for an unknown version.
    */
-  parseInputs(operation: string, raw: unknown, state: ProjectState): RunRequest['inputs'] {
+  parseInputs(operation: string, raw: unknown, state: ProjectState, callerName: string = operation): RunRequest['inputs'] {
     const spec = this.listOperations().find(candidate => candidate.name === operation)
     if (spec === undefined) throw new ProjectError('unknown_operation', `Operation ${operation} is not registered.`)
-    return parseInputs(spec, raw, state, (at, ref) => this.reducers.versionCreatedBy(at, ref))
+    return parseInputs(spec, raw, state, (at, ref) => this.reducers.versionCreatedBy(at, ref), callerName)
   }
 
   /**

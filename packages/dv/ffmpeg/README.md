@@ -71,11 +71,11 @@ A failed command, an unknown placeholder, or a declared output the command did n
 <a id="model-experience"></a>
 ## Model Experience
 
-None; the service runs commands, and the operation that calls it decides what the model learns.
+Indirectly, through the operations of `@dv/asset-pool`, `@dv/deliver`, and `@dv/inspector`, whose tool results report the files and probe fields that the service produces.
 
 #### KV Cache effect
 
-None; the service sends nothing to a model.
+None; the service sends nothing to a model and adds no tool.
 
 ## Known Limitations and Deferred Work
 

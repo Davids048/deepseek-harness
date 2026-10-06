@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package from a DreamVerse browser plugin to talk to `@dv/api` and to read the state it sends. `DvClient` wraps every `/api/dv` route and follows `/dv/events`; `fieldsOf` and `paramsOf` turn an operation's parameter schema into form fields and back; `timelineName` gives the name the interface shows for a timeline; `useViewSession` keeps a view's project, branch, state, and operations in step with the host; `BranchBar` is the project, branch, draft, and undo bar both views show; the event modules own the `dv:*` window events and page globals the panels exchange. The package is a library: it registers nothing and is bundled into each consumer.
+Use this package from a DreamVerse browser plugin to talk to `@dv/api` and to read the state it sends. `DvClient` wraps every `/api/dv` route and follows `/dv/events`; `fieldsOf` and `paramsOf` turn an operation's parameter schema into form fields and back; `useViewSession` keeps a view's project, branch, state, and operations in step with the host; `BranchBar` is the project, branch, draft, and undo bar both views show; the event modules own the `dv:*` window events and page globals the panels exchange. The package is a library: it registers nothing and is bundled into each consumer.
 
 ## Table of Contents
 

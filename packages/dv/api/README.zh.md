@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包让浏览器视图通过 HTTP 而不是通过智能体读取和修改 DreamVerse 项目。`dvApi` 在 `/api/dv/` 下注册经认证的 Fetch 路由：列出、新建、重命名和删除项目，把一条分支的状态读成 JSON，列出操作声明，以人的身份运行一个操作，把文件导入素材库，接受或丢弃一个对话的草稿，撤销和重做，新建和切换分支，接受一条过期记录，列出历史，保存画布布局，把项目关联到 DSH Workspace，以及记住视图选中了什么。原始路由 `GET /dv/events` 以 server-sent events 推送每一次项目变化，用同一个 Connection cookie 放行。`@dv/ui-*` 各包是它的消费者；浏览器客户端是 `@dv/ui-kit` 的 `DvClient`。
+使用本包让浏览器视图通过 HTTP 而不是通过智能体读取和修改 DreamVerse 项目。`dvApi` 在 `/api/dv/` 下注册经认证的 Fetch 路由，涵盖项目、分支状态、以人的身份运行的操作、素材导入、草稿、撤销和重做、分支、过期记录、历史、画布布局、Workspace 关联和视图选中项。原始路由 `GET /dv/events` 以 server-sent events 推送每一次项目变化。`@dv/ui-*` 各包是它的消费者；浏览器客户端是 `@dv/ui-kit` 的 `DvClient`。
 
 ## 目录
 
@@ -25,6 +25,8 @@ kind: "package-reference"
 ## 使用本包
 
 在 `@dv/project` 和 `@dv/asset-pool` 之后挂载插件，并且 profile 还要挂载 `dsh-web-app`（提供 `connection` 和 `webServer` 服务）。没有 `connection` 时 Fetch 路由不会注册；没有 `webServer` 时事件流不会注册。
+
+这些 Fetch 路由列出、新建、重命名和删除项目，把一条分支的状态读成 JSON，列出操作声明，以人的身份运行一个操作，把文件导入素材库，接受或丢弃一个对话的草稿，撤销和重做，新建和切换分支，接受一条过期记录，列出历史，保存画布布局，把项目关联到 DSH Workspace，以及记住视图选中了什么。事件流用同一个 Connection cookie 放行浏览器。
 
 ```yaml
 - id: dv-api
@@ -64,7 +66,17 @@ kind: "package-reference"
 | `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`，最新在前；`updated_at` 是 ISO-8601 UTC |
 | `/dv/events?project=<id>` | GET | — | `text/event-stream`：先 `ready`，再是 `record`、`update` 和 `branch` 事件，每个事件带一个 `ProjectEvent` |
 
-`surface` 是 `canvas`、`timeline`、`asset_pool` 或 `history`；其他值都按 `canvas` 处理，素材导入除外：它只接受 `canvas` 或 `asset_pool`。一次运行以人的身份调用 `dvProject.run`，写在请求所属对话的当前分支上（没有对话时是 `main`）；当某个输入指向尚未完成的记录时改为排队。请求体不合法回 `400`，项目、分支、记录、素材或操作不存在回 `404`，被拒绝的变更（例如丢弃一个计数已变化的草稿）回 `409`；每个错误体都是 `{error, code?, ...details}`，`code` 是 `ProjectError` 的错误码。智能体集成通过 `dvApi.selection(projectId)` 读到项目的最近一次选择，让智能体的项目块能提到用户指向的东西。
+`surface` 是 `canvas`、`timeline`、`asset_pool` 或 `history`；其他值都按 `canvas` 处理，素材导入除外：它只接受 `canvas` 或 `asset_pool`。一次运行以人的身份调用 `dvProject.run`，写在请求所属对话的当前分支上（没有对话时是 `main`）；当某个输入指向尚未完成的记录时改为排队。每条路由（包括事件流）的每个错误都以 JSON 体 `{error, code, ...details}` 回答：`error` 是消息文本，`code` 是下表中的一个错误码；`details` 携带拒绝的附加字段，例如计数已变化的草稿的当前 `counts`。智能体集成通过 `dvApi.selection(projectId)` 读到项目的最近一次选择，让智能体的项目块能提到用户指向的东西。
+
+| 错误码 | 状态 | 含义 |
+| --- | --- | --- |
+| `invalid_params` | 400 | 请求不合法：字段、查询字段或文件体缺失或格式错误 |
+| `invalid_inputs` | 400 | 操作拒绝的 `inputs`：未知角色、单值角色给了列表、缺少必需角色或未知版本；消息中写出操作名 |
+| `unknown_project` | 404 | 请求指定的项目不存在 |
+| `unknown_branch`、`unknown_record`、`unknown_asset`、`unknown_operation` | 404 | 其他不存在资源的 `ProjectError` 错误码 |
+| `not_found` | 404 | 没有 `ProjectError` 错误码的不存在资源；本包读取的每种资源都有错误码 |
+| 其他 `ProjectError` 错误码 | 400 或 409 | Project 拒绝了变更，例如 `draft_changed`、`no_open_draft` 或 `nothing_to_undo`（409） |
+| `internal_error` | 500 | 意外失败；`error` 是抛出错误的文本 |
 
 -----
 
@@ -74,12 +86,12 @@ kind: "package-reference"
 <details>
 <summary>实现内部——点击展开</summary>
 
-`DvApi` 在 `dvProject` 和 `dvAssetPool` 之上构造一个 `ApiHandlers`；操作列表和一次运行的操作来自 `dvProject.listOperations()`，运行的 `inputs` 由 `dvProject.parseInputs` 解析，工作区路由用 `dvProject.bindSession` 把对话绑定到项目，并为列表读回绑定文件（`{"project": <ProjectId>}`）。在 `ctx.inject(['connection'])` 里它用 `connection.fetch.register` 注册各条 Fetch 路由，每条都经过同一个 `answer` 包装，把 `ApiRequestError` 映射成状态码。在 `ctx.inject(['webServer'])` 里它注册 `/dv/events` 前缀路由，通过 `requestRejection` 询问 Connection 请求是否带有效 cookie，再把响应交给 `serveEventStream`；后者订阅 `dvProject.subscribe(projectId)`，每次变化写一帧 `event:`/`data:`，直到请求关闭。`toWireState` 原样发送 `ProjectState` 及其 `components`，再加上各分支头、分支和素材列表：已创建的素材、每条记录的输出和已解析输入、每个角色、场景和风格版本的参考图，以及每个时间线片段的并集。
+`DvApi` 在 `dvProject` 和 `dvAssetPool` 之上构造一个 `ApiHandlers`；操作列表和一次运行的操作来自 `dvProject.listOperations()`，运行的 `inputs` 由 `dvProject.parseInputs` 解析，工作区路由用 `dvProject.bindSession` 把对话绑定到项目，并为列表读回绑定文件（`{"project": <ProjectId>}`）。在 `ctx.inject(['connection'])` 里它用 `connection.fetch.register` 注册各条 Fetch 路由，包括素材导入、布局、工作区和项目管理路由在内的每条路由都经过 `src/api.ts` 中同一个 `answer` 包装，把 `ApiRequestError` 或 `ProjectError` 映射成它的状态码和错误码，其他错误映射成 500 `internal_error`；同一文件中的 `requireProject` 检查每条路由指定的项目。`/dv/events` 写出同样的错误体。在 `ctx.inject(['webServer'])` 里它注册 `/dv/events` 前缀路由，通过 `requestRejection` 询问 Connection 请求是否带有效 cookie，再把响应交给 `serveEventStream`；后者订阅 `dvProject.subscribe(projectId)`，每次变化写一帧 `event:`/`data:`，直到请求关闭。`toWireState` 原样发送 `ProjectState` 及其 `components`，再加上各分支头、分支和素材列表：已创建的素材、每条记录的输出和已解析输入、每个角色、场景和风格版本的参考图，以及每个时间线片段的并集。
 
 | 文件 | 内容 |
 | --- | --- |
 | [`src/wire.ts`](src/wire.ts) | `WireState`、`WireHistory`、`WireOperation`、`ViewSelection`、`toWireState`、`toWireOperation`、`mentionedAssets`、`projectIdOf` |
-| [`src/api.ts`](src/api.ts) | `ApiHandlers`、`ApiRequestError`、`OperationRequest`、`WireProject`：每条路由背后的校验和 `dvProject` 调用 |
+| [`src/api.ts`](src/api.ts) | `ApiHandlers`、`ApiRequestError`、`OperationRequest`、`WireProject`：每条路由背后的校验和 `dvProject` 调用；所有路由共用的 `answer`、`json` 和 `requireProject` |
 | [`src/asset-import.ts`](src/asset-import.ts) | 素材导入路由 |
 | [`src/layout.ts`](src/layout.ts) | `CanvasLayoutStore` 和布局路由 |
 | [`src/workspaces.ts`](src/workspaces.ts) | 项目 → Workspace 关联、对话绑定，以及项目的 DSH 会话 |

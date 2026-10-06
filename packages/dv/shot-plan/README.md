@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to plan a video before anything is rendered. A plan has a `PlanId` (`p1`, `p2`, …) and numbered versions. It registers three operations with `dvProject`: `plan.create` stores version 1 of a new plan (the shots with prompts and durations, the references, and the continuity) as a JSON asset, `plan.update` stores the next version of an existing plan, and `plan.approve` records the user's go-ahead for one version, schedules one `shot.render` per new or changed shot, and one `timeline.update` or `timeline.create` that lays out every shot's take. `dvProject` turns them into the agent tools `dv_plan_create`, `dv_plan_update` and `dv_plan_approve`. The reducer keeps the `plan` slice: every version of every plan and the record that approved it.
+Use this package to plan a video before anything is rendered. A plan has a `PlanId` (`p1`, `p2`, …) and numbered versions. It registers three operations with `dvProject`: `plan.create` stores version 1 of a new plan as a JSON asset, `plan.update` stores the next version of an existing plan, and `plan.approve` records the user's go-ahead for one version and schedules the renders of its new or changed shots and the timeline that lays out every shot's take. `dvProject` turns them into the agent tools `dv_plan_create`, `dv_plan_update` and `dv_plan_approve`.
 
 ## Table of Contents
 
@@ -24,7 +24,7 @@ Use this package to plan a video before anything is rendered. A plan has a `Plan
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin after `@dv/project`. The approval needs the operations `shot.render` (Shot render), `timeline.create` and `timeline.update` (Timeline), and reads the `timeline` slice, and the asset pool stores the plan files.
+Mount the plugin after `@dv/project`. The approval needs the operations `shot.render` (Shot render), `timeline.create` and `timeline.update` (Timeline), and reads the `timeline` slice, and the asset pool stores the plan files. A plan version holds the shots with prompts and durations, the references, and the continuity. The approval schedules one `shot.render` per new or changed shot and one `timeline.update` or `timeline.create` that lays out every shot's take. The reducer keeps the `plan` slice: every version of every plan and the record that approved it.
 
 ```yaml
 - id: dv-shot-plan
@@ -69,11 +69,33 @@ The reducer ignores records that are not `done`: a finished `plan.create` adds v
 <a id="model-experience"></a>
 ## Model Experience
 
-Three tools, `dv_plan_create`, `dv_plan_update` and `dv_plan_approve`, in the format `@dv/project` gives every operation tool. A `dv_plan_create` call returns one text block such as `done <record>: plan with 2 shots` with the params, the `plan.json` output and the report `{"plan":"p1","version":1}`; a `dv_plan_update` call returns `plan updated (2 shots)` and the report with the new version. A `dv_plan_approve` call returns `done <record>: plan p1 v2 approved` and the scheduled records; the agent then waits with `dv_proj_wait`. The tool descriptions tell the agent to extend, shorten or change a story with `dv_plan_update` on its plan and to create a plan only for a separate story. The agent integration's question rule adds `user_approved` to `dv_plan_approve`. An approval whose shots have no reference images is refused before any record or question with a message that names the shots and tells the agent to ask the user for a reference image and update the plan.
+### Tool definitions
+
+#### What the model sees
+
+Three tools, `dv_plan_create`, `dv_plan_update` and `dv_plan_approve`, in the format `@dv/project` gives every operation tool. The descriptions tell the agent to create a plan only for a separate story, to extend, shorten or change a story with `dv_plan_update` on its plan (passing the complete plan, every shot in order), and to call `dv_plan_approve` only after the user agreed to the plan it showed them; `dv_plan_create` and `dv_plan_update` also carry the deterministic note. The agent integration's question rule adds `user_approved` to `dv_plan_approve`.
+
+#### Token effect
+
+About 1,200 tokens for the three definitions, fixed while the plugin is mounted; the shared arguments of `@dv/project` add up to about 200 tokens to each definition.
 
 #### KV Cache effect
 
-The three tool schemas are part of every agent request while the plugin is mounted. A plan reaches the model only through the call's own params and results.
+The definitions sit in the stable tool section of every agent request; mounting or removing the plugin changes the tool list and invalidates the cached prefix from the tool section on.
+
+### Tool results
+
+#### What the model sees
+
+A `dv_plan_create` call returns one text block such as `done <record>: plan with 2 shots` with the `plan.json` output, the params, and the report `{"plan":"p1","version":1}`; a `dv_plan_update` call returns `plan updated (2 shots)` and the report with the new version. A `dv_plan_approve` call returns `done <record>: plan p1 v2 approved` and the scheduled records; the agent then waits with `dv_proj_wait`. An approval whose shots have no reference images is refused before any record or question with a message that names the shots and tells the agent to ask the user for a reference image and update the plan.
+
+#### Token effect
+
+A create or update result repeats the plan in its params: roughly 100 tokens plus about 50 per shot. An approval result is under 100 tokens plus one ID per scheduled record.
+
+#### KV Cache effect
+
+Each result is appended to the conversation after its call; the cached prefix stays intact. A plan reaches the model only through the call's own params and results.
 
 ## Known Limitations and Deferred Work
 

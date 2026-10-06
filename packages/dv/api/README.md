@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to let browser views read and change a DreamVerse project through HTTP instead of through the agent. `dvApi` registers authenticated Fetch routes under `/api/dv/` that list, create, rename and delete projects, read the state of a branch as JSON, list the operation declarations, run an operation as the human, import a file into the asset pool, accept or discard a chat session's draft, undo and redo, create and switch branches, accept a stale record, list the history, keep the canvas layout, link projects to DSH Workspaces, and remember what a view selected. A raw `GET /dv/events` route streams every project change as server-sent events, admitted through the same Connection cookie. The `@dv/ui-*` packages are its consumers; the browser client is `DvClient` of `@dv/ui-kit`.
+Use this package to let browser views read and change a DreamVerse project through HTTP instead of through the agent. `dvApi` registers authenticated Fetch routes under `/api/dv/` for projects, branch state, operations run as the human, asset imports, drafts, undo and redo, branches, stale records, history, canvas layouts, Workspace links, and view selections. A raw `GET /dv/events` route streams every project change as server-sent events. The `@dv/ui-*` packages are its consumers; the browser client is `DvClient` of `@dv/ui-kit`.
 
 ## Table of Contents
 
@@ -25,6 +25,8 @@ Use this package to let browser views read and change a DreamVerse project throu
 ## Use this package
 
 Mount the plugin after `@dv/project` and `@dv/asset-pool`, in a profile that also mounts `dsh-web-app` (for the `connection` and `webServer` services). Without `connection` the Fetch routes stay unregistered; without `webServer` the event stream does.
+
+The Fetch routes list, create, rename and delete projects, read the state of a branch as JSON, list the operation declarations, run an operation as the human, import a file into the asset pool, accept or discard a chat session's draft, undo and redo, create and switch branches, accept a stale record, list the history, keep the canvas layout, link projects to DSH Workspaces, and remember what a view selected. The event stream admits a browser through the same Connection cookie.
 
 ```yaml
 - id: dv-api
@@ -64,7 +66,17 @@ Mount the plugin after `@dv/project` and `@dv/asset-pool`, in a profile that als
 | `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`, newest first; `updated_at` is ISO-8601 UTC |
 | `/dv/events?project=<id>` | GET | — | `text/event-stream`: `ready`, then `record`, `update`, and `branch` events, each carrying one `ProjectEvent` |
 
-`surface` is `canvas`, `timeline`, `asset_pool` or `history`; anything else counts as `canvas`, except on the asset import, which takes `canvas` or `asset_pool` only. A run calls `dvProject.run` as the human, on the working branch of the request's chat session (`main` without one), or schedules the call when an input names a record that has not finished. A malformed body answers `400`, an unknown project, branch, record, asset, or operation `404`, and a refused change (such as discarding a draft whose counts changed) `409`; every error body is `{error, code?, ...details}`, where `code` is the `ProjectError` code. The agent integration reads the last selection of a project through `dvApi.selection(projectId)`, so the agent's project block can name what the user pointed at.
+`surface` is `canvas`, `timeline`, `asset_pool` or `history`; anything else counts as `canvas`, except on the asset import, which takes `canvas` or `asset_pool` only. A run calls `dvProject.run` as the human, on the working branch of the request's chat session (`main` without one), or schedules the call when an input names a record that has not finished. Every error of every route, the event stream included, answers with the JSON body `{error, code, ...details}`: `error` is the message text and `code` is one of the codes below; `details` carries extra fields of a refusal, such as the current `counts` of a changed draft. The agent integration reads the last selection of a project through `dvApi.selection(projectId)`, so the agent's project block can name what the user pointed at.
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `invalid_params` | 400 | A malformed request: a missing or malformed field, query field, or file body |
+| `invalid_inputs` | 400 | Operation `inputs` that the operation refuses: an unknown role, a list on a single role, a missing required role, or an unknown version; the message names the operation |
+| `unknown_project` | 404 | The request names no existing project |
+| `unknown_branch`, `unknown_record`, `unknown_asset`, `unknown_operation` | 404 | The `ProjectError` code of another unknown resource |
+| `not_found` | 404 | An unknown resource without a `ProjectError` code; every resource this package reads has one |
+| Another `ProjectError` code | 400 or 409 | Project refused the change, such as `draft_changed`, `no_open_draft`, or `nothing_to_undo` (409) |
+| `internal_error` | 500 | An unexpected failure; `error` is the thrown error's text |
 
 -----
 
@@ -74,12 +86,12 @@ Mount the plugin after `@dv/project` and `@dv/asset-pool`, in a profile that als
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`DvApi` builds one `ApiHandlers` over `dvProject` and `dvAssetPool`; the operation list and a run's operation come from `dvProject.listOperations()`, a run's `inputs` are parsed by `dvProject.parseInputs`, and the workspace routes bind a chat session to a project with `dvProject.bindSession` and read the binding files (`{"project": <ProjectId>}`) back for the listing. Inside `ctx.inject(['connection'])` it registers the Fetch routes with `connection.fetch.register`, each answering through one `answer` wrapper that maps `ApiRequestError` to its status. Inside `ctx.inject(['webServer'])` it registers the `/dv/events` prefix route, asks the Connection whether the request carries a valid cookie through `requestRejection`, and hands the response to `serveEventStream`, which subscribes to `dvProject.subscribe(projectId)` and writes one `event:`/`data:` frame per change until the request closes. `toWireState` sends `ProjectState` with its `components` as they are and adds the heads, the branches, and the asset list: the union of the created assets, every record's outputs and resolved inputs, the reference images of every character, location, and style version, and every timeline clip.
+`DvApi` builds one `ApiHandlers` over `dvProject` and `dvAssetPool`; the operation list and a run's operation come from `dvProject.listOperations()`, a run's `inputs` are parsed by `dvProject.parseInputs`, and the workspace routes bind a chat session to a project with `dvProject.bindSession` and read the binding files (`{"project": <ProjectId>}`) back for the listing. Inside `ctx.inject(['connection'])` it registers the Fetch routes with `connection.fetch.register`, and every route, including the asset import, layout, workspace and project admin routes, answers through one `answer` wrapper in `src/api.ts` that maps an `ApiRequestError` or a `ProjectError` to its status and code and anything else to 500 `internal_error`; `requireProject` there checks the project every route names. `/dv/events` writes the same error body. Inside `ctx.inject(['webServer'])` it registers the `/dv/events` prefix route, asks the Connection whether the request carries a valid cookie through `requestRejection`, and hands the response to `serveEventStream`, which subscribes to `dvProject.subscribe(projectId)` and writes one `event:`/`data:` frame per change until the request closes. `toWireState` sends `ProjectState` with its `components` as they are and adds the heads, the branches, and the asset list: the union of the created assets, every record's outputs and resolved inputs, the reference images of every character, location, and style version, and every timeline clip.
 
 | File | Content |
 | --- | --- |
 | [`src/wire.ts`](src/wire.ts) | `WireState`, `WireHistory`, `WireOperation`, `ViewSelection`, `toWireState`, `toWireOperation`, `mentionedAssets`, `projectIdOf` |
-| [`src/api.ts`](src/api.ts) | `ApiHandlers`, `ApiRequestError`, `OperationRequest`, `WireProject`: validation and the `dvProject` calls behind each route |
+| [`src/api.ts`](src/api.ts) | `ApiHandlers`, `ApiRequestError`, `OperationRequest`, `WireProject`: validation and the `dvProject` calls behind each route; `answer`, `json` and `requireProject`, shared by every route |
 | [`src/asset-import.ts`](src/asset-import.ts) | The asset import route |
 | [`src/layout.ts`](src/layout.ts) | `CanvasLayoutStore` and the layout route |
 | [`src/workspaces.ts`](src/workspaces.ts) | Project → Workspace links, session bindings, and a project's DSH sessions |

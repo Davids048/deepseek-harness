@@ -242,6 +242,12 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/dv/ui-kit': { kind: 'none', reason: 'Browser-side graph, form, and track helpers; they touch no prompt, schema, or tool result.' },
   'packages/dv/ui-canvas': { kind: 'indirect', reason: 'Browser-side canvas; the records its gestures write reach the model only through the agent integration (@dv/agent-integration).' },
   'packages/dv/ui-timeline': { kind: 'indirect', reason: 'Browser-side timeline; the records its gestures write reach the model only through the agent integration (@dv/agent-integration).' },
+  'packages/dv/ui-history': { kind: 'indirect', reason: 'Browser-side History panel; the records its accept, discard, undo, and redo write reach the model only through the agent integration (@dv/agent-integration).' },
+  'packages/dv/ui-asset-pool': { kind: 'indirect', reason: 'Browser-side asset pool panel; the asset.import records its imports write reach the model only through the agent integration (@dv/agent-integration).' },
+  'packages/dv/ui-composer': { kind: 'indirect', reason: 'Browser-side composer additions; the agent integration (@dv/agent-integration) turns their dv: mentions and composer modes into model context.' },
+  'packages/dv/ui-shell': { kind: 'indirect', reason: 'Browser-side shell; the session bindings it saves and the records its Insert clip writes reach the model only through the agent integration (@dv/agent-integration).' },
+  'packages/dv/ffmpeg': { kind: 'indirect', reason: 'The command runner adds no tool; the asset pool, deliver, and inspector operations report its files and probe fields.' },
+  'packages/dv/e2e': { kind: 'none', reason: 'Browser stories that run the DreamVerse profile against a scripted model; the package ships no plugin, prompt, or tool.' },
 }
 
 interface Failure {

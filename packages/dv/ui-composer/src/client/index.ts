@@ -4,7 +4,8 @@
  * - the 渲染前先问 / 直接渲染 and 质量 / 速度 toggles in `conversation.input.left`;
  * - the `dv_shot_render` tool card, which shows the prompt, status, and rendered video;
  * - creator-facing names for the other `dv_*` tools in their chat rows and in the running group title;
- * - 在历史中查看 on settled tool rows that wrote a record, which dispatches `dv:history-focus`;
+ * - 在历史中查看 on every settled row whose tool is not read-only, including failed calls, which dispatches
+ *   `dv:history-focus`;
  * - the approval cards (批准 / 跳过, and 全部批准 when several wait) in `conversation.input.dock`;
  * - an empty `conversation.input.permission` entry that hides DSH's file-permission chip;
  * - the `dv:compose` prefill from the canvas and asset pool views, which also brings the 对话 tab to the front.

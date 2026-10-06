@@ -12,6 +12,7 @@ import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { OperationSpec, ProjectEvent, ProjectId, RecordId, RecordOrigin, SessionId, TurnId } from '@dv/project'
 import { startBase, type BaseFixture } from './support.ts'
+import { answer } from '../src/api.ts'
 import DvApi, { ApiRequestError, EVENTS_PATH, ROUTES, WORKSPACE_ROUTES, frameOf, mentionedAssets, messageOf, type ApiHandlers } from '../src/index.ts'
 
 /** Keeps the registered Fetch routes and admits every request. */
@@ -191,8 +192,9 @@ describe('dvApi', () => {
     await expect(fixture.handlers.runOperation({ project: projectId, operation: 'no.such', surface: 'canvas' })).rejects.toMatchObject({ status: 404, code: 'unknown_operation' })
     await expect(fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', inputs: [{ role: 'x' }] })).rejects.toThrow(/inputs\[\]\.ref/)
     await expect(fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', inputs: 'x' })).rejects.toThrow(/array/)
+    // An input error names the operation, the name a view request uses.
     await expect(fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', inputs: [{ role: 'nope', ref: 'a' }] }))
-      .rejects.toMatchObject({ status: 400, message: expect.stringMatching(/Unknown input role/) })
+      .rejects.toMatchObject({ status: 400, code: 'invalid_inputs', message: expect.stringMatching(/^Unknown input role "nope" for asset\.import;/) })
     await expect(fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: {} }))
       .rejects.toMatchObject({ status: 400, code: 'invalid_params' })
     await expect(fixture.handlers.acceptDraft({ project: projectId, session: 'nobody' })).rejects.toMatchObject({ status: 409, code: 'no_open_draft' })
@@ -376,6 +378,29 @@ describe('dvApi', () => {
     expect((read.json as { id: string }).id).toBe('a')
   })
 
+  it('answers every refusal of the project routes with the body {error, code}', async () => {
+    const fixture = await start()
+    // Every route that names a project: GET routes read it from the query, POST routes from the body.
+    const named: Array<{ path: string; method: 'GET' | 'POST' }> = [
+      { path: ROUTES.state, method: 'GET' }, { path: ROUTES.operation, method: 'POST' }, { path: ROUTES.acceptDraft, method: 'POST' },
+      { path: ROUTES.discardDraft, method: 'POST' }, { path: ROUTES.undo, method: 'POST' }, { path: ROUTES.redo, method: 'POST' },
+      { path: ROUTES.createBranch, method: 'POST' }, { path: ROUTES.switchBranch, method: 'POST' }, { path: ROUTES.acceptStale, method: 'POST' },
+      { path: ROUTES.history, method: 'POST' }, { path: ROUTES.selection, method: 'GET' }, { path: ROUTES.selection, method: 'POST' },
+    ]
+    for (const { path, method } of named) {
+      const send = (project: string | undefined) => method === 'GET'
+        ? call(fixture, path, { query: project === undefined ? {} : { project } })
+        : call(fixture, path, { method, body: project === undefined ? {} : { project } })
+      expect(await send(undefined), `${method} ${path}`).toEqual({ status: 400, json: { error: "'project' must name a project.", code: 'invalid_params' } })
+      expect(await send('nope'), `${method} ${path}`).toEqual({ status: 404, json: { error: "Unknown project 'nope'.", code: 'unknown_project' } })
+    }
+    expect(await call(fixture, ROUTES.projects, { method: 'POST', body: {} }))
+      .toEqual({ status: 400, json: { error: "'title' must be a non-empty string.", code: 'invalid_params' } })
+    // A failure that is not a refused request answers 500 with the thrown error's text.
+    const failed = await answer(() => { throw new Error('disk gone') })
+    expect({ status: failed.status, json: await failed.json() as unknown }).toEqual({ status: 500, json: { error: 'disk gone', code: 'internal_error' } })
+  })
+
   it('lists the history with marks, turn requests, assets, filters and pages, and refuses bad queries', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')
@@ -431,10 +456,13 @@ describe('dvApi', () => {
     const projectId = await fixture.newProject('demo')
     const base = await fixture.web.listen()
 
+    // The stream answers a refusal with the JSON error body of the Fetch routes.
     const noProject = await fetch(`${base}${EVENTS_PATH}`)
-    expect(noProject.status).toBe(400)
+    expect({ status: noProject.status, json: await noProject.json() as unknown })
+      .toEqual({ status: 400, json: { error: "'project' must name a project.", code: 'invalid_params' } })
     const unknown = await fetch(`${base}${EVENTS_PATH}?project=nope`)
-    expect(unknown.status).toBe(404)
+    expect({ status: unknown.status, json: await unknown.json() as unknown })
+      .toEqual({ status: 404, json: { error: "Unknown project 'nope'.", code: 'unknown_project' } })
     fixture.connection.rejection = 401
     const rejected = await fetch(`${base}${EVENTS_PATH}?project=${projectId}`)
     expect(rejected.status).toBe(401)
@@ -517,7 +545,8 @@ describe('dvApi', () => {
     expect(rows.entry_path).toBe(join(root, 'entry'))
     expect(rows.projects.find(row => row.id === projectId)).toMatchObject({ path: join(root, 'projects', projectId), workspace_id: null })
     expect((await call(fixture, WORKSPACE_ROUTES.workspaces, { method: 'POST', body: { project: projectId, workspace_id: 'ws-1' } })).status).toBe(200)
-    expect((await call(fixture, WORKSPACE_ROUTES.workspaces, { method: 'POST', body: { project: projectId, workspaceId: 'ws-1' } })).status).toBe(400)
+    expect(await call(fixture, WORKSPACE_ROUTES.workspaces, { method: 'POST', body: { project: projectId, workspaceId: 'ws-1' } }))
+      .toMatchObject({ status: 400, json: { error: expect.any(String), code: 'invalid_params' } })
     const relisted = (await call(fixture, WORKSPACE_ROUTES.workspaces)).json as {
       projects: Array<{ id: string; workspace_id: string | null }>
       bindings: Record<string, string>
@@ -528,6 +557,9 @@ describe('dvApi', () => {
     expect(fixture.handlers.listProjects('chat-1')[0]).toMatchObject({ id: projectId, current: true })
     // The binding file of `@dv/project` under `<state root>/sessions` reaches the listing.
     expect(((await call(fixture, WORKSPACE_ROUTES.workspaces)).json as { bindings: Record<string, string> }).bindings).toEqual({ 'chat-1': projectId })
-    expect((await call(fixture, WORKSPACE_ROUTES.bind, { method: 'POST', body: { session: 'chat-1', project: 'missing' } })).status).toBe(400)
+    expect(await call(fixture, WORKSPACE_ROUTES.bind, { method: 'POST', body: { session: 'chat-1', project: 'missing' } }))
+      .toMatchObject({ status: 404, json: { error: expect.any(String), code: 'unknown_project' } })
+    expect(await call(fixture, WORKSPACE_ROUTES.bind, { method: 'POST', body: { project: projectId } }))
+      .toMatchObject({ status: 400, json: { code: 'invalid_params' } })
   })
 })

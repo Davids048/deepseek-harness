@@ -18,6 +18,9 @@
  * Projects deleted through `@dv/api/projects-admin` are no longer listed by `dvProject`; the list omits them and their
  * bindings.
  *
+ * Errors use the body `{error, code}` of every `/api/dv` route: 400 `invalid_params` for a malformed request, 404
+ * `unknown_project` for an unknown project.
+ *
  * @module @dv/api/workspaces
  */
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
@@ -26,8 +29,8 @@ import { join } from 'node:path'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type DvProject from '@dv/project'
-import type { ProjectId, SessionId } from '@dv/project'
-import { projectIdOf } from './wire.ts'
+import type { SessionId } from '@dv/project'
+import { answer, ApiRequestError, requireProject } from './api.ts'
 
 /** The Fetch route paths. */
 export const WORKSPACE_ROUTES = {
@@ -35,16 +38,6 @@ export const WORKSPACE_ROUTES = {
   bind: '/api/dv/workspaces/bind',
   sessions: '/api/dv/workspaces/sessions',
 } as const
-
-/**
- * A JSON response with no caching.
- * @param value - the body.
- * @param status - the HTTP status.
- * @returns the response.
- */
-function json(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
-}
 
 /**
  * The project → Workspace links, read from `<state root>/workspaces.json`.
@@ -159,58 +152,48 @@ function readBindings(stateRoot: string): Record<string, string> {
  */
 export function workspaceRoutes(project: DvProject, stateRoot: string): ConnectionFetchRoute[] {
   const projectsRoot = join(stateRoot, 'projects')
-  const projectOf = (value: unknown): ProjectId => {
-    const projectId = projectIdOf(value)
-    if (projectId === null) throw new Error("'project' must name a project.")
-    project.openProject(projectId)
-    return projectId
-  }
   const bodyOf = async (request: Request): Promise<Record<string, unknown>> => {
     const body: unknown = await request.json().catch(() => ({}))
     return typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
   }
-  const list = (): Response => {
+  const list = (): unknown => {
     const links = readLinks(stateRoot)
     const projects = project.listProjects()
     const live = new Set<string>(projects.map(info => info.id))
     const entryPath = join(stateRoot, 'entry')
     mkdirSync(entryPath, { recursive: true })
-    return json({
+    return {
       entry_path: entryPath,
       projects: projects.map(info => ({
         id: info.id, title: info.title, created_at: info.created_at,
         path: join(projectsRoot, info.id), workspace_id: links[info.id] ?? null,
       })),
       bindings: Object.fromEntries(Object.entries(readBindings(stateRoot)).filter(([, projectId]) => live.has(projectId))),
-    })
-  }
-  const link = async (request: Request): Promise<Response> => {
-    const body = await bodyOf(request)
-    const projectId = projectOf(body['project'])
-    if (typeof body['workspace_id'] !== 'string') return json({ error: "'workspace_id' must be a string." }, 400)
-    writeLinks(stateRoot, { ...readLinks(stateRoot), [projectId]: body['workspace_id'] })
-    return json({ ok: true })
-  }
-  const bind = async (request: Request): Promise<Response> => {
-    const body = await bodyOf(request)
-    const projectId = projectOf(body['project'])
-    if (typeof body['session'] !== 'string' || body['session'].length === 0) return json({ error: "'session' must be a session ID." }, 400)
-    project.bindSession(brandString<SessionId>(body['session']), projectId)
-    return json({ ok: true })
-  }
-  const guard = (run: (request: Request) => Response | Promise<Response>) => async (request: Request): Promise<Response> => {
-    try {
-      return await run(request)
-    } catch (error) {
-      return json({ error: error instanceof Error ? error.message : String(error) }, 400)
     }
   }
+  const link = async (request: Request): Promise<unknown> => {
+    const body = await bodyOf(request)
+    const projectId = requireProject(project, body['project'])
+    if (typeof body['workspace_id'] !== 'string') throw new ApiRequestError(400, "'workspace_id' must be a string.", 'invalid_params')
+    writeLinks(stateRoot, { ...readLinks(stateRoot), [projectId]: body['workspace_id'] })
+    return { ok: true }
+  }
+  const bind = async (request: Request): Promise<unknown> => {
+    const body = await bodyOf(request)
+    const projectId = requireProject(project, body['project'])
+    if (typeof body['session'] !== 'string' || body['session'].length === 0) {
+      throw new ApiRequestError(400, "'session' must be a session ID.", 'invalid_params')
+    }
+    project.bindSession(brandString<SessionId>(body['session']), projectId)
+    return { ok: true }
+  }
+  const guard = (run: (request: Request) => unknown) => (request: Request): Promise<Response> => answer(() => run(request))
   return [
     { path: WORKSPACE_ROUTES.workspaces, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: guard(request => request.method === 'GET' ? list() : link(request)) },
     { path: WORKSPACE_ROUTES.bind, methods: ['POST'], requestBody: 'buffered', fetch: guard(bind) },
     {
       path: WORKSPACE_ROUTES.sessions, methods: ['GET'], requestBody: 'buffered',
-      fetch: guard(request => json(projectSessions(projectOf(new URL(request.url).searchParams.get('project')), readBindings(stateRoot)))),
+      fetch: guard(request => projectSessions(requireProject(project, new URL(request.url).searchParams.get('project')), readBindings(stateRoot))),
     },
   ]
 }

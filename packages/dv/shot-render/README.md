@@ -74,11 +74,33 @@ Before any record is written, for every caller, the operation's `precondition` r
 <a id="model-experience"></a>
 ## Model Experience
 
-One tool, `dv_shot_render`, in the format `@dv/project` gives every operation tool, with the tool-only `continue_from`. Its description names the reference input, `continue_from`, the two outputs, and that every call is a new take whose changed prompt passes `based_on`. A call returns one text block with the record, its status, the summary `shot "<prompt>" (<n>s, seed <seed>)` (`shot <n> of plan <plan> v<version> "<prompt>" …` when an approved plan scheduled it), the outputs with their URLs, the params, and the report; the last still also arrives as an image block when an attachment service is mounted. A call without reference images is refused before any record with a message that tells the agent to ask the user for a reference image: "The video model renders every shot from 1 to <n> reference images, and this shot has none. Nothing was rendered. …".
+### Tool definitions
+
+#### What the model sees
+
+One tool, `dv_shot_render`, in the format `@dv/project` gives every operation tool, with the hint "Uses the GPU." and the tool-only `continue_from`. Its description names the reference input (`c1@1`), `continue_from`, the two outputs, and that every call is a new take whose changed prompt passes `based_on`. The agent integration's question rule adds `user_requested`.
+
+#### Token effect
+
+About 600 tokens for the definition, fixed while the plugin and the generation backend are mounted; the shared arguments of `@dv/project` add up to about 200 tokens to each definition.
 
 #### KV Cache effect
 
-The tool schema is part of every agent request while the plugin and the generation backend are mounted; mounting or removing the backend changes the tool list.
+The definition sits in the stable tool section of every agent request while the plugin and the generation backend are mounted; mounting or removing either changes the tool list and invalidates the cached prefix from the tool section on.
+
+### Tool results
+
+#### What the model sees
+
+A call returns one text block with the record, its status, the summary `shot "<prompt>" (<n>s, seed <seed>)` (`shot <n> of plan <plan> v<version> "<prompt>" …` when an approved plan scheduled it), the outputs with their URLs, the params, and the report; the last still also arrives as an image block when an attachment service is mounted. A call without reference images is refused before any record with a message that tells the agent to ask the user for a reference image: "The video model renders every shot from 1 to <n> reference images, and this shot has none. Nothing was rendered. …".
+
+#### Token effect
+
+Roughly 200 tokens of text per call, plus the image block of the last still.
+
+#### KV Cache effect
+
+Each result is appended to the conversation after its call; the cached prefix stays intact.
 
 ## Known Limitations and Deferred Work
 

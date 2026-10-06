@@ -22,10 +22,14 @@ import {
   projectIdOf, toWireOperation, toWireState, type ViewSelection, type WireHistory, type WireOperation, type WireState,
 } from './wire.ts'
 
-/** A request a route could not serve, with the HTTP status that answers it and the Project error code, when any. */
+/**
+ * A request a route could not serve, with the HTTP status that answers it and its error code: `invalid_params` for a
+ * malformed request, `unknown_project` for an unknown project, `not_found` for another unknown resource, else the
+ * `ProjectError` code.
+ */
 export class ApiRequestError extends Error {
   constructor(
-    readonly status: 400 | 404 | 409, message: string, readonly code: string | null = null,
+    readonly status: 400 | 404 | 409, message: string, readonly code: string,
     readonly details: Record<string, unknown> = {},
   ) {
     super(message)
@@ -68,6 +72,52 @@ export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * A JSON response with no caching.
+ * @param value - the body.
+ * @param status - the HTTP status.
+ * @returns the response.
+ */
+export function json(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
+}
+
+/**
+ * Run a route body and answer with its JSON value, or with the error body `{error, code, ...details}` of every
+ * `/api/dv` route and `/dv/events`: an {@link ApiRequestError} with its status and code, a `ProjectError` with the
+ * status of its code, anything else with 500 and code `internal_error`.
+ * @param run - the route body.
+ * @returns the JSON response.
+ */
+export async function answer(run: () => unknown): Promise<Response> {
+  try {
+    return json(await run())
+  } catch (error) {
+    if (error instanceof ApiRequestError) return json({ ...error.details, error: error.message, code: error.code }, error.status)
+    if (error instanceof ProjectError) return json({ error: error.message, code: error.code }, STATUS_OF[error.code] ?? 409)
+    return json({ error: messageOf(error), code: 'internal_error' }, 500)
+  }
+}
+
+/**
+ * The project a request names, checked to exist.
+ * @param project - the Project service.
+ * @param value - the raw project ID.
+ * @returns the project ID.
+ * @throws ApiRequestError `invalid_params` when it is malformed, `unknown_project` when it names no project.
+ */
+export function requireProject(project: Pick<DvProject, 'openProject'>, value: unknown): ProjectId {
+  const projectId = projectIdOf(value)
+  if (projectId === null) throw new ApiRequestError(400, "'project' must name a project.", 'invalid_params')
+  try {
+    project.openProject(projectId)
+  } catch {
+    // Project throws for an unknown project; the request names no project.
+    throw new ApiRequestError(404, `Unknown project '${projectId}'.`, 'unknown_project')
+  }
+  return projectId
+}
+
 /** The services the API reads and writes. */
 export interface ApiServices {
   project: DvProject
@@ -106,10 +156,10 @@ function objectOf(value: unknown): Record<string, unknown> {
  * @param value - a raw JSON value.
  * @param field - the field name for the error.
  * @returns the string.
- * @throws ApiRequestError when the value is not a non-empty string.
+ * @throws ApiRequestError (400, code `invalid_params`) when the value is not a non-empty string.
  */
 function stringOf(value: unknown, field: string): string {
-  if (typeof value !== 'string' || value.length === 0) throw new ApiRequestError(400, `'${field}' must be a non-empty string.`)
+  if (typeof value !== 'string' || value.length === 0) throw new ApiRequestError(400, `'${field}' must be a non-empty string.`, 'invalid_params')
   return value
 }
 
@@ -211,7 +261,9 @@ function countsOf(value: unknown): DraftCounts | null {
   const counts = objectOf(value)
   const agent = counts['agent_changes']
   const human = counts['human_edits']
-  if (typeof agent !== 'number' || typeof human !== 'number') throw new ApiRequestError(400, "'counts' must hold numbers 'agent_changes' and 'human_edits'.")
+  if (typeof agent !== 'number' || typeof human !== 'number') {
+    throw new ApiRequestError(400, "'counts' must hold numbers 'agent_changes' and 'human_edits'.", 'invalid_params')
+  }
   return { agent_changes: agent, human_edits: human }
 }
 
@@ -277,7 +329,8 @@ export class ApiHandlers {
     try {
       state = this.services.project.getState(projectId, name)
     } catch (error) {
-      throw new ApiRequestError(404, messageOf(error), error instanceof ProjectError ? error.code : null)
+      if (!(error instanceof ProjectError)) throw error
+      throw new ApiRequestError(404, error.message, error.code)
     }
     return toWireState(state, this.services.project.listBranches(projectId), id => this.assetOrNull(id))
   }
@@ -309,10 +362,10 @@ export class ApiHandlers {
     const byRole = this.inputsByRole(body['inputs'])
     let inputs: RunRequest['inputs']
     try {
-      inputs = this.services.project.parseInputs(operation, byRole, state)
+      inputs = this.services.project.parseInputs(operation, byRole, state, operation)
     } catch (error) {
       // Project's input parser explains an unknown role or a malformed reference; the request is at fault.
-      throw new ApiRequestError(400, messageOf(error))
+      throw new ApiRequestError(400, messageOf(error), error instanceof ProjectError ? error.code : 'invalid_inputs')
     }
     const request: RunRequest = {
       ...origin, project: projectId, operation, params: objectOf(body['params']), inputs,
@@ -321,7 +374,7 @@ export class ApiHandlers {
       ...await refused(() => this.waitsForProducer(projectId, inputs)) ? { after: [] } : {},
     }
     const result = await refused(() => this.services.project.run(request))
-    if (result.record === null) throw new ApiRequestError(400, `'${operation}' is a read and writes no record.`)
+    if (result.record === null) throw new ApiRequestError(400, `'${operation}' is a read and writes no record.`, 'invalid_params')
     return result.record
   }
 
@@ -479,7 +532,7 @@ export class ApiHandlers {
     // A selection names a canvas, timeline or asset pool item; the History panel's selection counts as the canvas.
     const selectionSurface = surface === 'history' ? 'canvas' : surface
     if (typeof kind !== 'string' || !SELECTION_KINDS.has(kind as ViewSelection['kind'])) {
-      throw new ApiRequestError(400, `'kind' must be one of ${[...SELECTION_KINDS].join(', ')}.`)
+      throw new ApiRequestError(400, `'kind' must be one of ${[...SELECTION_KINDS].join(', ')}.`, 'invalid_params')
     }
     const selection: ViewSelection = {
       kind: kind as ViewSelection['kind'], id: stringOf(body['id'], 'id'), surface: selectionSurface, at: new Date().toISOString(),
@@ -502,14 +555,7 @@ export class ApiHandlers {
    * @throws ApiRequestError `invalid_params` when it is malformed, `unknown_project` when it names no project.
    */
   private requireProject(value: unknown): ProjectId {
-    const projectId = projectIdOf(value)
-    if (projectId === null) throw new ApiRequestError(400, "'project' must name a project.", 'invalid_params')
-    try {
-      this.services.project.openProject(projectId)
-    } catch {
-      throw new ApiRequestError(404, `Unknown project '${projectId}'.`, 'unknown_project')
-    }
-    return projectId
+    return requireProject(this.services.project, value)
   }
 
   /**
@@ -545,7 +591,7 @@ export class ApiHandlers {
    */
   private inputsByRole(value: unknown): Record<string, string[]> {
     if (value === undefined) return {}
-    if (!Array.isArray(value)) throw new ApiRequestError(400, "'inputs' must be an array.")
+    if (!Array.isArray(value)) throw new ApiRequestError(400, "'inputs' must be an array.", 'invalid_params')
     const byRole: Record<string, string[]> = {}
     for (const entry of value) {
       const input = objectOf(entry)

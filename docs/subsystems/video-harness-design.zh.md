@@ -6,8 +6,8 @@
 
 ## 设计文档涵盖的内容
 
-- 术语：project、asset、操作记录、turn、分支、tool、command、plan、entity、view。<!-- names:allow: the term list of the published document -->
-- 从 DeepSeek Harness 内核到三个视图的六层结构，以及视图与 agent 为何平级且只通过工具写入。
+- 术语：项目、素材、操作记录、轮次、分支、工具、命令、分镜计划、角色和场景、视图。
+- 从 DeepSeek Harness 内核到三个视图的六层结构，以及视图与智能体为何平级且只通过工具写入。
 - 操作记录：追加写入、单父 DAG、命名指针、折叠即回放、undo 即指针移动、确定性缓存。
 - chat、timeline、canvas 如何从同一份日志推导，每个界面的手势如何变成记录。
 - 结构化工具与任意命令的区别，以及哪些命令应包装成工具。
@@ -17,4 +17,4 @@
 
 ## 实现位置
 
-[`packages/video-harness/`](../../packages/video-harness/README.zh.md) 下的包实现了该设计；[DreamVerse 页](dreamverse.zh.md)列出了 harness 复用与取代的 DreamVerse 包。
+`packages/dv/` 和 [`packages/video-harness/`](../../packages/video-harness/README.zh.md) 下的包实现了该设计，[DreamVerse 各包页面](video-harness.zh.md)描述这些包；[DreamVerse 页](dreamverse.zh.md)列出了 harness 复用与取代的 DreamVerse 包。

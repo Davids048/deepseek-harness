@@ -6,6 +6,8 @@
  * fold under the approval's row. One bar holds the filters (actor, branch, operation kind, timeline) and the actions on
  * the chat session's working branch (accept, discard, undo, redo), which are the panel's only writes. Selecting a row
  * plays its output under the row and focuses the record on the canvas or its clip on the timeline.
+ *
+ * @module @dv/ui-history/HistoryPanel
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'

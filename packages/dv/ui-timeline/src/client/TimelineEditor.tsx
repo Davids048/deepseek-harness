@@ -199,7 +199,7 @@ export function TimelineEditor(
   const [chosenClip, setChosenClip] = useState<SelectedClip | null>(null)
   const selected = resolveSelection(clips, timelineId, chosenClip)
   const setSelected = (position: number | null): void => {
-    const clip = clips.find(entry => entry.position === position)
+    const clip = clips.find(placed => placed.position === position)
     setChosenClip(position === null || clip === undefined ? null : { timelineId, position, assetId: clip.assetId })
   }
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
@@ -238,7 +238,7 @@ export function TimelineEditor(
     const focus = pendingClipFocus
     if (focus === null || focus.timelineId !== timelineId) return
     pendingClipFocus = null
-    const clip = clips.find(entry => entry.clip === focus.clipId)
+    const clip = clips.find(placed => placed.clip === focus.clipId)
     if (clip === undefined) return
     setChosenClip({ timelineId, position: clip.position, assetId: clip.assetId })
     player.seek(clip.startSec)
@@ -349,7 +349,7 @@ export function TimelineEditor(
     })
   }
   const remove = (position: number): void => {
-    const clip = clips.find(entry => entry.position === position)
+    const clip = clips.find(placed => placed.position === position)
     if (clip === undefined) return
     void runOperation('timeline.clip_remove', { clip: clip.clip }, t('intent.remove', { position })).then((ok) => { if (ok) setSelected(null) })
   }
@@ -357,7 +357,7 @@ export function TimelineEditor(
     void runOperation('timeline.clip_insert', { at, asset }, t('intent.insert', { at }))
   }
   // The record behind the selected clip's asset, while it is stale: the record "keep anyway" accepts.
-  const selectedClip = clips.find(entry => entry.position === selected)
+  const selectedClip = clips.find(placed => placed.position === selected)
   const staleRecord = selectedClip?.stale === true ? state.components.proj.created_by[selectedClip.assetId] ?? null : null
   const keepStale = (): void => {
     if (staleRecord !== null) void run(() => client.acceptStale(project, staleRecord, 'timeline', session))

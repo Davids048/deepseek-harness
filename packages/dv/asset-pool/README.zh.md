@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包把项目的每张图片、每段视频、每个音频和文本文件只保存一次，并且永不修改。素材的 ID 是其字节的 SHA-256，因此同一文件导入两次只是一个素材，而引用某个素材的记录永远指向同样的字节。本服务把自己注册为项目的素材存储（`dvProject.registerAssetStore`），并向 `dvProject` 注册两个操作：`asset.import`，把一个文件或 base64 字节变成素材；`asset.grab_still`，经 `dvFfmpeg` 把视频的一帧变成 PNG 静帧。`dvProject` 把它们变成智能体工具 `dv_asset_import` 和 `dv_asset_grab_still`。DSH web server 运行时，本服务在 `/dv/assets/<AssetId>` 提供素材文件。该组件没有归约函数：`proj` 切片的 `created_by` 记着创建每个素材的记录。
+使用本包把项目的每张图片、每段视频、每个音频和文本文件只保存一次，并且永不修改。素材的 ID 是其字节的 SHA-256，因此引用某个素材的记录永远指向同样的字节。本服务是项目的素材存储，并向 `dvProject` 注册两个操作：`asset.import`，把一个文件或 base64 字节变成素材；`asset.grab_still`，把视频的一帧变成 PNG 静帧。DSH web server 运行时，本服务在 `/dv/assets/<AssetId>` 提供素材文件。
 
 ## 目录
 
@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `@dv/project` 和 `@dv/ffmpeg` 之后挂载插件。其他插件注入 `dvAssetPool`。
+在 `@dv/project` 和 `@dv/ffmpeg` 之后挂载插件。其他插件注入 `dvAssetPool`。本服务经 `dvProject.registerAssetStore` 注册自己，因此同一文件导入两次只是一个素材。`asset.grab_still` 经 `dvFfmpeg` 运行，`dvProject` 把这两个操作变成智能体工具 `dv_asset_import` 和 `dv_asset_grab_still`。该组件没有归约函数：`proj` 切片的 `created_by` 记着创建每个素材的记录。
 
 ```yaml
 - id: dv-asset-pool
@@ -80,11 +80,33 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-两个工具 `dv_asset_import` 和 `dv_asset_grab_still`，采用 `@dv/project` 给每个操作工具的格式。一次调用返回一个文本块：状态和摘要（`imported face.png`、`still at last`）、参数，以及带素材 ID、媒体类型和 `/dv/assets/<AssetId>` URL 的输出。挂载了附件服务时，图片输出还以图片块到达。
+### 工具定义
 
-#### KV 缓存影响
+#### 模型看到什么
 
-插件挂载期间，两个工具的 schema 是每次 agent 请求的一部分。工具结果与其他工具结果一样进入对话。
+两个工具 `dv_asset_import` 和 `dv_asset_grab_still`，采用 `@dv/project` 给每个操作工具的格式。`dv_asset_import` 的描述是 "Bring a file into the asset pool: a path on this machine, or base64 bytes. Returns the asset ID to reference later."，参数为 `path`、`base64`、`mime`（必填）和 `name`。`dv_asset_grab_still` 的描述是 "Grab one frame of a video as a PNG still, to look at it or to use it as a reference." 和 "Runs on the CPU."，接受输入 `video` 和参数 `at`（`'first'`、`'last'` 或以秒计的时间；默认 last）。两个描述都以 "Repeating a call with the same inputs and params reuses the earlier result." 结尾。
+
+#### Token 影响
+
+两个定义约 600 个 token，插件挂载期间固定不变；`@dv/project` 的共享参数让每个定义多约 200 个 token。
+
+#### KV Cache 影响
+
+这些定义位于每次智能体请求中固定的工具部分；挂载或移除插件会改变工具列表，使缓存前缀从工具部分起失效。
+
+### 工具结果
+
+#### 模型看到什么
+
+一次调用返回一个文本块：`done <record>: <summary>`（`imported face.png`、`still at last`），每个输出一行，带素材 ID（其字节的 SHA-256）、媒体类型和 `/dv/assets/<AssetId>` URL，以及参数。挂载了附件服务时，图片输出还以图片块到达。
+
+#### Token 影响
+
+每次调用约 80 个 token 的文本，大部分是 64 个字符的素材 ID 和 URL。带 `base64` 的 `dv_asset_import` 调用会在回显的参数里重复这些字节，因此其结果的开销约等于其参数再来一遍。每个图片块按模型对一张图片的计费计算。
+
+#### KV Cache 影响
+
+结果在调用之后追加到对话中；已缓存的前缀保持不变。
 
 ## 已知限制与延期工作
 

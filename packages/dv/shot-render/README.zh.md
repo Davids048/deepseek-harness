@@ -74,11 +74,33 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-一个工具 `dv_shot_render`，格式与 `@dv/project` 给每个操作工具的一样，另有仅工具参数 `continue_from`。它的描述说明参考图输入、`continue_from`、两个输出，以及每次调用都是新版本、修改提示词时传 `based_on`。一次调用返回一个文本块，含记录、状态、摘要 `shot "<prompt>" (<n>s, seed <seed>)`（已批准的分镜计划调度时为 `shot <n> of plan <plan> v<version> "<prompt>" …`）、带 URL 的输出、参数和报告；挂载了附件服务时最后静帧还以图片块到达。不带参考图的调用在写任何记录之前被拒绝，消息让智能体向用户要一张参考图："The video model renders every shot from 1 to <n> reference images, and this shot has none. Nothing was rendered. …"。
+### 工具定义
+
+#### 模型看到什么
+
+一个工具 `dv_shot_render`，格式与 `@dv/project` 给每个操作工具的一样，带提示 "Uses the GPU."，另有仅工具参数 `continue_from`。它的描述说明参考图输入（`c1@1`）、`continue_from`、两个输出，以及每次调用都是新版本、修改提示词时传 `based_on`。智能体集成的提问规则加上 `user_requested`。
+
+#### Token 影响
+
+插件和生成后端挂载期间，该定义固定约 600 个 token；`@dv/project` 的共享参数给每个定义最多增加约 200 个 token。
 
 #### KV Cache 影响
 
-插件和生成后端挂载期间，该工具 schema 是每次智能体请求的一部分；挂载或移除后端会改变工具列表。
+插件和生成后端挂载期间，该定义位于每个智能体请求固定的工具段中；挂载或移除二者之一会改变工具列表，使从工具段开始的缓存前缀失效。
+
+### 工具结果
+
+#### 模型看到什么
+
+一次调用返回一个文本块，含记录、状态、摘要 `shot "<prompt>" (<n>s, seed <seed>)`（已批准的分镜计划调度时为 `shot <n> of plan <plan> v<version> "<prompt>" …`）、带 URL 的输出、参数和报告；挂载了附件服务时最后静帧还以图片块到达。不带参考图的调用在写任何记录之前被拒绝，消息让智能体向用户要一张参考图："The video model renders every shot from 1 to <n> reference images, and this shot has none. Nothing was rendered. …"。
+
+#### Token 影响
+
+每次调用约 200 个 token 的文本，另加最后静帧的图片块。
+
+#### KV Cache 影响
+
+每个结果在调用之后追加到对话中；已缓存的前缀保持不变。
 
 ## 已知限制与延期工作
 

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-用这个包在生成任何内容之前规划一段视频。一个分镜计划有一个 `PlanId`（`p1`、`p2`……）和编号的版本。它向 `dvProject` 注册三个操作：`plan.create` 把新分镜计划的版本 1（带提示词和时长的镜头、参考和连续性）存为 JSON 素材，`plan.update` 存储已有分镜计划的下一个版本，`plan.approve` 记录用户对一个版本的同意，为每个新增或修改的镜头调度一条 `shot.render`，再调度一条 `timeline.update` 或 `timeline.create` 来排列每个镜头的版本。`dvProject` 把它们变成智能体工具 `dv_plan_create`、`dv_plan_update` 和 `dv_plan_approve`。归约函数维护 `plan` 切片：每个分镜计划的每个版本和批准它的记录。
+用这个包在生成任何内容之前规划一段视频。一个分镜计划有一个 `PlanId`（`p1`、`p2`……）和编号的版本。它向 `dvProject` 注册三个操作：`plan.create` 把新分镜计划的版本 1 存为 JSON 素材，`plan.update` 存储已有分镜计划的下一个版本，`plan.approve` 记录用户对一个版本的同意，并调度其新增或修改镜头的渲染，以及排列每个镜头版本的时间线。`dvProject` 把它们变成智能体工具 `dv_plan_create`、`dv_plan_update` 和 `dv_plan_approve`。
 
 ## 目录
 
@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `@dv/project` 之后挂载本插件。批准需要操作 `shot.render`（镜头渲染）、`timeline.create` 和 `timeline.update`（时间线），并读取 `timeline` 切片，素材库存储分镜计划文件。
+在 `@dv/project` 之后挂载本插件。批准需要操作 `shot.render`（镜头渲染）、`timeline.create` 和 `timeline.update`（时间线），并读取 `timeline` 切片，素材库存储分镜计划文件。分镜计划的一个版本包含带提示词和时长的镜头、参考和连续性。批准为每个新增或修改的镜头调度一条 `shot.render`，再调度一条 `timeline.update` 或 `timeline.create` 来排列每个镜头的版本。归约函数维护 `plan` 切片：每个分镜计划的每个版本和批准它的记录。
 
 ```yaml
 - id: dv-shot-plan
@@ -69,11 +69,33 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-三个工具 `dv_plan_create`、`dv_plan_update` 和 `dv_plan_approve`，格式与 `@dv/project` 给每个操作工具的格式相同。一次 `dv_plan_create` 调用返回一个文本块，例如 `done <record>: plan with 2 shots`，附带参数、`plan.json` 输出和报告 `{"plan":"p1","version":1}`；一次 `dv_plan_update` 调用返回 `plan updated (2 shots)` 和带新版本的报告。一次 `dv_plan_approve` 调用返回 `done <record>: plan p1 v2 approved` 和已调度的记录；智能体随后用 `dv_proj_wait` 等待。工具描述告诉智能体用 `dv_plan_update` 在故事的分镜计划上延长、缩短或修改故事，只有另一个故事才新建分镜计划。智能体集成的提问规则给 `dv_plan_approve` 加上 `user_approved`。镜头没有参考图的批准在任何记录和提问之前被拒绝，消息列出这些镜头，并告诉智能体向用户要一张参考图、更新分镜计划。
+### 工具定义
+
+#### 模型看到什么
+
+三个工具 `dv_plan_create`、`dv_plan_update` 和 `dv_plan_approve`，格式与 `@dv/project` 给每个操作工具的格式相同。描述告诉智能体只有另一个故事才新建分镜计划，用 `dv_plan_update` 在故事的分镜计划上延长、缩短或修改故事（传完整的分镜计划，所有镜头按顺序），并且只在用户同意了它展示的分镜计划之后才调用 `dv_plan_approve`；`dv_plan_create` 和 `dv_plan_update` 还带有确定性说明。智能体集成的提问规则给 `dv_plan_approve` 加上 `user_approved`。
+
+#### Token 影响
+
+插件挂载期间，三个定义固定约 1,200 个 token；`@dv/project` 的共享参数给每个定义最多增加约 200 个 token。
 
 #### KV Cache 影响
 
-插件挂载期间，三个工具 schema 是每个智能体请求的一部分。分镜计划只通过调用自己的参数和结果到达模型。
+这些定义位于每个智能体请求固定的工具段中；挂载或移除插件会改变工具列表，使从工具段开始的缓存前缀失效。
+
+### 工具结果
+
+#### 模型看到什么
+
+一次 `dv_plan_create` 调用返回一个文本块，例如 `done <record>: plan with 2 shots`，附带 `plan.json` 输出、参数和报告 `{"plan":"p1","version":1}`；一次 `dv_plan_update` 调用返回 `plan updated (2 shots)` 和带新版本的报告。一次 `dv_plan_approve` 调用返回 `done <record>: plan p1 v2 approved` 和已调度的记录；智能体随后用 `dv_proj_wait` 等待。镜头没有参考图的批准在任何记录和提问之前被拒绝，消息列出这些镜头，并告诉智能体向用户要一张参考图、更新分镜计划。
+
+#### Token 影响
+
+新建或更新的结果在参数里重复分镜计划：约 100 个 token，每个镜头再加约 50 个。批准的结果不到 100 个 token，每条调度的记录再加一个 ID。
+
+#### KV Cache 影响
+
+每个结果在调用之后追加到对话中；已缓存的前缀保持不变。分镜计划只通过调用自己的参数和结果到达模型。
 
 ## 已知限制与延期工作
 

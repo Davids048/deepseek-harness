@@ -6,7 +6,7 @@ This page is a pointer. The design rationale behind the [DreamVerse packages](vi
 
 ## What the design document covers
 
-- Terms: project, asset, operation record, turn, branch, tool, command, plan, entity, view. <!-- names:allow: the term list of the published document -->
+- Terms: project, asset, operation record, turn, branch, tool, command, plan, characters and locations, view.
 - The six layers from the DeepSeek Harness kernel to the three views, and why the views and the agent are peers that write only through tools.
 - The operation record: append-only, single-parent DAG, named heads, folding as replay, undo as a pointer move, and the deterministic cache.
 - How chat, timeline, and canvas derive from one log and how each surface's gestures become records.
@@ -17,4 +17,4 @@ This page is a pointer. The design rationale behind the [DreamVerse packages](vi
 
 ## Where the implementation lives
 
-The packages under [`packages/video-harness/`](../../packages/video-harness/README.md) implement the design; the [DreamVerse page](dreamverse.md) lists which DreamVerse packages the harness reuses and which it supersedes.
+The packages under `packages/dv/` and [`packages/video-harness/`](../../packages/video-harness/README.md) implement the design, and the [DreamVerse packages page](video-harness.md) describes them; the [DreamVerse page](dreamverse.md) lists which DreamVerse packages the harness reuses and which it supersedes.

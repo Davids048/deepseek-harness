@@ -2,6 +2,8 @@
  * The project asset pool panel: filters (全部 / 导入 / 渲染结果), an import drop zone, a thumbnail grid in sections
  * (角色 · 参考图 · 渲染结果 · 导出), drag sources that carry the asset ID as `application/x-dv-asset`, and a preview on click. Assets
  * of an open draft that the user has not accepted yet are listed too, with a 草稿 (Draft) badge.
+ *
+ * @module @dv/ui-asset-pool/AssetsPanel
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent, ReactNode } from 'react'

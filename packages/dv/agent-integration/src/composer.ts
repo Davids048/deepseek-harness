@@ -8,6 +8,7 @@
  * Routes (authenticated, below the Connection's `/api` channel):
  * - `GET /api/dv/composer/mode?session=<id>`, `POST /api/dv/composer/mode` `{session, confirm?, speed?}`;
  * - `GET /api/dv/composer/approvals?session=<id>`, `POST /api/dv/composer/approvals` `{session, id?, all?, action}`.
+ * Every route answers through `@dv/api`'s `answer`, so an error has the `{error, code}` body of the other `/api/dv` routes.
  *
  * @module @dv/agent-integration/composer
  */
@@ -18,6 +19,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import { createUserMessage, type ContextFormed, type UserMessage } from '@deepseek-ai/dsh-llm'
+import { answer, ApiRequestError } from '@dv/api'
 import {
   formatInputRef, type AssetId, type PendingApproval, type ProjectId, type ProjectRecord, type RecordId, type SessionId,
 } from '@dv/project'
@@ -284,26 +286,29 @@ export interface ComposerRouteTarget {
  * @returns the routes.
  */
 export function composerRoutes(target: ComposerRouteTarget): ConnectionFetchRoute[] {
+  const query = (request: Request): string | null => new URL(request.url).searchParams.get('session')
   return [
     {
       path: COMPOSER_ROUTES.mode, methods: ['GET', 'POST'], requestBody: 'buffered',
-      fetch: guarded(async (request) => {
-        if (request.method === 'GET') return json(target.getComposerMode(sessionOf(new URL(request.url).searchParams.get('session'))))
+      fetch: async (request) => {
+        if (request.method === 'GET') return answer(() => target.getComposerMode(sessionOf(query(request))))
         const body = await bodyOf(request)
-        const patch: Partial<ComposerMode> = {}
-        if (body['confirm'] === 'ask' || body['confirm'] === 'direct') patch.confirm = body['confirm']
-        if (body['speed'] === 'quality' || body['speed'] === 'speed') patch.speed = body['speed']
-        return json(target.updateComposerMode(sessionOf(body['session']), patch))
-      }),
+        return answer(() => {
+          const patch: Partial<ComposerMode> = {}
+          if (body['confirm'] === 'ask' || body['confirm'] === 'direct') patch.confirm = body['confirm']
+          if (body['speed'] === 'quality' || body['speed'] === 'speed') patch.speed = body['speed']
+          return target.updateComposerMode(sessionOf(body['session']), patch)
+        })
+      },
     },
     {
       path: COMPOSER_ROUTES.approvals, methods: ['GET', 'POST'], requestBody: 'buffered',
-      fetch: guarded(async (request) => {
-        if (request.method === 'GET') return json(target.approvals(sessionOf(new URL(request.url).searchParams.get('session'))))
+      fetch: async (request) => {
+        if (request.method === 'GET') return answer(() => target.approvals(sessionOf(query(request))))
         const body = await bodyOf(request)
         const card = body['all'] === true ? 'all' : typeof body['id'] === 'string' ? body['id'] : ''
-        return json({ answered: target.answer(sessionOf(body['session']), card, body['action'] === 'approve') })
-      }),
+        return answer(() => ({ answered: target.answer(sessionOf(body['session']), card, body['action'] === 'approve') }))
+      },
     },
   ]
 }
@@ -357,9 +362,12 @@ function expansionSources(ctx: Context, session: SessionId): ExpansionSources {
   }
 }
 
-/** A required session ID from a query or body value. */
+/**
+ * A required session ID from a query or body value.
+ * @throws ApiRequestError `invalid_params` when the value is missing or empty.
+ */
 function sessionOf(value: unknown): string {
-  if (typeof value !== 'string' || value === '') throw new Error('session is required')
+  if (typeof value !== 'string' || value === '') throw new ApiRequestError(400, "'session' must name a chat session.", 'invalid_params')
   return value
 }
 
@@ -372,20 +380,4 @@ async function bodyOf(request: Request): Promise<Record<string, unknown>> {
     // A missing body is reported as a missing field by the route.
     return {}
   }
-}
-
-/** A route body whose thrown errors answer 400 with their message. */
-function guarded(run: (request: Request) => Promise<Response>): (request: Request) => Promise<Response> {
-  return async (request) => {
-    try {
-      return await run(request)
-    } catch (error) {
-      return json({ error: error instanceof Error ? error.message : String(error) }, 400)
-    }
-  }
-}
-
-/** A JSON response with no caching. */
-function json(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
 }

@@ -55,7 +55,10 @@ it('stores an imported file as an asset.import record with the caller\'s surface
   }
 
   const canvas = { name: 'ref.png', mime: 'image/png', surface: 'canvas' }
-  expect((await post({ ...canvas, project: projectId, name: 'empty.png' }, new Uint8Array())).status).toBe(400)
-  expect((await post({ project: projectId, name: 'ref.png', surface: 'canvas' }, new Uint8Array(lastFrame))).status).toBe(400)
-  expect((await post({ ...canvas, project: 'missing' }, new Uint8Array(lastFrame))).status).toBe(404)
+  const invalid = { status: 400, json: { error: expect.any(String), code: 'invalid_params' } }
+  expect(await post({ ...canvas, project: projectId, name: 'empty.png' }, new Uint8Array())).toMatchObject(invalid)
+  expect(await post({ project: projectId, name: 'ref.png', surface: 'canvas' }, new Uint8Array(lastFrame))).toMatchObject(invalid)
+  expect(await post(canvas, new Uint8Array(lastFrame))).toMatchObject(invalid)
+  expect(await post({ ...canvas, project: 'missing' }, new Uint8Array(lastFrame)))
+    .toMatchObject({ status: 404, json: { error: expect.any(String), code: 'unknown_project' } })
 })

@@ -83,7 +83,7 @@ describe('approval channel', () => {
     expect(direct.record?.status).toBe('done')
   })
 
-  it('serves the composer modes and approval cards on the composer routes, and keeps the modes under the state root', async () => {
+  it('serves the composer modes and approval cards, answers a missing session with invalid_params, and stores the modes', async () => {
     const { composer, stateRoot } = await start()
     const routes = new Map(composer.fetchRoutes().map(route => [route.path, route]))
     const call = async (path: string, init: { query?: string; body?: unknown } = {}): Promise<{ status: number; json: unknown }> => {
@@ -100,7 +100,10 @@ describe('approval channel', () => {
     expect((await call(COMPOSER_ROUTES.mode, { body: { session: 's1', confirm: 'ask' } })).json)
       .toEqual({ confirm: 'ask', speed: 'quality' })
     expect(readFileSync(join(stateRoot, 'composer-modes.json'), 'utf8')).toContain('"ask"')
-    expect((await call(COMPOSER_ROUTES.mode, { query: '?session=' })).status).toBe(400)
+    expect(await call(COMPOSER_ROUTES.mode, { query: '?session=' }))
+      .toEqual({ status: 400, json: { error: "'session' must name a chat session.", code: 'invalid_params' } })
+    expect(await call(COMPOSER_ROUTES.approvals, { body: { all: true, action: 'skip' } }))
+      .toEqual({ status: 400, json: { error: "'session' must name a chat session.", code: 'invalid_params' } })
     expect(await call(COMPOSER_ROUTES.approvals, { query: '?session=s1' })).toEqual({ status: 200, json: [] })
     expect((await call(COMPOSER_ROUTES.approvals, { body: { session: 's1', all: true, action: 'skip' } })).json).toEqual({ answered: 0 })
   })

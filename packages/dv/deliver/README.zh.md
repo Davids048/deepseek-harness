@@ -62,11 +62,33 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-一个工具 `dv_deliver_timeline_export`，格式与 `@dv/project` 给每个操作工具的一样。一次调用返回一个文本块：`done: exported timeline t1`、参数，以及带 URL 的输出视频，智能体把它作为链接交给用户。
+### 工具定义
+
+#### 模型看到什么
+
+一个工具 `dv_deliver_timeline_export`，格式与 `@dv/project` 给每个操作工具的一样。它的描述是 "Export a timeline to one video: each clip with an in or out point is trimmed to that range, and all clips are joined in timeline order. Runs on the CPU."。它自己只有一个参数 `timeline`（时间线 ID，例如 `t1`；默认：第一条时间线）。
+
+#### Token 影响
+
+定义约 250 个 token，插件挂载期间固定不变；`@dv/project` 的共享参数让每个定义多约 200 个 token。
 
 #### KV Cache 影响
 
-插件挂载期间，该工具 schema 是每次智能体请求的一部分。一次调用只把它的结果加入对话。
+该定义位于每次智能体请求中固定的工具部分；挂载或移除插件会改变工具列表，使缓存前缀从工具部分起失效。
+
+### 工具结果
+
+#### 模型看到什么
+
+一次调用返回一个文本块：`done <record>: exported timeline t1`（没有 `timeline` 时为 `exported the first timeline`）、一行 `- video: <AssetId> (video/mp4) <url>`，以及参数。视频不发送图片块。
+
+#### Token 影响
+
+每次调用约 80 个 token。
+
+#### KV Cache 影响
+
+结果在调用之后追加到对话中；已缓存的前缀保持不变。
 
 ## 已知限制与延期工作
 

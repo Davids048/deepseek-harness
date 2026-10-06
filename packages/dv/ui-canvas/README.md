@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the web application a canvas over a DreamVerse project beside the chat. `CanvasView` draws the records of the shown branch on a surface that pans and zooms: characters, locations, and styles as `bible` nodes, imported images and videos as `asset` nodes, plans as `plan` nodes, and every `shot.render` record as a `take` node, linked by the assets that flowed between them. The open draft of the chat session beside the canvas is overlaid with dashed nodes; the working-branch bar on top names the branch the canvas's edits go to and accepts or discards the draft; stale records are marked. Clicking a node opens a floating editor that renders a new take, replaces a reference image, or prefills the chat composer. The shell mounts `CanvasView` in its center; the `dv-canvas` right-Sidebar tab type shows the same canvas under a branch bar.
+Use this package to give the web application a canvas over a DreamVerse project beside the chat. `CanvasView` draws the records of the shown branch as nodes on a surface that pans and zooms, linked by the assets that flowed between them, with the chat session's open draft overlaid as dashed nodes and stale records marked. Clicking a node opens a floating editor that renders a new take, replaces a reference image, or prefills the chat composer. The shell mounts `CanvasView` in its center; the `dv-canvas` right-Sidebar tab type shows the same canvas under a branch bar.
 
 ## Table of Contents
 
@@ -25,6 +25,8 @@ Use this package to give the web application a canvas over a DreamVerse project 
 ## Use this package
 
 Mount the plugin in a profile that stacks `dsh-web-app` (which provides the right Sidebar, the locale service, and the client module loader) and `@dv/api` (which serves the routes the canvas calls). Build the browser bundle first: `pnpm run build` writes `lib/client.js`.
+
+The canvas draws characters, locations, and styles as `bible` nodes, imported images and videos as `asset` nodes, plans as `plan` nodes, and every `shot.render` record as a `take` node. The working-branch bar on top names the branch the canvas's edits go to and accepts or discards the draft.
 
 ```yaml
 - id: dv-ui-canvas

@@ -10,13 +10,15 @@
  * - `POST /api/dv/projects/rename` with `{project, title}` stores a title that no other project has, appending ` 2`,
  *   ` 3`, … on a clash, and returns `{title}`.
  *
+ * Errors use the body `{error, code}` of every `/api/dv` route: 400 `invalid_params` for a malformed request, 404
+ * `unknown_project` for an unknown project.
+ *
  * @module @dv/api/projects-admin
  */
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type DvProject from '@dv/project'
-import type { ProjectId } from '@dv/project'
+import { answer, ApiRequestError, requireProject } from './api.ts'
 import type { CanvasLayoutStore } from './layout.ts'
-import { projectIdOf } from './wire.ts'
 import { readLinks, writeLinks } from './workspaces.ts'
 
 /** The Fetch route paths. */
@@ -24,16 +26,6 @@ export const PROJECT_ADMIN_ROUTES = {
   delete: '/api/dv/projects/delete',
   rename: '/api/dv/projects/rename',
 } as const
-
-/**
- * A JSON response with no caching.
- * @param value - the body.
- * @param status - the HTTP status.
- * @returns the response.
- */
-function json(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' } })
-}
 
 /**
  * A title no other project uses: the trimmed title, else the title with the smallest free ` N` suffix.
@@ -58,39 +50,27 @@ export function uniqueProjectTitle(project: Pick<DvProject, 'listProjects'>, pro
  * @returns the routes.
  */
 export function projectAdminRoutes(project: DvProject, stateRoot: string, layouts: CanvasLayoutStore): ConnectionFetchRoute[] {
-  const projectOf = (value: unknown): ProjectId => {
-    const projectId = projectIdOf(value)
-    if (projectId === null) throw new Error("'project' must name a project.")
-    project.openProject(projectId)
-    return projectId
-  }
   const bodyOf = async (request: Request): Promise<Record<string, unknown>> => {
     const body: unknown = await request.json().catch(() => ({}))
     return typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
   }
-  const remove = async (request: Request): Promise<Response> => {
-    const projectId = projectOf((await bodyOf(request))['project'])
+  const remove = async (request: Request): Promise<unknown> => {
+    const projectId = requireProject(project, (await bodyOf(request))['project'])
     await project.deleteProject(projectId)
     layouts.delete(projectId)
     const { [projectId]: workspaceId, ...links } = readLinks(stateRoot)
     writeLinks(stateRoot, links)
-    return json({ ok: true, workspace_id: workspaceId ?? null })
+    return { ok: true, workspace_id: workspaceId ?? null }
   }
-  const rename = async (request: Request): Promise<Response> => {
+  const rename = async (request: Request): Promise<unknown> => {
     const body = await bodyOf(request)
-    const projectId = projectOf(body['project'])
+    const projectId = requireProject(project, body['project'])
     const wanted = typeof body['title'] === 'string' ? body['title'].trim() : ''
-    if (wanted.length === 0) return json({ error: "'title' must be a non-empty string." }, 400)
+    if (wanted.length === 0) throw new ApiRequestError(400, "'title' must be a non-empty string.", 'invalid_params')
     const info = await project.renameProject(projectId, uniqueProjectTitle(project, projectId, wanted))
-    return json({ title: info.title })
+    return { title: info.title }
   }
-  const guard = (run: (request: Request) => Promise<Response>) => async (request: Request): Promise<Response> => {
-    try {
-      return await run(request)
-    } catch (error) {
-      return json({ error: error instanceof Error ? error.message : String(error) }, 400)
-    }
-  }
+  const guard = (run: (request: Request) => Promise<unknown>) => (request: Request): Promise<Response> => answer(() => run(request))
   return [
     { path: PROJECT_ADMIN_ROUTES.delete, methods: ['POST'], requestBody: 'buffered', fetch: guard(remove) },
     { path: PROJECT_ADMIN_ROUTES.rename, methods: ['POST'], requestBody: 'buffered', fetch: guard(rename) },

@@ -1,6 +1,8 @@
 /**
  * Browser half: register `dv-history` as a right-Sidebar tab type and its body, open the tab when a `dv:history-focus`
  * event asks for a record, and export the History panel for direct rendering.
+ *
+ * @module @dv/ui-history/client
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'

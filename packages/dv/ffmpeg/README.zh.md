@@ -71,11 +71,11 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-无；该服务只运行命令，由调用它的操作决定模型得知什么。
+间接地，经由 `@dv/asset-pool`、`@dv/deliver` 和 `@dv/inspector` 的操作：它们的工具结果报告该服务产生的文件和探测字段。
 
 #### KV Cache 影响
 
-无；该服务不向模型发送任何内容。
+无；该服务不向模型发送任何内容，也不添加工具。
 
 ## 已知限制与延期工作
 

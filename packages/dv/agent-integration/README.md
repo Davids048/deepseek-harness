@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to run the DSH agent over a DreamVerse project. `dvAgentIntegration` listens to session events and reports each agent turn and the human's words that started it to `dvProject` (`noteTurn`), so the turn's records carry the turn and its first record is preceded by the turn's request record; it imports the images the user attaches in the chat as assets (`asset.import` by the user, which the session's next tool call waits for); it registers the DSH question rule of `plan.approve` and `shot.render` as the `dvProject` tool call check and asks its questions through `userQuestions` when the calling agent is a live root agent; it keeps each chat session's composer modes and, as `dvProject`'s approval channel, holds the agent's ask-first calls behind approval cards; it expands the `dv:` mentions of new user messages into a context message with record and asset IDs; and it contributes a system-prompt section with the state of the session's working branch: characters, locations and styles, timelines and their clips, takes, stale records, plans, the draft, and the rules for resolving references such as "the second clip". The `skills/` directory holds the `video-directing`, `timeline-editing`, and `branching-story` skills a profile points `skill-filesystem` at.
+Use this package to run the DSH agent over a DreamVerse project. `dvAgentIntegration` connects chat sessions to `dvProject`: it records each agent turn with the human's words that started it, imports the images attached in the chat as assets, asks the user before plan approvals and costly shot renders, holds ask-first calls behind approval cards, expands `dv:` mentions into record and asset IDs, and adds a system-prompt section with the state of the session's working branch. The `skills/` directory holds the directing skills.
 
 ## Table of Contents
 
@@ -23,6 +23,8 @@ Use this package to run the DSH agent over a DreamVerse project. `dvAgentIntegra
 ## Use this package
 
 Mount `@dv/agent-integration` after the DreamVerse components; it injects `dvProject` and `dvAssetPool` and uses `agents`, `attachments`, `connection`, `dvApi`, `dvShotPlan`, `systemPrompt`, and `userQuestions` when they are present.
+
+The plugin listens to session events and reports each agent turn and the human's words that started it to `dvProject` (`noteTurn`), so the turn's records carry the turn and its first record is preceded by the turn's request record. It imports the images the user attaches in the chat as assets (`asset.import` by the user, which the session's next tool call waits for). It registers the DSH question rule of `plan.approve` and `shot.render` as the `dvProject` tool call check and asks its questions through `userQuestions` when the calling agent is a live root agent. It keeps each chat session's composer modes and, as `dvProject`'s approval channel, holds the agent's ask-first calls behind approval cards. It expands the `dv:` mentions of new user messages into a context message with record and asset IDs. Its system-prompt section lists characters, locations and styles, timelines and their clips, takes, stale records, plans, the draft, and the rules for resolving references such as "the second clip". The `skills/` directory holds the `video-directing`, `timeline-editing`, and `branching-story` skills a profile points `skill-filesystem` at.
 
 ```yaml
 - id: dv-agent-integration
@@ -55,6 +57,8 @@ While a Connection is mounted, the plugin serves two authenticated routes for `@
 | `/api/dv/composer/mode` | POST | `{session, confirm?, speed?}` | `ComposerMode` |
 | `/api/dv/composer/approvals` | GET | query `session` | `ApprovalCard[]` `{id, session, tool_call, operation, summary, prompt, duration_sec, gpu_seconds, references, created_at}` |
 | `/api/dv/composer/approvals` | POST | `{session, id? \| all?, action: approve \| skip}` | `{answered}` |
+
+An error answers with the JSON body `{error, code}` of the `@dv/api` routes: 400 `invalid_params` when `session` is missing, 500 `internal_error` for an unexpected failure.
 
 `dvAgentIntegration.promptBlock(sessionId)` returns the section text for one session; `confirm(request)` is the channel the question rule asks through; `getComposerMode`, `updateComposerMode`, `approvals`, and `answer` read and change the composer modes and the approval cards; `asksFirst` and `requestApproval` are the `ApprovalChannel` that `dvProject` calls. The mention helpers `parseMentions`, `formatMention`, and `describeMention` are exported for other consumers.
 
