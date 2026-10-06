@@ -1,7 +1,7 @@
 /**
- * Canvas nodes and edges derived from a folded project state. A node is an item a creator works with: an entity
- * (character, style, location), an uploaded reference, a plan, or a generated clip. Deterministic edits (frame
- * extraction, probes, sequence records) do not become nodes; a timeline trim shows as a badge on the clip it shortened.
+ * Canvas nodes and edges derived from a folded project state. A node is an item a creator works with: a character,
+ * a location or a style, an imported reference, a plan, or a rendered take. Deterministic edits (still grabs,
+ * inspections, timeline records) do not become nodes; a timeline trim shows as a badge on the clip it shortened.
  */
 import type { WireOp, WireState } from '@video-harness/ui-kit/types.ts'
 
@@ -70,9 +70,9 @@ const COLUMN = 360
 /** Row pitch; it leaves room for a card whose text has grown at the lowest zoom and that carries a badge row. */
 export const ROW = 380
 
-/** A generation record whose outputs are media the creator judges. */
-function isGeneration(op: WireOp): boolean {
-  return op.tool?.name.startsWith('generate.') === true
+/** A `shot.render` record, whose outputs are media the creator judges. */
+function isRender(op: WireOp): boolean {
+  return op.tool?.name === 'shot.render'
 }
 
 /** A plan record. */
@@ -81,16 +81,16 @@ function isPlan(op: WireOp): boolean {
 }
 
 /**
- * Name each uploaded asset by this project's own `asset.upload` record. The asset store keeps the name of the first
- * upload of identical bytes in any project, so another project's file name would otherwise show here.
+ * Name each imported asset by this project's own `asset.import` record. The asset pool keeps the name of the first
+ * import of identical bytes in any project, so another project's file name would otherwise show here.
  * @param state - a folded state.
- * @returns the state with upload names applied; `state` itself when no name differs.
+ * @returns the state with import names applied; `state` itself when no name differs.
  */
-export function withUploadNames(state: WireState): WireState {
+export function withImportNames(state: WireState): WireState {
   const names = new Map<string, string>()
   for (const op of state.ops) {
     const name = op.params['name']
-    if (op.tool?.name !== 'asset.upload' || op.status !== 'done' || typeof name !== 'string' || name === '') continue
+    if (op.tool?.name !== 'asset.import' || op.status !== 'done' || typeof name !== 'string' || name === '') continue
     for (const id of op.outputs) names.set(id, name)
   }
   if (!state.assets.some(asset => names.has(asset.id) && names.get(asset.id) !== asset.name)) return state
@@ -142,7 +142,7 @@ export function buildCanvasGraph(state: WireState, draftOps: ReadonlySet<string>
   })
   const nodes: CanvasNode[] = []
   const byOp = new Map<string, string>()
-  // An asset an entity uses as its reference image belongs to the entity node, so its upload is not drawn twice.
+  // A reference image of a character, location or style belongs to that node, so its import is not drawn twice.
   const entityOfAsset = new Map<string, string>()
   for (const [name, versions] of Object.entries(state.entities)) {
     const latest = versions.at(-1)
@@ -157,7 +157,7 @@ export function buildCanvasGraph(state: WireState, draftOps: ReadonlySet<string>
     })
   }
   for (const op of state.ops) {
-    if (op.tool?.name === 'asset.upload') {
+    if (op.tool?.name === 'asset.import') {
       const media = op.outputs.find(id => isImage(id) || isVideo(id))
       if (media === undefined || entityOfAsset.has(media)) continue
       nodes.push({
@@ -169,7 +169,7 @@ export function buildCanvasGraph(state: WireState, draftOps: ReadonlySet<string>
       const shots = Array.isArray(op.params['shots']) ? op.params['shots'].length : 0
       const title = typeof op.params['title'] === 'string' ? op.params['title'] : ''
       nodes.push({ id: op.id, kind: 'plan', title, subtitle: String(shots), thumb: null, video: null, durationSec: null, op, flags: flagsOf(op), badges: [], take: null, x: 0, y: 0 })
-    } else if (isGeneration(op)) {
+    } else if (isRender(op)) {
       const video = op.outputs.find(id => isVideo(id)) ?? null
       const shot = typeof op.params['shot'] === 'number' ? op.params['shot'] : null
       nodes.push({

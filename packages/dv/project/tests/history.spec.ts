@@ -9,10 +9,10 @@ import { agentOrigin, createTestProject, OTHER_SESSION, readLines, SESSION, star
 import { draftBranch, MAIN_BRANCH, ProjectError } from '../src/shared.ts'
 import type { ProjectId, ProjectRecord, RecordId, RecordOrigin } from '../src/types.ts'
 
-declare module '../src/types.ts' {
+declare module '@dv/project' {
   interface ComponentStates {
     /** The slice of the test reducer: the `params.value` of every `timeline` record, in chain order. */
-    history_test: { values: number[] }
+    history_test?: { values: number[] }
   }
 }
 
@@ -25,7 +25,7 @@ function startWithValues(): ProjectModules {
   m.reducers.register('history_test', {
     initial: () => ({ values: [] }),
     reduce: (slice, record) => record.component === 'timeline' && typeof record.params.value === 'number'
-      ? { values: [...slice.values, record.params.value] }
+      ? { values: [...slice?.values ?? [], record.params.value] }
       : slice,
   })
   return m
@@ -57,7 +57,7 @@ function write(m: ProjectModules, project: ProjectId, origin: RecordOrigin, valu
  * @returns the test reducer's values on `main`.
  */
 function mainValues(m: ProjectModules, project: ProjectId): number[] {
-  return m.reducers.getState(project, MAIN_BRANCH).components.history_test.values
+  return m.reducers.getState(project, MAIN_BRANCH).components.history_test?.values ?? []
 }
 
 /**
@@ -85,7 +85,7 @@ describe('history', () => {
       operation: 'proj.undo', component: 'proj', branch: MAIN_BRANCH, parents: [second.id], params: { to: first.id }, status: 'done',
     })
     expect(m.store.getBranch(project, MAIN_BRANCH)?.head).toBe(undo.id)
-    expect(mainValues(m, project)).toEqual(m.reducers.stateAt(project, MAIN_BRANCH, first.id).components.history_test.values)
+    expect(mainValues(m, project)).toEqual(m.reducers.stateAt(project, MAIN_BRANCH, first.id).components.history_test?.values)
     expect(mainValues(m, project)).toEqual([1])
     const redo = await m.store.lock(project, () => m.history.redo(project, DIRECT))
     expect(redo).toMatchObject({ operation: 'proj.redo', parents: [undo.id], params: { to: second.id } })

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The video-harness profile layer: the DreamVerse generation client, the Project service, the harness tools, agent, views, and page plugins, the directing skills, and the model routes, stacked on dsh-base and dsh-web-app or dsh-headless.",
+  "description": "The video-harness profile layer: the DreamVerse generation client, the components, the harness agent, views, and page plugins, the directing skills, and the model routes, stacked on dsh-base and dsh-web-app or dsh-headless.",
   "exports": {
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
@@ -15,17 +15,30 @@
   },
   "dependencies": {
     "@dreamverse/generation-client": "workspace:*",
+    "@dv/asset-pool": "workspace:*",
+    "@dv/deliver": "workspace:*",
+    "@dv/ffmpeg": "workspace:*",
+    "@dv/inspector": "workspace:*",
     "@dv/project": "workspace:*",
+    "@dv/shot-plan": "workspace:*",
+    "@dv/shot-render": "workspace:*",
+    "@dv/story-bible": "workspace:*",
+    "@dv/timeline": "workspace:*",
     "@video-harness/agent": "workspace:*",
-    "@video-harness/assets": "workspace:*",
-    "@video-harness/media": "workspace:*",
     "@video-harness/mentions": "workspace:*",
-    "@video-harness/tools": "workspace:*",
     "@video-harness/ui-canvas": "workspace:*",
     "@video-harness/ui-composer": "workspace:*",
     "@video-harness/ui-timeline": "workspace:*",
     "@video-harness/ui-assets": "workspace:*",
     "@video-harness/ui-shell": "workspace:*",
     "@video-harness/views": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-include": "workspace:~",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*"
   }
 }

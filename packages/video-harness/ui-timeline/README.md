@@ -1,5 +1,5 @@
 ---
-description: "The video harness timeline as a right-Sidebar tab: the project's clip sequence on one track, with reorder, range, trim, insert, and remove gestures that become sequence and clip records."
+description: "The video harness timeline as a right-Sidebar tab: the project's timeline on one track, with move, trim, split, insert, and remove gestures that become `timeline.*` records."
 kind: "package-reference"
 ---
 
@@ -35,12 +35,12 @@ The Host half registers nothing. The browser half registers the `vh-timeline` ta
 
 | Gesture | Record |
 | --- | --- |
-| Set range | `sequence.set_range {slot, inSec, outSec}`; an empty field means "from the start" or "to the end" |
-| Move left or right | `sequence.move {from, to}` |
-| Export | `clip.trim` on each clip with an in or out point, then `media.concat` over the clips in order |
-| Insert after this clip | `sequence.insert {at, asset}` with the chosen video asset |
-| Remove from the timeline | `sequence.remove {slot}`; the clip before it is selected afterwards |
-| Start the timeline from this asset | `sequence.create {assets: [asset]}` |
+| Set range | `timeline.clip_trim {timeline, clip, in_sec, out_sec}`; an empty field means "from the start" or "to the end" |
+| Move left or right | `timeline.clip_move {timeline, clip, to}` |
+| Export | One `deliver.timeline_export` call with the shown timeline; Deliver trims each clip with an in or out point to that range and joins the clips in order |
+| Insert after this clip | `timeline.clip_insert {timeline, at, asset}` with the chosen video asset |
+| Remove from the timeline | `timeline.clip_remove {timeline, clip}`; the clip before it is selected afterwards |
+| Start the timeline from this asset | `timeline.create {timeline, title, assets: [asset]}` |
 | Click a clip | `/api/vh/selection` with the asset id and slot |
 
 Every record carries `surface: 'timeline'` and an intent in the DSH interface language naming the gesture. The 剪辑 view (`CutsView`) follows `<html lang>` through `@video-harness/ui-kit/locale.ts`; switching episode tabs stops playback and resets the viewer and playhead to the new episode. While a `draft/*` branch is shown the gestures are disabled. The track draws forty pixels per second; a clip whose asset reports no duration is drawn as five seconds.
@@ -72,7 +72,8 @@ Every record carries `surface: 'timeline'` and an intent in the DSH interface la
 
 - [`@video-harness/views`](../views/README.md) — the routes behind every gesture.
 - [`@video-harness/ui-kit`](../ui-kit/README.md) — the track geometry and the hooks.
-- [`@video-harness/tools`](../tools/README.md) — the `sequence.*` and `clip.trim` tools the timeline calls.
+- [`@dv/timeline`](../../dv/timeline/README.md) — the `timeline.*` operations the timeline calls.
+- [`@dv/deliver`](../../dv/deliver/README.md) — the `deliver.timeline_export` operation that Export calls.
 
 -----
 
@@ -90,5 +91,5 @@ None; the timeline sends nothing to a model.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **No drag** — clips move one slot per click; there are no drag handles.
-- **No playback of the sequence** — the panel previews one clip; playing the whole track needs a `media.concat` record.
+- **No playback of the whole timeline** — the panel previews one clip; playing the whole track needs a `deliver.timeline_export` record.
 - **One track** — audio and overlays have no lane.

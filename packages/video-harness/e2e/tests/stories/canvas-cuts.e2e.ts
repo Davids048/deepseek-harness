@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { bootHarness, playwright, waitFor, type BootedHarness } from '../harness.ts'
 import { startScriptedModel, type ScriptedModel } from '../scripted-model.ts'
 
-/** A 2×2 PNG with other bytes than {@link PNG_BASE64}, so its upload is a new asset. */
+/** A 2×2 PNG with other bytes than {@link PNG_BASE64}, so its import is a new asset. */
 const OTHER_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQVR42mP8z8DwnwEIGBkZGBgYAAAhGQIBk6M1bQAAAABJRU5ErkJggg=='
 
 /** A 1×1 opaque PNG. */
@@ -55,7 +55,7 @@ async function stateOf(project: string): Promise<StateWire> {
 }
 
 /**
- * Seed a project: an uploaded reference, a character, an approved plan whose shots last 1 s, 2 s, 1 s, … and render
+ * Seed a project: an imported reference, a character, an approved plan whose shots last 1 s, 2 s, 1 s, … and render
  * into episode 1, and extra episodes made of the first clips.
  * @param title - the project title.
  * @param shots - how many shots the plan has.
@@ -65,8 +65,8 @@ async function stateOf(project: string): Promise<StateWire> {
 async function seedProject(title: string, shots = 3, episodes: number[] = []): Promise<Seeded> {
   const created = await harness.api.post('/api/vh/projects', { title, surface: 'canvas' }) as { projectId: string }
   const id = created.projectId
-  const upload = await invoke(id, 'asset.upload', { base64: PNG_BASE64, mime: 'image/png', name: 'ref.png' })
-  await invoke(id, 'entity.character.create', { entity: 'c1', name: 'Dancer', refs: [upload.outputs[0]] })
+  const imported = await invoke(id, 'asset.import', { base64: PNG_BASE64, mime: 'image/png', name: 'ref.png' })
+  await invoke(id, 'bible.character_create', { character: 'c1', name: 'Dancer' }, [{ role: 'reference', ref: imported.outputs[0] ?? '' }])
   const plan = await invoke(id, 'plan.create', {
     title, continuity: 'independent', references: ['c1@1'],
     shots: Array.from({ length: shots }, (_, index) => ({ prompt: `${title} shot ${String(index + 1)}`, duration_sec: 1 + (index % 2) })),
@@ -74,14 +74,14 @@ async function seedProject(title: string, shots = 3, episodes: number[] = []): P
   await invoke(id, 'plan.approve', { plan: plan.id })
   const state = await waitFor(async () => {
     const current = await stateOf(id)
-    const done = current.ops.filter(op => op.tool?.name === 'generate.video' && op.status === 'done')
+    const done = current.ops.filter(op => op.tool?.name === 'shot.render' && op.status === 'done')
     return done.length === shots && (current.sequences[0]?.items.length ?? 0) === shots ? current : null
   }, `${String(shots)} rendered shots of ${title}`, 120_000)
   const clips = [...state.sequences[0]?.items ?? []].sort((a, b) => a.slot - b.slot).map(item => item.assetId)
   for (const [index, count] of episodes.entries()) {
-    await invoke(id, 'sequence.create', { sequence: `v${String(index + 2)}`, title: `第 ${String(index + 2)} 集`, assets: clips.slice(0, count) })
+    await invoke(id, 'timeline.create', { timeline: `t${String(index + 2)}`, name: `第 ${String(index + 2)} 集`, assets: clips.slice(0, count) })
   }
-  const shotOps = state.ops.filter(op => op.tool?.name === 'generate.video').map(op => op.id)
+  const shotOps = state.ops.filter(op => op.tool?.name === 'shot.render').map(op => op.id)
   return { id, clips, shots: shotOps }
 }
 
@@ -162,7 +162,7 @@ async function cutsTime(page: Page): Promise<[number, number]> {
 async function viewerAsset(page: Page): Promise<string | null> {
   return await page.locator('[data-testid="vh-cuts-viewer"] video').evaluateAll((videos) => {
     const shown = videos.find(video => (video as HTMLVideoElement).style.visibility !== 'hidden')
-    return /\/vh\/assets\/([0-9a-f]+)\//.exec(shown?.getAttribute('src') ?? '')?.[1] ?? null
+    return /\/dv\/assets\/([0-9a-f]+)/.exec(shown?.getAttribute('src') ?? '')?.[1] ?? null
   })
 }
 
@@ -177,7 +177,7 @@ async function pxPerSecond(page: Page): Promise<number> {
 }
 
 /** @returns the item list of one episode as `assetId[in-out]` strings in slot order. */
-async function episodeItems(project: string, episode = 'v1'): Promise<string[]> {
+async function episodeItems(project: string, episode = 't1'): Promise<string[]> {
   const sequence = (await stateOf(project)).sequences.find(entry => entry.id === episode)
   return [...sequence?.items ?? []].sort((a, b) => a.slot - b.slot).map(item => `${item.assetId.slice(0, 8)}[${String(item.inSec ?? '')}-${String(item.outSec ?? '')}]`)
 }
@@ -384,7 +384,7 @@ describe('canvas stories', () => {
     await expect.poll(() => clips.count(), { timeout: 30_000 }).toBe(3)
     await expect.poll(() => harness.backend.requests.length, { timeout: 30_000 }).toBe(requests + 1)
     const take = await waitFor(async () => {
-      const latest = (await stateOf(project.id)).ops.filter(op => op.tool?.name === 'generate.video').at(-1)
+      const latest = (await stateOf(project.id)).ops.filter(op => op.tool?.name === 'shot.render').at(-1)
       return latest?.status === 'done' ? latest : null
     }, 'the new take renders')
     expect(await page.locator(`path[data-edge="${original}>${take?.id ?? ''}"]`).count()).toBe(1)
@@ -429,7 +429,7 @@ describe('canvas stories', () => {
   it('at fit zoom node text is readable and cards do not overlap, also after a trim badge', async () => {
     const project = await seedProject('canvas-readable', 3)
     // A split marks clip 2 as trimmed, which adds a badge row to its card.
-    await invoke(project.id, 'sequence.split', { sequence: 'v1', slot: 2, atSec: 0.5 })
+    await invoke(project.id, 'timeline.clip_split', { timeline: 't1', clip: 2, at_sec: 0.5 })
     const page = await openPage()
     await gotoProject(page, project.id)
     await fitCanvas(page)
@@ -486,7 +486,7 @@ describe('canvas stories', () => {
     const project = await seedProject('canvas-stale', 2)
     const state = await stateOf(project.id)
     const frame = state.assets.find(asset => asset.mime.startsWith('image/') && asset.name !== 'ref.png')
-    await invoke(project.id, 'entity.character.update', { entity: 'c1', refs: [frame?.id ?? ''] })
+    await invoke(project.id, 'bible.character_update', { character: 'c1' }, [{ role: 'reference', ref: frame?.id ?? '' }])
     const page = await openPage()
     await gotoProject(page, project.id)
     const staleClips = page.locator('[data-node-kind="clip"][data-node-stale="true"]')
@@ -508,7 +508,7 @@ describe('canvas stories', () => {
 
   it('a draft draws dashed nodes with an accept bar; accepting makes them solid', async () => {
     const project = await seedProject('canvas-draft', 2)
-    model.rules.push({ match: 'draft-shot-please', steps: [{ calls: [{ name: 'vh_generate_video', args: { reason: 'draft shot', project_id: project.id, prompt: 'canvas-draft extra shot', duration_sec: 1, inputs: { reference: ['c1@1'] } } }] }], endText: '草稿待确认' })
+    model.rules.push({ match: 'draft-shot-please', steps: [{ calls: [{ name: 'dv_shot_render', args: { reason: 'draft shot', project_id: project.id, prompt: 'canvas-draft extra shot', duration_sec: 1, inputs: { reference: ['c1@1'] } } }] }], endText: '草稿待确认' })
     const page = await openPage()
     await gotoProject(page, project.id)
     const composer = page.locator('[data-vh-chat] [contenteditable="true"]').first()
@@ -526,7 +526,7 @@ describe('canvas stories', () => {
 
   it('dragging an image tile from 素材 onto the canvas places it on the canvas', async () => {
     const project = await seedProject('canvas-drop', 2)
-    const extra = await invoke(project.id, 'asset.upload', { base64: PNG_BASE64, mime: 'image/png', name: 'extra.png' })
+    const extra = await invoke(project.id, 'asset.import', { base64: PNG_BASE64, mime: 'image/png', name: 'extra.png' })
     const page = await openPage()
     await gotoProject(page, project.id)
     await openAssets(page)
@@ -640,7 +640,7 @@ describe('cuts stories', () => {
 
   it('a very short clip can still be selected by clicking its middle at the default zoom', async () => {
     const project = await seedProject('cuts-narrow', 3)
-    await invoke(project.id, 'sequence.set_range', { sequence: 'v1', slot: 1, outSec: 0.2 })
+    await invoke(project.id, 'timeline.clip_trim', { timeline: 't1', clip: 1, out_sec: 0.2 })
     const page = await openPage()
     await gotoProject(page, project.id, 'cuts')
     const clip = await page.locator('[data-clip-slot="1"]').boundingBox()
@@ -659,7 +659,7 @@ describe('cuts stories', () => {
     await box.fill('片尾')
     await box.press('Enter')
     await expect.poll(() => episodeTabs(page)).toEqual(['第 1 集', '片尾*'])
-    await expect.poll(async () => (await stateOf(project.id)).sequences.find(sequence => sequence.id === 'v2')?.title).toBe('片尾')
+    await expect.poll(async () => (await stateOf(project.id)).sequences.find(sequence => sequence.id === 't2')?.title).toBe('片尾')
   })
 
   it('an episode can be deleted from its tab menu after a confirmation', async () => {
@@ -673,7 +673,7 @@ describe('cuts stories', () => {
     const confirm = page.getByRole('dialog').getByRole('button', { name: /删除/ })
     if (await confirm.count() > 0) await confirm.click()
     await expect.poll(() => episodeTabs(page)).toEqual(['第 1 集*', '第 3 集'])
-    await expect.poll(async () => (await stateOf(project.id)).sequences.map(sequence => sequence.id)).toEqual(['v1', 'v3'])
+    await expect.poll(async () => (await stateOf(project.id)).sequences.map(sequence => sequence.id)).toEqual(['t1', 't3'])
   })
 
   it('deleting an episode can be undone from the toolbar', async () => {
@@ -690,7 +690,7 @@ describe('cuts stories', () => {
     await expect.poll(() => undo.isEnabled()).toBe(true)
     await undo.click()
     await expect.poll(() => episodeTabs(page)).toContain('第 2 集')
-    expect((await stateOf(project.id)).sequences.map(sequence => sequence.id)).toEqual(['v1', 'v2'])
+    expect((await stateOf(project.id)).sequences.map(sequence => sequence.id)).toEqual(['t1', 't2'])
   })
 
   it('deleting the last episode leaves an honest empty state', async () => {
@@ -817,9 +817,9 @@ describe('cuts stories', () => {
     await picker.waitFor()
     await picker.getByRole('button').first().click()
     await expect.poll(() => picker.count()).toBe(0)
-    await expect.poll(async () => (await episodeItems(project.id, 'v2')).length).toBe(1)
+    await expect.poll(async () => (await episodeItems(project.id, 't2')).length).toBe(1)
     await expect.poll(() => trackClips(page)).toEqual(['1'])
-    expect(await episodeItems(project.id, 'v1')).toHaveLength(2)
+    expect(await episodeItems(project.id, 't1')).toHaveLength(2)
   })
 
   it('dragging a video tile from 素材 onto the track inserts it where it is dropped', async () => {
@@ -840,7 +840,7 @@ describe('cuts stories', () => {
     await openAssets(page)
     await page.locator(`[data-asset-id="${project.clips[0] ?? ''}"]`).click()
     await page.getByRole('button', { name: '加入剪辑' }).click()
-    await expect.poll(() => episodeItems(project.id, 'v2'), { timeout: 5000 }).toEqual([`${(project.clips[0] ?? '').slice(0, 8)}[-]`])
+    await expect.poll(() => episodeItems(project.id, 't2'), { timeout: 5000 }).toEqual([`${(project.clips[0] ?? '').slice(0, 8)}[-]`])
     await expect.poll(() => trackClips(page)).toEqual(['1'])
   })
 
@@ -870,7 +870,7 @@ describe('cuts stories', () => {
     const link = page.locator('[data-testid="vh-cuts-exported"]')
     await link.waitFor({ timeout: 60_000 })
     const href = await link.getAttribute('href') ?? ''
-    const assetId = /\/vh\/assets\/([0-9a-f]+)\//.exec(href)?.[1] ?? ''
+    const assetId = /\/dv\/assets\/([0-9a-f]+)/.exec(href)?.[1] ?? ''
     const exported = (await stateOf(project.id)).assets.find(asset => asset.id === assetId)
     expect(exported?.mime.startsWith('video/')).toBe(true)
     const duration = await page.evaluate(async url => await new Promise<number>((resolve) => {
@@ -889,7 +889,7 @@ describe('cuts stories', () => {
 
   it('an episode the agent creates appears as a tab without moving the creator off the open episode', async () => {
     const project = await seedProject('cuts-agent', 2, [1])
-    model.rules.push({ match: 'make-episode-four', steps: [{ calls: [{ name: 'vh_sequence_create', args: { reason: '新建第 4 集', project_id: project.id, sequence: 'v4', title: '第 4 集', assets: [] } }] }] })
+    model.rules.push({ match: 'make-timeline-four', steps: [{ calls: [{ name: 'dv_timeline_create', args: { reason: '新建第 4 集', project_id: project.id, timeline: 't4', name: '第 4 集', assets: [] } }] }] })
     const page = await openPage()
     await gotoProject(page, project.id, 'cuts')
     await episodeTab(page, '第 2 集').click()
@@ -897,7 +897,7 @@ describe('cuts stories', () => {
     const composer = page.locator('[data-vh-chat] [contenteditable="true"]').first()
     await composer.waitFor({ timeout: 30_000 })
     await composer.click()
-    await page.keyboard.type('make-episode-four')
+    await page.keyboard.type('make-timeline-four')
     await page.keyboard.press('Enter')
     await expect.poll(() => episodeTabs(page), { timeout: 60_000 }).toEqual(['第 1 集', '第 2 集*', '第 4 集'])
     expect(await trackClips(page)).toEqual(['1*'])
@@ -909,7 +909,7 @@ describe('cuts stories', () => {
     await gotoProject(page, project.id, 'cuts')
     await page.locator('[data-clip-slot="2"]').click()
     const selectedAsset = project.clips[1]
-    await invoke(project.id, 'sequence.remove', { sequence: 'v1', slot: 1 })
+    await invoke(project.id, 'timeline.clip_remove', { timeline: 't1', clip: 1 })
     await expect.poll(() => trackClips(page)).toHaveLength(2)
     // Whatever stays selected must be the clip the creator picked, so Delete cannot remove a clip they never chose.
     const selected = await page.locator('[data-clip-slot][aria-pressed="true"]').evaluateAll(clips => clips.map(clip => clip.getAttribute('aria-label') ?? ''))

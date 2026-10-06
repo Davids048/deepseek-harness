@@ -5,7 +5,7 @@ import { crc32, deflateSync } from 'node:zlib'
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { bootHarness, playwright, waitFor, type BootedHarness } from '../harness.ts'
-import { assetIdOf, opIdOf, startScriptedModel, type ScriptedModel, type ScriptedRule } from '../scripted-model.ts'
+import { assetIdOf, recordIdOf, startScriptedModel, type ScriptedModel, type ScriptedRule } from '../scripted-model.ts'
 
 interface OpWire {
   id: string
@@ -19,7 +19,7 @@ interface AssetWire { id: string; name: string; mime: string }
 interface StateWire { ops: OpWire[]; assets: AssetWire[]; sequences?: Array<{ id: string; title: string; items: unknown[] }> }
 
 /**
- * A 16×16 PNG of one color, built in memory so every test can upload distinct bytes.
+ * A 16×16 PNG of one color, built in memory so every test can import distinct bytes.
  * @param rgb - the color as `[r, g, b]`.
  * @returns the PNG bytes.
  */
@@ -43,14 +43,14 @@ function solidPng(rgb: [number, number, number]): Buffer {
 }
 
 let colorSeed = 1
-/** A PNG whose bytes no other test uploads. */
+/** A PNG whose bytes no other test imports. */
 function freshPng(): Buffer {
   colorSeed += 37
   return solidPng([colorSeed % 256, (colorSeed * 7) % 256, (colorSeed * 13) % 256])
 }
 
 /**
- * The scripted agent. `只回复<X>` answers `收到<X>`; `做草稿` uploads a reference, plans two shots, approves, and waits,
+ * The scripted agent. `只回复<X>` answers `收到<X>`; `做草稿` imports a reference, plans two shots, approves, and waits,
  * leaving an open draft whose assets the panel flags.
  */
 const RULES: ScriptedRule[] = [
@@ -58,12 +58,12 @@ const RULES: ScriptedRule[] = [
   {
     match: '做草稿',
     steps: [
-      { calls: [{ name: 'vh_asset_upload', args: { reason: '产品图', base64: solidPng([200, 40, 40]).toString('base64'), mime: 'image/png', name: 'draft-product.png' } }] },
-      view => ({ calls: [{ name: 'vh_plan_create', args: {
+      { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: solidPng([200, 40, 40]).toString('base64'), mime: 'image/png', name: 'draft-product.png' } }] },
+      view => ({ calls: [{ name: 'dv_plan_create', args: {
         reason: '规划', title: '草稿广告', continuity: 'independent', references: [assetIdOf(view.toolResults[0], 'asset')],
         shots: [{ prompt: '草稿镜头一', duration_sec: 1 }],
       } }] }),
-      view => ({ calls: [{ name: 'vh_plan_approve', args: { reason: '用户同意', plan: opIdOf(view.toolResults[1]), user_approved: true } }] }),
+      view => ({ calls: [{ name: 'dv_plan_approve', args: { reason: '用户同意', plan: recordIdOf(view.toolResults[1]), user_approved: true } }] }),
       { calls: [{ name: 'dv_proj_wait', args: {} }] },
     ],
     endText: '镜头已生成。草稿待确认',
@@ -139,11 +139,11 @@ describe('The assets panel', () => {
    */
   async function seedVideo(projectId: string, prompt: string): Promise<string> {
     const reference = await harness.api.post('/api/vh/invoke', {
-      project: projectId, tool: 'asset.upload', params: { base64: freshPng().toString('base64'), mime: 'image/png', name: `${prompt}.png` },
+      project: projectId, tool: 'asset.import', params: { base64: freshPng().toString('base64'), mime: 'image/png', name: `${prompt}.png` },
       inputs: [], surface: 'canvas', intent: 'seed',
     }) as OpWire
     const shot = await harness.api.post('/api/vh/invoke', {
-      project: projectId, tool: 'generate.video', params: { prompt, duration_sec: 1 },
+      project: projectId, tool: 'shot.render', params: { prompt, duration_sec: 1 },
       inputs: [{ role: 'reference', ref: reference.outputs[0] }], surface: 'canvas', intent: 'seed',
     }) as OpWire
     expect(shot.status).toBe('done')
@@ -172,7 +172,7 @@ describe('The assets panel', () => {
       expect(await assetsPanel(page).locator('[data-asset-id]').count()).toBe(0)
       const full = await createProject('assets-full')
       await harness.api.post('/api/vh/invoke', {
-        project: full.id, tool: 'asset.upload', params: { base64: freshPng().toString('base64'), mime: 'image/png', name: 'only-here.png' }, inputs: [], surface: 'canvas', intent: 'seed',
+        project: full.id, tool: 'asset.import', params: { base64: freshPng().toString('base64'), mime: 'image/png', name: 'only-here.png' }, inputs: [], surface: 'canvas', intent: 'seed',
       })
       const empty = await createProject('assets-empty')
       await openProject(page, full.title)
@@ -181,11 +181,11 @@ describe('The assets panel', () => {
       await openProject(page, empty.title)
       await openAssets(page)
       await expect.poll(() => assetsPanel(page).locator('[data-asset-id]').count()).toBe(0)
-      expect(await assetsPanel(page).innerText()).toContain('拖入图片或视频上传，或点击选择文件')
+      expect(await assetsPanel(page).innerText()).toContain('拖入图片或视频导入，或点击选择文件')
       expect(errors).toEqual([])
     })
 
-    it('uploads through the file chooser and the drop zone, listed under 上传 and 参考', async () => {
+    it('imports through the file chooser and the drop zone, listed under 导入 and 参考', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
       await openProject(page, project.title)
@@ -202,18 +202,18 @@ describe('The assets panel', () => {
         zone?.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
       }, dropped)
       await expect.poll(() => assetsPanel(page).locator('[data-asset-id]').count()).toBe(2)
-      await assetsPanel(page).getByRole('button', { name: '上传', exact: true }).click()
+      await assetsPanel(page).getByRole('button', { name: '导入', exact: true }).click()
       const titles = await assetsPanel(page).locator('[data-asset-id]').evaluateAll(rows => rows.map(row => row.getAttribute('title')))
       expect(titles.sort()).toEqual(['chosen.png', 'dropped.png'])
       expect(errors).toEqual([])
     })
 
-    it('keeps the name a file was uploaded with when another project already holds the same bytes under another name', async () => {
+    it('keeps the name a file was imported with when another project already holds the same bytes under another name', async () => {
       const { page, errors } = await openPage()
       const bytes = freshPng()
       const other = await createProject()
       await harness.api.post('/api/vh/invoke', {
-        project: other.id, tool: 'asset.upload', params: { base64: bytes.toString('base64'), mime: 'image/png', name: 'someone-else.png' }, inputs: [], surface: 'canvas', intent: 'seed',
+        project: other.id, tool: 'asset.import', params: { base64: bytes.toString('base64'), mime: 'image/png', name: 'someone-else.png' }, inputs: [], surface: 'canvas', intent: 'seed',
       })
       const project = await createProject()
       await openProject(page, project.title)
@@ -240,13 +240,13 @@ describe('The assets panel', () => {
       expect(errors).toEqual([])
     })
 
-    it('lists rendered videos under 生成', async () => {
+    it('lists rendered videos under 渲染结果', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
       const videos = [await seedVideo(project.id, 'listed prompt one'), await seedVideo(project.id, 'listed prompt two')]
       await openProject(page, project.title)
       await openAssets(page)
-      await assetsPanel(page).getByRole('button', { name: '生成', exact: true }).click()
+      await assetsPanel(page).getByRole('button', { name: '渲染结果', exact: true }).click()
       await expect.poll(() => assetsPanel(page).locator('[data-asset-id]').count()).toBe(2)
       const ids = await assetsPanel(page).locator('[data-asset-id]').evaluateAll(rows => rows.map(row => row.getAttribute('data-asset-id')))
       expect(ids.sort()).toEqual(videos.sort())
@@ -270,11 +270,11 @@ describe('The assets panel', () => {
     it('previews an asset on click and closes it with Escape; 加入剪辑 in the preview adds the video to the cuts', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
-      await harness.api.post('/api/vh/invoke', { project: project.id, tool: 'sequence.create', params: { sequence: 'v1', title: '第 1 集', assets: [] }, inputs: [], surface: 'timeline', intent: 'seed' })
+      await harness.api.post('/api/vh/invoke', { project: project.id, tool: 'timeline.create', params: { timeline: 't1', name: '第 1 集', assets: [] }, inputs: [], surface: 'timeline', intent: 'seed' })
       await seedVideo(project.id, 'preview prompt')
       await openProject(page, project.title)
       await openAssets(page)
-      await assetsPanel(page).getByRole('button', { name: '生成', exact: true }).click()
+      await assetsPanel(page).getByRole('button', { name: '渲染结果', exact: true }).click()
       await assetsPanel(page).locator('[data-asset-id]').first().click()
       const dialog = page.getByRole('dialog')
       await dialog.waitFor()
@@ -290,7 +290,7 @@ describe('The assets panel', () => {
       const { page, errors } = await openPage()
       const project = await createProject()
       await harness.api.post('/api/vh/invoke', {
-        project: project.id, tool: 'asset.upload', params: { base64: freshPng().toString('base64'), mime: 'image/png', name: 'use-me.png' }, inputs: [], surface: 'canvas', intent: 'seed',
+        project: project.id, tool: 'asset.import', params: { base64: freshPng().toString('base64'), mime: 'image/png', name: 'use-me.png' }, inputs: [], surface: 'canvas', intent: 'seed',
       })
       await openProject(page, project.title)
       await openAssets(page)
@@ -305,12 +305,12 @@ describe('The assets panel', () => {
     it('drags an asset onto the cuts track and onto the canvas', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
-      await harness.api.post('/api/vh/invoke', { project: project.id, tool: 'sequence.create', params: { sequence: 'v1', title: '第 1 集', assets: [] }, inputs: [], surface: 'timeline', intent: 'seed' })
+      await harness.api.post('/api/vh/invoke', { project: project.id, tool: 'timeline.create', params: { timeline: 't1', name: '第 1 集', assets: [] }, inputs: [], surface: 'timeline', intent: 'seed' })
       await seedVideo(project.id, 'drag prompt')
       await openProject(page, project.title)
       await page.getByRole('tab', { name: '剪辑', exact: true }).click()
       await openAssets(page)
-      await assetsPanel(page).getByRole('button', { name: '生成', exact: true }).click()
+      await assetsPanel(page).getByRole('button', { name: '渲染结果', exact: true }).click()
       const clip = assetsPanel(page).locator('[data-asset-id]').first()
       await clip.dragTo(page.locator('[role="list"]').first())
       await expect.poll(async () => (await stateOf(project.id)).sequences?.[0]?.items.length ?? 0, { timeout: 10_000 }).toBe(1)
@@ -336,7 +336,7 @@ describe('The assets panel', () => {
       const project = await createProject('english')
       await openProject(page, project.title)
       await openAssets(page, 'en')
-      for (const filter of ['All', 'Uploads', 'Generated']) {
+      for (const filter of ['All', 'Imported', 'Rendered']) {
         // The panel can still be re-laying out right after the tab opens; retry a click on an unstable chip.
         const chip = assetsPanel(page).getByRole('button', { name: filter, exact: true })
         for (let attempt = 0; attempt < 4; attempt++) {

@@ -6,7 +6,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { createHash } from 'node:crypto'
-import { createRequire } from 'node:module'
 import { once } from 'node:events'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import type { AddressInfo } from 'node:net'
@@ -14,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { startMockLlmServer, type MockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
-import { renderClip } from '../../tools/tests/support.ts'
+import { encodeClip } from '../../views/tests/support.ts'
 
 /** The repository root, four levels above this file. */
 export const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -22,8 +21,8 @@ export const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
 /** The ffmpeg binary the fake backend renders clips with. */
 export const FFMPEG = process.env['VH_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
 
-/** Playwright as apps/web installs it; this package declares no dependency of its own. */
-export const playwright = createRequire(join(REPO_ROOT, 'apps/web/package.json'))('playwright') as typeof import('playwright')
+/** Playwright, a dev dependency of this package; the stories launch Chromium through it. */
+export * as playwright from 'playwright'
 
 /** The capabilities the fake backend reports: tiny frames so a clip renders in well under a second. */
 const CAPABILITIES_BODY = {
@@ -101,7 +100,7 @@ export async function startFakeBackend(
         requests.push(body)
         const rendered = options.playable === true
           ? await renderPlayableClip(dir, Number(body['width']), Number(body['height']), Number(body['num_frames']), String(body['prompt'] ?? ''))
-          : await renderClip(dir, Number(body['width']), Number(body['height']), Number(body['num_frames']))
+          : await encodeClip(dir, Number(body['width']), Number(body['height']), Number(body['num_frames']))
         response.writeHead(200, { 'content-type': 'text/event-stream', connection: 'close' })
         const events: Array<[string, object]> = [
           ['last_frame', { data: rendered.lastFrame.toString('base64') }],

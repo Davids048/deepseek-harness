@@ -1,25 +1,31 @@
 /**
  * The agent layer of the video harness as the `vhAgent` Cordis service. It ties the DSH agent loop to the Project
- * service: each agent turn and the human's words that started it are reported to the tool bridge, so the turn's
- * records carry the turn and its request record; confirmation questions reach the user through the `userQuestions`
- * service when one is mounted; and a system-prompt section carries the state of the session's working branch, which
- * the model needs to resolve references. Drafts belong to the chat session and span turns: this plugin never accepts
- * or discards one.
+ * service: each agent turn and the human's words that started it are reported to `dvProject`, so the turn's
+ * records carry the turn and its request record; the images a user attaches in a chat are imported into the asset
+ * pool; the DSH question rule of `plan.approve` and `shot.render` is registered with `dvProject` as its tool call
+ * check, and its questions reach the user through the `userQuestions` service when one is mounted; and a
+ * system-prompt section carries the state of the session's working branch, which the model needs to resolve
+ * references. Drafts belong to the chat session and span turns: this plugin never accepts or discards one.
  *
  * @module @video-harness/agent
  */
 import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type {} from '@deepseek-ai/dsh-attachment'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-user-questions'
-import type { AssetId, SessionId } from '@dv/project'
-import type { ConfirmRequest } from '@video-harness/tools'
+import type {} from '@dv/asset-pool'
+import type { AssetId, ProjectId, SessionId } from '@dv/project'
+import type { Plan } from '@dv/shot-plan'
 import type {} from '@video-harness/views'
+import { questionRule, type ConfirmRequest } from './question-rule.ts'
 import { renderResolverBlock } from './resolver.ts'
 
+export type { ConfirmRequest } from './question-rule.ts'
 export { renderResolverBlock, type ResolverInput } from './resolver.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -37,6 +43,8 @@ export interface Config {
   approveLabel: string
   /** The option label that declines a confirmation question. */
   declineLabel: string
+  /** Estimated GPU seconds a turn may spend on `shot.render` calls before the user must agree. */
+  confirmGpuSecondsThreshold: number
 }
 
 /** Loader validation. */
@@ -44,12 +52,13 @@ export const Config: z<Config> = z.object({
   promptSectionOrder: z.number().default(4900),
   approveLabel: z.string().default('Run it'),
   declineLabel: z.string().default('Not now'),
+  confirmGpuSecondsThreshold: z.number().default(60),
 })
 
 /** The name of the system-prompt section this plugin contributes. */
 export const PROMPT_SECTION = 'video-harness:project'
 
-/** The two composer choices of a chat session: ask before every generation or not, and quality or speed. */
+/** The two composer choices of a chat session: ask before every render or not, and quality or speed. */
 export interface ComposerMode {
   confirm: 'ask' | 'direct'
   speed: 'quality' | 'speed'
@@ -64,9 +73,9 @@ export interface ComposerChannel {
   mode(sessionId: string): ComposerMode
 }
 
-/** Turn wiring, confirmation, and the prompt section over the tool bridge. */
+/** Turn wiring, chat-image import, the question rule, and the prompt section. */
 export default class VhAgent extends Service {
-  static inject = ['dvProject', 'vhTools']
+  static inject = ['dvProject', 'dvAssetPool']
   static Config = Config
 
   private composer: ComposerChannel | null = null
@@ -76,8 +85,10 @@ export default class VhAgent extends Service {
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'vhAgent')
     ctx.on('session/event', (session: Session, event: SessionEvent) => { this.onSessionEvent(session, event) })
-    ctx.vhTools.setConfirmPolicy(request => this.confirm(request))
-    ctx.effect(() => () => { ctx.vhTools.setConfirmPolicy(null) }, 'vhAgent confirm policy')
+    ctx.effect(() => ctx.dvProject.registerToolCallCheck(questionRule({
+      project: ctx.dvProject, planOf: (project, plan) => this.planOf(project, plan),
+      confirmGpuSecondsThreshold: config.confirmGpuSecondsThreshold, ask: request => this.confirm(request),
+    })), 'vhAgent question rule')
     ctx.inject(['systemPrompt'], (child) => {
       child.effect(() => child.systemPrompt.section({
         name: PROMPT_SECTION,
@@ -109,13 +120,11 @@ export default class VhAgent extends Service {
    * @returns the block text.
    */
   promptBlock(sessionId: string | undefined): string {
-    const tools = this.ctx.vhTools
-    const session = sessionId === undefined ? undefined : tools.sessionState(sessionId)
-    const url = (id: string): string => tools.assetUrl(brandString<AssetId>(id))
-    if (sessionId === undefined || session === undefined || session.projectId === null) {
+    const projectId = sessionId === undefined ? null : this.ctx.dvProject.sessionProject(brandString<SessionId>(sessionId))
+    const url = (id: string): string => this.ctx.dvAssetPool.url(brandString<AssetId>(id))
+    if (sessionId === undefined || projectId === null) {
       return renderResolverBlock({ projectId: null, state: null, branch: null, url, selection: null })
     }
-    const projectId = session.projectId
     // The session's working branch: its draft when one is open, else the branch it switched to, else main.
     const branch = this.ctx.dvProject.workingBranch(projectId, brandString<SessionId>(sessionId))
     const state = this.ctx.dvProject.getState(projectId, branch.name)
@@ -132,12 +141,12 @@ export default class VhAgent extends Service {
       ? 'User preference: speed. Prefer the shortest durations and one take per shot.'
       : 'User preference: quality. Prefer careful prompts and longer durations where the shot needs them.'
     const confirm = mode.confirm === 'ask'
-      ? ' Every vh_generate_video and vh_plan_approve call waits for the user\'s approval card: call it directly without asking in chat first; the card is the question.'
+      ? ' Every dv_shot_render and dv_plan_approve call waits for the user\'s approval card: call it directly without asking in chat first; the card is the question.'
       : ''
     return `\n${speed}${confirm}`
   }
 
-  /** Report turn starts and the human's words of live sessions to the bridge, and import chat images. */
+  /** Report turn starts and the human's words of live sessions to `dvProject`, and import chat images. */
   private onSessionEvent(session: Session, event: SessionEvent): void {
     const agents = this.ctx.get('agents')
     if (agents !== undefined) {
@@ -146,14 +155,14 @@ export default class VhAgent extends Service {
     }
     if (event.type === 'turn/start') {
       this.turns.set(session.id, event.data.turn)
-      this.ctx.vhTools.noteTurn(session.id, event.data.turn, '')
+      this.ctx.dvProject.noteTurn(brandString<SessionId>(session.id), event.data.turn, '')
       return
     }
     if (event.type !== 'user/message' || event.data.source.kind !== 'user') return
     // The agent loop appends the user's message after it opened the turn the message starts.
     const turn = this.turns.get(session.id)
     const text = event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
-    if (turn !== undefined && text !== '') this.ctx.vhTools.noteTurn(session.id, turn, text)
+    if (turn !== undefined && text !== '') this.ctx.dvProject.noteTurn(brandString<SessionId>(session.id), turn, text)
     this.recordChatImages(session.id, event.data)
   }
 
@@ -165,10 +174,59 @@ export default class VhAgent extends Service {
   private recordChatImages(sessionId: string, message: SessionEventMap['user/message']): void {
     const refs = message.content.flatMap(block => block.type === 'image' ? [block.attachment] : [])
     if (refs.length === 0) return
-    this.ctx.vhTools.recordChatImages(sessionId, refs).catch((error: unknown) => {
+    this.importChatImages(brandString<SessionId>(sessionId), refs).catch((error: unknown) => {
       const reason = error instanceof Error ? error.message : String(error)
       this.ctx.logger('vhAgent').warn('could not import chat images of session %s as assets: %s', sessionId, reason)
     })
+  }
+
+  /**
+   * Import chat images as assets of the session's project: one `asset.import` per image by the user, in the chat, on
+   * the session's working branch. The session's next tool call waits until the import finished
+   * (`dvProject.holdToolCalls`). A session without a project, or a process without an attachment service, imports
+   * nothing.
+   * @param session - the chat session.
+   * @param refs - the image attachments of the user message.
+   * @returns the imported asset IDs.
+   */
+  private importChatImages(session: SessionId, refs: readonly ImageAttachmentRef[]): Promise<AssetId[]> {
+    const project = this.ctx.dvProject
+    const pool = this.ctx.dvAssetPool
+    const projectId = project.sessionProject(session)
+    const attachments = this.ctx.get('attachments')
+    if (projectId === null || attachments === undefined) return Promise.resolve([])
+    const importing = (async () => {
+      const ids: AssetId[] = []
+      for (const ref of refs) {
+        const stored = await attachments.readImage(ref)
+        const name = ref.name ?? `image.${ref.mediaType.slice('image/'.length)}`
+        const asset = pool.importAsset(stored.data, { mime: ref.mediaType, name }, null)
+        const result = await project.run({
+          project: projectId, operation: 'asset.import', inputs: [], params: { path: pool.path(asset), mime: ref.mediaType, name },
+          actor: 'user', surface: 'chat', session, turn: null, tool_call: null, intent: `import ${name}`,
+        })
+        ids.push(result.outputs[0] ?? asset)
+      }
+      return ids
+    })()
+    project.holdToolCalls(session, importing)
+    return importing
+  }
+
+  /**
+   * The plan a `plan.approve` call names, for the approval question.
+   * @param projectId - the project.
+   * @param plan - the call's `plan` param.
+   * @returns the plan, or null when the Shot plan component is not mounted or the param names no finished plan record.
+   */
+  private planOf(projectId: ProjectId, plan: unknown): Plan | null {
+    try {
+      return this.ctx.get('dvShotPlan')?.getPlan(projectId, String(plan)) ?? null
+    } catch (error: unknown) {
+      // An unknown plan record is refused by the approval's precondition; the question then uses the call's params.
+      void error
+      return null
+    }
   }
 
   /**
@@ -196,7 +254,7 @@ export default class VhAgent extends Service {
       })
       return answer.answers.some(item => item.id === 'approve' && item.selected.includes(this.config.approveLabel))
     } catch (error: unknown) {
-      // The question channel refused (delegated caller, aborted, or no UI): the bridge falls back to asking in chat.
+      // The question channel refused (delegated caller, aborted, or no UI): the rule falls back to asking in chat.
       void error
       return null
     }

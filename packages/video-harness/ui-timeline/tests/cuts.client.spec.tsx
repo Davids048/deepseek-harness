@@ -18,8 +18,8 @@ function twoVideos(): WireState {
   state.heads = { main: state.heads['main'] ?? 's1' }
   state.assets.push(asset('upload.mp4', 'video/mp4', null, 3))
   state.sequences = [
-    { id: 'v1', title: '第 1 集', items: state.sequence?.items ?? [] },
-    { id: 'v2', title: '第 2 集', items: [{ slot: 1, assetId: 'upload.mp4', inSec: null, outSec: null }] },
+    { id: 't1', title: '第 1 集', items: state.sequence?.items ?? [] },
+    { id: 't2', title: '第 2 集', items: [{ slot: 1, assetId: 'upload.mp4', inSec: null, outSec: null }] },
   ]
   return state
 }
@@ -45,7 +45,7 @@ describe('CutsView', () => {
     expect(clip(2).style.width).toBe('120px')
     expect(clip(2).getAttribute('data-clip-stale')).toBe('true')
     expect(view.getByTestId('vh-cuts-time').textContent).toBe('0:00.0 / 0:07.0')
-    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 'v1' }) })
+    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 't1' }) })
     fireEvent.click(view.getAllByRole('tab')[1] as HTMLElement)
     expect(view.container.querySelectorAll('[data-clip-slot]')).toHaveLength(1)
   })
@@ -58,59 +58,59 @@ describe('CutsView', () => {
     await waitFor(() => { expect(writes.some(write => write.path === '/api/vh/selection')).toBe(true) })
     fireEvent.keyDown(view.getByTestId('vh-cuts'), { key: 'Delete' })
     await waitFor(() => { expect(invokes()).toHaveLength(1) })
-    expect(invokes()[0]).toMatchObject({ project: 'p1', surface: 'timeline', tool: 'sequence.remove', params: { sequence: 'v1', slot: 2 } })
+    expect(invokes()[0]).toMatchObject({ project: 'p1', surface: 'timeline', tool: 'timeline.clip_remove', params: { timeline: 't1', clip: 2 } })
 
     fireEvent.pointerDown(view.getByTestId('vh-cuts-ruler'), { clientX: 60 })
     fireEvent.pointerUp(view.getByTestId('vh-cuts-ruler'), { clientX: 60 })
     fireEvent.click(view.getByText('分割'))
     await waitFor(() => { expect(invokes()).toHaveLength(2) })
-    expect(invokes()[1]).toMatchObject({ tool: 'sequence.split', params: { sequence: 'v1', slot: 1, atSec: 1.5 } })
+    expect(invokes()[1]).toMatchObject({ tool: 'timeline.clip_split', params: { timeline: 't1', clip: 1, at_sec: 1.5 } })
 
     fireEvent.pointerDown(clip(1), { clientX: 0 })
     fireEvent.pointerMove(clip(1), { clientX: 200 })
     fireEvent.pointerUp(clip(1), { clientX: 200 })
     await waitFor(() => { expect(invokes()).toHaveLength(3) })
-    expect(invokes()[2]).toMatchObject({ tool: 'sequence.move', params: { sequence: 'v1', from: 1, to: 2 } })
+    expect(invokes()[2]).toMatchObject({ tool: 'timeline.clip_move', params: { timeline: 't1', clip: 1, to: 2 } })
 
     const start = within(clip(1)).getByLabelText('拖动裁剪第 1 段的开头')
     fireEvent.pointerDown(start, { clientX: 0 })
     fireEvent.pointerMove(start, { clientX: 40 })
     fireEvent.pointerUp(start, { clientX: 40 })
     await waitFor(() => { expect(invokes()).toHaveLength(4) })
-    expect(invokes()[3]).toMatchObject({ tool: 'sequence.set_range', params: { sequence: 'v1', slot: 1, inSec: 1 } })
+    expect(invokes()[3]).toMatchObject({ tool: 'timeline.clip_trim', params: { timeline: 't1', clip: 1, in_sec: 1 } })
     expect(invokes()[3]?.['params']).not.toHaveProperty('outSec')
 
     fireEvent.click(view.getByText('＋ 新建'))
     await waitFor(() => { expect(invokes()).toHaveLength(5) })
-    expect(invokes()[4]).toMatchObject({ tool: 'sequence.create', params: { sequence: 'v3', title: '第 3 集', assets: [] } })
+    expect(invokes()[4]).toMatchObject({ tool: 'timeline.create', params: { timeline: 't3', name: '第 3 集', assets: [] } })
 
     fireEvent.click(view.getAllByRole('tab')[1] as HTMLElement)
     fireEvent.click(view.getByLabelText('添加片段'))
     fireEvent.click(within(view.getByRole('dialog')).getByText('shot1.mp4'))
     await waitFor(() => { expect(invokes()).toHaveLength(6) })
-    expect(invokes()[5]).toMatchObject({ tool: 'sequence.insert', params: { sequence: 'v2', at: 2, asset: 'shot1.mp4' } })
+    expect(invokes()[5]).toMatchObject({ tool: 'timeline.clip_insert', params: { timeline: 't2', at: 2, asset: 'shot1.mp4' } })
   })
 
   it('resets the viewer and playhead when another video is shown, and blanks the viewer for a video without clips', async () => {
     const { fetch } = scriptedFetch({
       state: () => {
         const state = twoVideos()
-        state.sequences?.push({ id: 'v3', title: '第 3 集', items: [] })
+        state.sequences?.push({ id: 't3', title: '第 3 集', items: [] })
         return state
       },
     })
     const view = render(<CutsView projectId="p1" branch="main" client={new VhClient(fetch)} />)
     await view.findByRole('list', { name: '视频轨道' })
     const frames = (): HTMLVideoElement[] => [...view.getByTestId('vh-cuts-viewer').querySelectorAll('video')]
-    expect(frames()[0]?.getAttribute('src')).toBe('/vh/assets/shot1.mp4/content')
+    expect(frames()[0]?.getAttribute('src')).toBe('/dv/assets/shot1.mp4')
     fireEvent.pointerDown(view.getByTestId('vh-cuts-ruler'), { clientX: 200 })
     fireEvent.pointerUp(view.getByTestId('vh-cuts-ruler'), { clientX: 200 })
     expect(view.getByTestId('vh-cuts-time').textContent).toBe('0:05.0 / 0:07.0')
 
-    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 'v1' }) })
+    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 't1' }) })
     fireEvent.click(view.getAllByRole('tab')[1] as HTMLElement)
     expect(view.getByTestId('vh-cuts-time').textContent).toBe('0:00.0 / 0:03.0')
-    expect(frames()[0]?.getAttribute('src')).toBe('/vh/assets/upload.mp4/content')
+    expect(frames()[0]?.getAttribute('src')).toBe('/dv/assets/upload.mp4')
 
     fireEvent.click(view.getAllByRole('tab')[2] as HTMLElement)
     expect(view.getByTestId('vh-cuts-time').textContent).toBe('0:00.0 / 0:00.0')
@@ -122,28 +122,28 @@ describe('CutsView', () => {
   it('shares the selected episode on window and follows an episode another bundle publishes', async () => {
     const { view, track } = mount()
     await track()
-    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 'v1' }) })
+    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 't1' }) })
     fireEvent.click(view.getAllByRole('tab')[1] as HTMLElement)
-    expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 'v2' })
-    act(() => { publishCurrentEpisode('p1', 'v1') })
+    expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 't2' })
+    act(() => { publishCurrentEpisode('p1', 't1') })
     expect(view.getAllByRole('tab').map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false'])
   })
 
   it('renames an episode by double-click and deletes it from the tab menu after a confirmation', async () => {
     const { view, invokes, track } = mount()
     await track()
-    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 'v1' }) })
+    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 't1' }) })
     fireEvent.doubleClick(view.getAllByRole('tab')[1] as HTMLElement)
     const box = within(view.getByRole('tablist')).getByRole('textbox')
     fireEvent.change(box, { target: { value: '片尾' } })
     fireEvent.keyDown(box, { key: 'Enter' })
     await waitFor(() => { expect(invokes()).toHaveLength(1) })
-    expect(invokes()[0]).toMatchObject({ tool: 'sequence.rename', params: { sequence: 'v2', title: '片尾' } })
+    expect(invokes()[0]).toMatchObject({ tool: 'timeline.rename', params: { timeline: 't2', name: '片尾' } })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     fireEvent.contextMenu(view.getAllByRole('tab')[1] as HTMLElement)
     fireEvent.click(view.getByRole('menuitem', { name: '删除这一集' }))
     await waitFor(() => { expect(invokes()).toHaveLength(2) })
-    expect(invokes()[1]).toMatchObject({ tool: 'sequence.delete', params: { sequence: 'v2' } })
+    expect(invokes()[1]).toMatchObject({ tool: 'timeline.delete', params: { timeline: 't2' } })
   })
 
   it('shows the open draft of its chat session for editing, and a draft branch it is given read-only with a note', async () => {
@@ -157,7 +157,7 @@ describe('CutsView', () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     fireEvent.click(editing.getByRole('menuitem', { name: '删除这一集' }))
     // The edit carries the session, so it lands on the session's draft.
-    await waitFor(() => { expect(writes.find(write => write.path === '/api/vh/invoke')?.body).toMatchObject({ session: 's5', tool: 'sequence.delete' }) })
+    await waitFor(() => { expect(writes.find(write => write.path === '/api/vh/invoke')?.body).toMatchObject({ session: 's5', tool: 'timeline.delete' }) })
     cleanup()
     const viewing = render(<CutsView projectId="p1" branch="draft/s5" client={new VhClient(fetch)} />)
     await viewing.findByText('草稿还没确认，虚线框的片段来自草稿。接受或丢弃草稿后才能修改。')
@@ -180,7 +180,7 @@ describe('CutsView', () => {
     const state = twoVideos()
     const base = state.sequences?.[0]?.items ?? []
     const added = { slot: base.length + 1, assetId: 'upload.mp4', inSec: null, outSec: null }
-    const video = { id: 'v1', title: '', items: [...base, added] }
+    const video = { id: 't1', title: '', items: [...base, added] }
     expect(placeVideo(state, video, 'draft/s9', base).clips.map(clip => clip.draft)).toEqual([...base.map(() => false), true])
     expect(placeVideo(state, video, 'main', base).clips.some(clip => clip.draft)).toBe(false)
   })
@@ -193,13 +193,12 @@ describe('CutsView', () => {
     expect(view.getByText('Split')).toBeTruthy()
   })
 
-  it('exports by cutting ranged clips first and joining all clips in order', async () => {
+  it('exports the shown timeline with one deliver.timeline_export call', async () => {
     const { view, invokes, track } = mount()
     await track()
     fireEvent.click(view.getByText('导出'))
-    await waitFor(() => { expect(view.getByTestId('vh-cuts-exported').getAttribute('href')).toBe('/vh/assets/new.mp4/content') })
-    expect(invokes().map(body => body['tool'])).toEqual(['clip.trim', 'media.concat'])
-    expect(invokes()[0]).toMatchObject({ inputs: [{ role: 'clip', ref: 'shot2.mp4' }], params: { startSec: 1, endSec: 4 } })
-    expect(invokes()[1]).toMatchObject({ inputs: [{ role: 'clip', ref: 'shot1.mp4' }, { role: 'clip', ref: 'new.mp4' }] })
+    await waitFor(() => { expect(view.getByTestId('vh-cuts-exported').getAttribute('href')).toBe('/dv/assets/new.mp4') })
+    expect(invokes().map(body => body['tool'])).toEqual(['deliver.timeline_export'])
+    expect(invokes()[0]).toMatchObject({ params: { timeline: 't1' } })
   })
 })

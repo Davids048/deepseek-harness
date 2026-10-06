@@ -12,10 +12,11 @@
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
+    "@dv/asset-pool": "workspace:*",
     "@dv/project": "workspace:*",
-    "@video-harness/agent": "workspace:*",
-    "@video-harness/assets": "workspace:*",
-    "@video-harness/tools": "workspace:*"
+    "@dv/shot-plan": "workspace:*",
+    "@dv/story-bible": "workspace:*",
+    "@video-harness/agent": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"

@@ -1,5 +1,5 @@
 ---
-description: "video-harness 包组：内容寻址的素材存储、媒体服务、作为 `@dv/project` 操作运行的结构化工具、agent 集成、浏览器 API，以及画布和时间线视图。"
+description: "video-harness 包组：基于 `@dv/project` 操作的 agent 集成、浏览器 API，以及画布和时间线视图。"
 kind: "package-group"
 ---
 
@@ -26,14 +26,11 @@ kind: "package-group"
 
 | 包 | 职责 |
 | --- | --- |
-| [`assets`](assets/README.zh.md) | 内容寻址的不可变媒体存储，以及 `/vh/assets/<id>/content` 路由 |
-| [`media`](media/README.zh.md) | 在已存素材上运行 ffmpeg 和 ffprobe：探测、抽帧、裁剪、拼接、运行声明输出的命令 |
-| [`tools`](tools/README.zh.md) | 带类型的工具 spec、它们作为 `dvProject` 操作的注册、桥接归约函数，以及 `vh_*` 和 `dv_proj_*` DSH 工具 |
 | [`agent`](agent/README.zh.md) | DSH agent loop 的轮次及其请求文本、聊天图片导入、确认问题、项目提示词节，以及导演 skill |
 | [`views`](views/README.zh.md) | 经认证的 `/api/vh/*` 路由和 `/vh/events` 事件流，浏览器视图经此读状态、写用户记录 |
 | [`ui-kit`](ui-kit/README.zh.md) | 两个视图共用的浏览器代码：API 客户端、状态类型、图布局、表单模型、轨道几何和分支栏 |
 | [`ui-canvas`](ui-canvas/README.zh.md) | 右侧栏的画布标签：记录按素材流向画成 DAG，参数表单可修改或重跑任一记录 |
-| [`ui-timeline`](ui-timeline/README.zh.md) | 右侧栏的时间线标签：片段序列在一条轨道上，可排序、设范围、裁剪、插入、移除 |
+| [`ui-timeline`](ui-timeline/README.zh.md) | 右侧栏的时间线标签：一条时间线的片段在一条轨道上，可排序、设范围、裁剪、插入、移除 |
 
 <a id="related-documentation"></a>
 ## 相关文档

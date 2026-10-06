@@ -27,8 +27,9 @@ import type {
  */
 function operation(overrides: Partial<OperationSpec> & Pick<OperationSpec, 'name' | 'component'>): OperationSpec {
   return {
-    version: '1', params: { prompt: { type: 'string' }, seed: { type: 'integer' } }, inputRoles: ['reference'], confirm: 'never',
-    deterministic: false, resource: 'none', execute: () => Promise.resolve({ outputs: [] }), ...overrides,
+    version: '1', params: { prompt: { type: 'string' }, seed: { type: 'integer' } }, confirm: 'never',
+    inputs: { reference: { type: 'image', description: 'A reference.', many: true } }, outputs: [], description: 'A test operation.',
+    summarize: () => 'ran', deterministic: false, resource: 'none', execute: () => Promise.resolve({ outputs: [] }), ...overrides,
   }
 }
 
@@ -177,6 +178,30 @@ describe('Runner', () => {
     expect((await running).record?.status).toBe('done')
   })
 
+  it('refuses a call that the operation\'s precondition refuses, before writing', async () => {
+    const m = startModules()
+    const project = await createTestProject(m)
+    const seen: string[] = []
+    const precondition = (call: RunRequest, state: { branch: string }): Promise<void> => {
+      seen.push(state.branch)
+      return call.params['prompt'] === 'refuse' ? Promise.reject(new Error('This shot has no reference image.')) : Promise.resolve()
+    }
+    m.runner.registerOperation(operation({ name: 'shot.render', component: 'shot', precondition }))
+    m.runner.registerOperation(operation({ name: 'inspect.image', component: 'inspect', readOnly: true, precondition }))
+    const before = files(m, project)
+    const eventCount = m.events.length
+
+    // An agent call that is refused opens no draft; a read-only call is refused the same way.
+    for (const name of ['shot.render', 'inspect.image']) {
+      await expect(m.runner.run(request(project, name, agentOrigin(), { params: { prompt: 'refuse' } })))
+        .rejects.toThrow('This shot has no reference image.')
+    }
+    expect(files(m, project)).toBe(before)
+    expect(m.events).toHaveLength(eventCount)
+    expect(seen).toEqual([MAIN_BRANCH, MAIN_BRANCH])
+    expect((await m.runner.run(request(project, 'shot.render'))).record?.status).toBe('done')
+  })
+
   it('fails the record when execute throws', async () => {
     const m = startModules()
     const project = await createTestProject(m)
@@ -297,6 +322,33 @@ describe('Runner', () => {
     expect(human.record?.status).toBe('done')
     expect(direct.record?.status).toBe('done')
     expect(requestApproval).not.toHaveBeenCalled()
+  })
+
+  it('asks in ask-first mode even when the agent call says the user approved it', async () => {
+    const m = startModules()
+    const project = await createTestProject(m)
+    m.runner.registerOperation(operation({
+      name: 'shot.render', component: 'shot', confirm: 'agent_ask_first',
+      params: { prompt: { type: 'string' }, user_approved: { type: 'boolean' }, user_requested: { type: 'boolean' } },
+    }))
+    const requestApproval = vi.fn<ApprovalChannel['requestApproval']>(() => Promise.resolve(false))
+    m.runner.registerApprovalChannel({ asksFirst: () => true, requestApproval })
+
+    const result = await m.runner.run(request(project, 'shot.render', agentOrigin(), {
+      params: { prompt: 'a red kite', user_approved: true, user_requested: true },
+    }))
+
+    expect(requestApproval).toHaveBeenCalledTimes(1)
+    expect(result.record).toMatchObject({ status: 'cancelled', error: { code: 'skipped' } })
+  })
+
+  it('refuses an operation whose name does not start with its component key', () => {
+    const m = startModules()
+    expect(() => m.runner.registerOperation(operation({ name: 'timeline.create', component: 'deliver' })))
+      .toThrow(expect.objectContaining({ code: 'invalid_params' }))
+    expect(() => m.runner.registerOperation(operation({ name: 'shot', component: 'shot' })))
+      .toThrow(expect.objectContaining({ code: 'invalid_params' }))
+    expect(m.runner.listOperations()).toEqual([])
   })
 
   it('lets other edits run while a render executes', async () => {

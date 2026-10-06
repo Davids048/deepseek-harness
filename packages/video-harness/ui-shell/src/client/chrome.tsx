@@ -128,8 +128,8 @@ function DreamVerseGuide({ useTabInfo }: PropsRuntime<'sidebar.right.tab.guide'>
   const { tab } = useTabInfo()
   const t = useText()
   const labels: Record<(typeof GUIDE_KINDS)[number], [string, string]> = {
-    'vh-chat': [t('对话', 'Chat'), t('和 agent 对话，让它规划和生成', 'Talk with the agent to plan and generate')],
-    [ASSETS_KIND]: [t('素材', 'Assets'), t('项目的人物、参考图、上传和生成结果', "The project's characters, reference images, uploads, and generations")],
+    'vh-chat': [t('对话', 'Chat'), t('和 agent 对话，让它规划和渲染', 'Talk with the agent to plan and render')],
+    [ASSETS_KIND]: [t('素材', 'Assets'), t('项目的人物、参考图、导入和渲染结果', "The project's characters, reference images, imports, and renders")],
     'vh-trajectory': [t('轨迹', 'Trajectory'), t('agent 的每一步调用（开发者视图）', 'Every agent step (developer view)')],
   }
   return (

@@ -15,13 +15,19 @@
       "path": "../../../vendor/schemastery"
     },
     {
+      "path": "../../attachment/attachment"
+    },
+    {
       "path": "../../core/tools"
+    },
+    {
+      "path": "../../llm/llm"
     },
     {
       "path": "../../util/brand"
     },
     {
-      "path": "../../video-harness/assets"
+      "path": "../../util/values"
     }
   ]
 }

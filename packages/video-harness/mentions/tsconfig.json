@@ -24,13 +24,16 @@
       "path": "../../client/connection/tsconfig.host.json"
     },
     {
+      "path": "../../dv/asset-pool"
+    },
+    {
       "path": "../../dv/project"
     },
     {
-      "path": "../assets"
+      "path": "../../dv/shot-plan"
     },
     {
-      "path": "../tools"
+      "path": "../../dv/story-bible"
     },
     {
       "path": "../agent"

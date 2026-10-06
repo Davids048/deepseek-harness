@@ -15,7 +15,7 @@ describe('buildDag', () => {
     // The join's clip came from a hidden child, so the edge comes from the plan.
     expect(dag.edges).toContainEqual({ from: 'p1', to: 'c1', label: 'clip', asset: 'shot2.mp4' })
     // The probe's input is the join's output.
-    expect(dag.edges).toContainEqual({ from: 'c1', to: 'x1', label: 'media', asset: 'cut.mp4' })
+    expect(dag.edges).toContainEqual({ from: 'c1', to: 'x1', label: 'media', asset: 'export.mp4' })
     // The entity edge points at the retake on the draft branch.
     expect(dag.edges).toContainEqual({ from: 'entity:hero', to: 'g3', label: 'reference', asset: 'ref.png' })
     const take = dag.nodes.find(node => node.id === 'g3')
@@ -41,17 +41,17 @@ describe('buildDag', () => {
   it('skips self references, unknown producers, and empty entity histories, and dedupes repeated edges', () => {
     const state = fixtureState()
     state.entities['ghost'] = []
-    state.ops.push(op({ id: 'loop', tool: { name: 'media.probe', version: '1' }, inputs: [{ role: 'clip', ref: 'loop#0', resolved: 'self.mp4' }, { role: 'clip', ref: 'external.mp4', resolved: null }, { role: 'clip', ref: 'cut.mp4', resolved: 'cut.mp4' }, { role: 'clip', ref: 'cut.mp4', resolved: 'cut.mp4' }], outputs: ['self.mp4'] }))
+    state.ops.push(op({ id: 'loop', tool: { name: 'media.probe', version: '1' }, inputs: [{ role: 'clip', ref: 'loop#0', resolved: 'self.mp4' }, { role: 'clip', ref: 'external.mp4', resolved: null }, { role: 'clip', ref: 'export.mp4', resolved: 'export.mp4' }, { role: 'clip', ref: 'export.mp4', resolved: 'export.mp4' }], outputs: ['self.mp4'] }))
     const dag = buildDag(state)
     expect(dag.nodes.some(node => node.id === 'entity:ghost')).toBe(false)
     const incoming = dag.edges.filter(edge => edge.to === 'loop')
-    expect(incoming).toEqual([{ from: 'c1', to: 'loop', label: 'clip', asset: 'cut.mp4' }])
+    expect(incoming).toEqual([{ from: 'c1', to: 'loop', label: 'clip', asset: 'export.mp4' }])
   })
 
   it('falls back to the fold\'s producer table for assets whose producer is visible but recorded later', () => {
     const state = fixtureState()
     state.ops.push(op({ id: 'late', tool: { name: 'media.probe', version: '1' }, inputs: [{ role: 'clip', ref: 'future.mp4', resolved: 'future.mp4' }] }))
-    state.ops.push(op({ id: 'maker', tool: { name: 'asset.upload', version: '1' }, outputs: ['future.mp4'] }))
+    state.ops.push(op({ id: 'maker', tool: { name: 'asset.import', version: '1' }, outputs: ['future.mp4'] }))
     state.producers['future.mp4'] = 'maker'
     expect(buildDag(state).edges).toContainEqual({ from: 'maker', to: 'late', label: 'clip', asset: 'future.mp4' })
   })
@@ -62,7 +62,7 @@ describe('opLabel', () => {
     expect(opLabel(op({ id: 'a', params: { prompt: 'short' } }))).toBe('short')
     expect(opLabel(op({ id: 'b', params: { prompt: 'hero walks through the rain at night in the city' } }))).toBe('hero walks through the rain …')
     expect(opLabel(op({ id: 'c', tool: { name: 'media.probe', version: '1' } }))).toBe('media.probe')
-    expect(opLabel(op({ id: 'e', kind: 'branch' }))).toBe('branch')
+    expect(opLabel(op({ id: 'e', kind: 'request' }))).toBe('request')
   })
 })
 

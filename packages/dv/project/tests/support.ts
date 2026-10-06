@@ -1,6 +1,7 @@
 /**
- * Shared fixtures of the `@dv/project` unit tests: a temporary store root, record origins, an in-memory asset store,
- * and a module set wired the same way as the `dvProject` service, without a Cordis context.
+ * Shared fixtures of the `@dv/project` unit tests: a temporary store root, record origins, in-memory asset stores,
+ * a module set wired the same way as the `dvProject` service, without a Cordis context, and the `test_bible` slice
+ * of the test reducers that answer `createdBy` and `assetsOf`.
  */
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -16,7 +17,31 @@ import { Runner, type RunnerAssets } from '../src/runner.ts'
 import { Scheduler } from '../src/scheduler.ts'
 import { MAIN_BRANCH } from '../src/shared.ts'
 import { Subscriptions } from '../src/subscriptions.ts'
-import type { AssetId, ProjectEvent, ProjectId, RecordOrigin, SessionId, TurnId } from '../src/types.ts'
+import type {
+  AssetId, AssetStore, ProjectEvent, ProjectId, RecordId, RecordInputRef, RecordOrigin, SessionId, TurnId,
+} from '../src/types.ts'
+
+declare module '@dv/project' {
+  interface ComponentStates {
+    /**
+     * The slice of the test reducers that stand in for Story bible: the assets and the creating record of each
+     * version, by {@link versionKey}.
+     */
+    test_bible?: { assets: Record<string, AssetId[]>; creators: Record<string, RecordId> }
+  }
+}
+
+/**
+ * The `test_bible` key of a character, location or style version.
+ * @param ref - an input reference.
+ * @returns `<kind>:<id>@<version>`, or null for an asset or a record output.
+ */
+export function versionKey(ref: RecordInputRef): string | null {
+  if ('character' in ref) return `character:${ref.character}@${ref.version}`
+  if ('location' in ref) return `location:${ref.location}@${ref.version}`
+  if ('style' in ref) return `style:${ref.style}@${ref.version}`
+  return null
+}
 
 /**
  * A temporary directory that is removed when the current test finishes.
@@ -79,6 +104,36 @@ export class FakeAssets implements RunnerAssets {
     const id = brandString<AssetId>(createHash('sha256').update(bytes).digest('hex'))
     this.created.set(id, createdBy)
     return id
+  }
+}
+
+/** An in-memory asset store with media types. */
+export class MemoryAssets implements AssetStore {
+  readonly files = new Map<AssetId, { mime: string; name: string; bytes: Uint8Array }>()
+
+  has(asset: AssetId): boolean {
+    return this.files.has(asset)
+  }
+
+  get(asset: AssetId): { mime: string; name: string } {
+    const file = this.files.get(asset)
+    if (file === undefined) throw new Error(`unknown asset ${asset}`)
+    return file
+  }
+
+  read(asset: AssetId): Uint8Array {
+    return this.files.get(asset)?.bytes ?? new Uint8Array()
+  }
+
+  importAsset(source: Uint8Array | { path: string }, meta: { mime: string; name: string }): AssetId {
+    const bytes = source instanceof Uint8Array ? source : Buffer.from(source.path)
+    const id = brandString<AssetId>(createHash('sha256').update(bytes).digest('hex'))
+    this.files.set(id, { mime: meta.mime, name: meta.name, bytes })
+    return id
+  }
+
+  url(asset: AssetId): string {
+    return `https://assets.example/${asset}`
   }
 }
 

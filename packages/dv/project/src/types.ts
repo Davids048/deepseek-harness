@@ -9,15 +9,23 @@
  * @module @dv/project/types
  */
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { ParameterSchemaSpec } from '@deepseek-ai/dsh-tools'
-import type { AssetId } from '@video-harness/assets' // names:allow (AssetId is owned by the asset package until stage 3)
+import type { ParameterSchemaSpec, ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 /**
- * The content-hash ID of an asset. The asset package owns this type until stage 3; Project re-exports it so that
- * callers import every record type from `@dv/project`. Stage 3 moves the definition into this file and the asset pool
- * re-exports it, because the asset pool depends on Project and Project cannot import it back.
+ * The ID of an asset: the SHA-256 hex digest of its bytes. Project defines it because records name assets; the asset
+ * pool depends on Project and re-exports it.
  */
-export type { AssetId } from '@video-harness/assets' // names:allow
+export type AssetId = Branded<'DvAssetId'>
+
+/** The ID of a character, chosen by the caller of `bible.character_create`, such as `c1`. The Story bible re-exports it. */
+export type CharacterId = Branded<'DvCharacterId'>
+
+/** The ID of a location, chosen by the caller of `bible.location_create`, such as `l1`. The Story bible re-exports it. */
+export type LocationId = Branded<'DvLocationId'>
+
+/** The ID of a style, chosen by the caller of `bible.style_create`, such as `s1`. The Story bible re-exports it. */
+export type StyleId = Branded<'DvStyleId'>
 
 /** The ID of a project; it names the project's directory under the store root. */
 export type ProjectId = Branded<'DvProjectId'>
@@ -48,14 +56,14 @@ export type RecordStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelle
 
 /**
  * What one record input refers to: an asset, the n-th output of an earlier record, or one version of a character, a
- * location or a style. Their IDs are plain strings until the story bible defines its ID types in stage 3.
+ * location or a style.
  */
 export type RecordInputRef =
   | { asset: AssetId }
   | { record: RecordId; output: number }
-  | { character: string; version: number }
-  | { location: string; version: number }
-  | { style: string; version: number }
+  | { character: CharacterId; version: number }
+  | { location: LocationId; version: number }
+  | { style: StyleId; version: number }
 
 /** One input of a record: what the operation read. */
 export interface RecordInput {
@@ -242,9 +250,45 @@ export interface OperationContext {
   ): AssetId
 }
 
+/** The kind of file or value an operation input or output carries. */
+type OperationValueType = 'image' | 'video' | 'audio' | 'text' | 'json' | 'any'
+
+/** One input role of an operation, as the agent tool and the canvas form declare it. */
+export interface OperationInput {
+  type: OperationValueType
+  description: string
+  required?: boolean
+  /** Whether the role takes several references, such as every reference image of a shot. */
+  many?: boolean
+  /** Whether the role also accepts character, location or style versions (`<id>@<version>`) besides assets. */
+  bible?: boolean
+}
+
+/** One output of an operation, in the order its `execute` returns them. */
+export interface OperationOutput {
+  role: string
+  type: OperationValueType
+}
+
+/**
+ * One agent tool call of an operation, after Project parsed it and before Project runs it. An operation's
+ * `prepareToolCall` receives it.
+ */
+export interface OperationToolCall {
+  /** The tool arguments as the model sent them, including the operation's `toolParams`. */
+  args: Record<string, unknown>
+  /** The run request Project will send; `prepareToolCall` may change its `params` and `inputs`. */
+  request: RunRequest
+  /** The state of the session's working branch, which the inputs were parsed against. */
+  state: ProjectState
+  /** The DSH tool call: the calling agent, the call ID and the stop signal. */
+  exec: ToolRunContext
+}
+
 /**
  * An operation a component implements and registers with `dvProject.registerOperation`. Each operation is run only
- * through `dvProject.run`.
+ * through `dvProject.run`. The spec also declares the operation's agent tool and canvas form: `description`, `inputs`,
+ * `outputs` and `summarize`.
  */
 export interface OperationSpec {
   /** `<component key>.<verb>` or `<component key>.<object>_<verb>`, for example `timeline.clip_move`. */
@@ -253,10 +297,14 @@ export interface OperationSpec {
   component: string
   /** The version of the parameter schema, written to each record's `operation_version`. */
   version: string
+  /** What the operation does, for the model (its tool description) and the canvas form. */
+  description: string
   /** The parameter schema in the DSH tool parameter format; the runner validates `params` against it. */
   params: ParameterSchemaSpec
   /** The input roles the operation accepts; the runner refuses an input with any other role. */
-  inputRoles: readonly string[]
+  inputs: Record<string, OperationInput>
+  /** The outputs, in the order `execute` returns them. */
+  outputs: OperationOutput[]
   /**
    * `agent_ask_first`: when the actor is `agent` and the session's composer asks first, the runner waits for the
    * human's approval before executing. `never`: the runner never waits.
@@ -281,6 +329,29 @@ export interface OperationSpec {
    * @returns the replaced records; omit the function for operations that replace nothing by themselves.
    */
   supersedes?(params: Record<string, unknown>, state: ProjectState): RecordId[]
+  /**
+   * One line for a chat card or a canvas node.
+   * @param record - a finished record of this operation.
+   * @returns the line.
+   */
+  summarize(record: ProjectRecord): string
+  /** Tool-only arguments besides `params`; Project removes them from the run request's params before `prepareToolCall`. */
+  toolParams?: ParameterSchemaSpec
+  /**
+   * Check or change an agent tool call before Project runs it, for example to ask the user a question or to turn a
+   * tool-only argument into an input. It is never a confirmation gate: the runner alone enforces `confirm`.
+   * @param call - the parsed call; throw to refuse it with the error's message.
+   */
+  prepareToolCall?(call: OperationToolCall): Promise<void>
+  /**
+   * Refuse a call of any caller before Project writes a record, for a rule the operation itself enforces (a render
+   * needs a reference image). The runner calls it under the project lock, after the params and inputs are valid, so
+   * it must stay fast and must never call `dvProject.run`.
+   * @param request - the call.
+   * @param state - the state of the working branch the call writes to (or reads, for a read-only operation).
+   * @throws Error that rejects `run` unchanged; nothing is written.
+   */
+  precondition?(request: RunRequest, state: ProjectState): Promise<void>
   /**
    * Run the operation. A throw fails the record with code `operation_failed` and the error's message.
    * @param context - the record, resolved inputs, parameters, state, and asset storage.
@@ -341,7 +412,8 @@ export interface Reducer<K extends ComponentKey = ComponentKey> {
    */
   conflict?(slice: ComponentStates[K], record: ProjectRecord): string | null
   /**
-   * The assets a character, location or style reference stands for. The runner calls the `bible` reducer's function.
+   * The assets a character, location or style reference stands for (Story bible's reducer defines it). The runner
+   * calls it; at most one registered reducer defines it.
    * @param slice - the slice at the record's parent.
    * @param ref - a character, location or style reference.
    * @returns the assets, or null when the reference names an unknown version.
@@ -349,13 +421,23 @@ export interface Reducer<K extends ComponentKey = ComponentKey> {
   assetsOf?(slice: ComponentStates[K], ref: RecordInputRef): AssetId[] | null
   /**
    * The record that created the character, location or style version a reference names; Project's `proj` reducer
-   * treats it as the producer of that input, so a record that read a superseded version is stale. Project calls the
-   * `bible` reducer's function.
+   * treats it as the producer of that input, so a record that read a superseded version is stale. Story bible's reducer
+   * defines it; at most one registered reducer defines it.
    * @param slice - the slice before the record being reduced.
    * @param ref - a character, location or style reference.
    * @returns the record, or null for an unknown version.
    */
   createdBy?(slice: ComponentStates[K], ref: RecordInputRef): RecordId | null
+  /**
+   * The fields of this slice that the agent reads in the project summary that `dv_proj_state` and the other
+   * `dv_proj_*` tools return. Project merges the fields of every reducer that defines it, in component key order,
+   * after the record count and before the stale records; a field name that Project or another component already uses
+   * throws `invalid_params`.
+   * @param slice - the slice at the branch head.
+   * @param assets - the asset store, for the URLs of the assets the slice names.
+   * @returns the fields by name.
+   */
+  agentSummary?(slice: ComponentStates[K], assets: Pick<AssetStore, 'url'>): Record<string, JsonValue>
 }
 
 /** The state of one branch at its head. */
@@ -447,6 +529,64 @@ export interface PendingApproval {
   gpu_seconds: number
   /** Aborted when the run request aborts; the channel then resolves false. */
   signal: AbortSignal
+}
+
+/**
+ * The asset pool as Project sees it: Project checks that input assets exist, imports the files operations produce,
+ * and describes outputs to the agent. The asset pool registers itself with `dvProject.registerAssetStore`.
+ */
+export interface AssetStore {
+  /**
+   * @param asset - an asset ID.
+   * @returns whether the asset pool holds it.
+   */
+  has(asset: AssetId): boolean
+  /**
+   * @param asset - an asset the pool holds.
+   * @returns its media type and display name. Throws for an unknown asset.
+   */
+  get(asset: AssetId): { mime: string; name: string }
+  /**
+   * @param asset - an asset the pool holds.
+   * @returns its bytes. Throws for an unknown asset.
+   */
+  read(asset: AssetId): Uint8Array
+  /**
+   * Import a file or bytes into the asset pool.
+   * @param source - the bytes, or a file path to copy.
+   * @param meta - the media type, the display name, the duration for audio and video, and the pixel size when known.
+   * @param createdBy - the record that created the asset; null for a read-only operation.
+   * @returns the asset's ID.
+   */
+  importAsset(
+    source: Parameters<OperationContext['importAsset']>[0],
+    meta: Parameters<OperationContext['importAsset']>[1],
+    createdBy: RecordId | null,
+  ): AssetId
+  /**
+   * @param asset - an asset ID.
+   * @returns the URL that serves its bytes, as the agent and chat cards show it.
+   */
+  url(asset: AssetId): string
+}
+
+/**
+ * The agent integration's check of every agent tool call, registered with `dvProject.registerToolCallCheck`: the DSH
+ * question rule that asks the user before an operation runs. It is never a confirmation gate: the runner alone
+ * enforces `OperationSpec.confirm`.
+ */
+export interface ToolCallCheck {
+  /**
+   * @param spec - an operation.
+   * @returns the tool-only arguments the check adds to the operation's tool, such as `user_approved`.
+   */
+  params(spec: OperationSpec): ParameterSchemaSpec
+  /**
+   * Check a call after the operation's own `prepareToolCall` and before Project runs it.
+   * @param spec - the operation.
+   * @param call - the parsed call; the check may change the request's params.
+   */
+  check(spec: OperationSpec, call: OperationToolCall): Promise<void>
 }
 
 /**

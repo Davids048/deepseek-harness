@@ -1,7 +1,7 @@
 /**
  * The cuts editor: one tab per video of the project, a viewer that plays the selected video across its clips, a
  * toolbar, a ruler, the V1 track with clip thumbnails sized by duration, and a display-only A1 track. Every edit is one
- * `/api/vh/invoke` call with `surface: 'timeline'` that names the video in its `sequence` param.
+ * `/api/vh/invoke` call of a `timeline.*` operation with `surface: 'timeline'` that names the timeline in its `timeline` param.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent, KeyboardEvent, PointerEvent, ReactNode } from 'react'
@@ -247,7 +247,7 @@ export function CutsEditor(
   }
   const videoTitle = video === null ? '' : titleOf(videos.indexOf(video))
   const invoke = (tool: string, params: Record<string, unknown>, intent: string): Promise<boolean> => {
-    const scoped = video === null ? params : { sequence: video.id, ...params }
+    const scoped = video === null ? params : { timeline: video.id, ...params }
     return run(() => client.invoke(request(project, session, { tool, params: scoped, intent })))
   }
 
@@ -258,7 +258,7 @@ export function CutsEditor(
     const title = `第 ${String(n)} 集`
     pendingEpisode.current = id
     setActiveId(id)
-    void run(() => client.invoke(request(project, session, { tool: 'sequence.create', params: { sequence: id, title, assets: [] }, intent: t('intent.create', { title: t('tabs.defaultTitle', { n }) }) })))
+    void run(() => client.invoke(request(project, session, { tool: 'timeline.create', params: { timeline: id, name: title, assets: [] }, intent: t('intent.create', { title: t('tabs.defaultTitle', { n }) }) })))
       .then((ok) => {
         if (ok) return
         pendingEpisode.current = null
@@ -276,18 +276,18 @@ export function CutsEditor(
     const index = videos.findIndex(entry => entry.id === renaming.id)
     const title = renaming.title.trim()
     if (index === -1 || title === '' || title === titleOf(index)) return
-    void run(() => client.invoke(request(project, session, { tool: 'sequence.rename', params: { sequence: renaming.id, title }, intent: t('intent.rename', { title }) })))
+    void run(() => client.invoke(request(project, session, { tool: 'timeline.rename', params: { timeline: renaming.id, name: title }, intent: t('intent.rename', { title }) })))
   }
   const deleteVideo = (id: string): void => {
     setMenu(null)
     const title = titleOf(videos.findIndex(entry => entry.id === id))
     if (readOnly || !window.confirm(t('tabs.deleteConfirm', { title }))) return
-    void run(() => client.invoke(request(project, session, { tool: 'sequence.delete', params: { sequence: id }, intent: t('intent.delete', { title }) })))
+    void run(() => client.invoke(request(project, session, { tool: 'timeline.delete', params: { timeline: id }, intent: t('intent.delete', { title }) })))
   }
   // `/api/vh/undo` moves `main` back one turn in any video; it is offered only when that turn's record edits this video.
   const latest = state.ops.find(op => op.id === state.heads['main'])
-  const latestVideo = latest?.tool?.name.startsWith('sequence.') === true
-    ? typeof latest.params['sequence'] === 'string' && latest.params['sequence'] !== '' ? latest.params['sequence'] : videos[0]?.id ?? null
+  const latestVideo = latest?.tool?.name.startsWith('timeline.') === true
+    ? typeof latest.params['timeline'] === 'string' && latest.params['timeline'] !== '' ? latest.params['timeline'] : videos[0]?.id ?? null
     : null
   // A turn on a video that no longer exists (a deleted episode) can be undone from any episode.
   const undoElsewhere = latestVideo !== null && latestVideo !== videoId && videos.some(entry => entry.id === latestVideo)
@@ -317,36 +317,29 @@ export function CutsEditor(
     })
   }
   const remove = (slot: number): void => {
-    void invoke('sequence.remove', { slot }, t('intent.remove', { slot })).then((ok) => { if (ok) setSelected(null) })
+    void invoke('timeline.clip_remove', { clip: slot }, t('intent.remove', { slot })).then((ok) => { if (ok) setSelected(null) })
   }
   const insert = (at: number, asset: string): void => {
-    void invoke('sequence.insert', { at, asset }, t('intent.insert', { at }))
+    void invoke('timeline.clip_insert', { at, asset }, t('intent.insert', { at }))
   }
   const splitAtPlayhead = (): void => {
     const clip = clips[clipIndexAt(clips, player.position)]
     if (clip === undefined) return
     const atSec = round(clip.inSec + player.position - clip.startSec)
     if (atSec <= clip.inSec + 0.05 || atSec >= clip.outSec - 0.05) return
-    void invoke('sequence.split', { slot: clip.slot, atSec }, t('intent.split', { slot: clip.slot, at: atSec }))
+    void invoke('timeline.clip_split', { clip: clip.slot, at_sec: atSec }, t('intent.split', { slot: clip.slot, at: atSec }))
   }
 
-  // Export joins the clips in order; a clip with an in or out point is cut to that range first.
+  // Export is one `deliver.timeline_export` call: Deliver trims the clips with an in or out point and joins all clips.
   const exportVideo = (): void => {
+    if (videoId === null) return
     setExporting(true)
     setExported(null)
     void run(async () => {
-      const refs: string[] = []
-      for (const clip of clips) {
-        if (clip.rawIn === null && clip.rawOut === null) { refs.push(clip.assetId); continue }
-        const cut = await client.invoke(request(project, session, {
-          tool: 'clip.trim', inputs: [{ role: 'clip', ref: clip.assetId }], params: { startSec: clip.inSec, endSec: clip.outSec }, intent: t('intent.trim', { slot: clip.slot }),
-        }))
-        refs.push(cut.outputs[0] ?? clip.assetId)
-      }
-      const joined = await client.invoke(request(project, session, {
-        tool: 'media.concat', inputs: refs.map(ref => ({ role: 'clip', ref })), intent: t('intent.export', { title: videoTitle }),
+      const exported = await client.invoke(request(project, session, {
+        tool: 'deliver.timeline_export', params: { timeline: videoId }, intent: t('intent.export', { title: videoTitle }),
       }))
-      setExported(joined.outputs[0] ?? null)
+      setExported(exported.outputs[0] ?? null)
     }).finally(() => { setExporting(false) })
   }
 
@@ -368,15 +361,15 @@ export function CutsEditor(
         return
       }
       const to = dropSlot(clips, clip.startSec + clip.seconds / 2 + deltaSec, clip.slot)
-      if (to !== clip.slot) void invoke('sequence.move', { from: clip.slot, to }, t('intent.move', { from: clip.slot, to })).then((ok) => { if (ok) setChosenClip({ videoId, slot: to, assetId: clip.assetId }) })
+      if (to !== clip.slot) void invoke('timeline.clip_move', { clip: clip.slot, to }, t('intent.move', { from: clip.slot, to })).then((ok) => { if (ok) setChosenClip({ videoId, slot: to, assetId: clip.assetId }) })
       return
     }
     if (!moved || readOnly) return
     const inSec = current.kind === 'trimStart' ? round(Math.max(0, Math.min(clip.inSec + deltaSec, clip.outSec - 0.1))) : clip.rawIn
     const outSec = current.kind === 'trimEnd' ? round(Math.max(clip.inSec + 0.1, Math.min(clip.outSec + deltaSec, clip.assetSeconds))) : clip.rawOut
     // An unset end of the range is left out: the operation reads a missing in or out point as the asset's own end.
-    const range = { ...inSec === null ? {} : { inSec }, ...outSec === null ? {} : { outSec } }
-    void invoke('sequence.set_range', { slot: clip.slot, ...range }, t('intent.setRange', { slot: clip.slot }))
+    const range = { ...inSec === null ? {} : { in_sec: inSec }, ...outSec === null ? {} : { out_sec: outSec } }
+    void invoke('timeline.clip_trim', { clip: clip.slot, ...range }, t('intent.setRange', { slot: clip.slot }))
   }
 
   const clipHandlers = (clip: CutClip, kind: ClipDrag['kind']) => ({

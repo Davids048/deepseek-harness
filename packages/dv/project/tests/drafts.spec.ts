@@ -11,10 +11,10 @@ import { agentOrigin, createTestProject, OTHER_SESSION, readLines, SESSION, star
 import { DraftConflictError, draftBranch, MAIN_BRANCH, ProjectError } from '../src/shared.ts'
 import type { ProjectId, ProjectRecord, RecordId, RecordOrigin, RecordStatus } from '../src/types.ts'
 
-declare module '../src/types.ts' {
+declare module '@dv/project' {
   interface ComponentStates {
     /** The slice of the test reducer that reports conflicts during accept replay. */
-    drafts_test: { applied: number }
+    drafts_test?: { applied: number }
   }
 }
 
@@ -163,7 +163,7 @@ describe('drafts', () => {
     const project = await createTestProject(m)
     m.reducers.register('drafts_test', {
       initial: () => ({ applied: 0 }),
-      reduce: (slice, record) => (record.component === 'timeline' ? { applied: slice.applied + 1 } : slice),
+      reduce: (slice, record) => (record.component === 'timeline' ? { applied: (slice?.applied ?? 0) + 1 } : slice),
       conflict: (_slice, record) => (record.params.clash === true ? 'The clip was removed on main.' : null),
     })
     await write(m, project, agentOrigin())

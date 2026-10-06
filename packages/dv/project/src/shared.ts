@@ -1,9 +1,15 @@
 /**
- * Values that every module of the Project service uses: the error classes and the branch names.
+ * Values that every module of the Project service uses: the component keys, the error classes and the branch names.
  *
  * @module @dv/project/shared
  */
 import type { RecordId, SessionId } from './types.ts'
+
+/**
+ * The component keys an operation's `component` may name, in the order the project summary of the `dv_proj_*` tools
+ * lists the components' fields.
+ */
+export const COMPONENT_KEYS: ReadonlySet<string> = new Set(['proj', 'asset', 'bible', 'plan', 'shot', 'timeline', 'deliver', 'inspect'])
 
 /** The branch name of a project's accepted line of records. */
 export const MAIN_BRANCH = 'main'

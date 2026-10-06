@@ -3,11 +3,10 @@ import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
-import type { AssetId, ProjectId, RecordId } from '@dv/project'
-import { generateVideoTool } from '@video-harness/tools'
+import type { AssetId, CharacterId, ProjectId, RecordId } from '@dv/project'
 import { afterEach, describe, expect, it } from 'vitest'
 import VhStream, { SegmentBroadcaster, type StreamFrame } from '../src/index.ts'
-import { startTools, type ToolsFixture } from '../../tools/tests/support.ts'
+import { startBase } from '../../views/tests/support.ts'
 
 const PROJECT = brandString<ProjectId>('p1')
 const OP = brandString<RecordId>('op-1')
@@ -122,34 +121,34 @@ describe('/vh/ws', () => {
   })
 })
 
-describe('generate.video with a live sink', () => {
+describe('shot.render with a live stream', () => {
   it('broadcasts the shot while the backend streams it', async () => {
-    const fixture: ToolsFixture = await startTools({ dsh: false, perception: false, generation: 'none' })
+    const fixture = await startBase({ dsh: false })
     cleanups.push(() => fixture.dispose())
     const broadcaster = new SegmentBroadcaster(1024 * 1024)
-    fixture.project.registerOperation(generateVideoTool(fixture.generation, fixture.assets, () => broadcaster))
+    fixture.context.provide('vhStream', broadcaster) // names:allow (the live stream service keeps its name)
     const user = { actor: 'user' as const, surface: 'chat' as const, session: null, turn: null, tool_call: null }
     const projectId = (await fixture.project.createProject('live', { ...user, intent: 'create' })).id
     const frames: StreamFrame[] = []
     broadcaster.subscribe(projectId, (frame) => { frames.push(frame) })
-    const upload = await fixture.project.run({
-      ...user, project: projectId, operation: 'asset.upload', inputs: [], params: { path: fixture.writeFile('ref.png', 'PNG'), mime: 'image/png' },
-      intent: 'upload',
+    const imported = await fixture.project.run({
+      ...user, project: projectId, operation: 'asset.import', inputs: [], params: { path: fixture.writeFile('ref.png', 'PNG'), mime: 'image/png' },
+      intent: 'import',
     })
     await fixture.project.run({
-      ...user, project: projectId, operation: 'entity.character.create', inputs: [], params: { entity: 'c1', name: 'Lead', refs: upload.outputs }, // names:allow
+      ...user, project: projectId, operation: 'bible.character_create', inputs: imported.outputs.map(asset => ({ role: 'reference', ref: { asset } })), params: { character: 'c1', name: 'Lead' },
       intent: 'character',
     })
     const { record: shot } = await fixture.project.run({
-      ...user, project: projectId, operation: 'generate.video', inputs: [{ role: 'reference', ref: { character: 'c1', version: 1 } }], // names:allow
+      ...user, project: projectId, operation: 'shot.render', inputs: [{ role: 'reference', ref: { character: brandString<CharacterId>('c1'), version: 1 } }],
       params: { prompt: 'Picture 1 waves', duration_sec: 1, shot: 3 }, intent: 'shot',
     })
-    if (shot === null) throw new Error('generate.video wrote no record') // names:allow
+    if (shot === null) throw new Error('shot.render wrote no record')
     expect(shot.status).toBe('done')
     const kinds = frames.map(frame => frame.kind === 'json' ? frame.data['type'] : 'chunk')
     expect(kinds).toEqual(['media_init', 'chunk', 'chunk', 'media_segment_complete'])
     expect(frames[0]).toEqual({ kind: 'json', data: { type: 'media_init', segment_idx: 3, mime: 'video/mp4; codecs="avc1.64001f"', stream_id: shot.id } })
     const streamed = frames.filter(frame => frame.kind === 'binary').reduce((total, frame) => total + frame.data.byteLength, 0)
-    expect(streamed).toBe(fixture.assets.get(shot.outputs[0] as AssetId).sizeBytes)
+    expect(streamed).toBe(fixture.assets.get(shot.outputs[0] as AssetId).size_bytes)
   })
 })

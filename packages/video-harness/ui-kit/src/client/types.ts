@@ -107,7 +107,7 @@ export interface WireState {
   stale: Record<string, { because: string }>
   superseded: Record<string, string>
   takes: Record<string, string[]>
-  plans: Array<{ op: string; approved: boolean; approvedBy: string | null }>
+  plans: Array<{ record: string; approved: boolean; approved_by: string | null }>
   producers: Record<string, string>
 }
 
@@ -129,7 +129,7 @@ export interface WireToolSpec {
   name: string
   version: string
   summary: string
-  inputs: Record<string, { type: string; description: string; required?: boolean; many?: boolean; entity?: boolean }>
+  inputs: Record<string, { type: string; description: string; required?: boolean; many?: boolean; bible?: boolean }>
   params: Record<string, WireParamSpec>
   outputs: Array<{ role: string; type: string }>
   deterministic: boolean

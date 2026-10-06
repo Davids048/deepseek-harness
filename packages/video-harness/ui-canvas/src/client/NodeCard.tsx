@@ -39,7 +39,7 @@ export function nodeTitle(node: CanvasNode, t: CanvasTranslate): string {
  */
 export function kindLabel(node: CanvasNode, t: CanvasTranslate): string {
   switch (node.kind) {
-    case 'entity': return node.entityKind === 'character' ? t('node.character') : t('node.entity')
+    case 'entity': return node.entityKind === 'character' ? t('node.character') : t('node.bible')
     case 'reference': return t('node.reference')
     case 'plan': return t('node.plan')
     case 'clip': return t('node.clip')

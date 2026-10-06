@@ -4,7 +4,7 @@
  * `vh:current-episode` event. The cuts editor publishes the episode the user selects; the shell publishes the episode
  * that a URL names on restore, writes the published episode into the URL, and inserts 加入剪辑 clips into it.
  *
- * An episode ID such as `v2` is unique only inside one project, so the value records its project, and readers ask for
+ * An episode ID such as `t2` is unique only inside one project, so the value records its project, and readers ask for
  * the episode of a given project.
  *
  * @module @video-harness/ui-kit/current-episode

@@ -1,24 +1,26 @@
 /**
  * Tests of the reducer registry and Project's own `proj` slice: slices computed from a branch's records, one reducer
  * per key, stale and superseded marks, stale acceptance, and character references resolved, and their producers
- * found, through the `bible` reducer. Records are appended on `main` directly through the record store.
+ * found, through the reducer that defines `assetsOf` and `createdBy`. Records are appended on `main` directly
+ * through the record store.
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { describe, expect, it } from 'vitest'
 import type { ProjectModules } from './support.ts'
-import { createTestProject, startModules, userOrigin } from './support.ts'
+import { createTestProject, startModules, userOrigin, versionKey } from './support.ts'
 import { MAIN_BRANCH, ProjectError } from '../src/shared.ts'
 import type { RecordLineInput } from '../src/record-store.ts'
-import type { AssetId, ComponentStates, ProjectId, ProjectRecord, RecordId, RecordInput } from '../src/types.ts'
+import type { AssetId, CharacterId, ComponentStates, ProjectId, ProjectRecord, RecordId, RecordInput } from '../src/types.ts'
 
-declare module '../src/types.ts' {
+declare module '@dv/project' {
   interface ComponentStates {
     /** The slice of the counting test reducer: how many `timeline` records the chain holds. */
-    reducers_test: { count: number }
-    /** The slice of the test `bible` reducer: assets and the creating record per `<character>@<version>`. */
-    bible: { versions: Record<string, AssetId[]>; creators: Record<string, RecordId> }
+    reducers_test?: { count: number }
   }
 }
+
+/** The character the `test_bible` reducers record. */
+const HERO = brandString<CharacterId>('hero')
 
 /** A record's operation, plus the record-line fields that differ from a plain finished human edit. */
 type RecordLineFields = Pick<RecordLineInput, 'component' | 'operation'> & Partial<RecordLineInput>
@@ -65,7 +67,7 @@ describe('reducers', () => {
     const m = startModules()
     m.reducers.register('reducers_test', {
       initial: () => ({ count: 0 }),
-      reduce: (slice, record) => record.component === 'timeline' ? { count: slice.count + 1 } : slice,
+      reduce: (slice, record) => record.component === 'timeline' ? { count: (slice?.count ?? 0) + 1 } : slice,
     })
     const project = await createTestProject(m)
     await append(m, project, INSERT)
@@ -73,12 +75,12 @@ describe('reducers', () => {
     const last = await append(m, project, INSERT)
     const state = m.reducers.getState(project, MAIN_BRANCH)
     expect(state).toMatchObject({ branch: MAIN_BRANCH, head: last.id, project: m.store.getProject(project) })
-    expect(state.components.reducers_test.count).toBe(2)
+    expect(state.components.reducers_test?.count).toBe(2)
     expect(state.components.proj.records).toEqual(m.store.ancestors(project, last.id))
     const next = m.reducers.apply(state, { ...last, id: brandString<RecordId>('next') })
     expect(next.head).toBe('next')
-    expect(next.components.reducers_test.count).toBe(3)
-    expect(state.components.reducers_test.count).toBe(2)
+    expect(next.components.reducers_test?.count).toBe(3)
+    expect(state.components.reducers_test?.count).toBe(2)
     expect(m.reducers.conflict(state, last)).toBeNull()
     expect(() => m.reducers.getState(project, 'explore/missing')).toThrow(ProjectError)
   })
@@ -97,6 +99,19 @@ describe('reducers', () => {
     expect((error as ProjectError).code).toBe('reducer_exists')
     remove()
     expect(() => m.reducers.register('reducers_test', reducer)).not.toThrow()
+  })
+
+  it('refuses a second reducer that defines createdBy or assetsOf', () => {
+    const m = startModules()
+    const versions = { initial: () => ({ assets: {}, creators: {} }), reduce: <S>(slice: S) => slice }
+    const remove = m.reducers.register('test_bible', { ...versions, createdBy: () => null, assetsOf: () => null })
+    const counting = { initial: () => ({ count: 0 }), reduce: (slice: { count: number }) => slice }
+    expect(() => m.reducers.register('reducers_test', { ...counting, createdBy: () => null }))
+      .toThrow(expect.objectContaining({ code: 'invalid_params' }))
+    expect(() => m.reducers.register('reducers_test', { ...counting, assetsOf: () => null }))
+      .toThrow(expect.objectContaining({ code: 'invalid_params' }))
+    remove()
+    expect(() => m.reducers.register('reducers_test', { ...counting, createdBy: () => null })).not.toThrow()
   })
 
   it('marks consumers of a superseded record stale', async () => {
@@ -136,41 +151,41 @@ describe('reducers', () => {
     expect(projSlice(m, project).stale).toEqual({})
   })
 
-  it('resolves character references through the bible reducer', async () => {
+  it('resolves character references through the reducer that defines assetsOf', async () => {
     const m = startModules()
     const project = await createTestProject(m)
     const state = m.reducers.getState(project, MAIN_BRANCH)
-    const ref = { character: 'hero', version: 1 }
+    const ref = { character: HERO, version: 1 }
     expect(m.reducers.assetsOf(state, ref)).toBeNull()
     const face = m.assets.add('hero face')
-    m.reducers.register('bible', {
-      initial: () => ({ versions: {}, creators: {} }),
+    m.reducers.register('test_bible', {
+      initial: () => ({ assets: {}, creators: {} }),
       reduce: (slice, record) => record.operation === 'bible.character_create'
-        ? { ...slice, versions: { ...slice.versions, [`${String(record.params.character)}@1`]: record.outputs } }
+        ? { creators: slice?.creators ?? {}, assets: { ...slice?.assets, [`character:${String(record.params.character)}@1`]: record.outputs } }
         : slice,
-      assetsOf: (slice, asked) => 'character' in asked ? slice.versions[`${asked.character}@${String(asked.version)}`] ?? null : null,
+      assetsOf: (slice, asked) => slice?.assets[versionKey(asked) ?? ''] ?? null,
     })
     await append(m, project, { component: 'bible', operation: 'bible.character_create', params: { character: 'hero' }, outputs: [face] })
     const withBible = m.reducers.getState(project, MAIN_BRANCH)
     expect(m.reducers.assetsOf(withBible, ref)).toEqual([face])
-    expect(m.reducers.assetsOf(withBible, { character: 'hero', version: 2 })).toBeNull()
+    expect(m.reducers.assetsOf(withBible, { character: HERO, version: 2 })).toBeNull()
   })
 
   it('marks records that read a superseded character version stale', async () => {
     const m = startModules()
     const project = await createTestProject(m)
     const face = m.assets.add('hero face')
-    m.reducers.register('bible', {
-      initial: () => ({ versions: {}, creators: {} }),
+    m.reducers.register('test_bible', {
+      initial: () => ({ assets: {}, creators: {} }),
       reduce(slice, record) {
         if (record.operation !== 'bible.character_create' && record.operation !== 'bible.character_update') return slice
-        const key = `hero@${String(Object.keys(slice.versions).length + 1)}`
-        return { versions: { ...slice.versions, [key]: [face] }, creators: { ...slice.creators, [key]: record.id } }
+        const key = versionKey({ character: HERO, version: Object.keys(slice?.creators ?? {}).length + 1 }) ?? ''
+        return { assets: { ...slice?.assets, [key]: [face] }, creators: { ...slice?.creators, [key]: record.id } }
       },
-      createdBy: (slice, asked) => 'character' in asked ? slice.creators[`${asked.character}@${String(asked.version)}`] ?? null : null,
+      createdBy: (slice, asked) => slice?.creators[versionKey(asked) ?? ''] ?? null,
     })
     /** A render that reads one version of the hero. */
-    const reads = (version: number): RecordInput => ({ role: 'reference', ref: { character: 'hero', version }, resolved_asset: face })
+    const reads = (version: number): RecordInput => ({ role: 'reference', ref: { character: HERO, version }, resolved_asset: face })
     const create = await append(m, project, { component: 'bible', operation: 'bible.character_create' })
     const x = m.assets.add('take x')
     const render = await append(m, project, { ...RENDER, inputs: [reads(1)], outputs: [x] })
@@ -179,7 +194,7 @@ describe('reducers', () => {
     const late = await append(m, project, { ...RENDER, inputs: [reads(1)] })
     await append(m, project, { ...RENDER, inputs: [reads(2)] })
     expect(projSlice(m, project).stale).toEqual({ [render.id]: update.id, [insert.id]: update.id, [late.id]: update.id })
-    // Keeping the render also keeps the clip made from it.
+    // Accepting the render also clears the stale mark of the clip made from it.
     await append(m, project, { component: 'proj', operation: 'proj.stale_accept', params: { record: render.id }, deterministic: true })
     expect(projSlice(m, project).stale).toEqual({ [late.id]: update.id })
   })

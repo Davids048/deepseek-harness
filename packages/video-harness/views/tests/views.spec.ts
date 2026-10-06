@@ -12,9 +12,8 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { ProjectEvent, ProjectId, RecordId, RecordOrigin, SessionId, TurnId } from '@dv/project'
-import type { ToolSpec } from '@video-harness/tools' // names:allow (the stage 2 tools spec type)
-import { startTools, type ToolsFixture } from '../../tools/tests/support.ts'
+import type { OperationSpec, ProjectEvent, ProjectId, RecordId, RecordOrigin, SessionId, TurnId } from '@dv/project'
+import { startBase, type BaseFixture } from './support.ts'
 import { WORKSPACE_ROUTES } from '../src/workspaces.ts'
 import VhViews, { EVENTS_PATH, ROUTES, ViewsRequestError, frameOf, mentionedAssets, messageOf } from '../src/index.ts'
 
@@ -61,13 +60,13 @@ class FakeWebServer {
   }
 }
 
-interface Fixture extends ToolsFixture {
+interface Fixture extends BaseFixture {
   views: VhViews
   connection: FakeConnection
   web: FakeWebServer
   /** Create a project as a human outside any chat session; returns its ID. */
   newProject(title: string): Promise<ProjectId>
-  /** Run `asset.upload` as the agent of chat session `session`, which opens or extends that session's draft. */
+  /** Run `asset.import` as the agent of chat session `session`, which opens or extends that session's draft. */
   agentImport(projectId: ProjectId, session: string, name: string): Promise<RecordId>
 }
 
@@ -80,11 +79,11 @@ const SLOW = 'inspect.slow' // names:allow (a test-only operation)
 const HUMAN: RecordOrigin = { actor: 'user', surface: 'api', session: null, turn: null, tool_call: null, intent: 'test' }
 
 /**
- * Mount the tools fixture with the views plugin, a fake Connection, and a fake web server.
+ * Mount the base fixture with the views plugin, a fake Connection, and a fake web server.
  * @returns the fixture.
  */
 async function start(): Promise<Fixture> {
-  const base = await startTools({ perception: false, generation: 'none' })
+  const base = await startBase({ generation: 'none' })
   const connection = new FakeConnection()
   const web = new FakeWebServer()
   base.context.provide('connection', connection)
@@ -97,11 +96,11 @@ async function start(): Promise<Fixture> {
     agentImport: async (projectId, session, name) => {
       calls += 1
       const { record } = await base.project.run({
-        project: projectId, operation: 'asset.upload', params: { path: base.writeFile(name, name), mime: 'image/png' }, inputs: [],
+        project: projectId, operation: 'asset.import', params: { path: base.writeFile(name, name), mime: 'image/png' }, inputs: [],
         actor: 'agent', surface: 'chat', session: brandString<SessionId>(session), turn: brandString<TurnId>(`turn-${String(calls)}`),
         tool_call: `call-${String(calls)}`, intent: `import ${name}`, request_text: `please import ${name}`,
       })
-      if (record === null) throw new Error('asset.upload wrote no record')
+      if (record === null) throw new Error('asset.import wrote no record')
       return record.id
     },
   }
@@ -138,22 +137,22 @@ describe('vhViews', () => {
   it('lists projects, reads branch state with asset records, and lists tool declarations', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')
-    const upload = await fixture.views.api.invoke({
-      project: projectId, tool: 'asset.upload', surface: 'canvas', intent: 'import a reference',
+    const imported = await fixture.views.api.invoke({
+      project: projectId, tool: 'asset.import', surface: 'canvas', intent: 'import a reference',
       params: { path: fixture.writeFile('ref.png', 'PNG'), mime: 'image/png' },
     })
-    expect(upload).toMatchObject({ status: 'done', actor: 'user', surface: 'canvas', branch: 'main', turn: null, session: null, kind: 'operation' })
+    expect(imported).toMatchObject({ status: 'done', actor: 'user', surface: 'canvas', branch: 'main', turn: null, session: null, kind: 'operation' })
 
     const projects = fixture.views.api.projects()
     expect(projects.map(entry => entry.projectId)).toContain(projectId)
-    expect(projects.find(entry => entry.projectId === projectId)?.heads['main']).toBe(upload.id)
+    expect(projects.find(entry => entry.projectId === projectId)?.heads['main']).toBe(imported.id)
     expect(projects.every(entry => !entry.current)).toBe(true)
     // The project a chat session is bound to comes first and is marked, whatever its age.
     const bound = (await fixture.call('dv_proj_create', { title: 'from chat' })).value as { project_id: string }
     await fixture.newProject('newest')
     expect(fixture.views.api.projects('anonymous').map(entry => [entry.title, entry.current])).toEqual([['from chat', true], ['newest', false], ['demo', false]])
     expect(fixture.views.api.projects('').map(entry => entry.title)).toEqual(['newest', 'from chat', 'demo'])
-    expect(bound.project_id).toBe(fixture.tools.sessionProject('anonymous'))
+    expect(bound.project_id).toBe(fixture.project.sessionProject(brandString<SessionId>('anonymous')))
     const made = await fixture.views.api.create({ title: 'from the timeline', surface: 'timeline' })
     expect(fixture.views.api.state(made.projectId).ops[0]).toMatchObject({ surface: 'timeline', actor: 'user', tool: { name: 'proj.create' } })
     expect((await fixture.views.api.create({ title: 'from the canvas' })).title).toBe('from the canvas')
@@ -165,21 +164,20 @@ describe('vhViews', () => {
 
     const state = fixture.views.api.state(projectId)
     expect(state.project).toMatchObject({ projectId, title: 'demo' })
-    expect(state.ops.map(op => op.tool?.name)).toEqual(['proj.create', 'asset.upload'])
-    expect(state.assets.map(asset => asset.id)).toEqual(upload.outputs)
+    expect(state.ops.map(op => op.tool?.name)).toEqual(['proj.create', 'asset.import'])
+    expect(state.assets.map(asset => asset.id)).toEqual(imported.outputs)
     expect(state.assets[0]?.mime).toBe('image/png')
     expect(state.heads['main']).toBe(state.head)
-    expect(state.branches).toEqual([{ name: 'main', head: upload.id, base: null, forked_at: null, session: null, counts: null }])
-    expect(state.producers).toEqual({ [upload.outputs[0] ?? '']: upload.id })
+    expect(state.branches).toEqual([{ name: 'main', head: imported.id, base: null, forked_at: null, session: null, counts: null }])
+    expect(state.producers).toEqual({ [imported.outputs[0] ?? '']: imported.id })
 
     const tools = fixture.views.api.tools()
-    const frame = tools.find(tool => tool.name === 'media.extract_frame')
-    expect(frame?.deterministic).toBe(true)
-    expect(frame?.cost).toBe('cpu')
-    expect(frame?.params['at']).toBeDefined()
-    expect(Object.keys(frame ?? {})).not.toContain('execute')
-    expect(tools.find(tool => tool.name === 'asset.upload')?.cost).toBe('free')
-    expect(tools.map(tool => tool.name)).not.toContain('clip.trim')
+    const still = tools.find(tool => tool.name === 'asset.grab_still')
+    expect(still?.deterministic).toBe(true)
+    expect(still?.cost).toBe('cpu')
+    expect(still?.params['at']).toBeDefined()
+    expect(Object.keys(still ?? {})).not.toContain('execute')
+    expect(tools.find(tool => tool.name === 'asset.import')?.cost).toBe('free')
   })
 
   it('refuses malformed and unknown requests with the matching status and code', async () => {
@@ -189,11 +187,11 @@ describe('vhViews', () => {
     expect(() => fixture.views.api.state('nope')).toThrow(/Unknown project/)
     expect(() => fixture.views.api.state(projectId, 'no-such-branch')).toThrow(ViewsRequestError)
     await expect(fixture.views.api.invoke({ project: projectId, tool: 'no.such', surface: 'canvas' })).rejects.toThrow(/Unknown tool/)
-    await expect(fixture.views.api.invoke({ project: projectId, tool: 'asset.upload', surface: 'canvas', inputs: [{ role: 'x' }] })).rejects.toThrow(/inputs\[\]\.ref/)
-    await expect(fixture.views.api.invoke({ project: projectId, tool: 'asset.upload', surface: 'canvas', inputs: 'x' })).rejects.toThrow(/array/)
-    await expect(fixture.views.api.invoke({ project: projectId, tool: 'media.probe', surface: 'canvas', inputs: [{ role: 'nope', ref: 'a' }] }))
+    await expect(fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'canvas', inputs: [{ role: 'x' }] })).rejects.toThrow(/inputs\[\]\.ref/)
+    await expect(fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'canvas', inputs: 'x' })).rejects.toThrow(/array/)
+    await expect(fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'canvas', inputs: [{ role: 'nope', ref: 'a' }] }))
       .rejects.toMatchObject({ status: 400, message: expect.stringMatching(/Unknown input role/) })
-    await expect(fixture.views.api.invoke({ project: projectId, tool: 'asset.upload', surface: 'canvas', params: {} }))
+    await expect(fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'canvas', params: {} }))
       .rejects.toMatchObject({ status: 400, code: 'invalid_params' })
     await expect(fixture.views.api.acceptDraft({ project: projectId, session: 'nobody' })).rejects.toMatchObject({ status: 409, code: 'no_open_draft' })
     await expect(fixture.views.api.discardDraft({ project: projectId })).rejects.toThrow(/branch/)
@@ -205,34 +203,38 @@ describe('vhViews', () => {
   it('records timeline gestures on main without a turn and schedules calls that wait for a producer', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')
-    const a = await fixture.views.api.invoke({ project: projectId, tool: 'asset.upload', surface: 'timeline', params: { path: fixture.writeFile('a.mp4', 'A'), mime: 'video/mp4' } })
-    const b = await fixture.views.api.invoke({ project: projectId, tool: 'asset.upload', surface: 'timeline', params: { path: fixture.writeFile('b.mp4', 'B'), mime: 'video/mp4' } })
-    const created = await fixture.views.api.invoke({ project: projectId, tool: 'sequence.create', surface: 'timeline', params: { assets: [a.outputs[0], b.outputs[0]] } })
+    const a = await fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'timeline', params: { path: fixture.writeFile('a.mp4', 'A'), mime: 'video/mp4' } })
+    const b = await fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'timeline', params: { path: fixture.writeFile('b.mp4', 'B'), mime: 'video/mp4' } })
+    const created = await fixture.views.api.invoke({ project: projectId, tool: 'timeline.create', surface: 'timeline', params: { assets: [a.outputs[0], b.outputs[0]] } })
     expect(created.status).toBe('done')
-    const moved = await fixture.views.api.invoke({ project: projectId, tool: 'sequence.move', surface: 'timeline', intent: 'drag clip 2 before clip 1', params: { from: 2, to: 1 } })
+    const moved = await fixture.views.api.invoke({ project: projectId, tool: 'timeline.clip_move', surface: 'timeline', intent: 'drag clip 2 before clip 1', params: { clip: 2, to: 1 } })
     expect(moved.intent).toBe('drag clip 2 before clip 1')
     const state = fixture.views.api.state(projectId)
-    expect(state.sequence?.items.map(item => item.assetId)).toEqual([b.outputs[0], a.outputs[0]])
+    expect(state.sequences[0]?.items).toEqual([ // names:allow
+      { slot: 1, assetId: b.outputs[0], inSec: null, outSec: null }, // names:allow
+      { slot: 2, assetId: a.outputs[0], inSec: null, outSec: null }, // names:allow
+    ])
+    expect(state.sequence?.items).toEqual(state.sequences[0]?.items) // names:allow
     expect(state.ops.every(op => op.actor === 'user' && op.turn === null && op.branch === 'main')).toBe(true)
 
     // A test operation that holds its record running until released, so a view call can name its unfinished output.
     let release = (): void => {}
     const held = new Promise<void>((resolve) => { release = resolve })
-    const slow: ToolSpec = { // names:allow (a test-only operation)
-      name: SLOW, component: 'inspect', version: '1', summary: 'Slow.', params: {}, inputs: {}, inputRoles: [], outputs: [{ role: 'note', type: 'text' }],
+    const slow: OperationSpec = {
+      name: SLOW, component: 'inspect', version: '1', description: 'Slow.', params: {}, inputs: {}, outputs: [{ role: 'note', type: 'text' }],
       confirm: 'never', deterministic: false, resource: 'none', summarize: () => 'slow',
       execute: async (context) => { await held; return { outputs: [context.importAsset(Buffer.from('T'), { mime: 'text/plain', name: 't.txt' })] } },
     }
-    fixture.tools.register(slow)
+    fixture.project.registerOperation(slow)
     const running = fixture.views.api.invoke({ project: projectId, tool: SLOW, surface: 'canvas' })
     await new Promise(resolve => setTimeout(resolve, 50))
     const producer = fixture.views.api.state(projectId).ops.find(op => op.tool?.name === SLOW)
     expect(producer?.status).toBe('running')
     const waiting = await fixture.views.api.invoke({
-      project: projectId, tool: 'media.probe', surface: 'canvas', inputs: [{ role: 'media', ref: `${producer?.id ?? ''}#0` }],
+      project: projectId, tool: 'asset.grab_still', surface: 'canvas', inputs: [{ role: 'video', ref: `${producer?.id ?? ''}#0` }],
     })
     expect(waiting.status).toBe('pending')
-    expect(waiting.inputs).toEqual([{ role: 'media', ref: `${producer?.id ?? ''}#0`, resolved: null }])
+    expect(waiting.inputs).toEqual([{ role: 'video', ref: `${producer?.id ?? ''}#0`, resolved: null }])
     release()
     await running
     await fixture.project.wait(projectId)
@@ -247,7 +249,7 @@ describe('vhViews', () => {
     await fixture.agentImport(projectId, 's1', 'two.png')
     // A human edit beside the chat of s1 lands on that session's draft; one without a session lands on main.
     const human = await fixture.views.api.invoke({
-      project: projectId, tool: 'asset.upload', surface: 'canvas', session: 's1', params: { path: fixture.writeFile('h.png', 'H'), mime: 'image/png' },
+      project: projectId, tool: 'asset.import', surface: 'canvas', session: 's1', params: { path: fixture.writeFile('h.png', 'H'), mime: 'image/png' },
     })
     expect(human.branch).toBe('draft/s1')
     const state = fixture.views.api.state(projectId)
@@ -281,8 +283,8 @@ describe('vhViews', () => {
   it('undoes and redoes as records, and creates and switches exploration branches', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')
-    const first = await fixture.views.api.invoke({ project: projectId, tool: 'asset.upload', surface: 'canvas', params: { path: fixture.writeFile('u1.png', 'U1'), mime: 'image/png' } })
-    const second = await fixture.views.api.invoke({ project: projectId, tool: 'asset.upload', surface: 'canvas', params: { path: fixture.writeFile('u2.png', 'U2'), mime: 'image/png' } })
+    const first = await fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('u1.png', 'U1'), mime: 'image/png' } })
+    const second = await fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('u2.png', 'U2'), mime: 'image/png' } })
     const undone = await fixture.views.api.undo({ project: projectId, surface: 'timeline' })
     expect(undone.record).toMatchObject({ tool: { name: 'proj.undo' }, params: { to: first.id }, actor: 'user', surface: 'timeline' })
     expect(fixture.views.api.state(projectId).ops.map(op => op.id)).not.toContain(second.id)
@@ -298,7 +300,7 @@ describe('vhViews', () => {
     const switched = await fixture.views.api.switchBranch({ project: projectId, branch: 'explore/style-b', session: 's3' })
     expect(switched.branch.name).toBe('explore/style-b')
     const onBranch = await fixture.views.api.invoke({
-      project: projectId, tool: 'asset.upload', surface: 'canvas', session: 's3', params: { path: fixture.writeFile('e.png', 'E'), mime: 'image/png' },
+      project: projectId, tool: 'asset.import', surface: 'canvas', session: 's3', params: { path: fixture.writeFile('e.png', 'E'), mime: 'image/png' },
     })
     expect(onBranch.branch).toBe('explore/style-b')
     expect(fixture.views.api.state(projectId, 'explore/style-b').ops.map(op => op.id)).toContain(onBranch.id)
@@ -334,7 +336,7 @@ describe('vhViews', () => {
     expect(missing.status).toBe(404)
 
     const invoked = await call(fixture, ROUTES.invoke, {
-      method: 'POST', body: { project: projectId, tool: 'asset.upload', surface: 'canvas', params: { path: fixture.writeFile('f.png', 'F'), mime: 'image/png' } },
+      method: 'POST', body: { project: projectId, tool: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('f.png', 'F'), mime: 'image/png' } },
     })
     expect(invoked.status).toBe(200)
     const state = await call(fixture, ROUTES.state, { query: { project: projectId, head: 'main' } })
@@ -397,7 +399,7 @@ describe('vhViews', () => {
       }
     }
     await readUntil(': connected')
-    await fixture.views.api.invoke({ project: projectId, tool: 'asset.upload', surface: 'canvas', params: { path: fixture.writeFile('g.png', 'G'), mime: 'image/png' } })
+    await fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('g.png', 'G'), mime: 'image/png' } })
     await readUntil('event: update')
     expect(text).toContain('event: record\ndata: {"kind":"record"')
     expect(text).toContain('event: branch\ndata: {"kind":"branch"')
@@ -411,9 +413,12 @@ describe('vhViews', () => {
     const projectId = await fixture.newProject('demo')
     const event: ProjectEvent = { kind: 'branch', name: 'main', branch: null }
     expect(frameOf(event)).toBe(`event: branch\ndata: ${JSON.stringify(event)}\n\n`)
-    const upload = await fixture.views.api.invoke({ project: projectId, tool: 'asset.upload', surface: 'canvas', params: { path: fixture.writeFile('h.png', 'H'), mime: 'image/png' } })
-    await fixture.views.api.invoke({ project: projectId, tool: 'entity.character.create', surface: 'canvas', params: { entity: 'c1', name: 'Hero', refs: upload.outputs } })
-    expect(mentionedAssets(fixture.project.getState(projectId))).toEqual(upload.outputs)
+    const imported = await fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('h.png', 'H'), mime: 'image/png' } })
+    await fixture.views.api.invoke({
+      project: projectId, tool: 'bible.character_create', surface: 'canvas', params: { character: 'c1', name: 'Hero' },
+      inputs: imported.outputs.map(ref => ({ role: 'reference', ref })),
+    })
+    expect(mentionedAssets(fixture.project.getState(projectId))).toEqual(imported.outputs)
   })
 
   it('names errors, orders projects, and refuses an undo without changes or a branch at an unknown record', async () => {
@@ -430,18 +435,21 @@ describe('vhViews', () => {
   it('records base_op and supersedes, lists only known assets, and reads an empty or non-string head as main', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')
-    const first = await fixture.views.api.invoke({ project: projectId, tool: 'asset.upload', surface: 'canvas', params: { path: fixture.writeFile('r.png', 'R'), mime: 'image/png' } })
+    const first = await fixture.views.api.invoke({ project: projectId, tool: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('r.png', 'R'), mime: 'image/png' } })
     const second = await fixture.views.api.invoke({
-      project: projectId, tool: 'asset.upload', surface: 'canvas', params: { path: fixture.writeFile('s.png', 'S'), mime: 'image/png' },
+      project: projectId, tool: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('s.png', 'S'), mime: 'image/png' },
       base_op: first.id, supersedes: [first.id, 7],
     })
     expect(second.base_op).toBe(first.id)
     expect(second.supersedes).toEqual([first.id])
     expect(fixture.views.api.state(projectId).superseded).toEqual({ [first.id]: second.id })
-    await fixture.views.api.invoke({ project: projectId, tool: 'entity.character.create', surface: 'canvas', params: { entity: 'c1', name: 'Hero', refs: ['nowhere'] } })
+    await expect(fixture.views.api.invoke({
+      project: projectId, tool: 'bible.character_create', surface: 'canvas', params: { character: 'c1', name: 'Hero' },
+      inputs: [{ role: 'reference', ref: 'nowhere' }],
+    })).rejects.toMatchObject({ code: 'unknown_asset' })
     expect(fixture.views.api.state(projectId).assets.map(entry => entry.id)).toEqual([...first.outputs, ...second.outputs])
     expect(fixture.views.api.state(projectId, '').head).toBe(fixture.views.api.state(projectId, 7).head)
-    expect(mentionedAssets(fixture.project.getState(projectId))).toEqual([...first.outputs, ...second.outputs, 'nowhere'])
+    expect(mentionedAssets(fixture.project.getState(projectId))).toEqual([...first.outputs, ...second.outputs])
   })
 
   it('links a project to its Workspace and binds a chat session to the project', async () => {

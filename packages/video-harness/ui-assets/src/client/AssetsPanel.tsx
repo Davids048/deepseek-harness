@@ -1,6 +1,6 @@
 /**
- * The project assets panel: filters (全部 / 上传 / 生成), an upload drop zone, a thumbnail grid in sections
- * (人物 · 参考 · 生成), drag sources that carry the asset ID as `application/x-vh-asset`, and a preview on click. Assets
+ * The project assets panel: filters (全部 / 导入 / 渲染结果), an import drop zone, a thumbnail grid in sections
+ * (人物 · 参考 · 渲染结果), drag sources that carry the asset ID as `application/x-vh-asset`, and a preview on click. Assets
  * of an open draft that the user has not accepted yet are listed too, with a 草稿 (Draft) badge.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -27,10 +27,10 @@ export interface AssetsPanelProps {
 }
 
 /** The filters above the grid. */
-type Filter = 'all' | 'uploads' | 'generated'
+type Filter = 'all' | 'imported' | 'rendered'
 
 const FILTERS: Array<{ id: Filter; zh: string; en: string }> = [
-  { id: 'all', zh: '全部', en: 'All' }, { id: 'uploads', zh: '上传', en: 'Uploads' }, { id: 'generated', zh: '生成', en: 'Generated' },
+  { id: 'all', zh: '全部', en: 'All' }, { id: 'imported', zh: '导入', en: 'Imported' }, { id: 'rendered', zh: '渲染结果', en: 'Rendered' },
 ]
 
 const line = 'var(--vh-line, rgba(127, 127, 127, 0.25))'
@@ -87,11 +87,11 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
       <>
         <Section title={t('人物', 'Characters')} assets={library.characters} draft={draft} onOpen={setPreview} />
         <Section title={t('参考', 'References')} assets={library.references} draft={draft} onOpen={setPreview} />
-        <Section title={t('生成', 'Generated')} assets={library.generated} draft={draft} onOpen={setPreview} />
+        <Section title={t('渲染结果', 'Rendered')} assets={library.rendered} draft={draft} onOpen={setPreview} />
       </>
     )
-  } else if (filter === 'uploads') body = <Section title={t('上传', 'Uploads')} assets={library.uploads} draft={draft} onOpen={setPreview} />
-  else body = <Section title={t('生成', 'Generated')} assets={library.generated} draft={draft} onOpen={setPreview} />
+  } else if (filter === 'imported') body = <Section title={t('导入', 'Imported')} assets={library.imported} draft={draft} onOpen={setPreview} />
+  else body = <Section title={t('渲染结果', 'Rendered')} assets={library.rendered} draft={draft} onOpen={setPreview} />
   return (
     <div data-testid="vh-assets-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: 12, gap: 10 }}>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -101,7 +101,7 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
           </button>
         ))}
       </div>
-      <UploadZone api={api} projectId={props.projectId} />
+      <ImportZone api={api} projectId={props.projectId} />
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{body}</div>
       {preview === null
         ? null
@@ -111,22 +111,23 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
 }
 
 /**
- * The drop zone that uploads files through `POST /api/vh/assets/upload`; also opens a file chooser on click.
+ * The drop zone that imports files through `POST /api/vh/assets/upload` (names:allow: the browser wire route until stage 4);
+ * also opens a file chooser on click.
  * @param props - the asset import client and the project.
  * @returns the zone.
  */
-function UploadZone(props: { api: ToolApi; projectId: string }): ReactNode {
+function ImportZone(props: { api: ToolApi; projectId: string }): ReactNode {
   const [pending, setPending] = useState(0)
   const [over, setOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const t = useText()
-  const upload = useCallback((files: FileList | null) => {
+  const importFiles = useCallback((files: FileList | null) => {
     if (files === null) return
     for (const file of Array.from(files)) {
       setPending(count => count + 1)
-      props.api.upload(props.projectId, file)
-        .then(() => { setError(null) }, (failure: unknown) => { setError(t(`「${file.name}」上传失败：${String(failure)}`, `Failed to upload "${file.name}": ${String(failure)}`)) })
+      props.api.importAsset(props.projectId, file)
+        .then(() => { setError(null) }, (failure: unknown) => { setError(t(`「${file.name}」导入失败：${String(failure)}`, `Failed to import "${file.name}": ${String(failure)}`)) })
         .finally(() => { setPending(count => count - 1) })
     }
   }, [props.api, props.projectId, t])
@@ -137,14 +138,14 @@ function UploadZone(props: { api: ToolApi; projectId: string }): ReactNode {
       role="button" tabIndex={0} onClick={() => input.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter') input.current?.click() }}
       onDragOver={(event) => { if (isFileDrag(event)) { event.preventDefault(); setOver(true) } }}
       onDragLeave={() => { setOver(false) }}
-      onDrop={(event) => { if (!isFileDrag(event)) return; event.preventDefault(); setOver(false); upload(event.dataTransfer.files) }}
+      onDrop={(event) => { if (!isFileDrag(event)) return; event.preventDefault(); setOver(false); importFiles(event.dataTransfer.files) }}
       style={{ border: `1px dashed ${over ? accent : line}`, borderRadius: 8, padding: '12px 8px', textAlign: 'center', fontSize: 12, color: muted, cursor: 'pointer' }}
     >
       {pending > 0
-        ? t(`上传中（${String(pending)}）…`, `Uploading (${String(pending)})…`)
-        : t('拖入图片或视频上传，或点击选择文件', 'Drop images or videos here to upload, or click to choose files')}
+        ? t(`导入中（${String(pending)}）…`, `Importing (${String(pending)})…`)
+        : t('拖入图片或视频导入，或点击选择文件', 'Drop images or videos here to import, or click to choose files')}
       {error === null ? null : <div style={{ color: 'var(--vh-danger, #e5484d)', marginTop: 4 }}>{error}</div>}
-      <input ref={input} type="file" accept="image/*,video/*" multiple hidden onChange={(event) => { upload(event.currentTarget.files); event.currentTarget.value = '' }} />
+      <input ref={input} type="file" accept="image/*,video/*" multiple hidden onChange={(event) => { importFiles(event.currentTarget.files); event.currentTarget.value = '' }} />
     </div>
   )
 }
@@ -209,7 +210,7 @@ function Thumb(props: { asset: WireAsset; draft: boolean; onOpen: (asset: WireAs
 function Preview(props: { asset: WireAsset; draft: boolean; onClose: () => void }): ReactNode {
   const { asset, onClose } = props
   const t = useText()
-  // The store records no dimensions for uploads, so read them from the loaded media.
+  // The asset pool records no dimensions for imported files, so read them from the loaded media.
   const [loadedSize, setLoadedSize] = useState<{ width: number; height: number } | null>(null)
   const width = asset.width ?? loadedSize?.width ?? null
   const height = asset.height ?? loadedSize?.height ?? null

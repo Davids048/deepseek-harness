@@ -1,5 +1,5 @@
 /**
- * A folded state the view tests share: one character, one approved plan whose shots were generated and sequenced, a
+ * A folded state the view tests share: one character, one approved plan whose shots were rendered and put on a timeline, a
  * running retake on the open draft of chat session `s5`, a failed trim, and an exploration branch. Also a scripted `fetch` that answers the
  * `/api/vh` routes from such a state and records every write.
  */
@@ -51,16 +51,16 @@ export function fixtureState(): WireState {
     ],
     ops: [
       op({ id: 'i1', kind: 'request', intent: 'make a hero film' }),
-      op({ id: 'u1', tool: { name: 'asset.upload', version: '1' }, params: { name: 'ref.png' }, outputs: ['ref.png'] }),
-      op({ id: 'e1', tool: { name: 'entity.character.create', version: '1' }, params: { entity: 'hero', name: 'Hero', refs: ['ref.png'] } }),
+      op({ id: 'u1', tool: { name: 'asset.import', version: '1' }, params: { name: 'ref.png' }, outputs: ['ref.png'] }),
+      op({ id: 'e1', tool: { name: 'bible.character_create', version: '1' }, params: { character: 'hero', name: 'Hero' } }),
       op({ id: 'p1', turn: 't2', actor: 'agent', tool: { name: 'plan.create', version: '1' }, params: { shots: [{ prompt: 'hero walks' }, { prompt: 'hero turns' }] } }),
       op({ id: 'a1', turn: 't3', tool: { name: 'plan.approve', version: '1' }, params: { plan: 'p1' } }),
-      op({ id: 'g1', turn: 't3', actor: 'agent', tool: { name: 'generate.video', version: '1' }, deterministic: false, inputs: [hero], params: { prompt: 'hero walks through the rain at night in the city' }, outputs: ['shot1.mp4', 'shot1-last.png'] }),
-      op({ id: 'g2', turn: 't3', actor: 'agent', tool: { name: 'generate.video', version: '1' }, deterministic: false, inputs: [hero, { role: 'first_frame', ref: 'g1#1', resolved: 'shot1-last.png' }], params: { prompt: 'hero turns' }, outputs: ['shot2.mp4', 'shot2-last.png'] }),
-      op({ id: 's1', turn: 't3', actor: 'agent', tool: { name: 'sequence.create', version: '1' }, params: { assets: ['shot1.mp4', 'shot2.mp4'] } }),
-      op({ id: 'c1', turn: 't4', surface: 'timeline', tool: { name: 'media.concat', version: '1' }, inputs: [{ role: 'clip', ref: 'shot2.mp4', resolved: 'shot2.mp4' }], outputs: ['cut.mp4'], status: 'failed', error: 'ffmpeg exit 1' }),
-      op({ id: 'x1', turn: 't4', tool: { name: 'media.probe', version: '1' }, inputs: [{ role: 'media', ref: 'c1#0', resolved: 'cut.mp4' }], outputs: ['notes.txt'] }),
-      op({ id: 'g3', turn: 't5', session: 's5', branch: 'draft/s5', actor: 'agent', tool: { name: 'generate.video', version: '1' }, deterministic: false, base_op: 'g1', inputs: [hero], params: { prompt: 'hero walks, wider' }, status: 'running' }),
+      op({ id: 'g1', turn: 't3', actor: 'agent', tool: { name: 'shot.render', version: '1' }, deterministic: false, inputs: [hero], params: { prompt: 'hero walks through the rain at night in the city' }, outputs: ['shot1.mp4', 'shot1-last.png'] }),
+      op({ id: 'g2', turn: 't3', actor: 'agent', tool: { name: 'shot.render', version: '1' }, deterministic: false, inputs: [hero, { role: 'first_frame', ref: 'g1#1', resolved: 'shot1-last.png' }], params: { prompt: 'hero turns' }, outputs: ['shot2.mp4', 'shot2-last.png'] }),
+      op({ id: 's1', turn: 't3', actor: 'agent', tool: { name: 'timeline.create', version: '1' }, params: { assets: ['shot1.mp4', 'shot2.mp4'] } }),
+      op({ id: 'c1', turn: 't4', surface: 'timeline', tool: { name: 'deliver.timeline_export', version: '1' }, params: { timeline: 't1' }, inputs: [{ role: 'clip', ref: 'shot2.mp4', resolved: 'shot2.mp4' }], outputs: ['export.mp4'], status: 'failed', error: 'ffmpeg exit 1' }),
+      op({ id: 'x1', turn: 't4', tool: { name: 'media.probe', version: '1' }, inputs: [{ role: 'media', ref: 'c1#0', resolved: 'export.mp4' }], outputs: ['notes.txt'] }),
+      op({ id: 'g3', turn: 't5', session: 's5', branch: 'draft/s5', actor: 'agent', tool: { name: 'shot.render', version: '1' }, deterministic: false, base_op: 'g1', inputs: [hero], params: { prompt: 'hero walks, wider' }, status: 'running' }),
     ],
     assets: [
       asset('ref.png', 'image/png', 'u1'),
@@ -68,7 +68,7 @@ export function fixtureState(): WireState {
       asset('shot1-last.png', 'image/png', 'g1'),
       asset('shot2.mp4', 'video/mp4', 'g2', 6),
       asset('shot2-last.png', 'image/png', 'g2'),
-      asset('cut.mp4', 'video/mp4', 'c1', 3),
+      asset('export.mp4', 'video/mp4', 'c1', 3),
       asset('notes.txt', 'text/plain', 'x1'),
     ],
     entities: { hero: [{ kind: 'character', version: 1, name: 'Hero', description: 'A tired detective.', refs: ['ref.png'], updatedBy: 'e1' }] },
@@ -76,20 +76,20 @@ export function fixtureState(): WireState {
     stale: { g2: { because: 'g1 superseded' } },
     superseded: { c1: 'c2' },
     takes: { g1: ['g1', 'g3'] },
-    plans: [{ op: 'p1', approved: true, approvedBy: 'a1' }],
-    producers: { 'ref.png': 'u1', 'shot1.mp4': 'g1', 'shot1-last.png': 'g1', 'shot2.mp4': 'g2', 'shot2-last.png': 'g2', 'cut.mp4': 'c1', 'notes.txt': 'x1' },
+    plans: [{ record: 'p1', approved: true, approved_by: 'a1' }],
+    producers: { 'ref.png': 'u1', 'shot1.mp4': 'g1', 'shot1-last.png': 'g1', 'shot2.mp4': 'g2', 'shot2-last.png': 'g2', 'export.mp4': 'c1', 'notes.txt': 'x1' },
   }
 }
 
 /** The tool declarations the fixture's records use. */
 export const TOOLS: WireToolSpec[] = [
   {
-    name: 'generate.video', version: '1', summary: 'One shot.', inputs: { reference: { type: 'image', description: 'refs', many: true, entity: true } },
+    name: 'shot.render', version: '1', summary: 'One shot.', inputs: { reference: { type: 'image', description: 'refs', many: true, bible: true } },
     params: { prompt: { type: 'string', required: true, description: 'What happens.' }, seed: { type: 'integer', description: 'Seed.' }, aspect: { type: 'string', enum: ['16:9', '9:16'] }, loop: { type: 'boolean' }, extra: { type: 'object' } },
-    outputs: [{ role: 'video', type: 'video' }, { role: 'last_frame', type: 'image' }], deterministic: false, cost: 'gpu', confirm: 'agent_ask_first',
+    outputs: [{ role: 'video', type: 'video' }, { role: 'last_still', type: 'image' }], deterministic: false, cost: 'gpu', confirm: 'agent_ask_first',
   },
   { name: 'plan.create', version: '1', summary: 'A plan.', inputs: {}, params: { shots: { type: 'array', items: { type: 'object' } } }, outputs: [], deterministic: true, cost: 'free', confirm: 'never' },
-  { name: 'sequence.create', version: '1', summary: 'Start the timeline.', inputs: {}, params: {}, outputs: [], deterministic: true, cost: 'free', confirm: 'never' },
+  { name: 'timeline.create', version: '1', summary: 'Start the timeline.', inputs: {}, params: {}, outputs: [], deterministic: true, cost: 'free', confirm: 'never' },
 ]
 
 /** Every POST the scripted fetch received, by path. */

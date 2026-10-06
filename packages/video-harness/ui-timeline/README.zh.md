@@ -1,5 +1,5 @@
 ---
-description: "作为右侧栏标签的视频 harness 时间线：项目的片段序列在一条轨道上，排序、设范围、裁剪、插入、移除手势变成序列和片段记录。"
+description: "作为右侧栏标签的视频 harness 时间线：项目的时间线在一条轨道上，移动、裁剪、拆分、插入、移除手势变成 `timeline.*` 记录。"
 kind: "package-reference"
 ---
 
@@ -35,12 +35,12 @@ Host 半边不注册任何东西。浏览器半边注册 `vh-timeline` 标签类
 
 | 手势 | 记录 |
 | --- | --- |
-| 设置范围 | `sequence.set_range {slot, inSec, outSec}`；空字段表示"从头开始"或"到结尾" |
-| 前移或后移 | `sequence.move {from, to}` |
-| 导出 | 对每个有入点或出点的片段做 `clip.trim`，再按顺序对全部片段做 `media.concat` |
-| 插在这段后面 | `sequence.insert {at, asset}`，素材为所选视频 |
-| 从时间线移除 | `sequence.remove {slot}`；随后选中它前面的片段 |
-| 从这个素材新建时间线 | `sequence.create {assets: [asset]}` |
+| 设置范围 | `timeline.clip_trim {timeline, clip, in_sec, out_sec}`；空字段表示"从头开始"或"到结尾" |
+| 前移或后移 | `timeline.clip_move {timeline, clip, to}` |
+| 导出 | 对当前显示的时间线做一次 `deliver.timeline_export` 调用；交付组件把每个有入点或出点的片段裁到该范围，再按顺序拼接全部片段 |
+| 插在这段后面 | `timeline.clip_insert {timeline, at, asset}`，素材为所选视频 |
+| 从时间线移除 | `timeline.clip_remove {timeline, clip}`；随后选中它前面的片段 |
+| 从这个素材新建时间线 | `timeline.create {timeline, title, assets: [asset]}` |
 | 点一个片段 | `/api/vh/selection`，带素材 id 和槽位 |
 
 每条记录都带 `surface: 'timeline'` 和一句用 DSH 界面语言说明手势的意图。剪辑视图（`CutsView`）通过 `@video-harness/ui-kit/locale.ts` 跟随 `<html lang>`；切换分集标签会停止播放，并把预览和播放头重置到新的一集。显示 `draft/*` 分支时手势禁用。轨道每秒画四十像素；素材没有时长时片段按五秒画。
@@ -72,7 +72,8 @@ Host 半边不注册任何东西。浏览器半边注册 `vh-timeline` 标签类
 
 - [`@video-harness/views`](../views/README.zh.md) — 每个手势背后的路由。
 - [`@video-harness/ui-kit`](../ui-kit/README.zh.md) — 轨道几何和 hook。
-- [`@video-harness/tools`](../tools/README.zh.md) — 时间线调用的 `sequence.*` 和 `clip.trim` 工具。
+- [`@dv/timeline`](../../dv/timeline/README.zh.md) — 时间线调用的 `timeline.*` 操作。
+- [`@dv/deliver`](../../dv/deliver/README.zh.md) — 导出调用的 `deliver.timeline_export` 操作。
 
 -----
 
@@ -90,5 +91,5 @@ Host 半边不注册任何东西。浏览器半边注册 `vh-timeline` 标签类
 <a id="known-limitations-and-deferred-work"></a>
 
 - **不能拖拽** — 片段每次点击移动一个槽位；没有拖拽手柄。
-- **不能播放整条序列** — 面板只预览一个片段；播放整条轨道需要一条 `media.concat` 记录。
+- **不能播放整条时间线** — 面板只预览一个片段；播放整条轨道需要一条 `deliver.timeline_export` 记录。
 - **只有一条轨道** — 音频和叠加层没有自己的泳道。

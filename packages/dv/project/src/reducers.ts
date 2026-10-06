@@ -12,9 +12,11 @@
  */
 import { effectiveChain } from './history.ts'
 import type { RecordStore } from './record-store.ts'
-import { ProjectError } from './shared.ts'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
+import { COMPONENT_KEYS, ProjectError } from './shared.ts'
 import type {
-  AssetId, ComponentStates, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId, RecordInput, RecordInputRef, Reducer,
+  AssetId, AssetStore, ComponentStates, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId, RecordInput, RecordInputRef,
+  Reducer,
 } from './types.ts'
 
 /** The `proj` slice. */
@@ -26,7 +28,7 @@ type AnySlice = ComponentStates[keyof ComponentStates]
 /** The record that created the character, location or style version a reference names; null for any other reference. */
 type VersionCreator = (ref: RecordInputRef) => RecordId | null
 
-/** The version lookup without a `bible` reducer: no reference names a version. */
+/** The version lookup without a reducer that defines `createdBy`: no reference names a version. */
 const noVersions: VersionCreator = () => null
 
 /**
@@ -105,8 +107,8 @@ function computeStale(
  * Apply one record to the `proj` slice (see {@link projReducer}).
  * @param slice - the slice before the record.
  * @param record - the record.
- * @param versionCreator - finds the producer of a character, location or style reference, from the `bible` slice
- *   before the record.
+ * @param versionCreator - finds the producer of a character, location or style reference, from the slice of the
+ *   reducer that defines `createdBy`, before the record.
  * @returns the slice after the record.
  */
 function reduceProj(slice: ProjSlice, record: ProjectRecord, versionCreator: VersionCreator): ProjSlice {
@@ -134,13 +136,14 @@ function reduceProj(slice: ProjSlice, record: ProjectRecord, versionCreator: Ver
  * - `superseded`: each ID in a record's `supersedes` → that record;
  * - `stale`: a record R is stale when one of its inputs was produced by a record that is superseded or stale; the
  *   producer of an input is the record that created its `resolved_asset`, and for a character, location or style
- *   reference also the record that created that version (the `bible` reducer's `createdBy`); the value is the
+ *   reference also the record that created that version (`createdBy` of the reducer that defines it); the value is the
  *   superseding record (or the record that made the producer stale). When a record supersedes another, every earlier
  *   record that is (transitively) downstream of the superseded one becomes stale.
  *   A `proj.stale_accept` record with `params.record` removes that record's mark and keeps it removed for the rest of
  *   the chain, and records downstream of it are not stale through it.
  * Request records and `proj.*` records other than `proj.stale_accept` change only `records`. The registry reduces the
- * slice with the `bible` reducer's `createdBy`; `projReducer.reduce` called on its own finds no version producers.
+ * slice with the `createdBy` of the reducer that defines it; `projReducer.reduce` called on its own finds no version
+ * producers.
  */
 export const projReducer: Reducer<'proj'> = {
   initial: () => ({ records: [], stale: {}, superseded: {}, created_by: {} }),
@@ -158,13 +161,21 @@ export class ReducerRegistry {
   constructor(private readonly store: RecordStore) {}
 
   /**
-   * Register a component's reducer. One reducer per key: a second registration of a key throws `reducer_exists`.
+   * Register a component's reducer. One reducer per key: a second registration of a key throws `reducer_exists`. At
+   * most one registered reducer defines `createdBy` and `assetsOf`: a second one that defines either throws
+   * `invalid_params`.
    * @param key - the component key.
    * @param reducer - the reducer.
    * @returns a function that removes the registration.
    */
   register<K extends keyof ComponentStates>(key: K, reducer: Reducer<K>): () => void {
     if (this.reducers.has(key)) throw new ProjectError('reducer_exists', `A reducer for component ${key} is already registered.`)
+    for (const hook of ['createdBy', 'assetsOf'] as const) {
+      const holder = [...this.reducers].find(([, other]) => other[hook] !== undefined)
+      if (reducer[hook] !== undefined && holder !== undefined) {
+        throw new ProjectError('invalid_params', `The reducer of ${String(holder[0])} already defines ${hook}; ${key} cannot define it too.`)
+      }
+    }
     this.reducers.set(key, reducer)
     return () => {
       if (this.reducers.get(key) === reducer) this.reducers.delete(key)
@@ -248,12 +259,27 @@ export class ReducerRegistry {
   }
 
   /**
-   * Apply one record to one slice. Project's own `proj` slice also reads the version producers of the `bible` slice
-   * before the record; `proj` is registered first, so `slices` still holds that slice while `proj` reduces.
+   * The project summary fields of every reducer that defines `agentSummary`, in component key order (keys outside
+   * that list follow in registration order).
+   * @param state - a state of a branch.
+   * @param assets - the asset store, for asset URLs.
+   * @returns one field object per such reducer.
+   */
+  agentSummaries(state: ProjectState, assets: Pick<AssetStore, 'url'>): Array<Record<string, JsonValue>> {
+    const order = [...COMPONENT_KEYS]
+    const rank = (key: string): number => (order.includes(key) ? order.indexOf(key) : order.length)
+    return [...this.reducers].sort(([a], [b]) => rank(String(a)) - rank(String(b)))
+      .flatMap(([key, reducer]) => reducer.agentSummary === undefined ? [] : [reducer.agentSummary(sliceOf(state, key, reducer), assets)])
+  }
+
+  /**
+   * Apply one record to one slice. Project's own `proj` slice also reads the version producers from the slice of the
+   * reducer that defines `createdBy`, before the record; `proj` is registered first, so `slices` still holds that slice
+   * while `proj` reduces.
    * @param reducer - the reducer of the slice.
    * @param slice - the slice before the record.
    * @param record - the record.
-   * @param slices - every slice by key; the `bible` entry is read before the record.
+   * @param slices - every slice by key; the slice of the reducer that defines `createdBy` is read before the record.
    * @returns the slice after the record.
    */
   private reduceSlice(reducer: Reducer, slice: AnySlice, record: ProjectRecord, slices: Map<keyof ComponentStates, AnySlice>): AnySlice {
@@ -262,28 +288,41 @@ export class ReducerRegistry {
   }
 
   /**
-   * The record that created a version, from the `bible` reducer's `createdBy`.
+   * The record that created a version, from `createdBy` of the reducer that defines it.
    * @param slices - every slice by key.
    * @param ref - a character, location or style reference.
-   * @returns the record, or null when no `bible` reducer is registered, it has no `createdBy`, or the version is unknown.
+   * @returns the record, or null when no registered reducer defines `createdBy` or the version is unknown.
    */
   private versionCreator(slices: Map<keyof ComponentStates, AnySlice>, ref: RecordInputRef): RecordId | null {
     for (const [key, reducer] of this.reducers) {
-      if (String(key) === 'bible') return reducer.createdBy?.(slices.get(key) ?? reducer.initial(), ref) ?? null
+      if (reducer.createdBy !== undefined) return reducer.createdBy(slices.get(key) ?? reducer.initial(), ref)
     }
     return null
   }
 
   /**
-   * The assets a character, location or style reference stands for, from the `bible` reducer's `assetsOf`.
+   * The record that created the version a character, location or style reference names, read from a computed state.
+   * @param state - a state of a branch.
+   * @param ref - a `{character, version}`, `{location, version}` or `{style, version}` reference.
+   * @returns the record, or null when no registered reducer defines `createdBy` or the reference names no known
+   *   version.
+   */
+  versionCreatedBy(state: ProjectState, ref: RecordInputRef): RecordId | null {
+    for (const [key, reducer] of this.reducers) {
+      if (reducer.createdBy !== undefined) return reducer.createdBy(sliceOf(state, key, reducer), ref)
+    }
+    return null
+  }
+
+  /**
+   * The assets a character, location or style reference stands for, from `assetsOf` of the reducer that defines it.
    * @param state - the state at the record's parent.
    * @param ref - a `{character, version}`, `{location, version}` or `{style, version}` reference.
-   * @returns the assets, or null when no `bible` reducer is registered or the version is unknown.
+   * @returns the assets, or null when no registered reducer defines `assetsOf` or the version is unknown.
    */
   assetsOf(state: ProjectState, ref: RecordInputRef): AssetId[] | null {
-    // `bible` is declared in `ComponentStates` by the package that registers it, so look the key up at runtime.
     for (const [key, reducer] of this.reducers) {
-      if (String(key) === 'bible') return reducer.assetsOf?.(sliceOf(state, key, reducer), ref) ?? null
+      if (reducer.assetsOf !== undefined) return reducer.assetsOf(sliceOf(state, key, reducer), ref)
     }
     return null
   }

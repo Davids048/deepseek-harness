@@ -24,7 +24,7 @@ Use this package to let browser views read and change a video project through HT
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin after `@video-harness/assets`, `@dv/project`, and `@video-harness/tools`, in a profile that also mounts `dsh-web-app` (for the `connection` and `webServer` services). Without `connection` the Fetch routes stay unregistered; without `webServer` the event stream does.
+Mount the plugin after `@dv/project` and `@dv/asset-pool`, in a profile that also mounts `dsh-web-app` (for the `connection` and `webServer` services). Without `connection` the Fetch routes stay unregistered; without `webServer` the event stream does.
 
 ```yaml
 - id: vh-views
@@ -42,7 +42,7 @@ Mount the plugin after `@video-harness/assets`, `@dv/project`, and `@video-harne
 | `/api/vh/projects` | GET | optional `session` (a chat session ID) | Every project, newest first, with its branch heads; with `session`, the project that session is bound to comes first with `current: true` |
 | `/api/vh/projects` | POST | `{title, surface}` | A project started from a view: `{projectId, title}` |
 | `/api/vh/state` | GET | `project`, optional `head` (branch name; default `main`) | The state of the branch: project, head, heads, branches with draft counts, records, mentioned assets, characters, locations and styles, timelines, stale and superseded records, takes, plans, producers |
-| `/api/vh/tools` | GET | — | Every registered tool declaration without its executor |
+| `/api/vh/tools` | GET | — | The declaration of every registered operation that writes a record and has an agent tool, without its executor |
 | `/api/vh/invoke` | POST | `{project, tool, inputs?, params?, intent?, surface, session?, base_op?, supersedes?}` | The record; `surface` is `canvas` or `timeline` |
 | `/api/vh/drafts/accept` | POST | `{project, session \| branch, surface}` | The `proj.draft_accept` record and the heads afterwards |
 | `/api/vh/drafts/discard` | POST | `{project, session \| branch, surface, counts?}` | Without `counts`: `{draft, counts}`; with the confirmed counts: the discarded counts and the heads afterwards |
@@ -64,7 +64,7 @@ An invoke runs the operation through `dvProject.run` as the human, on the workin
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`VhViews` builds one `ViewsApi` over `dvProject`, `vhAssets`, and `vhTools`. Inside `ctx.inject(['connection'])` it registers the Fetch routes with `connection.fetch.register`, each answering through one `answer` wrapper that maps `ViewsRequestError` to its status. Inside `ctx.inject(['webServer'])` it registers the `/vh/events` prefix route, asks the Connection whether the request carries a valid cookie through `requestRejection`, and hands the response to `serveEventStream`, which subscribes to `dvProject.subscribe(projectId)` and writes one `event:`/`data:` frame per change until the request closes. `toWireState` turns a `ProjectState` into JSON: branded IDs stay strings, and the asset list is the union of every record's outputs and resolved inputs and the reference images of every character, location, and style version.
+`VhViews` builds one `ViewsApi` over `dvProject` and `dvAssetPool`; the operation list and an invoke's operation come from `dvProject.listOperations()`, an invoke's `inputs` are parsed by `dvProject.parseInputs`, and the workspace routes bind a chat session to a project with `dvProject.bindSession`. Inside `ctx.inject(['connection'])` it registers the Fetch routes with `connection.fetch.register`, each answering through one `answer` wrapper that maps `ViewsRequestError` to its status. Inside `ctx.inject(['webServer'])` it registers the `/vh/events` prefix route, asks the Connection whether the request carries a valid cookie through `requestRejection`, and hands the response to `serveEventStream`, which subscribes to `dvProject.subscribe(projectId)` and writes one `event:`/`data:` frame per change until the request closes. `toWireState` turns a `ProjectState` into JSON: branded IDs stay strings, and the asset list is the union of every record's outputs and resolved inputs and the reference images of every character, location, and style version.
 
 | File | Content |
 | --- | --- |

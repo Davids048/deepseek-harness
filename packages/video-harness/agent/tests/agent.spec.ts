@@ -1,11 +1,11 @@
-import { join } from 'node:path'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { Branch, ProjectId, ProjectState, RecordId } from '@dv/project'
-import { afterEach, describe, expect, it } from 'vitest'
+import type { AssetId, Branch, CharacterId, ProjectId, ProjectState, RecordId, SessionId } from '@dv/project'
+import type { TimelineId } from '@dv/timeline'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import VhAgent, { PROMPT_SECTION, renderResolverBlock } from '../src/index.ts'
-import { resultText, startTools, type ToolsFixture } from '../../tools/tests/support.ts'
+import { resultText, startBase, type AgentBase } from './support.ts'
 
 /** A live session and the agent handle the registry reports for it. */
 interface FakeLive {
@@ -13,7 +13,7 @@ interface FakeLive {
   agent: { id: string; session: { id: string } }
 }
 
-interface AgentFixture extends ToolsFixture {
+interface AgentFixture extends AgentBase {
   agent: VhAgent
   agentFiber: { dispose(): Promise<void> }
   live: FakeLive
@@ -25,17 +25,20 @@ interface AgentFixture extends ToolsFixture {
 
 const fixtures: AgentFixture[] = []
 
-/** Mount the tools fixture plus the agent plugin; `registry` adds a fake `agents` service, `questions` a fake channel. */
+/** Mount the composition plus the agent plugin; `registry` adds a fake `agents` service, `questions` a fake channel. */
 interface StartOptions {
   registry?: boolean
   questions?: (question: string) => string[] | Error
+  /** The agent's GPU budget per turn; 60 by default. */
   threshold?: number
+  /** The asset pool's public URL base; empty by default. */
+  publicBaseUrl?: string
   /** Mount a fake `vhViews` that reports this selection for every project. */
   selection?: { kind: string; id: string; slot?: number; surface: string }
 }
 
 async function start(options: StartOptions = {}): Promise<AgentFixture> {
-  const base = await startTools()
+  const base = await startBase(options.publicBaseUrl)
   const session = { id: 's1' }
   const live: FakeLive = { session, agent: { id: 's1', session } }
   if (options.registry === true) base.context.provide('agents', { get: (id: string) => (id === 's1' ? live.agent : undefined), roots: () => [live.agent] })
@@ -54,12 +57,9 @@ async function start(options: StartOptions = {}): Promise<AgentFixture> {
     const selection = options.selection
     base.context.provide('vhViews', { selection: () => selection })
   }
-  if (options.threshold !== undefined) {
-    await base.toolsFiber.dispose()
-    const { default: VhTools } = await import('@video-harness/tools')
-    await base.context.plugin(VhTools, { perceptionMaxTokens: 1024, imageInput: true, sessionStateRoot: join(base.root, 'sessions'), publicBaseUrl: 'https://demo.example', confirmGpuSecondsThreshold: options.threshold, gpuSecondsPerVideoSecond: 4 }).await()
-  }
-  const agentFiber = base.context.plugin(VhAgent, { promptSectionOrder: 4900, approveLabel: 'Run it', declineLabel: 'Not now' })
+  const agentFiber = base.context.plugin(VhAgent, {
+    promptSectionOrder: 4900, approveLabel: 'Run it', declineLabel: 'Not now', confirmGpuSecondsThreshold: options.threshold ?? 60,
+  })
   await agentFiber.await()
   let calls = 0
   const fixture: AgentFixture = {
@@ -97,9 +97,9 @@ function json(result: ToolExecutionResult): Record<string, unknown> {
 /** A project bound to the live session with one character; the import and the character open the session's draft. */
 async function boundProject(fixture: AgentFixture): Promise<string> {
   const created = ok(await fixture.callAs('dv_proj_create', { title: 'dance' }))
-  ok(await fixture.callAs('vh_asset_upload', { reason: 'reference', path: fixture.writeFile('face.png'), mime: 'image/png' }))
+  ok(await fixture.callAs('dv_asset_import', { reason: 'reference', path: fixture.writeFile('face.png'), mime: 'image/png' }))
   const image = fixture.assets.list()[0]?.id as string
-  ok(await fixture.callAs('vh_entity_character_create', { reason: 'lead', entity: 'c1', name: 'Lead', refs: [image] }))
+  ok(await fixture.callAs('dv_bible_character_create', { reason: 'lead', character: 'c1', name: 'Lead', inputs: { reference: [image] } }))
   return created['project_id'] as string
 }
 
@@ -109,8 +109,8 @@ function plainState(components: Partial<{ [K in keyof ProjectState['components']
     project: { id: brandString<ProjectId>('p'), title: 'p', created_at: '' }, branch: 'main', head: brandString<RecordId>('h'),
     components: {
       proj: { records: [], stale: {}, superseded: {}, created_by: {}, ...components.proj },
-      timeline: { sequence: null, sequences: [], ...components.timeline },
-      bible: { entities: {}, ...components.bible }, // names:allow
+      timeline: { timelines: [], ...components.timeline },
+      bible: { characters: {}, locations: {}, styles: {}, ...components.bible },
       plan: { plans: [], ...components.plan },
       shot: { takes: {}, roots: {}, ...components.shot },
     },
@@ -135,26 +135,28 @@ describe('resolver block', () => {
     fixtures.pop()
     const second = await start()
     const projectId = await boundProject(second)
-    const plan = ok(await second.callAs('vh_plan_create', { reason: 'propose', continuity: 'chained', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }, { prompt: 'two', duration_sec: 1 }] }))
+    const plan = ok(await second.callAs('dv_plan_create', { reason: 'propose', continuity: 'chained', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }, { prompt: 'two', duration_sec: 1 }] }))
     const block = second.agent.promptBlock('s1')
     expect(block).toContain(`Project ${projectId} on branch draft/s1.`)
     expect(block).toContain('Draft draft/s1 is open with 3 agent change(s) and 0 human edit(s). Only the user accepts or discards it')
     expect(block).toContain('c1@1 character "Lead"')
-    expect(block).toContain('Timeline: empty.')
+    expect(block).toContain('Timelines: none.')
     // The imported picture is listed, so a chat attachment can be used as a reference.
-    expect(block).toMatch(/Uploaded images \(newest last\):\n- asset \S+ \/vh\/assets\//)
-    expect(block).toContain(`${plan['op_id']}: proposed, waiting for the user`)
-    ok(await second.callAs('vh_plan_approve', { reason: 'go', plan: plan['op_id'], user_approved: true }))
+    expect(block).toMatch(/Imported images \(newest last\):\n- asset \S+ \/dv\/assets\//)
+    expect(block).toContain(`${plan['record']}: proposed, waiting for the user`)
+    ok(await second.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'], user_approved: true }))
     ok(await second.callAs('dv_proj_wait', {}))
-    const recent = ok(await second.callAs('dv_proj_state', {}))['recent'] as Array<{ tool: string; op_id: string }>
-    const firstShot = recent.find(record => record.tool === 'generate.video')?.op_id // names:allow
-    const retake = ok(await second.callAs('vh_generate_video', { reason: 'again', prompt: 'two again', inputs: { reference: 'c1@1' }, base_op: firstShot, user_requested: true }))
-    ok(await second.callAs('vh_entity_character_update', { reason: 'new face', entity: 'c1', refs: [second.assets.list()[0]?.id as string], description: 'v2' }))
+    const recent = ok(await second.callAs('dv_proj_state', {}))['recent'] as Array<{ operation: string; record: string }>
+    const firstShot = recent.find(entry => entry.operation === 'shot.render')?.record
+    const retake = ok(await second.callAs('dv_shot_render', { reason: 'again', prompt: 'two again', inputs: { reference: 'c1@1' }, based_on: firstShot, user_requested: true }))
+    ok(await second.callAs('dv_bible_character_update', {
+      reason: 'new face', character: 'c1', inputs: { reference: [second.assets.list()[0]?.id as string] }, description: 'v2',
+    }))
     const after = second.agent.promptBlock('s1')
-    expect(after).toContain('Timeline:')
-    expect(after).toContain('/vh/assets/')
+    expect(after).toContain('Timelines:\n- t1 "第 1 集": 2 clips\n  - clip 1: asset ')
+    expect(after).toContain('/dv/assets/')
     expect(after).toContain('Takes (alternatives')
-    expect(after).toContain(String(retake['op_id']))
+    expect(after).toContain(String(retake['record']))
     expect(after).toContain('Stale records')
     expect(after).toContain('STALE')
     expect(after).toContain('approved by')
@@ -167,12 +169,12 @@ describe('resolver block', () => {
   it('renders characters, takes, ranges, and plans from a plain state', () => {
     const url = (id: string): string => `/u/${id}`
     const projectId = brandString<ProjectId>('p')
-    const state = plainState({ bible: { entities: { c9: [] } }, shot: { takes: { [brandString<RecordId>('root')]: [brandString<RecordId>('root')] } } }) // names:allow
+    const state = plainState({ shot: { takes: { [brandString<RecordId>('root')]: [brandString<RecordId>('root')] } } })
     const text = renderResolverBlock({ projectId, state, branch: branchOf('draft/s1', { agent_changes: 2, human_edits: 1 }), url })
     expect(text).toContain('Draft draft/s1 is open with 2 agent change(s) and 1 human edit(s).')
     expect(renderResolverBlock({ projectId, state, branch: branchOf('main'), url })).toContain('No draft is open.')
     expect(renderResolverBlock({ projectId: null, state: null, branch: null, url })).toContain('start the work with dv_proj_create')
-    expect(text).toContain('c9: no version')
+    expect(text).toContain('Characters, locations and styles: none.')
     expect(text).not.toContain('Takes')
     // Imported assets have no producing record, a trimmed clip shows its range, a stale producer is flagged, and a plan
     // approved by an unnamed actor says "user".
@@ -182,21 +184,23 @@ describe('resolver block', () => {
     const marked = plainState({
       proj: { created_by: { [a2]: g1 }, stale: { [g1]: brandString<RecordId>('g2') } },
       timeline: {
-        sequence: { items: [{ slot: 1, assetId: a1, inSec: null, outSec: 4 }, { slot: 2, assetId: a2, inSec: null, outSec: null }] },
+        timelines: [{
+          id: brandString<TimelineId>('t1'), name: '第 1 集',
+          clips: [{ asset: a1, in_sec: null, out_sec: 4 }, { asset: a2, in_sec: null, out_sec: null }],
+        }],
       },
-      plan: { plans: [{ op: brandString<RecordId>('p1'), approved: true, approvedBy: null }] },
+      plan: { plans: [{ record: brandString<RecordId>('p1'), approved: true, approved_by: null }] },
     })
     const lines = renderResolverBlock({ projectId, state: marked, branch: branchOf('main'), url })
-    expect(lines).toContain('Entities: none.')
-    expect(lines).toContain('slot 1: asset a1 from record upload range 0s-4 /u/a1')
-    expect(lines).toContain('slot 2: asset a2 from record g1 STALE /u/a2')
+    expect(lines).toContain('Timelines:\n- t1 "第 1 集": 2 clips\n  - clip 1: asset a1 range 0s-4 /u/a1\n  - clip 2: asset a2 from record g1 STALE /u/a2')
     expect(lines).toContain('g1 (input replaced by g2)')
     expect(lines).toContain('p1: approved by user')
-    const noRefs = plainState({ bible: { entities: { c1: [{ version: 1, kind: 'character', name: 'Lead', refs: [], description: '', updatedBy: brandString<RecordId>('u1') }] } } }) // names:allow
-    expect(renderResolverBlock({ projectId, state: noRefs, branch: branchOf('main'), url })).toContain('refs none')
+    const lead = { id: brandString<CharacterId>('c1'), version: 1, name: 'Lead', references: [], description: '', created_by: brandString<RecordId>('u1') }
+    const noRefs = plainState({ bible: { characters: { [lead.id]: [lead] } } })
+    expect(renderResolverBlock({ projectId, state: noRefs, branch: branchOf('main'), url })).toContain('- c1@1 character "Lead" references none')
     const picked = renderResolverBlock({ projectId, state: noRefs, branch: branchOf('main'), url, selection: { kind: 'op', id: 'g1', surface: 'canvas' } })
     expect(picked).toContain('user selection in the canvas: op g1. "这个 / this" refers to it')
-    expect(picked).not.toContain('(timeline slot')
+    expect(picked).not.toContain('of the timeline)')
   })
 })
 
@@ -207,7 +211,7 @@ describe('turn wiring', () => {
     fixture.emit('turn/start', { turn: 1 })
     fixture.emit('user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: 'make a dance video' }] })
     const projectId = brandString<ProjectId>(await boundProject(fixture))
-    expect(fixture.agent.promptBlock('s1')).toContain('user selection in the timeline: clip shot2.mp4 (timeline slot 2)')
+    expect(fixture.agent.promptBlock('s1')).toContain('user selection in the timeline: clip shot2.mp4 (clip 2 of the timeline)')
     const requests = fixture.project.listHistory({ project: projectId, kind: 'request' })
     expect(requests.map(entry => entry.record.intent)).toEqual(['make a dance video'])
     // Every agent record of the turn carries the turn of the request record.
@@ -223,12 +227,12 @@ describe('turn wiring', () => {
     fixture.emit('turn/end', { turn: 1, reason: { kind: 'completed' } })
     fixture.emit('turn/start', { turn: 2 })
     fixture.emit('user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: 'one more picture' }] })
-    ok(await fixture.callAs('vh_asset_upload', { reason: 'more', path: fixture.writeFile('b.png'), mime: 'image/png' }))
+    ok(await fixture.callAs('dv_asset_import', { reason: 'more', path: fixture.writeFile('b.png'), mime: 'image/png' }))
     fixture.emit('turn/end', { turn: 2, reason: { kind: 'aborted', reason: 'user' } })
-    const branch = fixture.project.workingBranch(projectId, brandString('s1'))
+    const branch = fixture.project.workingBranch(projectId, brandString<SessionId>('s1'))
     expect(branch.name).toBe('draft/s1')
     expect(branch.counts).toEqual({ agent_changes: 3, human_edits: 0 })
-    expect(fixture.project.getState(projectId).components.bible.entities).not.toHaveProperty('c1') // names:allow
+    expect(fixture.project.getState(projectId).components.bible.characters).not.toHaveProperty('c1')
     // Two turns, two request records; only the second had the user's words before its first call.
     const requests = fixture.project.listHistory({ project: projectId, kind: 'request' })
     expect(requests.map(entry => entry.record.intent)).toEqual(['one more picture'])
@@ -252,29 +256,29 @@ describe('confirmation', () => {
   it('requires the argument protocol when no question channel applies', async () => {
     const fixture = await start()
     await boundProject(fixture)
-    const plan = ok(await fixture.callAs('vh_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
-    const refused = await fixture.callAs('vh_plan_approve', { reason: 'go', plan: plan['op_id'] })
+    const plan = ok(await fixture.callAs('dv_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
+    const refused = await fixture.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'] })
     expect(refused.isError).toBe(true)
     expect(resultText(refused)).toContain('user_approved: true')
-    const approved = ok(await fixture.callAs('vh_plan_approve', { reason: 'go', plan: plan['op_id'], user_approved: true }))
-    const projectId = fixture.tools.sessionState('s1')?.projectId as ProjectId
-    expect(fixture.project.getRecord(projectId, approved['op_id'] as RecordId).params['user_approved']).toBe(true)
+    const approved = ok(await fixture.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'], user_approved: true }))
+    const projectId = fixture.project.sessionProject(brandString<SessionId>('s1')) as ProjectId
+    expect(fixture.project.getRecord(projectId, approved['record'] as RecordId).params['user_approved']).toBe(true)
     ok(await fixture.callAs('dv_proj_wait', {}))
     // Without an agent on the call the policy answers null as well.
-    expect(await fixture.agent.confirm({ spec: fixture.tools.get('plan.approve') as never, summary: 's', estimateGpuSeconds: 0, exec: { agent: undefined, signal: new AbortController().signal } as never })).toBeNull()
+    expect(await fixture.agent.confirm({ spec: fixture.project.listOperations().find(spec => spec.name === 'plan.approve') as never, summary: 's', estimateGpuSeconds: 0, exec: { agent: undefined, signal: new AbortController().signal } as never })).toBeNull()
   })
 
   it('asks through the question channel for live root agents and records the answer', async () => {
     const asked: string[] = []
     const fixture = await start({ registry: true, questions: (question) => { asked.push(question); return question.includes('decline-me') ? ['Not now'] : ['Run it'] } })
     await boundProject(fixture)
-    const plan = ok(await fixture.callAs('vh_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
-    ok(await fixture.callAs('vh_plan_approve', { reason: 'approve the plan', plan: plan['op_id'] }))
+    const plan = ok(await fixture.callAs('dv_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
+    ok(await fixture.callAs('dv_plan_approve', { reason: 'approve the plan', plan: plan['record'] }))
     expect(asked[0]).toContain('plan.approve: approve the plan')
     // A plan approval states what the plan's shots will cost.
     expect(asked[0]).toContain('Estimated GPU time for this turn: about 4 s')
     ok(await fixture.callAs('dv_proj_wait', {}))
-    const declined = await fixture.callAs('vh_plan_approve', { reason: 'decline-me', plan: plan['op_id'] })
+    const declined = await fixture.callAs('dv_plan_approve', { reason: 'decline-me', plan: plan['record'] })
     expect(declined.isError).toBe(true)
     expect(resultText(declined)).toContain('declined')
   })
@@ -284,10 +288,10 @@ describe('confirmation', () => {
     let confirm: 'ask' | 'direct' = 'ask'
     fixture.agent.setComposer({ mode: () => ({ confirm, speed: 'speed' }) })
     const exec = { agent: fixture.live.agent, signal: new AbortController().signal } as never
-    const render = fixture.tools.get('generate.video') as never // names:allow
+    const render = fixture.project.listOperations().find(spec => spec.name === 'shot.render') as never
     expect(await fixture.agent.confirm({ spec: render, summary: 's', estimateGpuSeconds: 100, exec })).toBe(true)
     // An operation that never asks first, or a session in direct mode, goes to the question channel.
-    expect(await fixture.agent.confirm({ spec: fixture.tools.get('plan.create') as never, summary: 's', estimateGpuSeconds: 0, exec })).toBeNull()
+    expect(await fixture.agent.confirm({ spec: fixture.project.listOperations().find(spec => spec.name === 'plan.create') as never, summary: 's', estimateGpuSeconds: 0, exec })).toBeNull()
     confirm = 'direct'
     expect(await fixture.agent.confirm({ spec: render, summary: 's', estimateGpuSeconds: 100, exec })).toBeNull()
     await boundProject(fixture)
@@ -302,36 +306,117 @@ describe('confirmation', () => {
   it('falls back to the argument protocol when the channel throws or the agent is not a root', async () => {
     const fixture = await start({ registry: true, questions: () => new Error('ASK_ABORTED') })
     await boundProject(fixture)
-    const plan = ok(await fixture.callAs('vh_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
-    const refused = await fixture.callAs('vh_plan_approve', { reason: 'go', plan: plan['op_id'] })
+    const plan = ok(await fixture.callAs('dv_plan_create', { reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'one', duration_sec: 1 }] }))
+    const refused = await fixture.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'] })
     expect(resultText(refused)).toContain('user_approved: true')
     const child = { id: 's1', session: fixture.live.session }
-    expect(await fixture.agent.confirm({ spec: fixture.tools.get('plan.approve') as never, summary: 's', estimateGpuSeconds: 0, exec: { agent: child, signal: new AbortController().signal } as never })).toBeNull()
+    expect(await fixture.agent.confirm({ spec: fixture.project.listOperations().find(spec => spec.name === 'plan.approve') as never, summary: 's', estimateGpuSeconds: 0, exec: { agent: child, signal: new AbortController().signal } as never })).toBeNull()
   })
 
   it('applies the GPU budget to cost-gated tools and reports the estimate', async () => {
     const asked: string[] = []
-    const fixture = await start({ registry: true, threshold: 3, questions: (question) => { asked.push(question); return ['Run it'] } })
+    const fixture = await start({
+      registry: true, threshold: 3, publicBaseUrl: 'https://demo.example', questions: (question) => { asked.push(question); return ['Run it'] },
+    })
     await boundProject(fixture)
     // 1 s at 4 GPU s/s is above the 3 s budget: the channel is asked and its estimate names the cost.
-    const shot = ok(await fixture.callAs('vh_generate_video', { reason: 'first', prompt: 'one', duration_sec: 1, inputs: { reference: 'c1@1' } }))
+    const shot = ok(await fixture.callAs('dv_shot_render', { reason: 'first', prompt: 'one', duration_sec: 1, inputs: { reference: 'c1@1' } }))
     expect(asked[0]).toContain('GPU time')
-    expect((shot['outputs'] as Array<{ url: string }>)[0]?.url).toMatch(/^https:\/\/demo\.example\/vh\/assets\//)
+    expect((shot['outputs'] as Array<{ url: string }>)[0]?.url).toMatch(/^https:\/\/demo\.example\/dv\/assets\//)
     // user_requested skips the question; an operation that uses no GPU never asks.
-    ok(await fixture.callAs('vh_generate_video', { reason: 'second', prompt: 'two', duration_sec: 1, inputs: { reference: 'c1@1' }, user_requested: true }))
-    ok(await fixture.callAs('vh_sequence_create', { reason: 'order', assets: [] }))
+    ok(await fixture.callAs('dv_shot_render', { reason: 'second', prompt: 'two', duration_sec: 1, inputs: { reference: 'c1@1' }, user_requested: true }))
+    ok(await fixture.callAs('dv_timeline_create', { reason: 'order', assets: [] }))
     expect(asked).toHaveLength(1)
     const state = ok(await fixture.callAs('dv_proj_state', {}))
-    expect(JSON.stringify(state)).toContain('https://demo.example/vh/assets/')
+    expect(JSON.stringify(state)).toContain('https://demo.example/dv/assets/')
     ok(await fixture.callAs('dv_proj_wait', {}))
   })
 
   it('runs cost-gated calls below the budget without asking', async () => {
     const fixture = await start({ registry: true, questions: () => new Error('must not be asked') })
     await boundProject(fixture)
-    const shot = await fixture.callAs('vh_generate_video', { reason: 'cheap', prompt: 'one', duration_sec: 1, inputs: { reference: 'c1@1' } })
+    const shot = await fixture.callAs('dv_shot_render', { reason: 'cheap', prompt: 'one', duration_sec: 1, inputs: { reference: 'c1@1' } })
     expect(shot.isError).toBe(false)
     ok(await fixture.callAs('dv_proj_wait', {}))
+  })
+})
+
+describe('question rule', () => {
+  it('adds user_approved and user_requested to the two tools while the agent is mounted', async () => {
+    const fixture = await start()
+    const parameters = (name: string): string =>
+      JSON.stringify(fixture.context.tools.schemas().find(tool => tool.name === name)?.parameters)
+    expect(parameters('dv_plan_approve')).toContain('user_approved')
+    expect(parameters('dv_shot_render')).toContain('user_requested')
+    expect(parameters('dv_plan_create')).not.toContain('user_')
+    await fixture.agentFiber.dispose()
+    expect(parameters('dv_plan_approve')).not.toContain('user_approved')
+    expect(parameters('dv_shot_render')).not.toContain('user_requested')
+  })
+
+  it('refuses a cost-gated call above the budget when no question channel applies', async () => {
+    const fixture = await start()
+    await boundProject(fixture)
+    // 20 s at 4 GPU s/s is 80, above the 60 s budget; the turn has spent nothing yet.
+    const refused = await fixture.callAs('dv_shot_render', { reason: 'long shot', prompt: 'one', duration_sec: 20, inputs: { reference: 'c1@1' } })
+    expect(refused.isError).toBe(true)
+    expect(resultText(refused)).toContain('about 80 GPU seconds, above the 60 s budget')
+    expect(resultText(refused)).toContain('user_requested: true')
+  })
+
+  it('asks one question for a plan approval, listing every shot with the plan\'s cost', async () => {
+    const fixture = await start()
+    await boundProject(fixture)
+    const asked = vi.spyOn(fixture.agent, 'confirm').mockResolvedValue(true)
+    const plan = ok(await fixture.callAs('dv_plan_create', {
+      reason: 'propose', references: ['c1@1'], shots: [{ prompt: 'walks', duration_sec: 1 }, { prompt: 'turns', duration_sec: 2 }],
+    }))
+    const approved = ok(await fixture.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'] }))
+    expect(approved['params']).toEqual({ plan: plan['record'] })
+    expect(asked).toHaveBeenCalledTimes(1)
+    expect(asked.mock.calls[0]?.[0]).toMatchObject({
+      estimateGpuSeconds: 12, params: { prompt: '1. walks (1 s)\n2. turns (2 s)', duration_sec: 3 },
+      inputs: [{ role: 'reference', ref: { character: 'c1', version: 1 } }],
+    })
+    ok(await fixture.callAs('dv_proj_wait', {}))
+    // A declined question refuses the call before any record.
+    asked.mockResolvedValue(false)
+    expect(resultText(await fixture.callAs('dv_plan_approve', { reason: 'again', plan: plan['record'] }))).toContain('The user declined dv_plan_approve')
+  })
+
+  it('refuses a plan approval without reference images before asking the user', async () => {
+    const asked: string[] = []
+    const fixture = await start({ registry: true, questions: (question) => { asked.push(question); return ['Run it'] } })
+    const projectId = brandString<ProjectId>(await boundProject(fixture))
+    const plan = ok(await fixture.callAs('dv_plan_create', {
+      reason: 'propose', shots: [{ prompt: 'one', duration_sec: 1, references: ['c1@1'] }, { prompt: 'two', duration_sec: 1 }],
+    }))
+    const records = fixture.project.listHistory({ project: projectId }).length
+    const refused = await fixture.callAs('dv_plan_approve', { reason: 'go', plan: plan['record'] })
+    expect(resultText(refused)).toContain('Shot 2 of the plan has no reference image. The video model renders every shot from 1 to 2')
+    expect(asked).toEqual([])
+    expect(fixture.project.listHistory({ project: projectId })).toHaveLength(records)
+  })
+})
+
+describe('chat images', () => {
+  it('imports the images a user attached in a bound chat as project assets on the working branch', async () => {
+    const fixture = await start()
+    const image = await fixture.attachments.saveImage({ data: Buffer.from('chat-image'), mediaType: 'image/png', name: 'cat.png' })
+    const message = { source: { kind: 'user' }, content: [{ type: 'image', attachment: image }] }
+    // Without a bound project the image stays in the chat only.
+    fixture.emit('user/message', message)
+    const projectId = brandString<ProjectId>(await boundProject(fixture))
+    fixture.emit('user/message', message)
+    // The session's next tool call waits for the import.
+    ok(await fixture.callAs('dv_timeline_create', { reason: 'order', assets: [] }))
+    const imported = fixture.project.listHistory({ project: projectId, actor: 'user', operation: 'asset.import' }).map(entry => entry.record)
+    expect(imported).toEqual([expect.objectContaining({
+      surface: 'chat', turn: null, branch: 'draft/s1', params: expect.objectContaining({ name: 'cat.png', mime: 'image/png' }),
+    })])
+    const asset = imported[0]?.outputs[0] as AssetId
+    expect(fixture.assets.read(asset).toString()).toBe('chat-image')
+    expect(fixture.agent.promptBlock('s1')).toContain(`asset ${asset} "cat.png"`)
   })
 })
 

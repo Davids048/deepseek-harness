@@ -19,6 +19,6 @@ export const assetsDefinition: SidebarRightTabDefinition = {
   title: () => pickText('素材', 'Assets'),
   guide: [{
     id: 'assets', order: 35, title: () => pickText('素材', 'Assets'),
-    description: () => pickText('项目的人物、参考图、上传和生成结果', "The project's characters, reference images, uploads, and generations"),
+    description: () => pickText('项目的人物、参考图、导入和渲染结果', "The project's characters, reference images, imports, and renders"),
   }],
 }

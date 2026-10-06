@@ -8,7 +8,7 @@ import { VH_COMPOSE_EVENT } from '@video-harness/ui-kit/compose.ts'
 import type { VhComposeDetail } from '@video-harness/ui-kit/compose.ts'
 import { fixtureState, op, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
 import { CanvasView } from '../src/client/CanvasView.tsx'
-import type { CanvasViewProps } from '../src/client/CanvasView.tsx'
+import type { CanvasTranslate } from '../src/client/NodeCard.tsx'
 import { zh } from '../src/client/locales.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
@@ -31,7 +31,7 @@ function mount(withTranslate = true) {
     return Promise.resolve(new Response('{}', { status: 404 }))
   })
   const client = new VhClient(scripted.fetch)
-  const t = makeTranslate(zh) as CanvasViewProps['t']
+  const t: CanvasTranslate = makeTranslate(zh)
   const view = render(<CanvasView projectId="p1" client={client} session="s5" {...withTranslate ? { t } : {}} />)
   const node = (id: string): HTMLElement => {
     const element = view.container.querySelector(`[data-node-id="${id}"]`)
@@ -67,7 +67,7 @@ describe('CanvasView', () => {
     fireEvent.click(view.getByText(zh['editor.regenerate']))
     await waitFor(() => { expect(writes.some(write => write.path === '/api/vh/invoke')).toBe(true) })
     expect(writes.find(write => write.path === '/api/vh/invoke')?.body).toMatchObject({
-      project: 'p1', tool: 'generate.video', surface: 'canvas', base_op: 'g1', params: { prompt: 'hero runs' },
+      project: 'p1', tool: 'shot.render', surface: 'canvas', base_op: 'g1', params: { prompt: 'hero runs' },
       inputs: [{ role: 'reference', ref: 'hero@1' }],
     })
     fireEvent.pointerDown(node('entity:hero'), { button: 0, clientX: 5, clientY: 5, pointerId: 1 })

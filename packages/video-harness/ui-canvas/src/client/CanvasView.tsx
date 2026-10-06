@@ -5,7 +5,7 @@
  * session the canvas sits beside is overlaid with dashed nodes and a bar to accept or discard it; the canvas's own writes
  * carry that session, so they land on the draft while it is open. Colors come from the DSH theme tokens, so the canvas
  * follows the app's light and dark themes. Dropping a 素材 tile places that asset's node under the pointer; dropping
- * image or video files uploads them and places their nodes there.
+ * image or video files imports them and places their nodes there.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
@@ -16,7 +16,7 @@ import { ToolApi } from '@video-harness/ui-kit/tool-api.ts'
 import { VH_ASSET_DRAG_TYPE } from '@video-harness/ui-kit/workspace-events.ts'
 import type { VhWorkspaceEventMap } from '@video-harness/ui-kit/workspace-events.ts'
 import { useProjectState } from '@video-harness/ui-kit/useProject.ts'
-import { buildCanvasGraph, NODE_WIDTH, overlayDraft, ROW, withUploadNames } from './graph.ts'
+import { buildCanvasGraph, NODE_WIDTH, overlayDraft, ROW, withImportNames } from './graph.ts'
 import type { CanvasEdge, CanvasNode } from './graph.ts'
 import { loadLayout, saveLayout } from './layout-api.ts'
 import type { CanvasViewport, NodePosition } from './layout-api.ts'
@@ -110,7 +110,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
       ...(overlay?.ops ?? []).filter(op => !known.has(op.id)).map(op => op.id),
       ...forkIndex === -1 ? [] : base.value.ops.slice(forkIndex + 1).map(op => op.id),
     ])
-    const state = withUploadNames(overlayDraft(base.value, overlay))
+    const state = withImportNames(overlayDraft(base.value, overlay))
     // The draft bar names the human's latest request that the draft answers.
     const draftIntent = state.ops.filter(op => draftOps.has(op.id) && op.kind === 'request').at(-1)?.intent ?? ''
     return { state, draftIntent, ...buildCanvasGraph(state, draftOps) }
@@ -132,7 +132,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
   const needsFit = useRef(false)
   // True while the viewport is an automatic fit; resizing the canvas refits until the user pans or zooms.
   const autoFit = useRef(false)
-  // Uploaded or dropped assets waiting for their node to appear, with the canvas point they were dropped at.
+  // Imported or dropped assets waiting for their node to appear, with the canvas point they were dropped at.
   const pendingDrops = useRef(new Map<string, NodePosition>())
   const [dragOver, setDragOver] = useState(false)
   // The node the user last dragged or dropped is drawn above the others.
@@ -376,7 +376,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     setDragOver(true)
   }
   /**
-   * Place a dropped 素材 tile's node under the pointer, or upload dropped image and video files and place their nodes.
+   * Place a dropped 素材 tile's node under the pointer, or import dropped image and video files and place their nodes.
    * @param event - the drop event.
    */
   const onDrop = (event: ReactDragEvent<HTMLDivElement>): void => {
@@ -403,7 +403,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
       if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { setNotice(t('drop.notMedia', { name: file.name })); return }
       const position = { x: point.x + index * 32, y: point.y + index * 32 }
       void run(async () => {
-        pendingDrops.current.set(await tools.upload(projectId, file, session), position)
+        pendingDrops.current.set(await tools.importAsset(projectId, file, session), position)
         placePending()
       })
     })

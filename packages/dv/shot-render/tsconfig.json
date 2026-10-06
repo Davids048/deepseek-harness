@@ -1,0 +1,36 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../dreamverse/generation-client"
+    },
+    {
+      "path": "../../dreamverse/segment-generation"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../asset-pool"
+    },
+    {
+      "path": "../project"
+    }
+  ]
+}

@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type { RecordOrigin } from '@dv/project'
 import { afterEach, beforeEach, expect, it } from 'vitest'
-import { startTools, type ToolsFixture } from '../../tools/tests/support.ts'
+import { startBase, type BaseFixture } from './support.ts'
 import { PROJECT_ADMIN_ROUTES, projectAdminRoutes } from '../src/projects-admin.ts'
 import { WORKSPACE_ROUTES, workspaceRoutes } from '../src/workspaces.ts'
 
@@ -17,7 +17,7 @@ import { WORKSPACE_ROUTES, workspaceRoutes } from '../src/workspaces.ts'
 const HUMAN: RecordOrigin = { actor: 'user', surface: 'api', session: null, turn: null, tool_call: null, intent: 'test' }
 
 let root = ''
-let fixture: ToolsFixture | null = null
+let fixture: BaseFixture | null = null
 const saved = { state: process.env['VH_STATE_ROOT'], home: process.env['DSH_HOME'] }
 
 beforeEach(() => {
@@ -51,8 +51,8 @@ async function call(
 }
 
 it('renames a project to a unique title and deletes it into the Project store\'s trash', async () => {
-  fixture = await startTools({ perception: false, generation: 'none', root })
-  const routes = [...workspaceRoutes(fixture.project, fixture.tools), ...projectAdminRoutes(fixture.project)]
+  fixture = await startBase({ generation: 'none', root })
+  const routes = [...workspaceRoutes(fixture.project), ...projectAdminRoutes(fixture.project)]
   const first = (await fixture.project.createProject('未命名项目', HUMAN)).id
   const second = (await fixture.project.createProject('未命名项目', HUMAN)).id
 
@@ -78,8 +78,8 @@ it('renames a project to a unique title and deletes it into the Project store\'s
 })
 
 it('lists the DSH sessions stored under a project directory, newest first', async () => {
-  fixture = await startTools({ perception: false, generation: 'none', root })
-  const routes = workspaceRoutes(fixture.project, fixture.tools)
+  fixture = await startBase({ generation: 'none', root })
+  const routes = workspaceRoutes(fixture.project)
   const projectId = (await fixture.project.createProject('chats', HUMAN)).id
   const group = join(root, 'dsh-home', 'sessions', `--tmp-state-projects-${projectId}--`)
   for (const [id, size] of [['session-a', 10], ['session-b', 3000]] as const) {

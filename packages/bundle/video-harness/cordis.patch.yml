@@ -4,11 +4,11 @@
 #   VH_BACKEND_URL   FastVideo streaming_v2 server (default http://127.0.0.1:8029)
 #   VH_STATE_ROOT    where assets, project records, and session bindings live (default ~/.local/state/video-harness)
 #   VH_FFMPEG / VH_FFPROBE  media binaries
-#   VH_PUBLIC_URL    origin that serves /vh/assets to remote viewers, for links in chat cards
+#   VH_PUBLIC_URL    origin that serves /dv/assets to remote viewers, for links in chat cards
 #   VH_AGENT_PROVIDER / VH_AGENT_MODEL / VH_AGENT_REASONING  the agent's model route
 #   VH_DEEPSEEK_BASE_URL  the OpenAI-compatible SGLang endpoint that serves DeepSeek (default http://10.244.6.153:30000/v1)
 #   VH_DEEPSEEK_API_KEY   bearer token for that endpoint; the launch script exports `none` when unset
-#   VH_AGENT_VISION       `0` makes perception.describe report that images are unsupported instead of calling the model
+#   VH_AGENT_VISION       `0` makes inspect.image report that images are unsupported instead of calling the model
 #   GROQ_API_KEY          key of the documented fallback route
 
 - insert:
@@ -17,19 +17,11 @@
       config:
         baseUrl: !!js process.env.VH_BACKEND_URL || 'http://127.0.0.1:8029'
 
-    - id: vh-media
-      name: '@video-harness/media'
+    - id: dv-ffmpeg
+      name: '@dv/ffmpeg'
       config:
         ffmpegPath: !!js process.env.VH_FFMPEG || '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
         ffprobePath: !!js process.env.VH_FFPROBE || 'ffprobe'
-
-    - id: vh-assets
-      name: '@video-harness/assets'
-      config:
-        root: !!js >-
-          process.getBuiltinModule('node:path').join(
-          process.env.VH_STATE_ROOT || process.getBuiltinModule('node:path').join(
-          process.getBuiltinModule('node:os').homedir(), '.local/state/video-harness'), 'assets')
 
     - id: dv-project
       name: '@dv/project'
@@ -38,16 +30,39 @@
           process.getBuiltinModule('node:path').join(
           process.env.VH_STATE_ROOT || process.getBuiltinModule('node:path').join(
           process.getBuiltinModule('node:os').homedir(), '.local/state/video-harness'), 'projects')
-
-    - id: vh-tools
-      name: '@video-harness/tools'
-      config:
-        publicBaseUrl: !!js process.env.VH_PUBLIC_URL || ''
-        imageInput: !!js process.env.VH_AGENT_VISION !== '0'
-        sessionStateRoot: !!js >-
+        sessionRoot: !!js >-
           process.getBuiltinModule('node:path').join(
           process.env.VH_STATE_ROOT || process.getBuiltinModule('node:path').join(
           process.getBuiltinModule('node:os').homedir(), '.local/state/video-harness'), 'sessions')
+
+    - id: dv-asset-pool
+      name: '@dv/asset-pool'
+      config:
+        publicBaseUrl: !!js process.env.VH_PUBLIC_URL || ''
+        root: !!js >-
+          process.getBuiltinModule('node:path').join(
+          process.env.VH_STATE_ROOT || process.getBuiltinModule('node:path').join(
+          process.getBuiltinModule('node:os').homedir(), '.local/state/video-harness'), 'assets')
+
+    - id: dv-inspector
+      name: '@dv/inspector'
+      config:
+        imageInput: !!js process.env.VH_AGENT_VISION !== '0'
+
+    - id: dv-shot-plan
+      name: '@dv/shot-plan'
+
+    - id: dv-shot-render
+      name: '@dv/shot-render'
+
+    - id: dv-story-bible
+      name: '@dv/story-bible'
+
+    - id: dv-timeline
+      name: '@dv/timeline'
+
+    - id: dv-deliver
+      name: '@dv/deliver'
 
     - id: vh-agent
       name: '@video-harness/agent'
@@ -89,9 +104,9 @@
   config:
     includeHarnessIdentity: false
     personaPrefix: &dreamverse-persona >-
-      You are the DreamVerse video assistant. You help creators plan, generate, and edit videos in their DreamVerse
-      project: characters and references, shots, takes, and the cuts of each episode. You work only through the
-      vh_* video tools and the skills listed for you; you have no shell, file, or web access. Reply in the language of
+      You are the DreamVerse video assistant. You help creators plan, render, and edit videos in their DreamVerse
+      project: characters and references, shots, takes, and the clips of each timeline. You work only through the
+      dv_* video tools and the skills listed for you; you have no shell, file, or web access. Reply in the language of
       the user's latest message, in plain words a creator understands; mention record IDs, asset IDs, and tool names
       only when the user asks for them.
     personaSuffix: ''
@@ -105,7 +120,7 @@
 
 # The Web agent preset of every DreamVerse chat: the persona above, the directing skills only, questions to the user,
 # and context compaction. It mounts no shell, file, web, delegation, goal, or plan-mode tools; the video tools come
-# from the vh-tools row on the host. The chooser is hidden, so every chat uses this preset.
+# from the dv-* rows on the host. The chooser is hidden, so every chat uses this preset.
 - id: agent-preset-registry
   config:
     default: dreamverse

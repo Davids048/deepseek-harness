@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `@video-harness/assets`、`@dv/project` 和 `@video-harness/tools` 之后挂载插件，并且 profile 还要挂载 `dsh-web-app`（提供 `connection` 和 `webServer` 服务）。没有 `connection` 时 Fetch 路由不会注册；没有 `webServer` 时事件流不会注册。
+在 `@dv/project` 和 `@dv/asset-pool` 之后挂载插件，并且 profile 还要挂载 `dsh-web-app`（提供 `connection` 和 `webServer` 服务）。没有 `connection` 时 Fetch 路由不会注册；没有 `webServer` 时事件流不会注册。
 
 ```yaml
 - id: vh-views
@@ -42,7 +42,7 @@ kind: "package-reference"
 | `/api/vh/projects` | GET | 可选 `session`（聊天会话 ID） | 全部项目，最新在前，带各分支头；给出 `session` 时该会话绑定的项目排第一并带 `current: true` |
 | `/api/vh/projects` | POST | `{title, surface}` | 从视图新建的项目：`{projectId, title}` |
 | `/api/vh/state` | GET | `project`，可选 `head`（分支名；默认 `main`） | 分支的状态：项目、head、各分支头、带草稿计数的分支、记录、提到的素材、角色场景和风格、时间线、过期和被替代的记录、版本、计划、生产者 |
-| `/api/vh/tools` | GET | — | 全部已注册工具的声明，不含执行器 |
+| `/api/vh/tools` | GET | — | 每个会写记录且有 agent 工具的已注册操作的声明，不含执行器 |
 | `/api/vh/invoke` | POST | `{project, tool, inputs?, params?, intent?, surface, session?, base_op?, supersedes?}` | 记录；`surface` 是 `canvas` 或 `timeline` |
 | `/api/vh/drafts/accept` | POST | `{project, session \| branch, surface}` | `proj.draft_accept` 记录和之后的各分支头 |
 | `/api/vh/drafts/discard` | POST | `{project, session \| branch, surface, counts?}` | 不带 `counts`：`{draft, counts}`；带已确认的计数：被丢弃的计数和之后的各分支头 |
@@ -64,7 +64,7 @@ kind: "package-reference"
 <details>
 <summary>实现内部——点击展开</summary>
 
-`VhViews` 在 `dvProject`、`vhAssets` 和 `vhTools` 之上构造一个 `ViewsApi`。在 `ctx.inject(['connection'])` 里它用 `connection.fetch.register` 注册各条 Fetch 路由，每条都经过同一个 `answer` 包装，把 `ViewsRequestError` 映射成状态码。在 `ctx.inject(['webServer'])` 里它注册 `/vh/events` 前缀路由，通过 `requestRejection` 询问 Connection 请求是否带有效 cookie，再把响应交给 `serveEventStream`；后者订阅 `dvProject.subscribe(projectId)`，每次变化写一帧 `event:`/`data:`，直到请求关闭。`toWireState` 把 `ProjectState` 变成 JSON：品牌化 ID 保持字符串，素材列表是每条记录的输出和已解析输入，以及每个角色、场景和风格版本的参考图的并集。
+`VhViews` 在 `dvProject` 和 `dvAssetPool` 之上构造一个 `ViewsApi`；操作列表和一次调用的操作来自 `dvProject.listOperations()`，调用的 `inputs` 由 `dvProject.parseInputs` 解析，工作区路由用 `dvProject.bindSession` 把聊天会话绑定到项目。在 `ctx.inject(['connection'])` 里它用 `connection.fetch.register` 注册各条 Fetch 路由，每条都经过同一个 `answer` 包装，把 `ViewsRequestError` 映射成状态码。在 `ctx.inject(['webServer'])` 里它注册 `/vh/events` 前缀路由，通过 `requestRejection` 询问 Connection 请求是否带有效 cookie，再把响应交给 `serveEventStream`；后者订阅 `dvProject.subscribe(projectId)`，每次变化写一帧 `event:`/`data:`，直到请求关闭。`toWireState` 把 `ProjectState` 变成 JSON：品牌化 ID 保持字符串，素材列表是每条记录的输出和已解析输入，以及每个角色、场景和风格版本的参考图的并集。
 
 | 文件 | 内容 |
 | --- | --- |

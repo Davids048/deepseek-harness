@@ -5,7 +5,7 @@
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { bootHarness, playwright, waitFor, type BootedHarness } from '../harness.ts'
-import { assetIdOf, opIdOf, startScriptedModel, textOf, type ChatRequest, type ScriptedModel, type ScriptedRule } from '../scripted-model.ts'
+import { assetIdOf, recordIdOf, startScriptedModel, textOf, type ChatRequest, type ScriptedModel, type ScriptedRule } from '../scripted-model.ts'
 
 /** A 1×1 opaque PNG. */
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
@@ -27,8 +27,8 @@ interface StateWire { ops: OpWire[]; sequence: { items: unknown[] } | null; bran
 
 /**
  * The scripted agent. `只回复<X>` answers `收到<X>`; `慢慢想` streams for six seconds; `加人物` registers a character;
- * `慢慢做` uploads an image and then streams for eight seconds, so a stop leaves an open draft; `新建项目` creates a
- * project as the agent does from the entry page; `做两个镜头的广告` uploads a reference, plans two shots, approves, and
+ * `慢慢做` imports an image and then streams for eight seconds, so a stop leaves an open draft; `新建项目` creates a
+ * project as the agent does from the entry page; `做两个镜头的广告` imports a reference, plans two shots, approves, and
  * waits, leaving an open draft; `两段待批` asks for two generations at once, which wait for approval cards in 生成前先问
  * mode.
  */
@@ -47,16 +47,16 @@ const RULES: ScriptedRule[] = [
   {
     match: '慢慢做',
     steps: [
-      { calls: [{ name: 'vh_asset_upload', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'slow.png' } }] },
+      { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'slow.png' } }] },
       { text: '还在做……', delayMs: 8000 },
     ],
   },
-  { match: '看看这张图', steps: [view => ({ calls: [{ name: 'vh_perception_describe', args: { reason: '看图', inputs: { image: /asset (\w+)/.exec(view.userText)?.[1] ?? '' } } }] })], endText: '看过了。' },
+  { match: '看看这张图', steps: [view => ({ calls: [{ name: 'dv_inspect_image', args: { reason: '看图', inputs: { image: /asset (\w+)/.exec(view.userText)?.[1] ?? '' } } }] })], endText: '看过了。' },
   {
     match: '点名生成一段',
     steps: [
-      { calls: [{ name: 'vh_asset_upload', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'named.png' } }] },
-      view => ({ calls: [{ name: 'vh_generate_video', args: { reason: '用户点名', prompt: '点名的镜头', duration_sec: 1, inputs: { reference: assetIdOf(view.toolResults[0], 'asset') }, user_requested: true } }] }),
+      { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'named.png' } }] },
+      view => ({ calls: [{ name: 'dv_shot_render', args: { reason: '用户点名', prompt: '点名的镜头', duration_sec: 1, inputs: { reference: assetIdOf(view.toolResults[0], 'asset') }, user_requested: true } }] }),
     ],
     endText: '生成好了。',
   },
@@ -64,20 +64,23 @@ const RULES: ScriptedRule[] = [
   {
     match: '加人物',
     steps: [
-      { calls: [{ name: 'vh_asset_upload', args: { reason: '人物参考图', base64: PNG_BASE64, mime: 'image/png', name: 'hero.png' } }] },
-      view => ({ calls: [{ name: 'vh_entity_character_create', args: { reason: '登记人物', entity: 'c1', name: '小橘', refs: [assetIdOf(view.toolResults[0], 'asset')] } }] }),
+      { calls: [{ name: 'dv_asset_import', args: { reason: '人物参考图', base64: PNG_BASE64, mime: 'image/png', name: 'hero.png' } }] },
+      view => ({ calls: [{
+        name: 'dv_bible_character_create',
+        args: { reason: '登记人物', character: 'c1', name: '小橘', inputs: { reference: [assetIdOf(view.toolResults[0], 'asset')] } },
+      }] }),
     ],
     endText: '人物小橘已登记。',
   },
   {
     match: '做两个镜头的广告',
     steps: [
-      { calls: [{ name: 'vh_asset_upload', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'product.png' } }] },
-      view => ({ calls: [{ name: 'vh_plan_create', args: {
+      { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'product.png' } }] },
+      view => ({ calls: [{ name: 'dv_plan_create', args: {
         reason: '规划', title: '产品广告', continuity: 'independent', references: [assetIdOf(view.toolResults[0], 'asset')],
         shots: [{ prompt: '产品特写', duration_sec: 1 }, { prompt: '产品使用场景', duration_sec: 2 }],
       } }] }),
-      view => ({ calls: [{ name: 'vh_plan_approve', args: { reason: '用户同意', plan: opIdOf(view.toolResults[1]), user_approved: true } }] }),
+      view => ({ calls: [{ name: 'dv_plan_approve', args: { reason: '用户同意', plan: recordIdOf(view.toolResults[1]), user_approved: true } }] }),
       { calls: [{ name: 'dv_proj_wait', args: {} }] },
     ],
     endText: '两个镜头已生成。草稿待确认',
@@ -85,10 +88,10 @@ const RULES: ScriptedRule[] = [
   {
     match: '两段待批',
     steps: [
-      { calls: [{ name: 'vh_asset_upload', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'product.png' } }] },
+      { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'product.png' } }] },
       view => ({ calls: [
-        { name: 'vh_generate_video', args: { reason: '第一段', prompt: '第一段画面', duration_sec: 1, inputs: { reference: assetIdOf(view.toolResults[0], 'asset') } } },
-        { name: 'vh_generate_video', args: { reason: '第二段', prompt: '第二段画面', duration_sec: 2, inputs: { reference: assetIdOf(view.toolResults[0], 'asset') } } },
+        { name: 'dv_shot_render', args: { reason: '第一段', prompt: '第一段画面', duration_sec: 1, inputs: { reference: assetIdOf(view.toolResults[0], 'asset') } } },
+        { name: 'dv_shot_render', args: { reason: '第二段', prompt: '第二段画面', duration_sec: 2, inputs: { reference: assetIdOf(view.toolResults[0], 'asset') } } },
       ] }),
     ],
     endText: '处理完毕。',
@@ -228,11 +231,11 @@ describe('chat with the agent', () => {
     return await harness.api.post('/api/vh/invoke', { project, tool, params, inputs, surface: 'canvas', intent: `story: ${tool}` }) as OpWire
   }
 
-  /** Create a project through the API with an uploaded image named `name`; returns the project and asset IDs. */
+  /** Create a project through the API with an imported image named `name`; returns the project and asset IDs. */
   async function seedProject(title: string, name: string, base64 = PNG_BASE64): Promise<{ projectId: string; assetId: string }> {
     const created = await harness.api.post('/api/vh/projects', { title, surface: 'canvas' }) as { projectId: string }
-    const upload = await invoke(created.projectId, 'asset.upload', { base64, mime: 'image/png', name })
-    return { projectId: created.projectId, assetId: upload.outputs[0] ?? '' }
+    const imported = await invoke(created.projectId, 'asset.import', { base64, mime: 'image/png', name })
+    return { projectId: created.projectId, assetId: imported.outputs[0] ?? '' }
   }
 
   it('keeps three messages in a row in order, each with its own reply, and clears the composer after each', async () => {
@@ -263,6 +266,9 @@ describe('chat with the agent', () => {
     const { page, errors } = await openPage('zh', `#project=${projectId}`)
     await send(page, `看看这张图 asset ${assetId}`)
     await waitChat(page, '看过了')
+    // The Inspector's tool answered as a read: the model got its report and no record.
+    const answered = requestFor('看看这张图')?.messages.filter(message => message.role === 'tool').map(message => textOf(message.content)) ?? []
+    expect(answered.some(text => text.startsWith('done: dv_inspect_image answered'))).toBe(true)
     const workspace = page.locator('[data-vh-workspace]')
     await page.waitForTimeout(2000)
     expect(await workspace.getByRole('button', { name: '接受', exact: true }).count()).toBe(0)
@@ -287,7 +293,7 @@ describe('chat with the agent', () => {
     const draftName = drafts[0]?.name ?? ''
     const draft = await harness.api.get(`/api/vh/state?project=${projectId}&head=${encodeURIComponent(draftName)}`) as StateWire
     const agentRecords = draft.ops.filter(op => op.actor === 'agent' && op.branch === draftName)
-    expect(agentRecords.map(op => op.tool?.name)).toEqual(['asset.upload', 'entity.character.create', 'asset.upload', 'generate.video'])
+    expect(agentRecords.map(op => op.tool?.name)).toEqual(['asset.import', 'bible.character_create', 'asset.import', 'shot.render'])
     expect(new Set(agentRecords.map(op => op.turn)).size).toBe(2)
     expect(drafts[0]?.counts).toEqual({ agent_changes: 4, human_edits: 0 })
     // The user accepts the draft from the canvas bar; then `main` holds every record, and the accept is the user's.
@@ -434,7 +440,7 @@ describe('chat with the agent', () => {
     await waitChat(page, '处理完毕', 60_000)
     expect(await cards.count()).toBe(0)
     expect(await chat(page).getByText('待批准 (').count()).toBe(0)
-    const finished = chat(page).locator('[data-tool="vh_generate_video"]')
+    const finished = chat(page).locator('[data-tool="dv_shot_render"]')
     expect(await finished.filter({ hasText: '未生成' }).count()).toBe(1)
     expect(await finished.filter({ hasText: '已生成' }).count()).toBe(1)
     // The mode belongs to the session and survives a reload.
@@ -458,10 +464,10 @@ describe('chat with the agent', () => {
     expect(await onScreen(card)).toBe(true)
     // The card names the product model, and the waiting step is named for creators, never by its wire tool name.
     expect(await card.textContent()).toContain('DreamVerse 视频模型')
-    await waitFor(async () => (await chat(page).locator('[data-process-activity]').allTextContents()).some(text => text.includes('批准计划')), 'the 批准计划 step title', 10_000)
-    expect(await chat(page).getByText('vh_plan_approve').count()).toBe(0)
+    await waitFor(async () => (await chat(page).locator('[data-process-activity]').allTextContents()).some(text => text.includes('批准分镜计划')), 'the 批准分镜计划 step title', 10_000)
+    expect(await chat(page).getByText('dv_plan_approve').count()).toBe(0)
     const pending = await harness.api.get(`/api/vh/state?project=${projectId}&head=main`) as StateWire
-    expect(pending.ops.filter(op => op.tool?.name === 'generate.video')).toHaveLength(0)
+    expect(pending.ops.filter(op => op.tool?.name === 'shot.render')).toHaveLength(0)
     await card.locator('button', { hasText: '批准' }).first().click()
     await waitChat(page, '两个镜头已生成', 60_000)
     expect(errors).toEqual([])
@@ -521,7 +527,7 @@ describe('chat with the agent', () => {
     // The sent bubble shows the chip label, not the wire form of the reference.
     expect(await chat(page).locator('[data-chat-flow-kind="user"]').last().innerText()).not.toContain('vh:')
     const expansion = referencesOf(requestFor('用这个') as ChatRequest)
-    // The expansion names the asset and its upload record in this project.
+    // The expansion names the asset and its import record in this project.
     expect(expansion).toContain(`asset ${target.assetId} made by record`)
     expect(errors).toEqual([])
   })
@@ -532,7 +538,7 @@ describe('chat with the agent', () => {
     await invoke(projectId, 'plan.approve', { plan: plan.id })
     const done = await waitFor(async () => {
       const state = await harness.api.get(`/api/vh/state?project=${projectId}&head=main`) as StateWire
-      return state.ops.find(op => op.tool?.name === 'generate.video' && op.status === 'done')
+      return state.ops.find(op => op.tool?.name === 'shot.render' && op.status === 'done')
     }, 'the clip to render', 60_000)
     // Visit another project first, so a stale composer from it would be a wrong target.
     const { page, errors } = await openPage()

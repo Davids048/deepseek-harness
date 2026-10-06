@@ -10,12 +10,10 @@
  * @module @video-harness/views/api
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type VhAssets from '@video-harness/assets'
+import type DvAssetPool from '@dv/asset-pool'
 import { draftBranch, MAIN_BRANCH, ProjectError } from '@dv/project'
 import type DvProject from '@dv/project'
 import type { AssetId, Branch, DraftCounts, ProjectId, RecordId, RecordOrigin, RunRequest, SessionId, Surface } from '@dv/project'
-import type VhTools from '@video-harness/tools'
-import { parseInputs } from '@video-harness/tools'
 import { projectIdOf, toWireOp, toWireState, toWireToolSpec, type ViewSelection, type WireOp, type WireState, type WireToolSpec } from './wire.ts'
 
 /** A request a route could not serve, with the HTTP status that answers it and the Project error code, when any. */
@@ -55,8 +53,7 @@ export function messageOf(error: unknown): string {
 /** The services the API reads and writes. */
 export interface ViewsServices {
   project: DvProject
-  assets: VhAssets
-  tools: VhTools
+  assets: DvAssetPool
 }
 
 /** The HTTP status of each refused Project call that a browser request can cause. */
@@ -158,7 +155,7 @@ export class ViewsApi {
     heads: Record<string, RecordId>
     current: boolean
   }> {
-    const bound = session === null || session.length === 0 ? null : this.services.tools.sessionProject(session)
+    const bound = session === null || session.length === 0 ? null : this.services.project.sessionProject(brandString<SessionId>(session))
     return this.services.project.listProjects()
       .map(info => ({
         projectId: info.id, title: info.title, createdAt: info.created_at, heads: this.heads(info.id), current: info.id === bound,
@@ -214,9 +211,9 @@ export class ViewsApi {
     return toWireState(info, state, this.services.project.listBranches(projectId), id => this.assetOrNull(id))
   }
 
-  /** @returns every registered tool's declaration. */
+  /** @returns the declaration of every registered operation that a view can run: every write. */
   tools(): WireToolSpec[] {
-    return this.services.tools.list().map(toWireToolSpec)
+    return this.services.project.listOperations().filter(spec => spec.readOnly !== true).map(toWireToolSpec)
   }
 
   /**
@@ -230,8 +227,7 @@ export class ViewsApi {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
     const tool = stringOf(body['tool'], 'tool')
-    const spec = this.services.tools.get(tool)
-    if (spec === undefined) throw new ViewsRequestError(404, `Unknown tool '${tool}'.`)
+    if (!this.services.project.listOperations().some(spec => spec.name === tool)) throw new ViewsRequestError(404, `Unknown tool '${tool}'.`)
     const surface = surfaceOf(body['surface'])
     const intent = typeof body['intent'] === 'string' && body['intent'].length > 0 ? body['intent'] : `${surface}: ${tool}`
     const origin = humanOrigin(body, intent)
@@ -240,9 +236,9 @@ export class ViewsApi {
     const byRole = this.inputsByRole(body['inputs'])
     let inputs: RunRequest['inputs']
     try {
-      inputs = parseInputs(spec, byRole, state)
+      inputs = this.services.project.parseInputs(tool, byRole, state)
     } catch (error) {
-      // The tools' input parser explains an unknown role or a malformed reference; the request is at fault.
+      // Project's input parser explains an unknown role or a malformed reference; the request is at fault.
       throw new ViewsRequestError(400, messageOf(error))
     }
     const request: RunRequest = {
@@ -349,7 +345,7 @@ export class ViewsApi {
   }
 
   /**
-   * Keep a stale record as it is: a `proj.stale_accept` record on the working branch of the request's chat session
+   * Accept a stale record as it is: a `proj.stale_accept` record on the working branch of the request's chat session
    * (`main` without one) removes its stale mark and the marks of the records made from it.
    * @param raw - `{project, record, session?, surface}`.
    * @returns the `proj.stale_accept` record and the heads afterwards.
@@ -359,7 +355,7 @@ export class ViewsApi {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
     const target = brandString<RecordId>(stringOf(body['record'], 'record'))
-    const record = await refused(() => this.services.project.acceptStale(projectId, target, humanOrigin(body, `keep ${target}`)))
+    const record = await refused(() => this.services.project.acceptStale(projectId, target, humanOrigin(body, `accept ${target}`)))
     return { record: toWireOp(record), heads: this.heads(projectId) }
   }
 

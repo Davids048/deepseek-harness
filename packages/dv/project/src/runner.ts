@@ -23,7 +23,7 @@ import type { Drafts } from './drafts.ts'
 import type { ReducerRegistry } from './reducers.ts'
 import type { RecordStore } from './record-store.ts'
 import type { Scheduler } from './scheduler.ts'
-import { ProjectError } from './shared.ts'
+import { COMPONENT_KEYS, ProjectError } from './shared.ts'
 import type {
   ApprovalChannel, AssetId, OperationContext, OperationSpec, ProjectId, ProjectRecord, ProjectState, RecordFailure, RecordId,
   RecordInput, RecordOrigin, RecordUpdate, RunRequest, RunResult,
@@ -58,9 +58,6 @@ export interface RunnerDeps {
   assets: RunnerAssets
   scheduler: Scheduler
 }
-
-/** The component keys an operation's `component` may name (stage 2 bridge: operation names keep the tools package's prefixes). */
-const COMPONENT_KEYS: ReadonlySet<string> = new Set(['proj', 'asset', 'bible', 'plan', 'shot', 'timeline', 'deliver', 'inspect'])
 
 /**
  * JSON with object keys sorted at every level, so that two equal params objects give the same text.
@@ -117,8 +114,8 @@ export class Runner {
 
   /**
    * Register an operation. Refused with `operation_exists` when the name is registered, and with `invalid_params`
-   * when `component` is not one of the component keys `proj asset bible plan shot timeline deliver inspect`. In stage 2
-   * the tools package's operation names keep their own prefixes, so the check that `name` starts with `<component>.` starts in stage 3.
+   * when `component` is not one of the component keys `proj asset bible plan shot timeline deliver inspect` or `name`
+   * does not start with `<component>.`.
    * @param spec - the operation.
    * @returns a function that removes the registration (only if it is still this spec).
    */
@@ -126,6 +123,9 @@ export class Runner {
     if (this.operations.has(spec.name)) throw new ProjectError('operation_exists', `Operation ${spec.name} is already registered.`)
     if (!COMPONENT_KEYS.has(spec.component)) {
       throw new ProjectError('invalid_params', `Operation ${spec.name} names an unknown component '${spec.component}'.`)
+    }
+    if (!spec.name.startsWith(`${spec.component}.`)) {
+      throw new ProjectError('invalid_params', `Operation ${spec.name} does not start with its component key '${spec.component}.'.`)
     }
     this.operations.set(spec.name, spec)
     return () => {
@@ -153,9 +153,9 @@ export class Runner {
 
   /**
    * Run one operation call. The steps are listed in `CONTRACTS.md` ("Runner: run"). Rejects with `ProjectError` only
-   * before a record exists (unknown operation, invalid params or inputs, input not ready, unknown project). Once the
-   * record is written, resolves with it in its final status (`done`, `failed`, `cancelled`), or `pending` for a
-   * scheduled run.
+   * before a record exists (unknown operation, invalid params or inputs, input not ready, unknown project), or with the
+   * error of the operation's `precondition`. Once the record is written, resolves with it in its final status (`done`,
+   * `failed`, `cancelled`), or `pending` for a scheduled run.
    * @param request - the call.
    * @returns the record, its outputs and report.
    */
@@ -168,13 +168,15 @@ export class Runner {
 
     if (spec.readOnly === true) return await this.runRead(spec, request)
 
-    const pending = await store.lock(request.project, () => {
+    const pending = await store.lock(request.project, async () => {
       // Inputs resolve before `branchForWrite`, which may open a draft, so that a refused call writes nothing. A newly
       // opened draft starts at the head of the session's working branch, so the state there is the state at the parent.
       for (const record of request.after ?? []) store.getRecord(request.project, record)
       const working = drafts.workingBranch(request.project, request.session)
       const state = reducers.getState(request.project, working.name)
       const inputs = this.resolveInputs(request, state, request.after !== undefined)
+      // The operation's own rule refuses the call before anything is written; the lock keeps the state it read current.
+      await spec.precondition?.(request, state)
       // The operation names the records it replaces itself; the caller may name more.
       const supersedes = [...new Set([...request.supersedes ?? [], ...spec.supersedes?.(request.params, state) ?? []])]
       const branch = drafts.branchForWrite(request.project, request)
@@ -269,7 +271,7 @@ export class Runner {
   }
 
   /**
-   * Keep a stale record's result: append `proj.stale_accept` with `params {record}` on the branch for the origin's
+   * Accept a stale record's result: append `proj.stale_accept` with `params {record}` on the branch for the origin's
    * write (`drafts.branchForWrite`). Takes the project lock.
    * @param project - the project.
    * @param record - a record that is stale on that branch.
@@ -316,7 +318,7 @@ export class Runner {
     if (messages.length > 0) {
       throw new ProjectError('invalid_params', `Invalid parameters for ${spec.name}: ${messages.join('; ')}`)
     }
-    const role = request.inputs.find(input => !spec.inputRoles.includes(input.role))
+    const role = request.inputs.find(input => !Object.hasOwn(spec.inputs, input.role))
     if (role !== undefined) {
       throw new ProjectError('invalid_inputs', `Operation ${spec.name} takes no input with role '${role.role}'.`)
     }
@@ -333,6 +335,7 @@ export class Runner {
     const branch = drafts.workingBranch(request.project, request.session).name
     const state = reducers.getState(request.project, branch)
     const inputs = this.resolveInputs(request, state, false)
+    await spec.precondition?.(request, state)
     const scratchDir = await mkdtemp(join(tmpdir(), 'dv-operation-'))
     try {
       const result = await spec.execute({

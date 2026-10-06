@@ -1,6 +1,6 @@
 /**
  * The composer's visible additions: the two mode controls beside the input, the approval cards of waiting
- * generations above it, and the card of a `generate.video` call in the chat.
+ * renders above it, and the card of a `shot.render` call in the chat.
  *
  * @module @video-harness/ui-composer/views
  */
@@ -82,7 +82,7 @@ export function PendingBar(props: { sessionId: string }) {
   </div>
 }
 
-/** Parsed arguments of a generate call, empty while they stream. */
+/** Parsed arguments of a render call, empty while they stream. */
 function argsOf(raw: string): Record<string, unknown> {
   try {
     const value: unknown = JSON.parse(raw)
@@ -93,8 +93,8 @@ function argsOf(raw: string): Record<string, unknown> {
   }
 }
 
-/** What the generate card reads from the tool-call owner props. */
-export interface GenerateCardProps {
+/** What the render card reads from the tool-call owner props. */
+export interface RenderCardProps {
   sessionId: string
   callId: string
   phase: 'preparing' | 'start' | 'result'
@@ -110,12 +110,12 @@ function outputsOf(block: object): Array<{ role: string; url: string; mime: stri
 }
 
 /**
- * The card of one `generate.video` call: its prompt, status, and the generated video. While the call waits for the
+ * The card of one `shot.render` call: its prompt, status, and the rendered video. While the call waits for the
  * user, the status points to the approval card above the composer, which holds the 批准 / 跳过 buttons.
  * @param props - the call.
  * @returns the card.
  */
-export function GenerateCard(props: GenerateCardProps) {
+export function RenderCard(props: RenderCardProps) {
   const t = useText()
   const approvals = useApprovals(props.sessionId)
   const pending = approvals.find(entry => entry.callId === props.callId)
@@ -127,16 +127,16 @@ export function GenerateCard(props: GenerateCardProps) {
   const failed = 'isError' in block && block.isError === true
   const video = outputsOf(block).find(output => output.mime.startsWith('video/'))
   const status = pending !== undefined ? t('等待批准（在输入框上方）', 'Waiting for approval (above the input)')
-    : props.phase === 'result' ? (failed ? t('未生成', 'Not generated') : t('已生成', 'Generated')) : t('生成中…', 'Generating…')
-  return <div style={card} data-tool="vh_generate_video">
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong>{t('生成视频', 'Generate video')}</strong><span style={{ opacity: 0.7 }}>{status}</span></div>
+    : props.phase === 'result' ? (failed ? t('未生成', 'Not rendered') : t('已生成', 'Rendered')) : t('生成中…', 'Rendering…')
+  return <div style={card} data-tool="dv_shot_render">
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong>{t('生成镜头', 'Render shot')}</strong><span style={{ opacity: 0.7 }}>{status}</span></div>
     {prompt !== '' && <div style={{ marginTop: 4, opacity: 0.85 }}>{prompt}</div>}
     {video !== undefined && <video src={video.url} controls muted style={{ marginTop: 8, width: '100%', borderRadius: 8 }} />}
   </div>
 }
 
 /**
- * The chat row of one `vh_*` tool call other than generation: the tool's creator-facing name and whether the step is
+ * The chat row of one agent tool call other than `dv_shot_render`: the tool's creator-facing name and whether the step is
  * running, done, or failed.
  * @param props - the tool's [Chinese, English] name, the call phase, and the call block.
  * @returns the row.
@@ -157,9 +157,9 @@ function ApprovalCardView(props: { approval: ApprovalCard }) {
   const store = approvalStore(approval.sessionId)
   // A plan approval's prompt holds one numbered line per shot.
   const shots = approval.tool === 'plan.approve' ? approval.prompt.split('\n').filter(line => line.trim() !== '').length : null
-  const title = shots === null ? t('待批准 · 生成视频', 'Pending approval · Generate video')
+  const title = shots === null ? t('待批准 · 生成镜头', 'Pending approval · Render shot')
     : t(`待批准 · 计划（${String(shots)} 个镜头）`, `Pending approval · Plan (${String(shots)} ${shots === 1 ? 'shot' : 'shots'})`)
-  return <div style={{ ...card, borderColor: 'var(--dsh-accent, #6d5efc)' }} data-tool="vh_generate_video" data-state="awaiting-approval">
+  return <div style={{ ...card, borderColor: 'var(--dsh-accent, #6d5efc)' }} data-tool="dv_shot_render" data-state="awaiting-approval">
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong>{title}</strong><span style={{ opacity: 0.7 }}>{t('DreamVerse 视频模型', 'DreamVerse video model')}</span></div>
     <div style={{ marginTop: 6, whiteSpace: 'pre-line' }}>{approval.prompt || approval.summary}</div>
     {approval.references.length > 0 && <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>

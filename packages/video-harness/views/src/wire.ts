@@ -6,9 +6,15 @@
  *
  * @module @video-harness/views/wire
  */
-import type { AssetMeta } from '@video-harness/assets'
-import type { AssetId, Branch, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordInputRef } from '@dv/project'
-import type { ToolSpec } from '@video-harness/tools'
+import type { Asset } from '@dv/asset-pool'
+import {
+  formatInputRef, type AssetId, type Branch, type OperationSpec, type ProjectId, type ProjectInfo, type ProjectRecord,
+  type ProjectState, type RecordId,
+} from '@dv/project'
+import type {} from '@dv/shot-plan'
+import type {} from '@dv/shot-render'
+import type { Character, Location, StoryBibleState, Style } from '@dv/story-bible'
+import type { Timeline } from '@dv/timeline'
 
 /** One input of a record as the views read it: the reference as text and the asset it stood for. */
 export interface WireInput {
@@ -58,10 +64,19 @@ export interface WireState {
   branches: Branch[]
   ops: WireOp[]
   /** The records of every asset a record created, imported, or still references. */
-  assets: AssetMeta[]
-  entities: ProjectState['components']['bible']['entities']
-  sequence: ProjectState['components']['timeline']['sequence']
-  sequences: ProjectState['components']['timeline']['sequences']
+  assets: WireAsset[]
+  /**
+   * Every version of each character, location and style by ID, in the wire names the views read until stage 4
+   * (`kind`, `refs`, `updatedBy`). names:allow
+   */
+  entities: Record<string, WireBibleVersion[]> // names:allow
+  /**
+   * The first timeline's clips, in the wire names the views read until stage 4: each clip's 1-based position, asset,
+   * and in and out points. names:allow
+   */
+  sequence: { items: Array<{ slot: number; assetId: AssetId; inSec: number | null; outSec: number | null }> } | null // names:allow
+  /** Every timeline, in creation order, with its clips in the same wire names. names:allow */
+  sequences: Array<{ id: string; title: string; items: NonNullable<WireState['sequence']>['items'] }> // names:allow
   /** Stale records: record → the record whose change made it stale. */
   stale: Record<string, { because: string }>
   superseded: Record<string, string>
@@ -76,13 +91,13 @@ export interface WireToolSpec {
   name: string
   version: string
   summary: string
-  inputs: ToolSpec['inputs']
-  params: ToolSpec['params']
-  outputs: ToolSpec['outputs']
+  inputs: OperationSpec['inputs']
+  params: OperationSpec['params']
+  outputs: OperationSpec['outputs']
   deterministic: boolean
   /** The scheduler class: `free` for operations that use no CPU or GPU slot. */
   cost: 'free' | 'cpu' | 'gpu'
-  confirm: ToolSpec['confirm']
+  confirm: OperationSpec['confirm']
 }
 
 /** What a view last selected in a project, so the agent's resolver can read "this one". */
@@ -97,18 +112,6 @@ export interface ViewSelection {
 }
 
 /**
- * A record input reference as the text the views and the agent read.
- * @param ref - the reference.
- * @returns an asset ID, `<record>#<output>`, or `<id>@<version>`.
- */
-export function refText(ref: RecordInputRef): string {
-  if ('asset' in ref) return ref.asset
-  if ('record' in ref) return `${ref.record}#${String(ref.output)}`
-  const id = 'character' in ref ? ref.character : 'location' in ref ? ref.location : ref.style
-  return `${id}@${String(ref.version)}`
-}
-
-/**
  * Convert one record into the form the views read.
  * @param record - a record in its current form.
  * @returns the wire record.
@@ -118,7 +121,7 @@ export function toWireOp(record: ProjectRecord): WireOp {
     id: record.id, parents: record.parents, turn: record.turn, session: record.session, branch: record.branch,
     actor: record.actor, surface: record.surface, intent: record.intent, kind: record.kind,
     ...record.operation === null ? {} : { tool: { name: record.operation, version: record.operation_version ?? '' } },
-    inputs: record.inputs.map(input => ({ role: input.role, ref: refText(input.ref), resolved: input.resolved_asset })),
+    inputs: record.inputs.map(input => ({ role: input.role, ref: formatInputRef(input.ref), resolved: input.resolved_asset })),
     params: record.params, outputs: record.outputs, status: record.status,
     ...record.based_on === null ? {} : { base_op: record.based_on },
     supersedes: record.supersedes,
@@ -133,6 +136,18 @@ export function toWireOp(record: ProjectRecord): WireOp {
 }
 
 /**
+ * Convert one timeline of the `timeline` slice into the wire names the views read.
+ * @param timeline - a timeline.
+ * @returns its ID, its name (wire field `title`) and its clips with their positions.
+ */
+function toWireTimeline(timeline: Timeline): WireState['sequences'][number] { // names:allow
+  const items = timeline.clips.map((clip, index) => ({
+    slot: index + 1, assetId: clip.asset, inSec: clip.in_sec, outSec: clip.out_sec, // names:allow
+  }))
+  return { id: timeline.id, title: timeline.name, items }
+}
+
+/**
  * Collect every asset a state mentions: created assets, record outputs, resolved inputs, character, location and
  * style references, and timeline clips. Records that failed before creating anything add nothing.
  * @param state - a branch state.
@@ -144,11 +159,66 @@ export function mentionedAssets(state: ProjectState): AssetId[] {
     for (const id of record.outputs) seen.add(id)
     for (const input of record.inputs) if (input.resolved_asset !== null) seen.add(input.resolved_asset)
   }
-  for (const versions of Object.values(state.components.bible.entities)) {
-    for (const version of versions) for (const id of version.refs) seen.add(id)
+  const { characters, locations, styles } = state.components.bible
+  for (const versions of [...Object.values(characters), ...Object.values(locations), ...Object.values(styles)]) {
+    for (const version of versions) for (const id of version.references) seen.add(id)
   }
-  for (const timeline of state.components.timeline.sequences) for (const item of timeline.items) seen.add(item.assetId)
+  for (const timeline of state.components.timeline.timelines) for (const clip of timeline.clips) seen.add(clip.asset)
   return [...seen]
+}
+
+/** One version of a character, location or style in the field names the views read (renamed in stage 4). */
+interface WireBibleVersion {
+  kind: 'character' | 'location' | 'style'
+  version: number
+  name: string
+  description: string
+  refs: AssetId[]
+  updatedBy: RecordId
+}
+
+/**
+ * Convert the `bible` slice into the wire form: one map of every character, location and style by ID.
+ * @param bible - the slice.
+ * @returns the versions by ID, each with its kind.
+ */
+function toWireBible(bible: StoryBibleState): WireState['entities'] { // names:allow
+  const wire: WireState['entities'] = {} // names:allow
+  const kinds = [['character', bible.characters], ['location', bible.locations], ['style', bible.styles]] as const
+  for (const [kind, byId] of kinds) {
+    for (const [id, versions] of Object.entries(byId) as Array<[string, Array<Character | Location | Style>]>) {
+      wire[id] = versions.map(version => ({
+        kind, version: version.version, name: version.name, description: version.description, refs: version.references,
+        updatedBy: version.created_by,
+      }))
+    }
+  }
+  return wire
+}
+
+/** One asset of the asset pool in the field names the views read (renamed with the other wire names in stage 4). */
+interface WireAsset {
+  id: AssetId
+  mime: string
+  name: string
+  sizeBytes: number
+  producedBy: string | null
+  createdAt: string
+  width: number | null
+  height: number | null
+  durationSec: number | null
+}
+
+/**
+ * Turn an asset of the asset pool into the wire form.
+ * @param asset - the asset.
+ * @returns the wire asset.
+ */
+function toWireAsset(asset: Asset): WireAsset {
+  return {
+    id: asset.id, mime: asset.mime, name: asset.name, sizeBytes: asset.size_bytes, producedBy: asset.created_by,
+    createdAt: asset.created_at, width: asset.width, height: asset.height, durationSec: asset.duration_sec,
+  }
 }
 
 /**
@@ -163,16 +233,18 @@ export function toWireState(
   project: ProjectInfo,
   state: ProjectState,
   branches: Branch[],
-  asset: (id: AssetId) => AssetMeta | null,
+  asset: (id: AssetId) => Asset | null,
 ): WireState {
-  const assets: AssetMeta[] = []
+  const assets: WireAsset[] = []
   for (const id of mentionedAssets(state)) {
-    const meta = asset(id)
-    if (meta !== null) assets.push(meta)
+    const found = asset(id)
+    if (found !== null) assets.push(toWireAsset(found))
   }
   const { proj, bible, timeline, shot, plan } = state.components
   const stale: WireState['stale'] = {}
   for (const [record, because] of Object.entries(proj.stale)) stale[record] = { because }
+  const wireTimelines = timeline.timelines.map(toWireTimeline)
+  const first = wireTimelines[0]
   return {
     project: { projectId: project.id, title: project.title, createdAt: project.created_at },
     head: state.head,
@@ -180,9 +252,9 @@ export function toWireState(
     branches,
     ops: proj.records.map(toWireOp),
     assets,
-    entities: bible.entities,
-    sequence: timeline.sequence,
-    sequences: timeline.sequences,
+    entities: toWireBible(bible), // names:allow
+    sequence: first === undefined ? null : { items: first.items }, // names:allow
+    sequences: wireTimelines, // names:allow
     stale,
     superseded: proj.superseded,
     takes: shot.takes,
@@ -196,11 +268,11 @@ export function toWireState(
  * @param spec - a registered tool.
  * @returns the wire spec.
  */
-export function toWireToolSpec(spec: ToolSpec): WireToolSpec {
+export function toWireToolSpec(spec: OperationSpec): WireToolSpec {
   return {
     name: spec.name,
     version: spec.version,
-    summary: spec.summary,
+    summary: spec.description,
     inputs: spec.inputs,
     params: spec.params,
     outputs: spec.outputs,

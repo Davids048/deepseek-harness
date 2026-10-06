@@ -1,6 +1,6 @@
 /**
  * The floating editor a canvas node opens in the middle of the canvas. A clip shows a large player, its prompt,
- * reference chips, duration, and seed, and offers "生成新版本" (a user `generate.*` record whose `base_op` is the clip)
+ * reference chips, duration, and seed, and offers "生成新版本" (a user `shot.render` record whose `base_op` is the clip)
  * and "让 agent 改" (a `vh:compose` event that prefills the chat composer). An entity can swap its reference image; a
  * plan lists its shots.
  */
@@ -250,16 +250,16 @@ function EntityForm({ node, state, client, project, session, readOnly, t, run }:
   const replace = (assetId: string): void => {
     if (latest === undefined) return
     void run(() => client.invoke({
-      project, tool: `entity.${latest.kind}.update`, params: { entity: name, refs: [assetId] }, surface: 'canvas',
+      project, tool: `bible.${latest.kind}_update`, params: { [latest.kind]: name }, inputs: [{ role: 'reference', ref: assetId }], surface: 'canvas',
       intent: t('intent.replaceRef', { name: latest.name || name }), ...sessionField,
     }))
   }
-  const upload = (event: ChangeEvent<HTMLInputElement>): void => {
+  const importImage = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0]
     if (file === undefined) return
     void run(async () => {
       const base64 = await base64Of(file)
-      const record = await client.invoke({ project, tool: 'asset.upload', params: { base64, mime: file.type || 'image/png', name: file.name }, surface: 'canvas', intent: t('intent.upload', { name: file.name }), ...sessionField })
+      const record = await client.invoke({ project, tool: 'asset.import', params: { base64, mime: file.type || 'image/png', name: file.name }, surface: 'canvas', intent: t('intent.import', { name: file.name }), ...sessionField })
       const assetId = record.outputs[0]
       if (assetId !== undefined) replace(assetId)
     })
@@ -281,8 +281,8 @@ function EntityForm({ node, state, client, project, session, readOnly, t, run }:
           {images.map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
         </select>
         <label style={{ ...secondaryButton, opacity: readOnly ? 0.5 : 1 }}>
-          {t('editor.upload')}
-          <input type="file" accept="image/*" disabled={readOnly} style={{ display: 'none' }} onChange={upload} />
+          {t('editor.import')}
+          <input type="file" accept="image/*" disabled={readOnly} style={{ display: 'none' }} onChange={importImage} />
         </label>
       </div>
     </div>
@@ -296,7 +296,7 @@ function EntityForm({ node, state, client, project, session, readOnly, t, run }:
  */
 function PlanList({ node, state, t }: NodeEditorProps): ReactNode {
   const shots = Array.isArray(node.op?.params['shots']) ? node.op.params['shots'] as Array<Record<string, unknown>> : []
-  const approved = state.plans.find(plan => plan.op === node.op?.id)?.approved === true
+  const approved = state.plans.find(plan => plan.record === node.op?.id)?.approved === true
   return (
     <div>
       <p style={{ margin: 0, color: approved ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-state-warn-primary)' }}>{approved ? t('editor.planApproved') : t('editor.planPending')}</p>

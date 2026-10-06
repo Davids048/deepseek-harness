@@ -10,7 +10,7 @@ import { startScriptedModel, type ScriptedModel, type ScriptedRule } from '../sc
 /** A 1×1 opaque PNG. */
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
-/** Two more 1×1 PNGs with other colors, so uploads in different stories are different files. */
+/** Two more 1×1 PNGs with other colors, so imports in different stories are different files. */
 const RED_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGM4ISf3HwAEugIEPlcfxwAAAABJRU5ErkJggg=='
 const GREEN_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQW2DzHwAD1AH6mPShBQAAAABJRU5ErkJggg=='
 
@@ -197,9 +197,9 @@ describe('navigation, projects, sessions, and panels', () => {
     return (await harness.api.post('/api/vh/projects', { title, surface: 'canvas' }) as { projectId: string }).projectId
   }
 
-  /** Upload a PNG (base64) named `name` into a project through the views API. */
-  async function upload(projectId: string, name: string, png = PNG_BASE64): Promise<void> {
-    await harness.api.post('/api/vh/invoke', { project: projectId, tool: 'asset.upload', params: { base64: png, mime: 'image/png', name }, inputs: [], surface: 'canvas', intent: 'story: upload' })
+  /** Import a PNG (base64) named `name` into a project through the views API. */
+  async function importPng(projectId: string, name: string, png = PNG_BASE64): Promise<void> {
+    await harness.api.post('/api/vh/invoke', { project: projectId, tool: 'asset.import', params: { base64: png, mime: 'image/png', name }, inputs: [], surface: 'canvas', intent: 'story: import' })
   }
 
   /** Open a project from its navigator row and wait until the shell shows it. */
@@ -278,7 +278,7 @@ describe('navigation, projects, sessions, and panels', () => {
   it('新项目 several times gives unique titles, and each project opens clean: empty canvas, chat, and assets', async () => {
     const { page, errors } = await openPage()
     const first = await newProject(page)
-    await upload(first.projectId, 'only-in-first.png', RED_PNG)
+    await importPng(first.projectId, 'only-in-first.png', RED_PNG)
     await send(page, '甲')
     const titles = [first.title]
     for (let round = 0; round < 3; round += 1) {
@@ -450,7 +450,7 @@ describe('navigation, projects, sessions, and panels', () => {
   it('switching between two projects on canvas and cuts: nothing from one shows in the other', async () => {
     const a = await createProject('NAV 切换甲')
     const b = await createProject('NAV 切换乙')
-    await upload(a, 'only-in-jia.png', GREEN_PNG)
+    await importPng(a, 'only-in-jia.png', GREEN_PNG)
     const { page, errors } = await openPage()
     await openProject(page, 'NAV 切换甲')
     await send(page, '甲')
@@ -500,11 +500,11 @@ describe('navigation, projects, sessions, and panels', () => {
     expect({ label, location: locationOf(page), crumbs: await crumbs(page) }).toEqual({ label, ...before })
   }
 
-  it('the same image uploaded into two projects under different names shows each project its own name', async () => {
+  it('the same image imported into two projects under different names shows each project its own name', async () => {
     const a = await createProject('NAV 同图甲')
     const b = await createProject('NAV 同图乙')
-    await upload(a, 'jia-name.png')
-    await upload(b, 'yi-name.png')
+    await importPng(a, 'jia-name.png')
+    await importPng(b, 'yi-name.png')
     const { page, errors } = await openPage()
     await openProject(page, 'NAV 同图乙')
     await selectTab(page, '素材')

@@ -27,13 +27,22 @@
       "path": "../../core/tools"
     },
     {
-      "path": "../assets"
+      "path": "../../dv/asset-pool"
     },
     {
       "path": "../../dv/project"
     },
     {
-      "path": "../tools"
+      "path": "../../dv/shot-plan"
+    },
+    {
+      "path": "../../dv/shot-render"
+    },
+    {
+      "path": "../../dv/story-bible"
+    },
+    {
+      "path": "../../dv/timeline"
     }
   ]
 }

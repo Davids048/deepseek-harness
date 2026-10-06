@@ -23,9 +23,9 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSy
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type DvProject from '@dv/project'
-import type { ProjectId } from '@dv/project'
-import type VhTools from '@video-harness/tools'
+import type { ProjectId, SessionId } from '@dv/project'
 import { projectIdOf } from './wire.ts'
 
 /** The Fetch route paths. */
@@ -150,11 +150,10 @@ function readBindings(): Record<string, string> {
 
 /**
  * The project ↔ Workspace Fetch routes.
- * @param project - the Project service, for the project list and the project check.
- * @param tools - the tools service, which holds session bindings.
+ * @param project - the Project service, for the project list, the project check, and session bindings.
  * @returns the routes.
  */
-export function workspaceRoutes(project: DvProject, tools: VhTools): ConnectionFetchRoute[] {
+export function workspaceRoutes(project: DvProject): ConnectionFetchRoute[] {
   const projectsRoot = join(stateRoot(), 'projects')
   const projectOf = (value: unknown): ProjectId => {
     const projectId = projectIdOf(value)
@@ -192,7 +191,8 @@ export function workspaceRoutes(project: DvProject, tools: VhTools): ConnectionF
     const body = await bodyOf(request)
     const projectId = projectOf(body['project'])
     if (typeof body['session'] !== 'string' || body['session'].length === 0) return json({ error: "'session' must be a session ID." }, 400)
-    return json({ ok: tools.bindSession(body['session'], projectId) })
+    project.bindSession(brandString<SessionId>(body['session']), projectId)
+    return json({ ok: true })
   }
   const guard = (run: (request: Request) => Response | Promise<Response>) => async (request: Request): Promise<Response> => {
     try {

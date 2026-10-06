@@ -1,10 +1,10 @@
 /** Canvas nodes and edges derived from the shared folded state. */
 import { describe, expect, it } from 'vitest'
 import { fixtureState } from '../../ui-kit/tests/fixture.client.tsx'
-import { buildCanvasGraph, overlayDraft, withUploadNames } from '../src/client/graph.ts'
+import { buildCanvasGraph, overlayDraft, withImportNames } from '../src/client/graph.ts'
 
 describe('buildCanvasGraph', () => {
-  it('draws entities, plans, and clips, and hides uploads, joins, probes, and sequence records', () => {
+  it('draws characters, locations, styles, plans, and clips, and hides imports, exports, inspections, and timeline records', () => {
     const graph = buildCanvasGraph(fixtureState(), new Set(['g3']))
     expect(graph.nodes.map(node => [node.id, node.kind])).toEqual([
       ['entity:hero', 'entity'], ['p1', 'plan'], ['g1', 'clip'], ['g2', 'clip'], ['g3', 'clip'],
@@ -26,8 +26,8 @@ describe('buildCanvasGraph', () => {
     expect(byId.get('g3')?.x).toBe(byId.get('g1')?.x)
     // The original clip and its retake are numbered versions; a clip with one version has no number.
     expect([byId.get('g1')?.take, byId.get('g3')?.take, byId.get('g2')?.take]).toEqual([1, 2, null])
-    // Uploaded references map to their entity; derived media maps up the producer chain to a drawn clip.
-    expect(graph.assetNodes).toMatchObject({ 'ref.png': 'entity:hero', 'shot1.mp4': 'g1', 'cut.mp4': 'g2' })
+    // Imported references map to their character, location or style; derived assets map up the producer chain to a drawn clip.
+    expect(graph.assetNodes).toMatchObject({ 'ref.png': 'entity:hero', 'shot1.mp4': 'g1', 'export.mp4': 'g2' })
   })
 
   it('wraps a long shot list into a block of columns without overlapping cards', () => {
@@ -35,7 +35,7 @@ describe('buildCanvasGraph', () => {
     const g2 = full.ops.find(op => op.id === 'g2')
     if (g2 === undefined) throw new Error('fixture lacks g2')
     const shots = Array.from({ length: 22 }, (_, index) => ({ ...g2, id: `s${String(index)}`, inputs: [], params: { prompt: 'p', shot: index + 1 }, outputs: [] }))
-    const graph = buildCanvasGraph({ ...full, ops: [...full.ops.filter(op => !op.tool?.name.startsWith('generate.')), ...shots] })
+    const graph = buildCanvasGraph({ ...full, ops: [...full.ops.filter(op => op.tool?.name !== 'shot.render'), ...shots] })
     const clips = graph.nodes.filter(node => node.kind === 'clip')
     expect(new Set(clips.map(node => `${String(node.x)},${String(node.y)}`)).size).toBe(22)
     const width = Math.max(...clips.map(node => node.x)) - Math.min(...clips.map(node => node.x))
@@ -54,10 +54,13 @@ describe('buildCanvasGraph', () => {
     expect(overlayDraft(base, null)).toBe(base)
   })
 
-  it('names an upload by this project\'s record, not by the shared asset store', () => {
+  it('names an imported asset by this project\'s record, not by the shared asset pool', () => {
     const full = fixtureState()
-    const upload = { ...full.ops[0], id: 'u9', tool: { name: 'asset.upload', version: '1' }, params: { name: 'yi-name.png' }, outputs: ['shared.png'], status: 'done' as const, inputs: [] }
-    const state = withUploadNames({ ...full, ops: [...full.ops, upload], assets: [...full.assets, { ...full.assets[0], id: 'shared.png', mime: 'image/png', name: 'jia-name.png' }] })
+    const [firstRecord] = full.ops
+    const [firstAsset] = full.assets
+    if (firstRecord === undefined || firstAsset === undefined) throw new Error('fixture lacks a record or an asset')
+    const imported = { ...firstRecord, id: 'u9', tool: { name: 'asset.import', version: '1' }, params: { name: 'yi-name.png' }, outputs: ['shared.png'], status: 'done' as const, inputs: [] }
+    const state = withImportNames({ ...full, ops: [...full.ops, imported], assets: [...full.assets, { ...firstAsset, id: 'shared.png', mime: 'image/png', name: 'jia-name.png' }] })
     expect(buildCanvasGraph(state).nodes.find(node => node.id === 'u9')?.title).toBe('yi-name.png')
   })
 })

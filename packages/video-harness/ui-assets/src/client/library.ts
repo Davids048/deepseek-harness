@@ -13,23 +13,23 @@ export interface DraftState {
 
 /** The panel's view of one project's assets. */
 export interface AssetLibrary {
-  /** Images that the latest version of a character entity references. */
+  /** Images that the latest version of a character references. */
   characters: WireAsset[]
-  /** Uploaded media and other entities' reference images, without characters. */
+  /** Imported files and the reference images of locations and styles, without characters. */
   references: WireAsset[]
-  /** Videos that a generation or edit record produced, newest first. */
-  generated: WireAsset[]
-  /** Outputs of `asset.upload` records, newest first. */
-  uploads: WireAsset[]
+  /** Videos that a record other than `asset.import` produced (takes and exports), newest first. */
+  rendered: WireAsset[]
+  /** Outputs of `asset.import` records, newest first. */
+  imported: WireAsset[]
   /** IDs of the listed assets that only an open draft mentions. */
   draft: Set<string>
 }
 
 /**
- * Merge the open drafts into the state of `main`: records, assets, and entity versions that `main` lacks.
+ * Merge the open drafts into the state of `main`: records, assets, and character, location and style versions that `main` lacks.
  * @param main - the folded state of `main`.
  * @param drafts - the folded states of the draft branches.
- * @returns the merged records, assets, and entities.
+ * @returns the merged records, assets, and character, location and style versions.
  */
 function mergeDrafts(main: WireState, drafts: readonly DraftState[]): Pick<WireState, 'ops' | 'assets' | 'entities'> {
   const ops: WireOp[] = [...main.ops]
@@ -57,10 +57,10 @@ export function assetLibrary(main: WireState, drafts: readonly DraftState[] = []
   const state = mergeDrafts(main, drafts)
   const onMain = new Set(main.assets.map(asset => asset.id))
   const byId = new Map(state.assets.map(asset => [asset.id, asset]))
-  // The store keeps the name and time of the first upload of identical bytes in any project; show this project's own
-  // upload name and time, read from its `asset.upload` records.
+  // The asset pool keeps the name and time of the first import of identical bytes in any project; show this project's
+  // own import name and time, read from its `asset.import` records.
   for (const op of state.ops) {
-    if (op.status !== 'done' || op.tool?.name !== 'asset.upload') continue
+    if (op.status !== 'done' || op.tool?.name !== 'asset.import') continue
     const name = op.params['name']
     for (const id of op.outputs) {
       const asset = byId.get(id)
@@ -79,27 +79,27 @@ export function assetLibrary(main: WireState, drafts: readonly DraftState[] = []
     return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   }
   const characterIds = new Set<string>()
-  const entityRefIds = new Set<string>()
+  const bibleRefIds = new Set<string>()
   for (const versions of Object.values(state.entities)) {
     const latest = versions.at(-1)
     if (latest === undefined) continue
-    for (const ref of latest.refs) (latest.kind === 'character' ? characterIds : entityRefIds).add(ref)
+    for (const ref of latest.refs) (latest.kind === 'character' ? characterIds : bibleRefIds).add(ref)
   }
-  const uploadIds: string[] = []
-  const generatedIds: string[] = []
+  const importedIds: string[] = []
+  const renderedIds: string[] = []
   for (const op of state.ops) {
     if (op.status !== 'done' || op.tool === undefined) continue
-    if (op.tool.name === 'asset.upload') { uploadIds.push(...op.outputs); continue }
+    if (op.tool.name === 'asset.import') { importedIds.push(...op.outputs); continue }
     for (const id of op.outputs) {
-      if (byId.get(id)?.mime.startsWith('video/')) generatedIds.push(id)
+      if (byId.get(id)?.mime.startsWith('video/')) renderedIds.push(id)
     }
   }
-  const generated = pick(generatedIds)
+  const rendered = pick(renderedIds)
   return {
     characters: pick(characterIds),
-    references: pick([...uploadIds, ...entityRefIds].filter(id => !characterIds.has(id) && !generatedIds.includes(id))),
-    generated,
-    uploads: pick(uploadIds),
+    references: pick([...importedIds, ...bibleRefIds].filter(id => !characterIds.has(id) && !renderedIds.includes(id))),
+    rendered,
+    imported: pick(importedIds),
     draft: new Set(state.assets.map(asset => asset.id).filter(id => !onMain.has(id))),
   }
 }

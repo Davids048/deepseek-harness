@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DreamVerse assets panel as a right-Sidebar tab: the project's characters, references, uploads, and generations with filters, upload, drag into the canvas or the cuts, and preview.",
+  "description": "DreamVerse assets panel as a right-Sidebar tab: the project's characters, references, imports, and renders with filters, import, drag into the canvas or the timeline, and preview.",
   "exports": {
     ".": "./src/index.ts",
     "./client": {

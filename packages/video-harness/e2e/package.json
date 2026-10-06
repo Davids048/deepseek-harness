@@ -8,6 +8,7 @@
     "./package.json": "./package.json"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-llm-mock-server": "workspace:*"
+    "@deepseek-ai/dsh-llm-mock-server": "workspace:*",
+    "playwright": "^1.49.0"
   }
 }

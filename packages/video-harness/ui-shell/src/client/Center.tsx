@@ -305,16 +305,16 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     window.addEventListener('vh:canvas-focus', focus)
     return () => { window.removeEventListener('vh:canvas-focus', focus) }
   }, [])
-  // 加入剪辑 appends the asset to the episode selected in the cuts editor, else to the project's first episode; a
-  // project without episodes gets 第 1 集 holding the clip. New episodes store the language-neutral title `第 N 集`.
+  // 加入剪辑 appends the asset to the timeline selected in the timeline editor, else to the project's first timeline; a
+  // project without timelines gets timeline `t1` named 第 1 集 holding the clip.
   const insertToCut = (assetId: string): void => {
     const sequences = state.value?.sequences ?? []
-    const episode = sequences.find(item => item.id === getEpisodeOf(projectId)) ?? sequences[0]
-    const at = (episode?.items.length ?? 0) + 1
-    const call = episode === undefined
-      ? { tool: 'sequence.create', params: { sequence: 'v1', title: '第 1 集', assets: [assetId] }, intent: pickText('新建第 1 集并加入片段', 'Create Episode 1 with the clip') }
-      : { tool: 'sequence.insert', params: { sequence: episode.id, at, asset: assetId }, intent: pickText(`加入剪辑第 ${String(at)} 段`, `Add to Cuts at clip ${String(at)}`) }
-    if (episode === undefined) publishCurrentEpisode(projectId, 'v1')
+    const timeline = sequences.find(item => item.id === getEpisodeOf(projectId)) ?? sequences[0]
+    const at = (timeline?.items.length ?? 0) + 1
+    const call = timeline === undefined
+      ? { tool: 'timeline.create', params: { timeline: 't1', name: '第 1 集', assets: [assetId] }, intent: pickText('新建时间线', 'Create timeline') }
+      : { tool: 'timeline.clip_insert', params: { timeline: timeline.id, at, asset: assetId }, intent: pickText(`插入片段（第 ${String(at)} 段）`, `Insert clip at position ${String(at)}`) }
+    if (timeline === undefined) publishCurrentEpisode(projectId, 't1')
     void client.invoke({ project: projectId, ...call, surface: 'timeline', ...session === null ? {} : { session } })
       .then(() => { state.reload() }, (error: unknown) => { console.warn('ui-shell: insert failed', error) })
   }

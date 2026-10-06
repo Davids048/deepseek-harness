@@ -1,6 +1,6 @@
 /**
  * Composer support of the video harness as the `vhComposer` Cordis service:
- * - per-session composer modes (ask before every generation or not; quality or speed), stored in one JSON file;
+ * - per-session composer modes (ask before every render or not; quality or speed), stored in one JSON file;
  * - the approval cards: as `dvProject`'s approval channel, it holds an agent's `agent_ask_first` call (a shot render
  *   or a plan approval) of a session in ask mode until the user approves or skips its card;
  * - an `agent/pre-step` listener that expands the composer's `vh:` references in new user messages into a context
@@ -21,13 +21,15 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContextFormed, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
-import type {
-  ApprovalChannel, AssetId, PendingApproval, ProjectId, ProjectRecord, RecordId, SessionId,
+import {
+  formatInputRef, type ApprovalChannel, type AssetId, type PendingApproval, type ProjectId, type ProjectRecord, type RecordId,
+  type SessionId,
 } from '@dv/project'
 import type { ComposerChannel, ComposerMode } from '@video-harness/agent'
-import type {} from '@video-harness/assets'
-import type { PlanDocument } from '@video-harness/tools'
-import { expansionBlock, parseVhReferences, refText, type ExpansionSources } from './expand.ts'
+import type {} from '@dv/asset-pool'
+import type { Plan } from '@dv/shot-plan'
+import type { Character, CharacterId, Location, LocationId, Style, StyleId } from '@dv/story-bible'
+import { expansionBlock, parseVhReferences, type ExpansionSources } from './expand.ts'
 
 export { describeReference, expansionBlock, formatVhReference, parseVhReferences, type ExpansionSources, type VhReference } from './expand.ts'
 
@@ -88,7 +90,7 @@ interface CardInput {
 
 /** The composer service. */
 export default class VhComposer extends Service implements ComposerChannel, ApprovalChannel {
-  static inject = ['dvProject', 'vhAssets', 'vhTools'] // names:allow (the asset store service until stage 3)
+  static inject = ['dvProject', 'dvAssetPool']
 
   private modes: Record<string, ComposerMode> | null = null
   private readonly pending = new Map<string, ApprovalCard & { resolve: (approved: boolean) => void }>()
@@ -166,7 +168,7 @@ export default class VhComposer extends Service implements ComposerChannel, Appr
     const plan = record.operation === 'plan.approve' ? this.planCard(approval.project, record) : null
     const params = plan?.params ?? record.params
     const inputs: CardInput[] = plan?.inputs ?? record.inputs.map(input => ({
-      role: input.role, ref: refText(input.ref), assetId: input.resolved_asset ?? ('asset' in input.ref ? input.ref.asset : null),
+      role: input.role, ref: formatInputRef(input.ref), assetId: input.resolved_asset ?? ('asset' in input.ref ? input.ref.asset : null),
     }))
     return new Promise((resolve) => {
       const id = randomUUID()
@@ -195,20 +197,19 @@ export default class VhComposer extends Service implements ComposerChannel, Appr
    * references, and the estimate of rendering every shot.
    * @param projectId - the project.
    * @param record - the pending `plan.approve` record.
-   * @returns the card fields, or null when the record names no readable plan document.
+   * @returns the card fields, or null when the Shot plan component is not mounted or the record names no plan.
    */
   private planCard(
     projectId: ProjectId, record: ProjectRecord,
   ): { params: Record<string, unknown>; inputs: CardInput[]; estimate: number } | null {
-    let document: PlanDocument
+    let document: Plan | undefined
     try {
-      const asset = this.ctx.dvProject.getRecord(projectId, brandString<RecordId>(String(record.params['plan']))).outputs[0]
-      if (asset === undefined) return null
-      document = JSON.parse(this.ctx.vhAssets.read(asset).toString('utf8')) as PlanDocument // names:allow
+      document = this.ctx.get('dvShotPlan')?.getPlan(projectId, String(record.params['plan']))
     } catch {
       // An unreadable plan leaves the card with the record's own params; the call fails when it runs.
       return null
     }
+    if (document === undefined) return null
     const seconds = document.shots.map(shot => shot.duration_sec ?? 5)
     const total = seconds.reduce((sum, value) => sum + value, 0)
     const references = [...new Set(document.shots.flatMap(shot => shot.references ?? document.references ?? []))]
@@ -217,7 +218,7 @@ export default class VhComposer extends Service implements ComposerChannel, Appr
         prompt: document.shots.map((shot, index) => `${index + 1}. ${shot.prompt} (${seconds[index]} s)`).join('\n'), duration_sec: total,
       },
       inputs: references.map(ref => ({ role: 'reference', ref, assetId: null })),
-      estimate: this.ctx.vhTools.get('generate.video')?.estimate?.({ duration_sec: total }).gpu_seconds ?? 0,
+      estimate: this.ctx.dvProject.listOperations().find(spec => spec.name === 'shot.render')?.estimate?.({ duration_sec: total }).gpu_seconds ?? 0,
     }
   }
 
@@ -283,7 +284,7 @@ export default class VhComposer extends Service implements ComposerChannel, Appr
 
   /** The session's bound project, else the newest project whose records produced a referenced asset. */
   private projectFor(sessionId: string, text: string): ProjectId | null {
-    const bound = this.ctx.vhTools.sessionProject(sessionId)
+    const bound = this.ctx.dvProject.sessionProject(brandString<SessionId>(sessionId))
     if (bound !== null) return bound
     const assets = parseVhReferences(text).flatMap(reference => reference.uri.split('/').slice(-1))
     const projects = this.ctx.dvProject.listProjects().sort((a, b) => b.created_at.localeCompare(a.created_at))
@@ -314,7 +315,7 @@ export default class VhComposer extends Service implements ComposerChannel, Appr
     return inputs.map((input) => {
       const assetId = input.assetId ?? this.assetOf(projectId, input.ref)
       return {
-        role: input.role, ref: input.ref, assetId, url: assetId === null ? null : this.ctx.vhTools.assetUrl(brandString<AssetId>(assetId)),
+        role: input.role, ref: input.ref, assetId, url: assetId === null ? null : this.ctx.dvAssetPool.url(brandString<AssetId>(assetId)),
       }
     })
   }
@@ -333,8 +334,11 @@ export default class VhComposer extends Service implements ComposerChannel, Appr
     }
     const at = ref.lastIndexOf('@')
     if (at > 0) {
-      const versions = this.ctx.dvProject.getState(projectId).components.bible.entities[ref.slice(0, at)] ?? []
-      return versions.find(version => String(version.version) === ref.slice(at + 1))?.refs[0] ?? null
+      const { characters, locations, styles } = this.ctx.dvProject.getState(projectId).components.bible
+      const id = ref.slice(0, at)
+      const versions: ReadonlyArray<Character | Location | Style> = characters[brandString<CharacterId>(id)]
+        ?? locations[brandString<LocationId>(id)] ?? styles[brandString<StyleId>(id)] ?? []
+      return versions.find(version => String(version.version) === ref.slice(at + 1))?.references[0] ?? null
     }
     return ref
   }

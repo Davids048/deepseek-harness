@@ -16,8 +16,9 @@ import type { OperationContext, OperationSpec, ProjectId, ProjectRecord, RecordI
  */
 function operation(overrides: Partial<OperationSpec> & Pick<OperationSpec, 'name' | 'component' | 'execute'>): OperationSpec {
   return {
-    version: '1', params: { prompt: { type: 'string' } }, inputRoles: ['reference'], confirm: 'never', deterministic: false,
-    resource: 'none', ...overrides,
+    version: '1', params: { prompt: { type: 'string' } }, confirm: 'never', deterministic: false,
+    inputs: { reference: { type: 'image', description: 'A reference.', many: true } }, outputs: [], description: 'A test operation.',
+    summarize: () => 'ran', resource: 'none', ...overrides,
   }
 }
 

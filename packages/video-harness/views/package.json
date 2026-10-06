@@ -10,9 +10,12 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
+    "@dv/asset-pool": "workspace:*",
     "@dv/project": "workspace:*",
-    "@video-harness/assets": "workspace:*",
-    "@video-harness/tools": "workspace:*"
+    "@dv/shot-plan": "workspace:*",
+    "@dv/shot-render": "workspace:*",
+    "@dv/story-bible": "workspace:*",
+    "@dv/timeline": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -22,9 +25,12 @@
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-client-connection": "workspace:*",
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
-    "@video-harness/media": "workspace:*",
+    "@dreamverse/generation-client": "workspace:*",
+    "@dv/ffmpeg": "workspace:*",
     "@types/node": "^22.20.0"
   }
 }

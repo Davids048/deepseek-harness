@@ -1,5 +1,5 @@
 /**
- * Live media of the video harness as the `vhStream` Cordis service: `generate.video` hands each shot's fMP4 chunks to
+ * Live media of the video harness as the `vhStream` Cordis service: `shot.render` hands each shot's fMP4 chunks to
  * the service while the backend is still producing them, and every browser subscribed to the project over the
  * `/vh/ws` route receives them in the framing the DreamVerse page already plays (`media_init`, binary chunks,
  * `media_segment_complete`). The same socket forwards operation-log changes (`op`, `head`), so a page follows media and

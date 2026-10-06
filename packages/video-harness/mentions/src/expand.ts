@@ -12,8 +12,8 @@
  * @module @video-harness/mentions/expand
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { AssetId, ProjectId, ProjectRecord, ProjectState, RecordId, RecordInputRef } from '@dv/project'
-import type {} from '@video-harness/tools'
+import { formatInputRef, type AssetId, type ProjectId, type ProjectRecord, type ProjectState, type RecordId } from '@dv/project'
+import type { Character, Location, Style } from '@dv/story-bible'
 
 /** One `vh:` reference found in user text. */
 export interface VhReference {
@@ -73,12 +73,17 @@ export function describeReference(reference: VhReference, projectId: ProjectId, 
       const producer = state.components.proj.created_by[brandString<AssetId>(assetId)]
       return `${head}: asset ${assetId}${producerText(projectId, producer, sources)}`
     }
-    case 'entity': {
-      const entityId = parts[1] ?? ''
-      const versions = state.components.bible.entities[entityId] ?? []
-      const latest = versions[versions.length - 1]
-      if (latest === undefined) return `${head}: no entity ${entityId} on main`
-      return `${head}: ${latest.kind} ${entityId}@${String(latest.version)} "${latest.name}", reference images [${latest.refs.join(', ')}]; pass it as input ${entityId}@${String(latest.version)}`
+    case 'entity': { // names:allow (composer URI kind until stage 4)
+      const id = parts[1] ?? ''
+      const { characters, locations, styles } = state.components.bible
+      const kinds = [['character', characters], ['location', locations], ['style', styles]] as const
+      const found = kinds.flatMap(([kind, byId]) => {
+        const latest = (byId as Record<string, ReadonlyArray<Character | Location | Style>>)[id]?.at(-1)
+        return latest === undefined ? [] : [{ kind, latest }]
+      })[0]
+      if (found === undefined) return `${head}: no character, location or style ${id} on main`
+      const { kind, latest } = found
+      return `${head}: ${kind} ${id}@${String(latest.version)} "${latest.name}", reference images [${latest.references.join(', ')}]; pass it as input ${id}@${String(latest.version)}`
     }
     case 'op': {
       const recordId = parts[1] ?? ''
@@ -89,30 +94,17 @@ export function describeReference(reference: VhReference, projectId: ProjectId, 
   }
 }
 
-/**
- * A record input reference as text, as the composer and the agent write it.
- * @param ref - the reference.
- * @returns an asset ID, `<id>@<version>`, or `<record>#<output>`.
- */
-export function refText(ref: RecordInputRef): string {
-  if ('asset' in ref) return ref.asset
-  if ('record' in ref) return `${ref.record}#${ref.output}`
-  if ('character' in ref) return `${ref.character}@${ref.version}`
-  if ('location' in ref) return `${ref.location}@${ref.version}`
-  return `${ref.style}@${ref.version}`
-}
-
 /** The producing record of an asset, as ` made by …` text. */
 function producerText(projectId: ProjectId, recordId: RecordId | undefined, sources: ExpansionSources): string {
-  if (recordId === undefined) return ', uploaded (no producing record)'
+  if (recordId === undefined) return ', imported (no producing record)'
   const record = sources.getRecord(projectId, recordId)
   if (record === undefined) return `, record ${recordId} not found`
   const prompt = typeof record.params['prompt'] === 'string' ? `, prompt "${record.params['prompt']}"` : ''
   const duration = record.report?.['duration_sec'] ?? record.params['duration_sec']
-  const inputs = record.inputs.map(input => `${input.role}=${input.resolved_asset ?? refText(input.ref)}`).join(', ')
+  const inputs = record.inputs.map(input => `${input.role}=${input.resolved_asset ?? formatInputRef(input.ref)}`).join(', ')
   return ` made by record ${record.id} (${record.operation ?? record.kind}, ${record.status})${prompt}`
     + `${duration === undefined ? '' : `, duration ${String(duration)} s`}`
-    + `, inputs [${inputs}], outputs [${record.outputs.join(', ')}]; to change it call the tool again with base_op ${record.id}`
+    + `, inputs [${inputs}], outputs [${record.outputs.join(', ')}]; to change it call the tool again with based_on ${record.id}`
 }
 
 /**

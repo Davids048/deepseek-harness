@@ -101,9 +101,9 @@ export class VhApiError extends Error {
   }
 }
 
-/** The media URL of an asset, served by `@video-harness/assets`. */
+/** The URL of an asset's file, served by `@dv/asset-pool`. */
 export function assetUrl(id: string): string {
-  return `/vh/assets/${encodeURIComponent(id)}/content`
+  return `/dv/assets/${encodeURIComponent(id)}`
 }
 
 /**

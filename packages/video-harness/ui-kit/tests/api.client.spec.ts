@@ -13,9 +13,9 @@ describe('VhClient', () => {
     expect(await client.projects(undefined, 's1')).toEqual([PROJECT])
     expect(await client.createProject('Demo 2', 'canvas')).toMatchObject({ heads: { main: 'x' } })
     expect((await client.state('p1', 'explore/style-b')).project.projectId).toBe('p1')
-    expect((await client.tools()).map(tool => tool.name)).toContain('generate.video')
-    const record = await client.invoke({ project: 'p1', tool: 'sequence.move', params: { from: 2, to: 1 }, surface: 'timeline' })
-    expect(record.tool?.name).toBe('sequence.move')
+    expect((await client.tools()).map(tool => tool.name)).toContain('shot.render')
+    const record = await client.invoke({ project: 'p1', tool: 'timeline.clip_move', params: { clip: 2, to: 1 }, surface: 'timeline' })
+    expect(record.tool?.name).toBe('timeline.clip_move')
     await client.acceptDraft('p1', { session: 's5' }, 'canvas')
     await client.undo('p1')
     await client.branch('p1', 'alt', 'main')
@@ -37,7 +37,7 @@ describe('VhClient', () => {
     expect(writes[7]?.body).toEqual({ project: 'p1', session: 's5', surface: 'canvas', counts: { agent_changes: 1, human_edits: 0 } })
     expect(writes[8]?.body).toEqual({ project: 'p1', session: 's5' })
     expect(writes[9]?.body).toEqual({ project: 'p1', branch: 'main', session: 's5' })
-    expect(assetUrl('a/b')).toBe('/vh/assets/a%2Fb/content')
+    expect(assetUrl('a/b')).toBe('/dv/assets/a%2Fb')
   })
 
   it('uses the browser fetch when none is given', async () => {

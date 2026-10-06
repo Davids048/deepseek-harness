@@ -1,6 +1,6 @@
 # @dv/project module contracts
 
-This file specifies the seven internal modules of the `dvProject` service: what each one does, its rules and errors,
+This file specifies the internal modules of the `dvProject` service: what each one does, its rules and errors,
 and the unit tests that pin it. The public types are in `src/types.ts`, the errors and branch constants in
 `src/shared.ts`, and the service surface with its JSDoc (working-branch rules, lock scope, every method) in
 `src/index.ts`.
@@ -17,16 +17,18 @@ and the unit tests that pin it. The public types are in `src/types.ts`, the erro
 8. [Drafts and branches](#8-drafts-and-branches-draftsts)
 9. [Runner and confirmation](#9-runner-and-confirmation-runnerts)
 10. [Scheduler](#10-scheduler-schedulerts)
-11. [Test plan](#11-test-plan)
+11. [Chat sessions and agent tools](#11-chat-sessions-and-agent-tools-sessionsts-agent-toolsts-proj-toolsts)
+12. [Test plan](#12-test-plan)
 
 ## 1. Modules, files and tests
 
-| Module                          | Files                                         | Tests                                                       |
-| ------------------------------- | --------------------------------------------- | ----------------------------------------------------------- |
-| Record store and subscriptions  | `src/record-store.ts`, `src/subscriptions.ts` | `tests/record-store.spec.ts`, `tests/subscriptions.spec.ts` |
-| Runner, confirmation, scheduler | `src/runner.ts`, `src/scheduler.ts`           | `tests/runner.spec.ts`, `tests/scheduler.spec.ts`           |
-| Drafts, working branches        | `src/drafts.ts`                               | `tests/drafts.spec.ts`                                      |
-| History and reducer registry    | `src/history.ts`, `src/reducers.ts`           | `tests/history.spec.ts`, `tests/reducers.spec.ts`           |
+| Module                          | Files                                                        | Tests                                                       |
+| ------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------- |
+| Record store and subscriptions  | `src/record-store.ts`, `src/subscriptions.ts`                | `tests/record-store.spec.ts`, `tests/subscriptions.spec.ts` |
+| Runner, confirmation, scheduler | `src/runner.ts`, `src/scheduler.ts`                          | `tests/runner.spec.ts`, `tests/scheduler.spec.ts`           |
+| Drafts, working branches        | `src/drafts.ts`                                              | `tests/drafts.spec.ts`                                      |
+| History and reducer registry    | `src/history.ts`, `src/reducers.ts`                          | `tests/history.spec.ts`, `tests/reducers.spec.ts`           |
+| Chat sessions and agent tools   | `src/sessions.ts`, `src/agent-tools.ts`, `src/proj-tools.ts` | `tests/agent-tools.spec.ts`, `tests/proj-tools.spec.ts`     |
 
 The runner, drafts and history call the record store; the runner and drafts call the reducer registry and
 `effectiveChain`; the runner calls `drafts.branchForWrite`. Tests use the real modules (`tests/support.ts`
@@ -50,6 +52,11 @@ The runner, drafts and history call the record store; the runner and drafts call
         |  getState registerReducer                        -> reducers         |
         |  wait                                            -> scheduler        |
         |  subscribe                                       -> subscriptions    |
+        |  bindSession sessionProject noteTurn sessionTurn holdToolCalls       |
+        |                                                  -> sessions         |
+        |  registerOperation (tool), parseInputs           -> agent-tools      |
+        |  dv_proj_* tools (registry mounted)              -> proj-tools       |
+        |  registerAssetStore: the store the runner and agent-tools read       |
         v                                                                      |
   runner ----> drafts.branchForWrite / workingBranch                           |
     |    ----> reducers.stateAt / getState / assetsOf                          |
@@ -162,19 +169,20 @@ Owner: agent D.
 
 | Function                             | Behavior                                                                                                                                               |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `register(key, reducer)`             | One reducer per key (`reducer_exists`). Registration order is the call order of `reduce` and `conflict`. Returns a remover.                            |
+| `register(key, reducer)`             | One reducer per key (`reducer_exists`); at most one reducer defines `createdBy` and `assetsOf` (`invalid_params`). Registration order is the call order of `reduce` and `conflict`. Returns a remover. |
 | `getState(project, branch)`          | `stateAt(project, branch, head of branch)`; `unknown_branch` for a missing branch.                                                                     |
 | `stateAt(project, branch, head)`     | `reduceChain(info, branch, effectiveChain(store, project, head))`.                                                                                     |
 | `reduceChain(info, branch, records)` | Starts each registered reducer at `initial()`, calls `reduce` for every record in order, returns `{project: info, branch, head: last.id, components}`. |
 | `apply(state, record)`               | One more `reduce` per reducer on a copy of `state.components`; `head` becomes `record.id`.                                                             |
 | `conflict(state, record)`            | The first non-null `conflict` result, in registration order, else null.                                                                                |
-| `assetsOf(state, ref)`               | The `bible` reducer's `assetsOf(state.components.bible, ref)`; null when there is no `bible` reducer or it has no `assetsOf`.                          |
-| `createdBy` (private)                | The `bible` reducer's `createdBy` on the `bible` slice before the record; the `proj` slice reads it while it reduces that record.                      |
+| `assetsOf(state, ref)`               | `assetsOf` of the reducer that defines it, on that reducer's slice (Story bible in a deployment); null when no reducer defines it.                    |
+| `createdBy` (private)                | `createdBy` of the reducer that defines it, on its slice before the record; the `proj` slice reads it while it reduces that record.                   |
+| `agentSummaries(state, assets)`      | The `agentSummary` fields of every reducer that defines it, in the component key order of `COMPONENT_KEYS` (other keys after, in registration order). |
 
 `projReducer` (Project's own slice) follows its JSDoc. Staleness in detail, for each record R in order:
 
 The producers of an input are the record in `created_by[resolved_asset]` and, for a `{character}`, `{location}` or
-`{style}` ref, the record that created that version (the `bible` reducer's `createdBy`).
+`{style}` ref, the record that created that version (`createdBy` of the reducer that defines it).
 
 1. Each output asset of R when R is `done`: `created_by[asset] = R.id`.
 2. Each ID X in `R.supersedes`: `superseded[X] = R.id`; then every earlier record with an input produced by X, or by a
@@ -237,28 +245,30 @@ change only during replay; removing a draft never removes records; a conflict wr
 
 Owner: agent B.
 
-**Registration.** `registerOperation(spec)`: refuse a registered name with `operation_exists`, and a `component`
-outside `proj asset bible plan shot timeline deliver inspect` with `invalid_params` (the
-operation name itself is not checked against the key). `listOperations` returns registration order.
+**Registration.** `registerOperation(spec)`: refuse a registered name with `operation_exists`, a `component`
+outside `proj asset bible plan shot timeline deliver inspect` with `invalid_params`, and a name that does not start
+with `<component>.` with `invalid_params`. `listOperations` returns registration order.
 `registerApprovalChannel`: one channel; a later one replaces it; the remover clears only the same channel.
 
 **Runner: run.** Steps of `run(request)`:
 
 1. Look up the operation (`unknown_operation`) and the project (`unknown_project`).
 2. Validate `params` with `validateArgs(spec.params, params)` from `@deepseek-ai/dsh-tools`; any message →
-   `invalid_params` with the messages joined. Every input role must be in `spec.inputRoles` (`invalid_inputs`).
+   `invalid_params` with the messages joined. Every input role must be a key of `spec.inputs` (`invalid_inputs`).
 3. Read-only operation (`spec.readOnly`): branch = `drafts.workingBranch(project, session).name`, state =
-   `reducers.getState`, resolve inputs (step 5 rules), call `execute` with `record: null` and a scratch directory, and
+   `reducers.getState`, resolve inputs (step 5 rules), await `spec.precondition?.(request, state)` (a throw rejects `run`
+   with that error), call `execute` with `record: null` and a scratch directory, and
    resolve `{record: null, outputs, report: report ?? null}`. No lock, no record, no confirmation. A throw from
    `execute` rejects `run` with that error.
 4. Take the lock. `branch = drafts.branchForWrite(project, request)`; `parent = head of branch`.
 5. Resolve inputs against `reducers.stateAt(project, branch, parent)`:
-   `{asset}` must exist in the asset store (`unknown_asset`); `{record, output}` must name an existing record
+   `{asset}` must exist in the registered asset store (`unknown_asset`); `{record, output}` must name an existing record
    (`unknown_record`) and a non-negative integer `output`; when the producer is `done`, `resolved_asset` is its
    `outputs[output]` (missing → `invalid_inputs`); `failed` or `cancelled` → `invalid_inputs`; `pending` or
    `running` → `resolved_asset: null`, allowed only when `request.after` is set, else `input_not_ready`. A
    `{character}`, `{location}` or `{style}` ref becomes one input per asset of `reducers.assetsOf` (null →
-   `invalid_inputs`), each with the same role and ref.
+   `invalid_inputs`), each with the same role and ref. Then await `spec.precondition?.(request, state of the working
+   branch)` under the lock: a throw rejects `run` with that error unchanged, before anything is written.
 6. When `request.request_text` is set, `request.turn` is not null, and no record of the project has `kind: 'request'`
    and this turn: append the request record on `branch` (template in section 3).
 7. Append the operation record: `status: 'pending'`, `component`, `operation`, `operation_version`, `deterministic`
@@ -323,7 +333,68 @@ Owner: agent B. Behavior is in the module comment and JSDoc. Details:
 Invariants: never more than `limits.gpu` scheduled `gpu` records and `limits.cpu` scheduled `cpu` records run at once;
 a record never starts before its dependencies are `done`; each queued record runs at most once.
 
-## 11. Test plan
+## 11. Chat sessions and agent tools (`sessions.ts`, `agent-tools.ts`, `proj-tools.ts`)
+
+**Sessions.** `bind(session, project)` writes `<sessionRoot>/<encodeURIComponent(session)>.json` as
+`{"projectId": "<ProjectId>"}` (the field name the views workspace listing reads) and keeps it in memory;
+`project(session)` reads the file on first use (`null` without a file; a file whose `projectId` is neither a string
+nor null throws "is not a session binding"). `noteTurn(session, n, text)`: a turn number different from the current
+one starts a new `TurnId`; the same number with non-empty text sets the turn's request text. `hold(session, work)`
+chains `work` behind earlier held work; `ready(session)` settles after all of it, whether it fulfilled or rejected.
+
+**Tool call check.** `registerToolCallCheck(check)` keeps one check (the agent integration's DSH question rule); a
+later registration replaces it, the remover clears only the same check, and both register every tool again so the
+schemas carry `check.params(spec)`. Every tool registration belongs to the service's own `ctx.inject(['tools'])` child,
+whichever plugin registers the check or the operation, so a check removed while its plugin unloads leaves every
+operation tool registered.
+
+**Asset store.** `registerAssetStore(store)` keeps one store; a later registration replaces it and the remover clears
+only the same store. While no store is registered, `has` and `importAsset` throw "No asset store is registered", so a
+run that names an asset input or imports an output fails.
+
+**Agent tools.** While the DSH `tools` registry is mounted, the service registers one tool per registered operation
+and removes it with the operation or the registry. `toolNameOf(spec)`: `dv_<name with _>`. The tool's description
+is `<description>`, then "Uses the GPU." for resource `gpu` or "Runs on the CPU." for `cpu` (nothing for `none`), then
+"A read that writes no record." for `readOnly` or, for `deterministic`, "Repeating a call with the same inputs and params
+reuses the earlier result.". Its parameters are
+`spec.params`, `spec.toolParams`, the tool call check's `params(spec)`, and the shared `reason` (required), `project_id`, `inputs` (when the operation has
+input roles), and `supersedes` and `based_on` (when the operation writes a record). A call:
+
+1. waits for `sessions.ready(session)`; `session` is the calling agent's ID, else `anonymous`;
+2. takes `project_id`, else the session's project, else fails with "No project selected";
+3. builds the origin: actor `agent`, surface `chat`, the session, the session's current turn, the call ID, and the
+   `reason` (empty → the operation name) as the intent;
+4. reads the state of the session's working branch and parses `inputs` with `parseInputs`;
+5. builds the run request: params are the arguments without the shared and tool-only ones; `request_text` is the
+   turn's text when it has one; `based_on` and `supersedes` from the arguments;
+6. calls `spec.prepareToolCall`, then the tool call check's `check(spec, …)`, with `{args, request, state, exec}`;
+   either may refuse the call before any record or change the request's params and inputs; neither is a
+   confirmation gate, because the runner alone enforces `confirm`;
+7. schedules the call (`after: []`) when an input names an unfinished record, then runs it;
+8. returns `{record, status, summary, outputs [{role, asset_id, mime, url}], scheduled, params, report?, images?}`;
+   a read returns `record: ''`, the summary `<tool> answered` and its report; a `failed` or `cancelled` record is a
+   tool error (`skipped` → "The user declined <tool>", `stopped` → "<tool> was stopped", else the failure message).
+   Model-visible text names the tool (`toolNameOf(spec)`), never the operation. `formatToolResult` (internal) writes
+   the value as one text block, then one image block per image attachment.
+
+**Input references.** `parseInputs(spec, raw, state)`: `raw` is an object of role → reference text or a list of
+them. `<record>#<output>` → `{record, output}`; `<id>@<version>` → the first of `{character}`, `{location}`, `{style}` whose
+version `createdBy` of the reducer that defines it knows, else "Unknown character, location, or style version";
+anything else → `{asset}`. An unknown role, a list on a single role, a non-string reference and a missing required role throw.
+`formatInputRef(ref)` writes a reference as the text this parser reads back.
+
+**Project tools.** While the registry is mounted, the service also registers the `dv_proj_*` tools of `proj-tools.ts`
+and removes them with the registry. Each resolves the project from `project_id`, else the session's project (else
+"No project selected"), and writes its records with the agent origin of the call. `dv_proj_create` and `dv_proj_open`
+bind the session and refuse ("This conversation belongs to project …") when the session is bound to another project;
+`dv_proj_draft_discard` passes the working branch's counts and refuses without an open draft;
+`dv_proj_branch_create` prefixes `explore/` and switches the session to the new branch. `dv_proj_history_list`
+returns `listHistory` entries (default limit 20). Every other tool returns the project summary of the session's
+working branch (`dv_proj_state` takes `branch`): `project_id head branch draft branches records`, then
+`agentSummaries` in order, then `stale` and `recent` (the last twelve operation records with their summaries and
+output URLs). A field name used twice throws `invalid_params`.
+
+## 12. Test plan
 
 Each test file builds modules with `startModules()` and projects with `createTestProject()` from `tests/support.ts`.
 Test names below are the `it(...)` titles; each line says what the test asserts. Required tests are marked (R).
@@ -360,9 +431,12 @@ Test names below are the `it(...)` titles; each line says what the test asserts.
   `superseded[A] = C`, `created_by[X] = A`.
 - `keeps a record fresh after proj.stale_accept`: after the accept record, `stale[B]` is gone and stays gone after a
   later unrelated record.
-- `resolves character references through the bible reducer`: a test `bible` reducer with `assetsOf`.
-- `marks records that read a superseded character version stale`: a test `bible` reducer with `createdBy`; an update
-  that supersedes the creating record marks the render that read version 1 and the clip made from it.
+- `refuses a second reducer that defines createdBy or assetsOf`: `invalid_params`; after the remover, the key
+  registers.
+- `resolves character references through the reducer that defines assetsOf`: a test `test_bible` reducer with
+  `assetsOf`.
+- `marks records that read a superseded character version stale`: a test `test_bible` reducer with `createdBy`; an
+  update that supersedes the creating record marks the render that read version 1 and the clip made from it.
 
 **`tests/history.spec.ts` (D)**
 
@@ -417,6 +491,9 @@ Test names below are the `it(...)` titles; each line says what the test asserts.
   the signal ends `cancelled` / `stopped`.
 - `does not ask for human calls or in direct mode`: actor `user`, or `asksFirst` false → `requestApproval` never
   called.
+- `asks in ask-first mode even when the agent call says the user approved it` (R, confirmation): `user_approved`
+  and `user_requested` in the params do not skip the approval card.
+- `refuses an operation whose name does not start with its component key`.
 - `lets other edits run while a render executes` (lock scope): an execute blocked on a promise; a second run on the
   same project finishes first.
 - `ends unfinished records at start`: a `pending` record from an earlier store → `cancelled` / `stopped` after
@@ -430,3 +507,27 @@ Test names below are the `it(...)` titles; each line says what the test asserts.
   record runs meanwhile.
 - `fails a record whose input record failed`: A fails → B `failed` / `input_failed` and never executes.
 - `waits for every scheduled record of a project`: `wait(project)` resolves after the last record finishes.
+
+**`tests/agent-tools.spec.ts`**
+
+- Tool names, registration with the registry and removal with the operation.
+- A call runs as the agent on the session's project and turn, writes the turn's request record, carries `based_on`
+  and `supersedes`, and returns outputs with URLs and image blocks; a failed record is a tool error.
+- A read answers with its report and writes nothing; without an attachment service a result has no images.
+- `prepareToolCall` changes the inputs, tool-only arguments stay out of params, and a call behind an unfinished
+  producer is scheduled.
+- The tool call check adds its arguments to every tool schema, and a check that throws stops the call before any
+  record.
+- Held work delays a session's calls until it settles, even when it fails.
+- Every operation tool stays registered, without the check's arguments, when the plugin that registered the tool call
+  check unloads.
+
+**`tests/proj-tools.spec.ts`**
+
+- Every `dv_proj_*` tool is registered while the registry is mounted and removed with the service.
+- Create and open bind the session; a bound session refuses another project; a call without a project fails.
+- Each reducer's `agentSummary` fields sit between `records` and `stale`; a field used twice refuses the summary.
+- `recent` lists summaries, failure messages, output URLs and pending statuses; history lists entries with marks.
+- Accept, discard, undo, redo, stale accept, branch create and switch, and wait behave as their methods do.
+- `parseInputs` for every reference form and every refusal.
+- A binding survives a restart and a broken binding file throws; a run without an asset store fails.

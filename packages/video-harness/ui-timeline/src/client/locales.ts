@@ -74,7 +74,6 @@ export const zh = {
   'intent.insert': '在剪辑里插入素材到第 {at} 段',
   'intent.remove': '在剪辑里删除第 {slot} 段',
   'intent.split': '在剪辑里把第 {slot} 段从 {at} 秒处分开',
-  'intent.trim': '导出前按入点和出点剪出第 {slot} 段',
   'intent.export': '导出 {title}',
 } satisfies Record<string, string>
 
@@ -142,6 +141,5 @@ export const en = {
   'intent.insert': 'Insert an asset at position {at} in the cuts editor',
   'intent.remove': 'Delete clip {slot} in the cuts editor',
   'intent.split': 'Split clip {slot} at {at}s in the cuts editor',
-  'intent.trim': 'Cut clip {slot} to its in and out points before export',
   'intent.export': 'Export {title}',
 } satisfies Record<VhTimelineKey, string>

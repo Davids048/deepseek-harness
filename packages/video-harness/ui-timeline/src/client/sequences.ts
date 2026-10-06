@@ -43,19 +43,19 @@ export interface CutClip {
  */
 export function videosOf(state: WireState): CutsVideo[] {
   if (state.sequences !== undefined) return state.sequences
-  return state.sequence === null ? [] : [{ id: 'v1', title: '', items: state.sequence.items }]
+  return state.sequence === null ? [] : [{ id: 't1', title: '', items: state.sequence.items }]
 }
 
 /**
- * The first free video ID of the form `v<n>`, starting after the current count.
+ * The first free video ID of the form `t<n>`, starting after the current count.
  * @param videos - the existing videos.
  * @returns the ID for a new video.
  */
 export function nextVideoId(videos: CutsVideo[]): string {
   const taken = new Set(videos.map(video => video.id))
   let n = videos.length + 1
-  while (taken.has(`v${String(n)}`)) n += 1
-  return `v${String(n)}`
+  while (taken.has(`t${String(n)}`)) n += 1
+  return `t${String(n)}`
 }
 
 /**

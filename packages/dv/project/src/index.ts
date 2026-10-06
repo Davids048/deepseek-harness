@@ -23,31 +23,45 @@
  * update line, and releases it while an approval card waits and while the operation executes. Accept, discard, undo,
  * redo, branch creation, branch switching and project creation hold it for their whole duration.
  *
- * The internal modules (`record-store`, `runner`, `scheduler`, `drafts`, `history`, `reducers`, `subscriptions`) are
- * private; `CONTRACTS.md` in this package specifies each of them.
+ * Agent tools. While the DSH `tools` registry is mounted, every registered operation also has its agent tool
+ * `dv_<operation name with _>`, built by the `agent-tools` module. A tool call runs the operation as the agent on the
+ * project its chat session is bound to (`bindSession`), in the session's current turn (`noteTurn`). Project also
+ * registers its own `dv_proj_*` tools (the `proj-tools` module); they bind the session to its project and return the
+ * project summary, to which each component's reducer adds its fields through `Reducer.agentSummary`.
+ *
+ * The asset pool registers itself with {@link DvProject.registerAssetStore}; until it does, a run that names an input
+ * asset or imports an output fails.
+ *
+ * The internal modules (`record-store`, `runner`, `scheduler`, `drafts`, `history`, `reducers`, `subscriptions`,
+ * `sessions`, `agent-tools`, `proj-tools`) are private; `CONTRACTS.md` in this package specifies each of them.
  *
  * @module @dv/project
  */
 import { randomUUID } from 'node:crypto'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import type {} from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
-import type { PutOptions } from '@video-harness/assets' // names:allow (the asset store service until stage 3)
+import { AgentTools, parseInputs } from './agent-tools.ts'
 import { Drafts } from './drafts.ts'
 import { History } from './history.ts'
+import { projTools } from './proj-tools.ts'
 import { RecordStore } from './record-store.ts'
 import { projReducer, ReducerRegistry } from './reducers.ts'
 import { Runner } from './runner.ts'
 import { Scheduler } from './scheduler.ts'
-import { MAIN_BRANCH } from './shared.ts'
+import { MAIN_BRANCH, ProjectError } from './shared.ts'
+import { Sessions } from './sessions.ts'
 import { Subscriptions } from './subscriptions.ts'
 import type {
-  ApprovalChannel, Branch, ComponentStates, DraftCounts, HistoryEntry, HistoryQuery, OperationSpec, ProjectEvent, ProjectId,
-  ProjectInfo, ProjectRecord, ProjectState, RecordId, RecordOrigin, Reducer, RunRequest, RunResult, SessionId,
+  ApprovalChannel, AssetId, AssetStore, Branch, ComponentStates, DraftCounts, HistoryEntry, HistoryQuery, OperationSpec,
+  ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId, RecordInputRef, RecordOrigin, Reducer,
+  RunRequest, RunResult, SessionId, ToolCallCheck, TurnId,
 } from './types.ts'
 
 export * from './types.ts'
 export { DraftConflictError, MAIN_BRANCH, ProjectError, draftBranch } from './shared.ts'
+export { formatInputRef, sessionOf, toolNameOf, type OperationToolValue } from './agent-tools.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -64,6 +78,8 @@ export interface Config {
   cpuConcurrency: number
   /** Scheduled records of `gpu` operations that may run at the same time. */
   gpuConcurrency: number
+  /** The directory holding one file per chat session with the project it is bound to (`$VH_STATE_ROOT/sessions`). */
+  sessionRoot: string
 }
 
 /** Loader validation. */
@@ -71,11 +87,11 @@ export const Config: z<Config> = z.object({
   root: z.string().required(),
   cpuConcurrency: z.number().default(4),
   gpuConcurrency: z.number().default(1),
+  sessionRoot: z.string().required(),
 })
 
 /** The Project service. */
 export default class DvProject extends Service {
-  static inject = ['vhAssets'] // names:allow (the asset store service until stage 3)
   static Config = Config
 
   private readonly subscriptions = new Subscriptions()
@@ -85,6 +101,16 @@ export default class DvProject extends Service {
   private readonly history: History
   private readonly runner: Runner
   private readonly scheduler: Scheduler
+  private readonly sessions: Sessions
+  private readonly agentTools: AgentTools
+  private assetStore: AssetStore | null = null
+  private toolCallCheck: ToolCallCheck | null = null
+  /**
+   * Registers one operation's agent tool while the DSH tool registry is mounted, else null; and the disposer of each
+   * operation's tool by operation name.
+   */
+  private registerOperationTool: ((spec: OperationSpec) => () => void) | null = null
+  private readonly toolDisposers = new Map<string, () => void>()
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'dvProject')
@@ -103,22 +129,47 @@ export default class DvProject extends Service {
     this.scheduler = new Scheduler(this.store, (project, record) => this.runner.execute(project, record), {
       cpu: config.cpuConcurrency, gpu: config.gpuConcurrency,
     })
-    const assets = ctx.vhAssets // names:allow
+    // The runner reaches the asset pool through the registered store, read at call time.
     this.runner = new Runner({
       store: this.store, drafts: this.drafts, reducers: this.reducers, scheduler: this.scheduler,
       assets: {
-        has: asset => assets.has(asset),
-        importAsset: (source, meta, createdBy) => assets.put(source, {
-          mime: meta.mime, name: meta.name,
-          producedBy: createdBy === null ? null : brandString<NonNullable<PutOptions['producedBy']>>(createdBy),
-          ...meta.durationSec === undefined ? {} : { durationSec: meta.durationSec },
-          ...meta.width === undefined ? {} : { width: meta.width },
-          ...meta.height === undefined ? {} : { height: meta.height },
-        }),
+        has: asset => this.requireAssetStore().has(asset),
+        importAsset: (source, meta, createdBy) => this.requireAssetStore().importAsset(source, meta, createdBy),
       },
+    })
+    this.sessions = new Sessions(config.sessionRoot)
+    this.agentTools = new AgentTools(ctx, {
+      sessions: this.sessions,
+      assets: () => this.requireAssetStore(),
+      toolCallCheck: () => this.toolCallCheck,
+      workingState: (project, session) => this.getState(project, this.workingBranch(project, session).name),
+      versionCreatedBy: (state, ref) => this.reducers.versionCreatedBy(state, ref),
+      run: request => this.run(request),
+      getRecord: (project, record) => this.getRecord(project, record),
+      listHistory: query => this.listHistory(query),
     })
     this.store.load()
     this.reducers.register('proj', projReducer)
+    // Every registered operation has its agent tool while the DSH tool registry is mounted.
+    ctx.inject(['tools'], (child) => {
+      // The registry stays in this closure: read through the service from another plugin, it would bind each tool to
+      // that plugin's fiber, which may be unloading (a tool call check removed while its plugin unloads).
+      const registry = child.tools
+      child.effect(() => {
+        this.registerOperationTool = spec => registry.register(this.agentTools.define(spec))
+        for (const spec of this.listOperations()) this.addTool(spec)
+        return () => {
+          for (const dispose of this.toolDisposers.values()) dispose()
+          this.toolDisposers.clear()
+          this.registerOperationTool = null
+        }
+      }, 'dvProject operation tools')
+      const projToolDeps = {
+        assets: () => this.requireAssetStore(),
+        agentSummaries: (state: ProjectState) => this.reducers.agentSummaries(state, this.requireAssetStore()),
+      }
+      for (const definition of projTools(this, projToolDeps)) child.effect(() => registry.register(definition), `dvProject ${definition.name}`)
+    })
     ctx.effect(() => () => { this.scheduler.dispose() }, 'dvProject stop scheduling')
     this.runner.recover().catch((error: unknown) => {
       ctx.logger('dvProject').warn('could not end unfinished records: %s', error instanceof Error ? error.message : String(error))
@@ -262,7 +313,7 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Keep a stale record's result: write a `proj.stale_accept` record with `params {record}` on the origin's working
+   * Accept a stale record's result: write a `proj.stale_accept` record with `params {record}` on the origin's working
    * branch, which removes the record's stale mark from then on.
    * @param project - the project.
    * @param record - a stale record.
@@ -341,12 +392,20 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Register an operation; a component calls it from its plugin inside `ctx.effect` and returns the disposer.
+   * Register an operation and, while the DSH `tools` registry is mounted, its agent tool `dv_<name with _>`; a
+   * component calls it from its plugin inside `ctx.effect` and returns the disposer.
    * @param spec - the operation.
-   * @returns a function that removes it. Throws `operation_exists` or `invalid_params`.
+   * @returns a function that removes the operation and its tool. Throws `operation_exists`, or `invalid_params` for
+   *   an unknown component key or a name that does not start with `<component>.`.
    */
   registerOperation(spec: OperationSpec): () => void {
-    return this.runner.registerOperation(spec)
+    const remove = this.runner.registerOperation(spec)
+    this.addTool(spec)
+    return () => {
+      remove()
+      this.toolDisposers.get(spec.name)?.()
+      this.toolDisposers.delete(spec.name)
+    }
   }
 
   /** @returns every registered operation, in registration order. */
@@ -365,11 +424,132 @@ export default class DvProject extends Service {
   }
 
   /**
+   * The assets a character, location or style version stands for, read through `assetsOf` of the reducer that defines it.
+   * @param state - the state to read the version in, normally the caller's working branch.
+   * @param ref - a versioned input reference.
+   * @returns the version's assets, or null for an unknown version or when no reducer answers.
+   */
+  assetsOf(state: ProjectState, ref: RecordInputRef): AssetId[] | null {
+    return this.reducers.assetsOf(state, ref)
+  }
+
+  /**
+   * Turn the `inputs` argument of a tool call or a view request into run inputs: `<record>#<n>` names output n of a
+   * record, `<id>@<n>` a character, location or style version, anything else an asset.
+   * @param operation - a registered operation name.
+   * @param raw - role → reference text or a list of them; undefined for none.
+   * @param state - the state the references are read against, normally the caller's working branch.
+   * @returns the inputs. Throws `unknown_operation`, or an `Error` naming the role for an unknown role, a list on a
+   *   single role, a missing required role, or an unknown version.
+   */
+  parseInputs(operation: string, raw: unknown, state: ProjectState): RunRequest['inputs'] {
+    const spec = this.listOperations().find(candidate => candidate.name === operation)
+    if (spec === undefined) throw new ProjectError('unknown_operation', `Operation ${operation} is not registered.`)
+    return parseInputs(spec, raw, state, (at, ref) => this.reducers.versionCreatedBy(at, ref))
+  }
+
+  /**
+   * Bind a chat session to a project, so its agent tools and the views beside its chat work on that project. The
+   * binding is saved under `sessionRoot` and survives a restart.
+   * @param session - the chat session.
+   * @param project - the project.
+   */
+  bindSession(session: SessionId, project: ProjectId): void {
+    this.sessions.bind(session, project)
+  }
+
+  /**
+   * @param session - a chat session.
+   * @returns the project it is bound to, or null while it has none.
+   */
+  sessionProject(session: SessionId): ProjectId | null {
+    return this.sessions.project(session)
+  }
+
+  /**
+   * Note the agent turn a chat session is in and the human's words that started it, so the records of the turn's tool
+   * calls carry the turn and the first one writes the turn's `request` record. A new turn number starts a new turn ID;
+   * the same number with words sets the words.
+   * @param session - the chat session.
+   * @param turn - the agent loop's turn number.
+   * @param requestText - the human's words; empty while they are not known.
+   */
+  noteTurn(session: SessionId, turn: number, requestText: string): void {
+    this.sessions.noteTurn(session, turn, requestText)
+  }
+
+  /**
+   * @param session - a chat session.
+   * @returns the ID of the turn it is in, or null before its first noted turn.
+   */
+  sessionTurn(session: SessionId): TurnId | null {
+    return this.sessions.turn(session)?.turn ?? null
+  }
+
+  /**
+   * Make the session's next agent tool calls wait until `work` settles, for example while the images of the human's
+   * message are imported. A failure of `work` does not fail the calls.
+   * @param session - the chat session.
+   * @param work - the work.
+   */
+  holdToolCalls(session: SessionId, work: Promise<unknown>): void {
+    this.sessions.hold(session, work)
+  }
+
+  /**
+   * Register the asset pool's store; one at a time, a later registration replaces the earlier one.
+   * @param store - the store.
+   * @returns a function that removes it.
+   */
+  registerAssetStore(store: AssetStore): () => void {
+    this.assetStore = store
+    return () => {
+      if (this.assetStore === store) this.assetStore = null
+    }
+  }
+
+  /**
+   * Register the agent integration's check of every agent tool call; one at a time, a later registration replaces the
+   * earlier one. The tools are registered again so that their schemas carry the check's tool-only arguments.
+   * @param check - the check.
+   * @returns a function that removes it.
+   */
+  registerToolCallCheck(check: ToolCallCheck): () => void {
+    this.toolCallCheck = check
+    this.refreshTools()
+    return () => {
+      if (this.toolCallCheck !== check) return
+      this.toolCallCheck = null
+      this.refreshTools()
+    }
+  }
+
+  /**
    * Register the composer's approval channel; one at a time, a later registration replaces the earlier one.
    * @param channel - the channel.
    * @returns a function that removes it.
    */
   registerApprovalChannel(channel: ApprovalChannel): () => void {
     return this.runner.registerApprovalChannel(channel)
+  }
+
+  /** @returns the registered asset store; throws while the asset pool has not registered one. */
+  private requireAssetStore(): AssetStore {
+    if (this.assetStore === null) throw new Error('No asset store is registered with dvProject; mount the asset pool.')
+    return this.assetStore
+  }
+
+  /** Register every operation's agent tool again, after the tool call check changed. */
+  private refreshTools(): void {
+    if (this.registerOperationTool === null) return
+    for (const dispose of this.toolDisposers.values()) dispose()
+    this.toolDisposers.clear()
+    for (const spec of this.listOperations()) this.addTool(spec)
+  }
+
+  /** Register the agent tool of an operation while the DSH tool registry is mounted. */
+  private addTool(spec: OperationSpec): void {
+    if (this.registerOperationTool === null) return
+    this.toolDisposers.set(spec.name, this.registerOperationTool(spec))
   }
 }

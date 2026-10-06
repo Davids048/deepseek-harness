@@ -12,8 +12,7 @@ import z from '@deepseek-ai/schemastery'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { ProjectId } from '@dv/project'
-import type {} from '@video-harness/assets'
-import type {} from '@video-harness/tools'
+import type {} from '@dv/asset-pool'
 import { ViewsApi, ViewsRequestError, type ViewsServices, messageOf } from './api.ts'
 import { assetImportRoutes } from './asset-import.ts'
 import { serveEventStream } from './events.ts'
@@ -105,7 +104,7 @@ async function bodyOf(request: Request): Promise<unknown> {
 
 /** The views service. */
 export default class VhViews extends Service {
-  static inject = ['dvProject', 'vhAssets', 'vhTools']
+  static inject = ['dvProject', 'dvAssetPool']
   static Config = Config
 
   /** The transport-independent operations. */
@@ -113,7 +112,7 @@ export default class VhViews extends Service {
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'vhViews')
-    const services: ViewsServices = { project: ctx.dvProject, assets: ctx.vhAssets, tools: ctx.vhTools }
+    const services: ViewsServices = { project: ctx.dvProject, assets: ctx.dvAssetPool }
     this.api = new ViewsApi(services)
     ctx.inject(['connection'], (connected) => {
       for (const route of this.fetchRoutes()) {
@@ -170,9 +169,9 @@ export default class VhViews extends Service {
           : withBody(body => api.select(body))(request),
       },
       ...layoutRoutes(this.ctx.dvProject),
-      ...workspaceRoutes(this.ctx.dvProject, this.ctx.vhTools),
+      ...workspaceRoutes(this.ctx.dvProject),
       ...projectAdminRoutes(this.ctx.dvProject),
-      ...assetImportRoutes({ project: this.ctx.dvProject, assets: this.ctx.vhAssets }),
+      ...assetImportRoutes({ project: this.ctx.dvProject, assets: this.ctx.dvAssetPool }),
     ]
   }
 

@@ -1,5 +1,5 @@
 ---
-description: "The video-harness package group: the content-addressed asset store, the media service, the structured tools that run as `@dv/project` operations, the agent integration, the browser API, and the canvas and timeline views."
+description: "The video-harness package group: the agent integration over the `@dv/project` operations, the browser API, and the canvas and timeline views."
 kind: "package-group"
 ---
 
@@ -26,14 +26,11 @@ The [video harness subsystem page](../../docs/subsystems/video-harness.md) expla
 
 | Package | Role |
 | --- | --- |
-| [`assets`](assets/README.md) | Content-addressed immutable media store and the `/vh/assets/<id>/content` route |
-| [`media`](media/README.md) | ffmpeg and ffprobe over stored assets: probe, extract frames, trim, concatenate, run declared commands |
-| [`tools`](tools/README.md) | The typed tool specs, their registration as `dvProject` operations, the bridge reducers, and the `vh_*` and `dv_proj_*` DSH tools |
 | [`agent`](agent/README.md) | The turns of the DSH agent loop and their request text, chat image imports, confirmation questions, the project prompt section, and the directing skills |
 | [`views`](views/README.md) | Authenticated `/api/vh/*` routes and the `/vh/events` stream through which the browser views read state and write user records |
 | [`ui-kit`](ui-kit/README.md) | Browser code the two views share: the API client, the state types, the graph layout, the form model, the track geometry, and the branch bar |
 | [`ui-canvas`](ui-canvas/README.md) | The canvas tab of the right Sidebar: records as a DAG of asset flow, with a parameter form that edits or reruns any record |
-| [`ui-timeline`](ui-timeline/README.md) | The timeline tab of the right Sidebar: the clip sequence on one track with reorder, range, trim, insert, and remove gestures |
+| [`ui-timeline`](ui-timeline/README.md) | The timeline tab of the right Sidebar: the clips of a timeline on one track with reorder, range, trim, insert, and remove gestures |
 
 <a id="related-documentation"></a>
 ## Related documentation
