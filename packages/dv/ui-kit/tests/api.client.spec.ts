@@ -65,6 +65,27 @@ describe('DvClient', () => {
     expect(fetchSpy).toHaveBeenCalledWith('/api/dv/projects', { signal: null })
   })
 
+  it('posts a history query as a JSON body and decodes the history answer and its errors', async () => {
+    const calls: Array<{ path: string; init: RequestInit | undefined }> = []
+    const answer = { entries: [{ record: { id: 'g1' }, mark: 'undone' }], requests: {}, assets: [] }
+    const fetchImpl: typeof fetch = (input, init) => {
+      calls.push({ path: String(input), init })
+      return Promise.resolve(new Response(JSON.stringify(answer)))
+    }
+    const controller = new AbortController()
+    const history = await new DvClient(fetchImpl).listHistory(
+      { project: 'p1', marks: ['main', 'undone'], records: ['g1', 'g2'], tool_call: 'call-1', limit: 50 }, controller.signal,
+    )
+    expect(history).toEqual(answer)
+    expect(calls[0]?.path).toBe('/api/dv/history')
+    expect(calls[0]?.init).toMatchObject({ method: 'POST', signal: controller.signal })
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      project: 'p1', marks: ['main', 'undone'], records: ['g1', 'g2'], tool_call: 'call-1', limit: 50,
+    })
+    const unknown: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({ error: 'No record', code: 'unknown_record' }), { status: 404 }))
+    await expect(new DvClient(unknown).listHistory({ project: 'p1', before: 'x' })).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
+  })
+
   it('turns error statuses into DvApiError and swallows selection failures', async () => {
     const failing: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({ error: 'Unknown project' }), { status: 404 }))
     const client = new DvClient(failing)

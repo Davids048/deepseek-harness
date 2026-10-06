@@ -92,6 +92,9 @@
     - id: dv-ui-asset-pool
       name: '@dv/ui-asset-pool'
 
+    - id: dv-ui-history
+      name: '@dv/ui-history'
+
     - id: dv-ui-shell
       name: '@dv/ui-shell'
 

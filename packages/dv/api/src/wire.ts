@@ -1,13 +1,13 @@
 /**
  * The JSON the browser receives: the state of one branch (`ProjectState` with its component slices sent verbatim) with
- * the asset pool entries it references, the branch heads and branches (with the counts of each open draft), and the
- * operation declarations the canvas turns into parameter forms. Records travel as `ProjectRecord`, unchanged.
+ * the asset pool entries it references, the branch heads and branches (with the counts of each open draft), the history
+ * list, and the operation declarations the canvas turns into parameter forms. Records travel as `ProjectRecord`, unchanged.
  *
  * @module @dv/api/wire
  */
 import type { Asset } from '@dv/asset-pool'
 import type {
-  AssetId, Branch, ComponentStates, OperationSpec, ProjectId, ProjectInfo, ProjectState, RecordId,
+  AssetId, Branch, ComponentStates, HistoryEntry, OperationSpec, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId,
 } from '@dv/project'
 import type {} from '@dv/shot-plan'
 import type {} from '@dv/shot-render'
@@ -28,6 +28,16 @@ export interface WireState {
   /** One slice per registered reducer, as Project computed them. */
   components: ComponentStates
   /** The asset pool entry of every asset a record created, imported, or still references. */
+  assets: Asset[]
+}
+
+/** The history list as the browser reads it (`POST /api/dv/history`). */
+export interface WireHistory {
+  /** The entries, newest first, as `dvProject.listHistory` returns them. */
+  entries: HistoryEntry[]
+  /** The `request` record of every turn that has a record in `entries`, by turn. */
+  requests: Record<string, ProjectRecord>
+  /** The asset pool entry of every asset the entries name as an output or a resolved input. */
   assets: Asset[]
 }
 

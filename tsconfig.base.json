@@ -366,6 +366,7 @@
       "@dv/ui-asset-pool": ["./packages/dv/ui-asset-pool/src/index.ts"],
       "@dv/ui-canvas": ["./packages/dv/ui-canvas/src/index.ts"],
       "@dv/ui-composer": ["./packages/dv/ui-composer/src/index.ts"],
+      "@dv/ui-history": ["./packages/dv/ui-history/src/index.ts"],
       "@dv/ui-kit": ["./packages/dv/ui-kit/src/index.ts"],
       "@dv/ui-shell": ["./packages/dv/ui-shell/src/index.ts"],
       "@dv/ui-timeline": ["./packages/dv/ui-timeline/src/index.ts"],

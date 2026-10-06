@@ -376,6 +376,56 @@ describe('dvApi', () => {
     expect((read.json as { id: string }).id).toBe('a')
   })
 
+  it('lists the history with marks, turn requests, assets, filters and pages, and refuses bad queries', async () => {
+    const fixture = await start()
+    const projectId = await fixture.newProject('demo')
+    const human = await fixture.handlers.runOperation({
+      project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('h.png', 'H'), mime: 'image/png' },
+    })
+    const undone = await fixture.handlers.runOperation({
+      project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('u.png', 'U'), mime: 'image/png' },
+    })
+    const undo = await fixture.handlers.undo({ project: projectId, surface: 'history' })
+    expect(undo.record.surface).toBe('history')
+    const agent = await fixture.agentImport(projectId, 's1', 'a.png')
+    const history = async (body: Record<string, unknown>) => {
+      const answer = await call(fixture, ROUTES.history, { method: 'POST', body: { project: projectId, ...body } })
+      return answer as {
+        status: number
+        json: {
+          entries: Array<{ record: { id: string }; mark: string }>
+          requests: Record<string, { intent: string }>
+          assets: Array<{ id: string }>
+        }
+      }
+    }
+    const ids = (answer: Awaited<ReturnType<typeof history>>): string[] => answer.json.entries.map(entry => entry.record.id)
+
+    const all = await history({ kind: 'operation' })
+    expect(all.status).toBe(200)
+    expect(all.json.entries.map(entry => [entry.record.id, entry.mark])).toEqual([
+      [agent, 'draft'], [undo.record.id, 'main'], [undone.id, 'undone'], [human.id, 'main'], [expect.any(String), 'main'],
+    ])
+    // The agent's turn is headed by its request record, though the request is not an entry of this page.
+    expect(Object.values(all.json.requests).map(request => request.intent)).toEqual(['please import a.png'])
+    const named = [...human.outputs, ...undone.outputs, ...fixture.project.getRecord(projectId, agent).outputs]
+    expect(all.json.assets.map(asset => asset.id).sort()).toEqual(named.sort())
+
+    expect(ids(await history({ marks: ['main', 'undone'], limit: 2 }))).toEqual([undo.record.id, undone.id])
+    expect((await history({ kind: 'request' })).json.entries.map(entry => entry.mark)).toEqual(['draft'])
+    expect(ids(await history({ tool_call: 'call-1' }))).toEqual([agent])
+    expect(ids(await history({ actor: 'user', component: 'asset', before: undone.id }))).toEqual([human.id])
+    expect(ids(await history({ records: [human.id, agent] }))).toEqual([agent, human.id])
+    expect((await history({ actor: 'agent', kind: 'operation', session: 's9' })).json).toEqual({ entries: [], requests: {}, assets: [] })
+
+    expect(await call(fixture, ROUTES.history, { method: 'POST', body: {} })).toMatchObject({ status: 400, json: { code: 'invalid_params' } })
+    expect(await call(fixture, ROUTES.history, { method: 'POST', body: { project: 'nope' } })).toMatchObject({ status: 404, json: { code: 'unknown_project' } })
+    expect(await history({ before: 'missing' })).toMatchObject({ status: 404, json: { code: 'unknown_record' } })
+    for (const bad of [{ actor: 'robot' }, { marks: ['kept'] }, { marks: 'main' }, { limit: 0 }, { limit: 201 }, { limit: 1.5 }, { branch: 3 }]) {
+      expect(await history(bad)).toMatchObject({ status: 400, json: { code: 'invalid_params' } })
+    }
+  })
+
   it('streams project changes as server-sent events and refuses rejected or unknown requests', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')

@@ -215,7 +215,8 @@ Owner: agent D. The module comment defines the effective chain and change units;
 - `redo`: see JSDoc; `params.to` is the parent of the undo being redone, so the state returns to what it was just
   before that undo.
 - `list(query)`: filters combine with AND; `before` keeps records written before that record (file order);
-  `limit` applies after filtering. Marks follow the JSDoc order: `main`, `draft`, `discarded`, `replayed`, `undone`,
+  `tool_call` keeps the records one tool call wrote; `marks` keeps the entries whose mark is listed; `limit` applies
+  after every filter, `marks` included. Marks follow the JSDoc order: `main`, `draft`, `discarded`, `replayed`, `undone`,
   `branch`.
 
 Invariants: undo and redo never move a pointer other than `main` and never rewrite a record; undo after undo walks
@@ -450,6 +451,8 @@ Test names below are the `it(...)` titles; each line says what the test asserts.
 - `lists history newest first with filters` (R): records from two actors and two branches; default order is reverse
   write order; `actor`, `branch`, `operation`, `session`, `before` and `limit` each narrow the list as specified.
 - `marks main, draft, undone, discarded and replayed records`: one scenario that produces each mark and asserts it.
+- `filters by tool call, and by mark before the limit`: `tool_call` selects one agent record; `marks` selects `main` +
+  `undone` and `draft` entries; with `limit` 1 the mark filter still finds the older undone record.
 
 **`tests/drafts.spec.ts` (C)**
 

@@ -653,23 +653,23 @@ describe('navigation, projects, sessions, and panels', () => {
   it('closing every right-panel tab and collapsing both sidebars can all be undone', async () => {
     const { page, errors } = await openPage()
     const { projectId, title } = await newProject(page)
-    await waitFor(async () => (await rightTabs(page)).length === 3, 'the three default tabs', 20_000)
-    expect([...await rightTabs(page)].sort()).toEqual(['对话', '素材库', '轨迹'].sort())
-    for (const tab of ['轨迹', '素材库', '对话']) {
+    await waitFor(async () => (await rightTabs(page)).length === 4, 'the four default tabs', 20_000)
+    expect([...await rightTabs(page)].sort()).toEqual(['对话', '素材库', '历史', '轨迹'].sort())
+    for (const tab of ['轨迹', '历史', '素材库', '对话']) {
       const item = page.locator('[data-dockkit-tab]', { has: page.locator('[data-dockkit-tab-title]', { hasText: tab }) }).first()
       await item.hover()
       await item.locator('[data-dockkit-tab-close]').click()
       await waitFor(async () => !(await rightTabs(page)).includes(tab), `${tab} closed`, 5000)
     }
     expect(await rightTabs(page)).toEqual([])
-    // The top bar's 面板 brings back 对话 / 素材 / 轨迹 with 对话 in front.
+    // The top bar's 面板 brings back 对话 / 素材库 / 历史 / 轨迹 with 对话 in front.
     await page.getByRole('button', { name: '面板' }).click()
-    await waitFor(async () => (await rightTabs(page)).length === 3, 'tabs reopened', 10_000)
+    await waitFor(async () => (await rightTabs(page)).length === 4, 'tabs reopened', 10_000)
     await chat(page).waitFor({ timeout: 10_000 })
     await page.getByRole('button', { name: '收起右侧边栏' }).click()
     await waitFor(async () => (await rightTabs(page)).length === 0, 'right panel collapsed', 5000)
     await page.getByRole('button', { name: '面板' }).click()
-    await waitFor(async () => (await rightTabs(page)).length === 3, 'right panel expanded', 10_000)
+    await waitFor(async () => (await rightTabs(page)).length === 4, 'right panel expanded', 10_000)
     await page.getByRole('button', { name: '收起侧边栏' }).click()
     await waitFor(async () => !await navigator(page).isVisible(), 'navigator hidden', 5000)
     await page.getByRole('button', { name: '打开侧边栏' }).click()
@@ -697,7 +697,7 @@ describe('navigation, projects, sessions, and panels', () => {
   it('switching the DSH language to English turns every DreamVerse string English, and back', async () => {
     const { page, errors } = await openPage()
     await newProject(page)
-    await waitFor(async () => (await rightTabs(page)).length === 3, 'the three default tabs', 20_000)
+    await waitFor(async () => (await rightTabs(page)).length === 4, 'the four default tabs', 20_000)
     /** Pick a language in DSH Settings → General. */
     const pickLanguage = async (settings: string, current: string, wanted: string): Promise<void> => {
       await page.getByRole('button', { name: settings }).click()
@@ -713,14 +713,14 @@ describe('navigation, projects, sessions, and panels', () => {
       for (const label of ['Create project', 'Home', 'Projects']) expect(nav).toContain(label)
       const bar = await page.locator('[data-dv-workspace] header').innerText()
       for (const label of ['Canvas', 'Timeline', 'Panels', 'New chat']) expect(bar).toContain(label)
-      expect([...await rightTabs(page)].sort()).toEqual(['Asset pool', 'Chat', 'Trajectory'])
+      expect([...await rightTabs(page)].sort()).toEqual(['Asset pool', 'Chat', 'History', 'Trajectory'])
     } finally {
       // The language is a durable DSH preference shared by every browser of this harness; restore Chinese.
       await page.keyboard.press('Escape')
       await pickLanguage('Settings', 'English', '中文')
     }
     await waitFor(async () => (await page.evaluate(() => document.documentElement.lang)).startsWith('zh'), '<html lang> zh', 5000)
-    expect([...await rightTabs(page)].sort()).toEqual(['对话', '素材库', '轨迹'].sort())
+    expect([...await rightTabs(page)].sort()).toEqual(['对话', '素材库', '历史', '轨迹'].sort())
     expect(await navigator(page).innerText()).toContain('新建项目')
     expect(errors).toEqual([])
   })

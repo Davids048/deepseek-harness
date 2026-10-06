@@ -161,7 +161,8 @@ export class History {
    * including that record; `replayed` for records listed in a `proj.draft_accept` record's `params.replayed` as
    * originals; `undone` for records on the raw chain of `main` that are not on its effective chain; `branch` for every
    * other record. The first matching mark in that order wins. Draft names are reused per session, so a specific draft
-   * is identified by its fork record (`forked_at`, `params.base`), never by the branch name alone. Takes no lock.
+   * is identified by its fork record (`forked_at`, `params.base`), never by the branch name alone. The `marks` filter
+   * applies after the record filters and before `limit`. Takes no lock.
    * @param query - the project and the filters.
    * @returns the entries.
    */
@@ -184,8 +185,11 @@ export class History {
       && (query.status === undefined || record.status === query.status)
       && (query.session === undefined || record.session === query.session)
       && (query.turn === undefined || record.turn === query.turn)
+      && (query.tool_call === undefined || record.tool_call === query.tool_call)
       && (only === null || only.has(record.id)))
+    const marks = query.marks === undefined ? null : new Set(query.marks)
     const entries = selected.reverse().map(record => ({ record, mark: mark(record.id) }))
+      .filter(entry => marks === null || marks.has(entry.mark))
     return query.limit === undefined ? entries : entries.slice(0, Math.max(0, query.limit))
   }
 

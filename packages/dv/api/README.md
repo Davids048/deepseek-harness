@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to let browser views read and change a DreamVerse project through HTTP instead of through the agent. `dvApi` registers authenticated Fetch routes under `/api/dv/` that list, create, rename and delete projects, read the state of a branch as JSON, list the operation declarations, run an operation as the human, import a file into the asset pool, accept or discard a chat session's draft, undo and redo, create and switch branches, accept a stale record, keep the canvas layout, link projects to DSH Workspaces, and remember what a view selected. A raw `GET /dv/events` route streams every project change as server-sent events, admitted through the same Connection cookie. The `@dv/ui-*` packages are its consumers; the browser client is `DvClient` of `@dv/ui-kit`.
+Use this package to let browser views read and change a DreamVerse project through HTTP instead of through the agent. `dvApi` registers authenticated Fetch routes under `/api/dv/` that list, create, rename and delete projects, read the state of a branch as JSON, list the operation declarations, run an operation as the human, import a file into the asset pool, accept or discard a chat session's draft, undo and redo, create and switch branches, accept a stale record, list the history, keep the canvas layout, link projects to DSH Workspaces, and remember what a view selected. A raw `GET /dv/events` route streams every project change as server-sent events, admitted through the same Connection cookie. The `@dv/ui-*` packages are its consumers; the browser client is `DvClient` of `@dv/ui-kit`.
 
 ## Table of Contents
 
@@ -56,6 +56,7 @@ Mount the plugin after `@dv/project` and `@dv/asset-pool`, in a profile that als
 | `/api/dv/branches/create` | POST | `{project, name, at, session?, surface}` | `{branch, heads}` for the branch `explore/<name>` |
 | `/api/dv/branches/switch` | POST | `{project, branch, session, surface}` | `{branch, heads}` for the branch the session works on |
 | `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}` with the `proj.stale_accept` record |
+| `/api/dv/history` | POST | `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`; `marks` and `records` are arrays; `limit` is 1 to 200, default 50 | `WireHistory` `{entries, requests, assets}`: the `dvProject.listHistory` entries `{record, mark}` newest first, the `request` record of every turn they belong to (by turn), and every asset they name; a read that writes no record |
 | `/api/dv/selection` | GET / POST | GET: `project`; POST: `{project, kind, id, surface}` with `kind` `record \| clip \| asset \| character \| location \| style` | `ViewSelection` `{kind, id, surface, at}` (GET: or null) |
 | `/api/dv/layout` | GET / POST | GET: `project`; POST: `{project, positions?, viewport?}` | `{positions, viewport}`; POST merges positions keyed by canvas node ID |
 | `/api/dv/workspaces` | GET / POST | POST: `{project, workspace_id}` | GET: `{entry_path, projects: [{id, title, created_at, path, workspace_id}], bindings}`; POST: `{ok}` |
@@ -63,7 +64,7 @@ Mount the plugin after `@dv/project` and `@dv/asset-pool`, in a profile that als
 | `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`, newest first; `updated_at` is ISO-8601 UTC |
 | `/dv/events?project=<id>` | GET | — | `text/event-stream`: `ready`, then `record`, `update`, and `branch` events, each carrying one `ProjectEvent` |
 
-`surface` is `canvas`, `timeline` or `asset_pool`; anything else counts as `canvas`, except on the asset import, which takes `canvas` or `asset_pool` only. A run calls `dvProject.run` as the human, on the working branch of the request's chat session (`main` without one), or schedules the call when an input names a record that has not finished. A malformed body answers `400`, an unknown project, branch, record, asset, or operation `404`, and a refused change (such as discarding a draft whose counts changed) `409`; every error body is `{error, code?, ...details}`, where `code` is the `ProjectError` code. The agent integration reads the last selection of a project through `dvApi.selection(projectId)`, so the agent's project block can name what the user pointed at.
+`surface` is `canvas`, `timeline`, `asset_pool` or `history`; anything else counts as `canvas`, except on the asset import, which takes `canvas` or `asset_pool` only. A run calls `dvProject.run` as the human, on the working branch of the request's chat session (`main` without one), or schedules the call when an input names a record that has not finished. A malformed body answers `400`, an unknown project, branch, record, asset, or operation `404`, and a refused change (such as discarding a draft whose counts changed) `409`; every error body is `{error, code?, ...details}`, where `code` is the `ProjectError` code. The agent integration reads the last selection of a project through `dvApi.selection(projectId)`, so the agent's project block can name what the user pointed at.
 
 -----
 
@@ -77,7 +78,7 @@ Mount the plugin after `@dv/project` and `@dv/asset-pool`, in a profile that als
 
 | File | Content |
 | --- | --- |
-| [`src/wire.ts`](src/wire.ts) | `WireState`, `WireOperation`, `ViewSelection`, `toWireState`, `toWireOperation`, `mentionedAssets`, `projectIdOf` |
+| [`src/wire.ts`](src/wire.ts) | `WireState`, `WireHistory`, `WireOperation`, `ViewSelection`, `toWireState`, `toWireOperation`, `mentionedAssets`, `projectIdOf` |
 | [`src/api.ts`](src/api.ts) | `ApiHandlers`, `ApiRequestError`, `OperationRequest`, `WireProject`: validation and the `dvProject` calls behind each route |
 | [`src/asset-import.ts`](src/asset-import.ts) | The asset import route |
 | [`src/layout.ts`](src/layout.ts) | `CanvasLayoutStore` and the layout route |

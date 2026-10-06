@@ -5,8 +5,9 @@
  * @module @dv/ui-kit/api
  */
 import type {
-  ApprovalCard, Branch, CanvasLayout, ComposerMode, DraftCounts, DraftTarget, OperationRequest, ProjectEvent, ProjectInfo,
-  ProjectRecord, ViewSelection, WireOperation, WireProject, WireRecordResult, WireSession, WireState, WireWorkspaces,
+  ApprovalCard, Branch, CanvasLayout, ComposerMode, DraftCounts, DraftTarget, HistoryQuery, OperationRequest, ProjectEvent,
+  ProjectInfo, ProjectRecord, ViewSelection, WireHistory, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
+  WireWorkspaces,
 } from './types.ts'
 
 /** One `/dv/events` stream shared by every subscriber of a project in this page. */
@@ -74,7 +75,7 @@ function releaseEventSource(project: string, shared: SharedEventSource): void {
 const EVENT_KINDS: ReadonlyArray<ProjectEvent['kind']> = ['record', 'update', 'branch']
 
 /** The surface a view sends with its writes: a subset of the record field `Surface`. */
-export type ViewSurface = 'canvas' | 'timeline' | 'asset_pool'
+export type ViewSurface = 'canvas' | 'timeline' | 'asset_pool' | 'history'
 
 /** A route answered with an error status. */
 export class DvApiError extends Error {
@@ -160,6 +161,21 @@ export class DvClient {
    */
   getState(project: string, branch: string, signal?: AbortSignal): Promise<WireState> {
     return this.get('/api/dv/state', { project, branch }, signal)
+  }
+
+  /**
+   * List a project's records with their marks, newest first, with the request record of each turn they belong to and
+   * the assets they name.
+   * The query travels as a JSON body because a `records` set can be long; the route writes no record.
+   * @param query - the project and the filters.
+   * @param signal - cancels the request.
+   * @returns the entries, the turns' request records, and the assets.
+   */
+  async listHistory(query: HistoryQuery, signal?: AbortSignal): Promise<WireHistory> {
+    const response = await this.fetchImpl('/api/dv/history', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(query), signal: signal ?? null,
+    })
+    return decode<WireHistory>(response)
   }
 
   /** @returns the declaration of every operation that changes a project. */

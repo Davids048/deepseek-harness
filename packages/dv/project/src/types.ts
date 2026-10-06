@@ -46,7 +46,7 @@ export type RecordKind = 'request' | 'operation'
 export type Actor = 'user' | 'agent' | 'system'
 
 /** Where the action that caused a record came from. */
-export type Surface = 'chat' | 'canvas' | 'timeline' | 'asset_pool' | 'api'
+export type Surface = 'chat' | 'canvas' | 'timeline' | 'asset_pool' | 'api' | 'history'
 
 /**
  * The state of an operation call. It only moves forward: `pending` → `running` → `done` | `failed` | `cancelled`;
@@ -463,6 +463,10 @@ export interface HistoryQuery {
   status?: RecordStatus
   session?: SessionId
   turn?: TurnId
+  /** Only records written by this tool call. */
+  tool_call?: string
+  /** Only entries whose mark is one of these. */
+  marks?: Array<HistoryEntry['mark']>
   /** Only these records. */
   records?: RecordId[]
   /** Only records written before this record, for paging. */
@@ -471,7 +475,7 @@ export interface HistoryQuery {
   limit?: number
 }
 
-/** One row of the history list. */
+/** One entry of the history list. */
 export interface HistoryEntry {
   record: ProjectRecord
   /**

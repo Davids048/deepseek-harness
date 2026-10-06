@@ -1,0 +1,90 @@
+---
+description: "The DreamVerse History panel: every record of a project, newest first and grouped by agent turn, with marks, filters, output previews, and focus of a record on the canvas or the timeline."
+kind: "package-reference"
+---
+
+# @dv/ui-history
+
+English | [中文](README.zh.md)
+
+## Summary
+
+Use this package to give the web application a History panel beside the chat. `HistoryPanel` lists the records of the open project from every actor, surface, and chat session, newest first, one row per operation record: time, actor, surface, intent, the operation's tool label, status, and thumbnails of the input and output assets. The records of one agent turn sit under the human's request text. Each row shows its mark: 草稿 / Draft on an open draft, 已接受 / Accepted after the draft was accepted, 已撤销 / Undone, 已丢弃 / Discarded, 已重放 / Replayed, or the exploration branch name; undone and discarded rows stay listed, dimmed and struck. Filters narrow the rows by actor, branch, operation kind, and timeline. Selecting a row plays its output under the row and focuses the record's node on the canvas or its clip on the timeline. The `dv-history` right-Sidebar tab type shows the panel of the project the shell has open.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Mount the plugin in a profile that stacks `dsh-web-app` (which provides the right Sidebar and the client module loader) and `@dv/api` (which serves the routes the panel calls). Build the browser bundle first: `pnpm run build` writes `lib/client.js`.
+
+```yaml
+- id: dv-ui-history
+  name: '@dv/ui-history'
+```
+
+The Host half registers nothing. The browser half registers the `dv-history` tab type (a page the Sidebar's guide offers as "History") and the tab body under its own id `@dv/ui-history`, and opens the tab when a `dv:history-focus` window event arrives.
+
+| Gesture | Request or event |
+| --- | --- |
+| Open the panel, page with "Load more", change a filter | `POST /api/dv/history` with the filters as `HistoryQuery` fields; 50 entries per page, `before` for the next page |
+| Select a render, story bible, plan, or asset row | `dv:canvas-focus` `{recordId}`; the shell shows the canvas and the canvas opens the record's node |
+| Select a Timeline row or a timeline export | `dv:timeline-focus` `{timelineId, clipId}`; the shell shows the timeline and the editor selects the clip |
+| "Show in trajectory" on an agent row or a turn heading | `dv:trajectory-focus` `{session, toolCall}`; the shell opens 轨迹 on that chat session |
+| Accept the draft, Discard, Undo, Redo in the header | `POST /api/dv/drafts/accept`, `/api/dv/drafts/discard` (through the confirmation dialog), `/api/dv/undo`, `/api/dv/redo` with `surface: 'history'` |
+
+A `dv:history-focus` event `{session, toolCall}` clears the filters, finds the record that tool call wrote, loads pages until its row is loaded, and selects it. Only records marked `main` or `draft` move the center; `proj.*` records are only selected.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+`HistoryPanel` reads the state of `main` with `useProjectState` for the branches and the chat session's open draft, and the state of the session's working branch for its timelines and records. The branch filter `main` asks for marks `main` and `undone`, a draft for its `draft` records, an exploration branch for the records appended to it. The timeline filter sends the record set that `timelineRecords` computes from the working branch: Timeline records and exports of the timeline or of its clips (a clip belongs to the timeline of the record whose `report.clips` assigned it), and the records that created the assets of its clips. The `requests` field of the answer gives each turn group its heading even when the request record is on another page. On `/dv/events`, an `update` event replaces the record in the loaded rows, and any other event refetches the loaded window, debounced by 200 ms.
+
+| File | Content |
+| --- | --- |
+| [`src/client/index.ts`](src/client/index.ts) | Registrations and the tab opening on `dv:history-focus` |
+| [`src/client/definition.ts`](src/client/definition.ts) | The tab type |
+| [`src/client/HistoryPanel.tsx`](src/client/HistoryPanel.tsx) | The panel, its header buttons (accept, discard, undo, redo), filters, rows, preview, and the tab body |
+| [`src/client/rows.ts`](src/client/rows.ts) | Turn groups, mark badges, tool labels, the branch filter query, timeline record sets, and center focus |
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+- [`@dv/api`](../api/README.md) — the history route and the draft, undo, and redo routes.
+- [`@dv/project`](../project/README.md) — the history query and the marks of its entries.
+- [`@dv/ui-kit`](../ui-kit/README.md) — the API client, the wire types, the window events, and the tool labels.
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+Indirectly, through the browser-side History panel; the records its accept, discard, undo, and redo write reach the model only through the agent integration (`@dv/agent-integration`).
+
+#### KV Cache effect
+
+None; the panel sends nothing to a model.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- **Timeline filter covers the working branch** — the record set of a timeline comes from the chat session's working branch, so records of discarded drafts and other branches do not match it.
+- **Window refetch** — every `record` or `branch` event refetches the loaded window (up to 200 entries); a long history scrolled far back reloads slowly.

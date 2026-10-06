@@ -1,7 +1,8 @@
 /**
  * Right-panel tabs of the DreamVerse shell: 对话 shows the main session's chat in the narrow panel, and 轨迹 shows the
  * same session's trajectory without a composer. Both are page types of the session seat, so they follow the main
- * session. The 素材库 tab is registered by `@dv/ui-asset-pool`.
+ * session. Opening 轨迹 with the param `callId` scrolls its trajectory to that tool call. The 素材库 tab is registered by
+ * `@dv/ui-asset-pool`.
  *
  * @module @dv/ui-shell/tabs
  */
@@ -9,6 +10,7 @@ import { Fragment, useEffect, useSyncExternalStore, type ReactNode } from 'react
 import type { ConversationViewsProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { pickText, useText } from '@dv/ui-kit/locale.ts'
 import { ChatOnlyView } from './Center.tsx'
@@ -18,6 +20,13 @@ import css from './shell.module.css'
 export const CHAT_ID = '@dv/ui-shell/chat'
 /** Implementation identity of the trajectory tab. */
 export const TRAJECTORY_ID = '@dv/ui-shell/trajectory'
+
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightTabParamsMap {
+    /** The tool call the trajectory scrolls to (the model's call ID, which records store as `tool_call`). */
+    'dv-trajectory': { readonly callId?: string }
+  }
+}
 
 /** The chat tab type. */
 export const chatDefinition: SidebarRightTabDefinition = {
@@ -83,9 +92,31 @@ export function ChatTab({ sessionId, useSession, useConversation, useSessions, r
   )
 }
 
-/** The trajectory view alone. */
+/** The tool call a session's 轨迹 tab was last opened on, with the tab navigation's revision. */
+interface TrajectoryFocus { callId: string; revision: number }
+
+/*
+ * The 轨迹 tab body reads its navigation params, but the trajectory view sits inside DSH's Conversation content, whose
+ * local view component receives only session props. The body publishes the requested tool call per session here, and
+ * the view reads it.
+ */
+const trajectoryFocus = new Map<SessionId, TrajectoryFocus>()
+const trajectoryFocusListeners = new Set<() => void>()
+
+/** Subscribe to changed trajectory focus requests. */
+function subscribeTrajectoryFocus(listener: () => void): () => void {
+  trajectoryFocusListeners.add(listener)
+  return () => { trajectoryFocusListeners.delete(listener) }
+}
+
+/**
+ * The trajectory view alone. A requested tool call reaches DSH's trajectory as its focus; each new request mounts the
+ * session body again, so a second request for the same call scrolls to it again.
+ */
 function TrajectoryOnlyView(props: ConversationViewsProps): ReactNode {
-  return <>{props.renderSlot('conversation.session', { view: 'trajectory' })}</>
+  const focus = useSyncExternalStore(subscribeTrajectoryFocus, () => trajectoryFocus.get(props.sessionId))
+  if (focus === undefined) return <>{props.renderSlot('conversation.session', { view: 'trajectory' })}</>
+  return <Fragment key={focus.revision}>{props.renderSlot('conversation.session', { view: 'trajectory', focus: focus.callId })}</Fragment>
 }
 
 /**
@@ -103,12 +134,30 @@ function TrajectoryContent({ renderFactorySlot }: Pick<TabProps, 'renderFactoryS
 }
 
 /**
- * The main session's trajectory, read-only. A session without turns shows what will appear here instead of a blank tab.
+ * Publish the tool call that the 轨迹 tab of a session was opened on; a navigation without `callId` clears it.
+ * @param sessionId - the session.
+ * @param callId - the requested tool call, if any.
+ * @param revision - the tab navigation's revision, which grows with every open.
+ */
+function useTrajectoryFocus(sessionId: SessionId, callId: string | undefined, revision: number): void {
+  useEffect(() => {
+    if (callId === undefined) trajectoryFocus.delete(sessionId)
+    else trajectoryFocus.set(sessionId, { callId, revision })
+    for (const listener of [...trajectoryFocusListeners]) listener()
+  }, [sessionId, callId, revision])
+}
+
+/**
+ * The main session's trajectory, read-only, scrolled to the tool call named by the tab's `callId` param. A session
+ * without turns shows what will appear here instead of a blank tab.
  * @param props - the tab props.
  * @returns the trajectory, or the empty-state hint.
  */
-export function TrajectoryTab({ useSession, useConversation, renderFactorySlot }: TabProps): ReactNode {
+export function TrajectoryTab({ sessionId, useSession, useConversation, useTabInfo, renderFactorySlot }: TabProps): ReactNode {
   const t = useText()
+  const { navigation } = useTabInfo().tab
+  const callId = typeof navigation.params === 'object' && 'callId' in navigation.params ? navigation.params.callId : undefined
+  useTrajectoryFocus(sessionId, callId, navigation.revision)
   const session = useSession(s => s)
   const conversation = useConversation(s => s)
   const active = conversation.activeTargets.size > 0 || (!session.blank && !session.awaitingFirstTurn) || session.running

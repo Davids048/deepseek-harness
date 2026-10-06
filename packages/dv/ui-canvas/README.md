@@ -44,7 +44,7 @@ The Host half registers nothing. The browser half registers the `dv-canvas` tab 
 | Click a node | `POST /api/dv/selection` with kind `record`, `character`, `location`, or `style`, so the host can tell the agent what the user pointed at |
 | Drag a node, pan, or zoom | `POST /api/dv/layout` with the moved positions, keyed by node ID, and the viewport |
 
-While a `draft/*` branch is shown the editor's write buttons are disabled; accept or discard the draft, or switch to another branch, to write. A `dv:canvas-focus` window event with `{recordId}` centers and opens that record's node.
+While a `draft/*` branch is shown the editor's write buttons are disabled; accept or discard the draft, or switch to another branch, to write. A `dv:canvas-focus` window event with `{recordId}` centers and opens that record's node. When the record has no node of its own, the event opens the story bible node of the version it wrote, else the node of its first output.
 
 -----
 

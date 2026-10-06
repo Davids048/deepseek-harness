@@ -44,7 +44,7 @@ Mount the plugin with the projects directory and the session directory. The asse
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The service in `src/index.ts` delegates to ten private modules: the record store (the only code that touches `project.json`, `records.jsonl` and `branches.json`), the runner, the scheduler, drafts and branches, history, the reducer registry, subscriptions, the chat sessions (bindings, turns, held tool calls), the agent tools (one DSH tool per operation), and the `dv_proj_*` tools. `CONTRACTS.md` lists each module's functions, rules, errors and tests.
+The service in `src/index.ts` delegates to ten private modules: the record store (the only code that touches `project.json`, `records.jsonl` and `branches.json`), the runner, the scheduler, drafts and branches, history, the reducer registry, subscriptions, the chat sessions (bindings, turns, held tool calls), the agent tools (one DSH tool per operation), and the `dv_proj_*` tools. `CONTRACTS.md` lists each module's functions, rules, errors and tests. `listHistory(query)` is the one history query: the `dv_proj_history_list` tool and the `POST /api/dv/history` route of `@dv/api` both call it. Its filters (`branch`, `marks`, `actor`, `component`, `operation`, `kind`, `status`, `session`, `turn`, `tool_call`, `records`, `before`) combine with AND, and `limit` applies after them.
 
 <a id="further-exploration"></a>
 ## Further Exploration

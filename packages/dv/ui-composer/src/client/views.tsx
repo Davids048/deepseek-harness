@@ -1,6 +1,6 @@
 /**
  * The composer's visible additions: the two mode controls beside the input, the approval cards of waiting
- * renders above it, and the card of a `shot.render` call in the chat.
+ * renders above it, the card of a `shot.render` call in the chat, and the 在历史中查看 link of settled tool rows.
  *
  * @module @dv/ui-composer/views
  */
@@ -8,6 +8,7 @@ import { useEffect, useState, useSyncExternalStore, type CSSProperties } from 'r
 import { assetUrl } from '@dv/ui-kit/api.ts'
 import { useText } from '@dv/ui-kit/locale.ts'
 import type { ApprovalCard, ComposerMode } from '@dv/ui-kit/types.ts'
+import { DV_HISTORY_FOCUS_EVENT, dispatchWorkspaceEvent } from '@dv/ui-kit/workspace-events.ts'
 import { approvalStore, composerClient } from './api.ts'
 
 const chip: CSSProperties = { display: 'inline-flex', borderRadius: 999, border: '1px solid var(--dsh-border, #3a3a3a)', overflow: 'hidden', fontSize: 12 }
@@ -94,6 +95,23 @@ function argsOf(raw: string): Record<string, unknown> {
   }
 }
 
+/** Read tools: they write no record, so their rows have no 在历史中查看 link. */
+const READ_TOOLS: ReadonlySet<string> = new Set(['dv_proj_state', 'dv_proj_history_list', 'dv_proj_wait', 'dv_inspect_image', 'dv_inspect_asset'])
+
+/**
+ * 在历史中查看 on a settled tool row: asks the History panel to select the record this tool call wrote.
+ * @param props - the chat session and the tool call.
+ * @returns the link button.
+ */
+function HistoryLink(props: { sessionId: string; callId: string }) {
+  const t = useText()
+  const { sessionId, callId } = props
+  return <button type="button" data-testid="dv-composer-open-history" style={{ ...secondary, padding: '0 6px', fontSize: 12 }}
+    onClick={() => { dispatchWorkspaceEvent(DV_HISTORY_FOCUS_EVENT, { session: sessionId, toolCall: callId }) }}>
+    {t('在历史中查看', 'Show in history')}
+  </button>
+}
+
 /** What the render card reads from the tool-call owner props. */
 export interface RenderCardProps {
   sessionId: string
@@ -133,21 +151,30 @@ export function RenderCard(props: RenderCardProps) {
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong>{t('渲染镜头', 'Render shot')}</strong><span style={{ opacity: 0.7 }}>{status}</span></div>
     {prompt !== '' && <div style={{ marginTop: 4, opacity: 0.85 }}>{prompt}</div>}
     {video !== undefined && <video src={video.url} controls muted style={{ marginTop: 8, width: '100%', borderRadius: 8 }} />}
+    {props.phase === 'result' && <div style={{ marginTop: 6 }}><HistoryLink sessionId={props.sessionId} callId={props.callId} /></div>}
   </div>
 }
 
 /**
- * The chat row of one agent tool call other than `dv_shot_render`: the tool's creator-facing name and whether the step is
- * running, done, or failed.
- * @param props - the tool's [Chinese, English] name, the call phase, and the call block.
+ * The chat row of one agent tool call other than `dv_shot_render`: the tool's creator-facing name, whether the step is
+ * running, done, or failed, and, once settled, 在历史中查看 for a tool that writes a record.
+ * @param props - the tool's [Chinese, English] name, the chat session, the tool call, the call phase, and the call block.
  * @returns the row.
  */
-export function ToolLabelRow(props: { label: readonly [string, string]; toolName: string; phase: 'preparing' | 'start' | 'result'; block: object }) {
+export function ToolLabelRow(props: {
+  label: readonly [string, string]
+  toolName: string
+  sessionId: string
+  callId: string
+  phase: 'preparing' | 'start' | 'result'
+  block: object
+}) {
   const t = useText()
   const failed = 'isError' in props.block && props.block.isError === true
   const status = props.phase !== 'result' ? t('进行中…', 'Running…') : failed ? t('未完成', 'Failed') : t('完成', 'Done')
   return <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', margin: '4px 0', fontSize: 13 }} data-tool={props.toolName}>
     <span>{t(props.label[0], props.label[1])}</span><span style={{ opacity: 0.6, fontSize: 12 }}>{status}</span>
+    {props.phase === 'result' && !READ_TOOLS.has(props.toolName) && <HistoryLink sessionId={props.sessionId} callId={props.callId} />}
   </div>
 }
 

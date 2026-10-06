@@ -4,6 +4,7 @@
  * - the 渲染前先问 / 直接渲染 and 质量 / 速度 toggles in `conversation.input.left`;
  * - the `dv_shot_render` tool card, which shows the prompt, status, and rendered video;
  * - creator-facing names for the other `dv_*` tools in their chat rows and in the running group title;
+ * - 在历史中查看 on settled tool rows that wrote a record, which dispatches `dv:history-focus`;
  * - the approval cards (批准 / 跳过, and 全部批准 when several wait) in `conversation.input.dock`;
  * - an empty `conversation.input.permission` entry that hides DSH's file-permission chip;
  * - the `dv:compose` prefill from the canvas and asset pool views, which also brings the 对话 tab to the front.
@@ -21,7 +22,8 @@ import { createElement, useCallback } from 'react'
 import { DV_COMPOSE_EVENT, type DvComposeDetail } from '@dv/ui-kit/compose.ts'
 import { deliverCompose, mountComposer } from './compose.ts'
 import { projectMentionSource } from './mention.ts'
-import { addToolNames, DV_TOOL_LABELS } from './tool-labels.ts'
+import { DV_TOOL_LABELS } from '@dv/ui-kit/tool-labels.ts'
+import { addToolNames } from './tool-labels.ts'
 import { ModeControls, PendingBar, RenderCard, ToolLabelRow } from './views.tsx'
 
 export { projectItems, referenceText, MENTION_SOURCE } from './mention.ts'
@@ -68,7 +70,9 @@ export function apply(ctx: ClientContext): void {
   // Every other labelled tool shows its creator-facing name in its chat row and in the running group title.
   function LabelRow(props: ToolCallViewProps) {
     const label = DV_TOOL_LABELS[props.toolName] ?? [props.toolName, props.toolName]
-    return createElement(ToolLabelRow, { label, toolName: props.toolName, phase: props.phase, block: props.block })
+    return createElement(ToolLabelRow, {
+      label, toolName: props.toolName, sessionId: props.sessionId, callId: props.callId, phase: props.phase, block: props.block,
+    })
   }
   for (const name of Object.keys(DV_TOOL_LABELS)) {
     if (name !== RENDER_TOOL) ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: name }, LabelRow))

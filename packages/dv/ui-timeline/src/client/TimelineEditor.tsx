@@ -14,7 +14,7 @@ import { publishCurrentTimeline, useCurrentTimeline } from '@dv/ui-kit/current-t
 import { timelineName } from '@dv/ui-kit/timeline.ts'
 import { assetIndex, videoAssets } from '@dv/ui-kit/state.ts'
 import type { OperationRequest, WireState } from '@dv/ui-kit/types.ts'
-import { DV_ASSET_DRAG_TYPE } from '@dv/ui-kit/workspace-events.ts'
+import { DV_ASSET_DRAG_TYPE, DV_TIMELINE_FOCUS_EVENT, type DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
 import { WorkingBranchBar } from '@dv/ui-kit/WorkingBranchBar.tsx'
 import { useTimelinePlayer } from './player.ts'
 import { clipIndexAt, dropPosition, nextTimelineId, placeTimeline, timecode, timelinesOf } from './timelines.ts'
@@ -101,6 +101,17 @@ interface RedoEntry {
 
 /** Redo entries per project, newest last; kept outside the component so a canvas ↔ timeline switch keeps them. */
 const redoStacks = new Map<string, RedoEntry[]>()
+
+// A `dv:timeline-focus` request usually arrives while the editor is unmounted (the shell shows the timeline view in
+// response), so the module keeps the latest requested clip until an editor showing that timeline consumes it.
+let pendingClipFocus: DvWorkspaceEventMap['dv:timeline-focus'] | null = null
+const clipFocusListeners = new Set<() => void>()
+if (typeof window !== 'undefined') {
+  window.addEventListener(DV_TIMELINE_FOCUS_EVENT, (event) => {
+    pendingClipFocus = (event as CustomEvent<DvWorkspaceEventMap['dv:timeline-focus']>).detail
+    for (const listener of clipFocusListeners) listener()
+  })
+}
 
 /**
  * The clip the user selected: its timeline, its position when selected, and its asset, so neither an edit elsewhere
@@ -215,6 +226,23 @@ export function TimelineEditor(
     }
     if (timelineId !== activeId) publishCurrentTimeline(project, timelineId)
   }, [project, activeId, timelineId, timelines])
+
+  // Select the clip that `dv:timeline-focus` asked for and seek to its start, once this editor shows its timeline.
+  const [clipFocusRequest, setClipFocusRequest] = useState(0)
+  useEffect(() => {
+    const listener = (): void => { setClipFocusRequest(count => count + 1) }
+    clipFocusListeners.add(listener)
+    return () => { clipFocusListeners.delete(listener) }
+  }, [])
+  useEffect(() => {
+    const focus = pendingClipFocus
+    if (focus === null || focus.timelineId !== timelineId) return
+    pendingClipFocus = null
+    const clip = clips.find(entry => entry.clip === focus.clipId)
+    if (clip === undefined) return
+    setChosenClip({ timelineId, position: clip.position, assetId: clip.assetId })
+    player.seek(clip.startSec)
+  }, [clipFocusRequest, timelineId, clips])
 
   // Keep the stored selection on the position it resolved to after an edit elsewhere.
   useEffect(() => {

@@ -1,7 +1,7 @@
 /**
  * Browser half of the DreamVerse shell: the center workspace in place of DSH's main Conversation, the DreamVerse
- * navigator and brand in the left sidebar, the 对话 / 轨迹 right-panel tabs, and DSH's New Session action redirected
- * into the open project.
+ * navigator and brand in the left sidebar, the 对话 / 轨迹 right-panel tabs, DSH's New Session action redirected
+ * into the open project, and the `dv:trajectory-focus` link that opens 轨迹 at one tool call.
  *
  * @module @dv/ui-shell/client
  */
@@ -9,6 +9,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import { DV_TRAJECTORY_FOCUS_EVENT, type DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
 import { createActions } from './actions.ts'
 import { CenterPanel, type ShellInjected } from './Center.tsx'
 import { applyChrome } from './chrome.tsx'
@@ -82,4 +83,31 @@ export function apply(ctx: ClientContext): void {
     const timer = setInterval(read, LINKS_POLL_MS)
     return () => { clearInterval(timer) }
   }, 'ui-shell: links poll')
+  ctx.effect(() => {
+    const seat = injected.shell.mountedSeat
+    let stopWaiting = (): void => {}
+    // Open 轨迹 on the event's chat session, moving the main session there first, and name the tool call to show.
+    const onTrajectoryFocus = (event: Event): void => {
+      const detail = (event as CustomEvent<DvWorkspaceEventMap['dv:trajectory-focus']>).detail
+      if (typeof detail !== 'object' || detail === null || typeof detail.session !== 'string' || typeof detail.toolCall !== 'string') return
+      stopWaiting()
+      const open = (): void => { ctx.sidebarRight.openTab('dv-trajectory', { params: { callId: detail.toolCall } }) }
+      if (seat.getSnapshot() === detail.session) {
+        open()
+        return
+      }
+      const unsubscribe = seat.subscribe(() => {
+        if (seat.getSnapshot() !== detail.session) return
+        stopWaiting()
+        open()
+      })
+      stopWaiting = () => { unsubscribe(); stopWaiting = () => {} }
+      injected.shell.openSession(detail.session)
+    }
+    window.addEventListener(DV_TRAJECTORY_FOCUS_EVENT, onTrajectoryFocus)
+    return () => {
+      stopWaiting()
+      window.removeEventListener(DV_TRAJECTORY_FOCUS_EVENT, onTrajectoryFocus)
+    }
+  }, 'ui-shell: dv:trajectory-focus listener')
 }

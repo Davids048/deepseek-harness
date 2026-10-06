@@ -31,7 +31,7 @@ Mount the plugin in a profile that stacks `dsh-web-app` and `@dv/api`, and build
   name: '@dv/ui-timeline'
 ```
 
-The Host half registers nothing. The browser half registers the `dv-timeline` tab type (offered by the Sidebar's guide page as "Timeline"), the `dvTimeline` locale namespace in Chinese and English, and the tab body under its own id `@dv/ui-timeline`.
+The Host half registers nothing. The browser half registers the `dv-timeline` tab type (offered by the Sidebar's guide page as "Timeline"), the `dvTimeline` locale namespace in Chinese and English, and the tab body under its own id `@dv/ui-timeline`. A `dv:timeline-focus` window event with `{timelineId, clipId}` makes the editor select that clip of the timeline and move the playhead to its start.
 
 | Gesture | Record |
 | --- | --- |

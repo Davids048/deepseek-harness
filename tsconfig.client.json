@@ -141,6 +141,7 @@
     { "path": "./packages/dv/ui-canvas" },
     { "path": "./packages/dv/ui-timeline" },
     { "path": "./packages/dv/ui-asset-pool" },
+    { "path": "./packages/dv/ui-history" },
     { "path": "./packages/dv/ui-shell" },
     { "path": "./packages/dv/ui-composer" },
     { "path": "./apps/web" }

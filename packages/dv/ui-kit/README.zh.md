@@ -34,8 +34,8 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 
 | 模块 | 内容 |
 | --- | --- |
-| `types.ts` | `WireState`、`ProjectRecord`、`Branch`、`Asset`、`Timeline`、`Clip`、`WireOperation`、`WireProject`、`ProjectEvent`、`OperationRequest`、`ApprovalCard`：`@dv/api` 收发的 JSON 的结构类型 |
-| `api.ts` | `DvClient`（`listProjects`、`getState`、`listOperations`、`runOperation`、`importAsset`、`acceptDraft`、`discardDraft`、`undo`、`redo`、`createBranch`、`switchBranch`、`acceptStale`、`select`，布局、工作区和输入框调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
+| `types.ts` | `WireState`、`ProjectRecord`、`Branch`、`Asset`、`Timeline`、`Clip`、`WireOperation`、`WireProject`、`ProjectEvent`、`OperationRequest`、`HistoryQuery`、`HistoryEntry`、`WireHistory`、`ApprovalCard`：`@dv/api` 收发的 JSON 的结构类型 |
+| `api.ts` | `DvClient`（`listProjects`、`getState`、`listOperations`、`runOperation`、`importAsset`、`acceptDraft`、`discardDraft`、`undo`、`redo`、`createBranch`、`switchBranch`、`acceptStale`、`listHistory`、`select`，布局、工作区和输入框调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`、`paramsOf(fields)`、`FieldParseError`：每个 schema 属性一个控件，带类型转换 |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`、`timelineName(timeline, numbered)`、`formatSeconds` |
 | `state.ts` | `openDrafts`、`sessionDraft`、`branchNames`、`assetIndex`、`videoAssets` |
@@ -44,7 +44,8 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | `BranchBar.tsx` | 分支栏：项目和分支选择器、新建项目和新建分支按钮、撤销，以及每个打开草稿一枚接受/丢弃标签；文案以 `labels` 传入，由所属插件先本地化 |
 | `WorkingBranchBar.tsx` | `WorkingBranchBar`：视图所在对话的当前分支（它打开的草稿，否则 `main`），并为草稿提供接受和丢弃；画布和时间线编辑器都显示它（测试 ID `dv-kit-working-branch`，属性 `data-branch`） |
 | `DiscardDraftDialog.tsx` | `useDiscardDraft(client, project, surface, onChange?)`：每次丢弃先读草稿的数量，在对话框里说明会丢失多少处智能体修改和你自己的修改（测试 ID `dv-kit-discard-dialog`），再带着确认过的数量丢弃；遇到 `draft_changed` 时重新显示当前数量并调用 `onChange` |
-| `compose.ts`、`workspace-events.ts` | 窗口事件 `dv:compose`、`dv:timeline-insert`、`dv:canvas-focus` 和素材拖拽类型 `application/x-dv-asset` |
+| `compose.ts`、`workspace-events.ts` | 窗口事件 `dv:compose`、`dv:timeline-insert`、`dv:canvas-focus`、`dv:history-focus`、`dv:trajectory-focus`、`dv:timeline-focus`（`DV_*_EVENT`）和素材拖拽类型 `application/x-dv-asset` |
+| `tool-labels.ts` | `DV_TOOL_LABELS`：每个 `dv_*` 工具的中英文标签，由输入框的工具卡片和历史面板显示 |
 | `current-project.ts`、`current-timeline.ts` | 打开的项目和选中的时间线，存在 `window.__dvCurrentProject` 和 `window.__dvCurrentTimeline` 上，用 `dv:current-project` 和 `dv:current-timeline` 通知 |
 | `locale.ts` | `useText`、`pickText`：按 `<html lang>` 取一对中英文字符串中的一个 |
 

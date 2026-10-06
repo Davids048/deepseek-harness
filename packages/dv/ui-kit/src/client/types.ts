@@ -10,7 +10,7 @@
 export type Actor = 'user' | 'agent' | 'system'
 
 /** Where the action that caused a record came from. */
-export type Surface = 'chat' | 'canvas' | 'timeline' | 'asset_pool' | 'api'
+export type Surface = 'chat' | 'canvas' | 'timeline' | 'asset_pool' | 'api' | 'history'
 
 /** The state of an operation call. */
 export type RecordStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
@@ -270,6 +270,52 @@ export type ProjectEvent =
   | { kind: 'record'; record: ProjectRecord }
   | { kind: 'update'; record: ProjectRecord }
   | { kind: 'branch'; name: string; branch: Branch | null }
+
+/** One entry of the history list: a record in its current form and where it stands. */
+export interface HistoryEntry {
+  record: ProjectRecord
+  /**
+   * `main` (on the effective chain of `main`), `draft` (on an open draft), `undone` (left behind by an undo),
+   * `discarded` (on a discarded draft), `replayed` (a draft record that accept copied onto `main`), or `branch` (only
+   * on an exploration branch).
+   */
+  mark: 'main' | 'draft' | 'undone' | 'discarded' | 'replayed' | 'branch'
+}
+
+/** What `POST /api/dv/history` selects (the JSON body). Every filter is optional; filters combine with AND. */
+export interface HistoryQuery {
+  project: string
+  /** Only records appended to this branch name. */
+  branch?: string
+  /** Only entries with one of these marks. */
+  marks?: Array<HistoryEntry['mark']>
+  actor?: Actor
+  /** A component key, such as `timeline`. */
+  component?: string
+  operation?: string
+  kind?: ProjectRecord['kind']
+  status?: RecordStatus
+  session?: string
+  turn?: string
+  /** Only records written by this tool call. */
+  tool_call?: string
+  /** Only these records. */
+  records?: string[]
+  /** Only records written before this record, for paging. */
+  before?: string
+  /** At most this many entries: 1 to 200; the server's default is 50. */
+  limit?: number
+}
+
+/** The `POST /api/dv/history` answer. */
+export interface WireHistory {
+  /** The entries, newest first. */
+  entries: HistoryEntry[]
+  /** The `request` record of every turn that has a record in `entries`, by turn. */
+  requests: Record<string, ProjectRecord>
+  /** Every asset that the entries name as an output or a resolved input. */
+  assets: Asset[]
+}
 
 /** What a view sends to run an operation as the human. */
 export interface OperationRequest {

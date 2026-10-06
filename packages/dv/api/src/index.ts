@@ -30,7 +30,7 @@ export { LAYOUT_ROUTE, type CanvasLayout, type CanvasViewport, type NodePosition
 export { PROJECT_ADMIN_ROUTES } from './projects-admin.ts'
 export { WORKSPACE_ROUTES } from './workspaces.ts'
 export {
-  mentionedAssets, projectIdOf, toWireOperation, toWireState, type ViewSelection, type WireOperation, type WireState,
+  mentionedAssets, projectIdOf, toWireOperation, toWireState, type ViewSelection, type WireHistory, type WireOperation, type WireState,
 } from './wire.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -73,6 +73,7 @@ export const ROUTES = {
   createBranch: '/api/dv/branches/create',
   switchBranch: '/api/dv/branches/switch',
   acceptStale: '/api/dv/stale/accept',
+  history: '/api/dv/history',
   selection: '/api/dv/selection',
 } as const
 
@@ -181,6 +182,7 @@ export default class DvApi extends Service {
       { path: ROUTES.createBranch, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.createBranch(body)) },
       { path: ROUTES.switchBranch, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.switchBranch(body)) },
       { path: ROUTES.acceptStale, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.acceptStale(body)) },
+      { path: ROUTES.history, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.listHistory(body)) },
       {
         path: ROUTES.selection, methods: ['GET', 'POST'], requestBody: 'buffered',
         fetch: request => request.method === 'GET'

@@ -20,6 +20,9 @@ import { getShell, markSessionChoice, refreshLinks, setShell, shellClient } from
 /** The right-panel kind of the asset pool tab that `@dv/ui-asset-pool` registers. */
 export const ASSET_POOL_KIND = 'dv-asset-pool'
 
+/** The right-panel kind of the History tab that `@dv/ui-history` registers. */
+export const HISTORY_KIND = 'dv-history'
+
 /** Milliseconds to wait for the DSH session and Workspace lists before choosing a session from them anyway. */
 const LIST_READY_TIMEOUT_MS = 5000
 
@@ -340,9 +343,10 @@ export function createActions(ctx: ClientContext): ShellActions {
       return created
     },
     showPanels() {
-      // 对话 opens first so it leads the tab strip, then 素材库 and 轨迹; reopening 对话 brings it to the front.
+      // 对话 opens first so it leads the tab strip, then 素材库, 历史 and 轨迹; reopening 对话 brings it to the front.
       ctx.sidebarRight.openTab('dv-chat')
       ctx.sidebarRight.openTab(ASSET_POOL_KIND)
+      ctx.sidebarRight.openTab(HISTORY_KIND)
       ctx.sidebarRight.openTab('dv-trajectory')
       ctx.sidebarRight.openTab('dv-chat')
     },

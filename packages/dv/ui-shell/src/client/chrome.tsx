@@ -14,12 +14,15 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { useText } from '@dv/ui-kit/locale.ts'
-import { ASSET_POOL_KIND } from './actions.ts'
+import { ASSET_POOL_KIND, HISTORY_KIND } from './actions.ts'
 import { CHAT_ID, TRAJECTORY_ID } from './tabs.tsx'
 import css from './chrome.module.css'
 
 /** Implementation identity of the 素材库 tab that `@dv/ui-asset-pool` registers. */
 const ASSET_POOL_ID = '@dv/ui-asset-pool'
+
+/** Implementation identity of the 历史 tab that `@dv/ui-history` registers. */
+const HISTORY_ID = '@dv/ui-history'
 
 /**
  * Sidebar controls DreamVerse hides. The DSH sidebar draws them without a DSH UI slot, so the shell hides them by their CSS
@@ -77,7 +80,7 @@ function hideHostCommands(commandUi: unknown): () => void {
 }
 
 /** The right-panel tab kinds the DreamVerse guide offers, in order. */
-const GUIDE_KINDS = ['dv-chat', ASSET_POOL_KIND, 'dv-trajectory'] as const
+const GUIDE_KINDS = ['dv-chat', ASSET_POOL_KIND, HISTORY_KIND, 'dv-trajectory'] as const
 
 /**
  * Rewrite the DSH dictionary entries in `TEXT_OVERRIDES` in place. The locale runtime keeps one dictionary object per
@@ -110,7 +113,7 @@ function SkipWelcome({ complete }: { complete: () => void }): ReactNode {
   return null
 }
 
-/** A right-panel tab title that follows the interface language, for the 对话 / 素材库 / 轨迹 tabs. */
+/** A right-panel tab title that follows the interface language, for the 对话 / 素材库 / 历史 / 轨迹 tabs. */
 function liveTitle(zh: string, en: string): (props: PropsRuntime<'sidebar.right.pane.tab.title'>) => ReactNode {
   return function LiveTitle(): ReactNode {
     const t = useText()
@@ -119,7 +122,7 @@ function liveTitle(zh: string, en: string): (props: PropsRuntime<'sidebar.right.
 }
 
 /**
- * The right-panel guide (the page a new tab shows): a short hint and the three DreamVerse panels. The canvas and the
+ * The right-panel guide (the page a new tab shows): a short hint and the four DreamVerse panels. The canvas and the
  * timeline live in the center and DSH's tab types do not belong to a creator, so neither is offered.
  * @param props - the guide chain props.
  * @returns the guide.
@@ -130,6 +133,7 @@ function DreamVerseGuide({ useTabInfo }: PropsRuntime<'sidebar.right.tab.guide'>
   const labels: Record<(typeof GUIDE_KINDS)[number], [string, string]> = {
     'dv-chat': [t('对话', 'Chat'), t('和智能体对话，让它规划和渲染', 'Talk with the agent to plan and render')],
     [ASSET_POOL_KIND]: [t('素材库', 'Asset pool'), t('项目的角色、参考图、导入的文件和渲染结果', "The project's characters, reference images, imports, and renders")],
+    [HISTORY_KIND]: [t('历史', 'History'), t('项目的每一条记录：谁在哪里做了什么', 'Every record of the project: who did what, and where')],
     'dv-trajectory': [t('轨迹', 'Trajectory'), t('智能体的每一步调用（开发者视图）', 'Every agent step (developer view)')],
   }
   return (
@@ -174,7 +178,9 @@ export function applyChrome(ctx: ClientContext): void {
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.guide', () => ctx.slots.register(
     { name: 'sidebar.right.tab.guide', select: () => true }, DreamVerseGuide,
   )), 'ui-shell: right-panel guide')
-  const titles: Array<[string, string, string]> = [[CHAT_ID, '对话', 'Chat'], [ASSET_POOL_ID, '素材库', 'Asset pool'], [TRAJECTORY_ID, '轨迹', 'Trajectory']]
+  const titles: Array<[string, string, string]> = [
+    [CHAT_ID, '对话', 'Chat'], [ASSET_POOL_ID, '素材库', 'Asset pool'], [HISTORY_ID, '历史', 'History'], [TRAJECTORY_ID, '轨迹', 'Trajectory'],
+  ]
   for (const [key, zh, en] of titles) {
     ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
       { name: 'sidebar.right.pane.tab.title', key }, liveTitle(zh, en),

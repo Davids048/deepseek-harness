@@ -178,4 +178,23 @@ describe('history', () => {
     })
     expect(mainValues(m, project)).toEqual([1, 5, 3])
   })
+
+  it('filters by tool call, and by mark before the limit', async () => {
+    const m = startWithValues()
+    const project = await createTestProject(m)
+    const kept = await write(m, project, DIRECT, 1)
+    const undone = await write(m, project, DIRECT, 2)
+    const undo = await m.store.lock(project, () => m.history.undo(project, DIRECT))
+    const agentFirst = await write(m, project, agentOrigin('turn-1'), 3)
+    const agentSecond = await write(m, project, agentOrigin('turn-2'), 4)
+    const create = readLines(m.root, project)[0]!.id
+    const ids = (entries: Array<{ record: ProjectRecord }>): RecordId[] => entries.map(entry => entry.record.id)
+
+    expect(ids(m.history.list({ project, tool_call: 'call-turn-1' }))).toEqual([agentFirst.id])
+    expect(ids(m.history.list({ project, marks: ['main', 'undone'] }))).toEqual([undo.id, undone.id, kept.id, create])
+    expect(ids(m.history.list({ project, marks: ['draft'] }))).toEqual([agentSecond.id, agentFirst.id])
+    // The mark filter applies first, so the limit counts only the matching entries.
+    expect(ids(m.history.list({ project, marks: ['undone'], limit: 1 }))).toEqual([undone.id])
+    expect(m.history.list({ project, marks: [] })).toEqual([])
+  })
 })

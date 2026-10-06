@@ -225,7 +225,13 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
   }, [])
   useEffect(() => {
     if (pendingFocus === null || !layoutReady || graph === null) return
-    const node = graph.nodes.find(candidate => candidate.id === pendingFocus)
+    // The record's own node, else the story bible node whose version it wrote, else the node of its first output.
+    const recordId = pendingFocus
+    const firstOutput = graph.state.components.proj.records.find(record => record.id === recordId)?.outputs[0]
+    const outputNode = firstOutput === undefined ? undefined : graph.assetNodes[firstOutput]
+    const node = graph.nodes.find(candidate => candidate.id === recordId)
+      ?? graph.nodes.find(candidate => candidate.record?.id === recordId)
+      ?? graph.nodes.find(candidate => candidate.id === outputNode)
     pendingFocus = null
     if (node === undefined) return
     const rect = container.current?.getBoundingClientRect()

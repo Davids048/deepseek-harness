@@ -1,7 +1,7 @@
 /**
  * The handlers behind the browser routes, independent of transport: list and create projects, read a branch state,
  * list operations, run an operation as the human, accept or discard a chat session's draft, undo and redo, create and
- * switch branches, accept a stale record, and remember a view's selection. The Fetch routes and the tests call these
+ * switch branches, accept a stale record, list the history, and remember a view's selection. The Fetch routes and the tests call these
  * methods directly.
  *
  * Every write goes through `dvProject` with actor `user`, the surface the request names, and the chat session the view
@@ -15,9 +15,12 @@ import type DvAssetPool from '@dv/asset-pool'
 import { draftBranch, MAIN_BRANCH, ProjectError } from '@dv/project'
 import type DvProject from '@dv/project'
 import type {
-  AssetId, Branch, DraftCounts, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordOrigin, RunRequest, SessionId, Surface,
+  AssetId, Branch, DraftCounts, HistoryEntry, HistoryQuery, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordOrigin, RunRequest,
+  SessionId, Surface, TurnId,
 } from '@dv/project'
-import { projectIdOf, toWireOperation, toWireState, type ViewSelection, type WireOperation, type WireState } from './wire.ts'
+import {
+  projectIdOf, toWireOperation, toWireState, type ViewSelection, type WireHistory, type WireOperation, type WireState,
+} from './wire.ts'
 
 /** A request a route could not serve, with the HTTP status that answers it and the Project error code, when any. */
 export class ApiRequestError extends Error {
@@ -115,10 +118,68 @@ const SELECTION_KINDS: ReadonlySet<ViewSelection['kind']> = new Set(['record', '
 
 /**
  * @param value - the raw `surface` of a request.
- * @returns the surface; anything but `timeline` or `asset_pool` counts as the canvas.
+ * @returns the surface; anything but `timeline`, `asset_pool` or `history` counts as the canvas.
  */
-function surfaceOf(value: unknown): Surface & ViewSelection['surface'] {
-  return value === 'timeline' || value === 'asset_pool' ? value : 'canvas'
+function surfaceOf(value: unknown): Surface & ('canvas' | 'timeline' | 'asset_pool' | 'history') {
+  return value === 'timeline' || value === 'asset_pool' || value === 'history' ? value : 'canvas'
+}
+
+/** The values each enumerated history filter accepts. */
+const HISTORY_ENUMS = {
+  actor: ['user', 'agent', 'system'],
+  kind: ['request', 'operation'],
+  status: ['pending', 'running', 'done', 'failed', 'cancelled'],
+  marks: ['main', 'draft', 'undone', 'discarded', 'replayed', 'branch'],
+} as const
+
+/** The history filters that take one free-form string, copied to the query as they are. */
+const HISTORY_STRINGS = ['branch', 'component', 'operation', 'session', 'turn', 'tool_call', 'before'] as const
+
+/** The number of entries a history request returns when it names no limit, and the most it may ask for. */
+const HISTORY_LIMIT = { default: 50, max: 200 } as const
+
+/**
+ * The filters of a history request body, checked.
+ * @param body - the request body.
+ * @param project - the project, already checked.
+ * @returns the history query.
+ * @throws ApiRequestError (400, code `invalid_params`) when a filter has the wrong type or an unknown value.
+ */
+function historyQueryOf(body: Record<string, unknown>, project: ProjectId): HistoryQuery {
+  const invalid = (message: string): ApiRequestError => new ApiRequestError(400, message, 'invalid_params')
+  const query: Record<string, unknown> = { project }
+  for (const field of HISTORY_STRINGS) {
+    const value = body[field]
+    if (value === undefined || value === null) continue
+    if (typeof value !== 'string' || value.length === 0) throw invalid(`'${field}' must be a non-empty string.`)
+    query[field] = value
+  }
+  for (const field of ['actor', 'kind', 'status'] as const) {
+    const value = body[field]
+    if (value === undefined || value === null) continue
+    const allowed: readonly string[] = HISTORY_ENUMS[field]
+    if (typeof value !== 'string' || !allowed.includes(value)) throw invalid(`'${field}' must be one of ${allowed.join(', ')}.`)
+    query[field] = value
+  }
+  // `marks` and `records` are arrays of strings; `marks` takes only known marks.
+  for (const field of ['marks', 'records'] as const) {
+    const value = body[field]
+    if (value === undefined || value === null) continue
+    if (!Array.isArray(value) || !value.every((item): item is string => typeof item === 'string')) {
+      throw invalid(`'${field}' must be an array of strings.`)
+    }
+    const allowed: readonly string[] = HISTORY_ENUMS.marks
+    if (field === 'marks' && !value.every(mark => allowed.includes(mark))) {
+      throw invalid(`'marks' may hold only ${allowed.join(', ')}.`)
+    }
+    query[field] = value
+  }
+  const limit = body['limit'] ?? HISTORY_LIMIT.default
+  if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > HISTORY_LIMIT.max) {
+    throw invalid(`'limit' must be an integer from 1 to ${String(HISTORY_LIMIT.max)}.`)
+  }
+  query['limit'] = limit
+  return query as unknown as HistoryQuery
 }
 
 /**
@@ -372,6 +433,40 @@ export class ApiHandlers {
   }
 
   /**
+   * List a project's records with their marks, newest first, through `dvProject.listHistory` (the query behind
+   * `dv_proj_history_list`). A read: it writes no record.
+   * @param raw - the history query: `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?,
+   *   turn?, tool_call?, records?, before?, limit?}`; `limit` is 1 to 200, default 50.
+   * @returns the entries, the `request` record of every turn the entries belong to, and every asset they name.
+   * @throws ApiRequestError (400 `invalid_params`, 404 `unknown_project`, 404 `unknown_record` for `before`).
+   */
+  async listHistory(raw: unknown): Promise<WireHistory> {
+    const body = objectOf(raw)
+    const projectId = this.requireProject(body['project'])
+    const query = historyQueryOf(body, projectId)
+    const entries: HistoryEntry[] = await refused(() => this.services.project.listHistory(query))
+    const turns = new Set(entries.flatMap(entry => entry.record.turn === null ? [] : [entry.record.turn]))
+    // The request record heads its turn, so it is looked up even when the filters or the page leave it out.
+    const requests: Record<string, ProjectRecord> = {}
+    if (turns.size > 0) {
+      for (const { record } of this.services.project.listHistory({ project: projectId, kind: 'request' })) {
+        const turn: TurnId | null = record.turn
+        if (turn !== null && turns.has(turn) && requests[turn] === undefined) requests[turn] = record
+      }
+    }
+    const named = new Set<AssetId>()
+    for (const { record } of entries) {
+      for (const id of record.outputs) named.add(id)
+      for (const input of record.inputs) if (input.resolved_asset !== null) named.add(input.resolved_asset)
+    }
+    const assets = [...named].flatMap((id) => {
+      const asset = this.assetOrNull(id)
+      return asset === null ? [] : [asset]
+    })
+    return { entries, requests, assets }
+  }
+
+  /**
    * Remember what a view selected, for the agent integration's project block.
    * @param raw - `{project, kind, id, surface}`.
    * @returns the stored selection.
@@ -380,11 +475,14 @@ export class ApiHandlers {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
     const kind = body['kind']
+    const surface = surfaceOf(body['surface'])
+    // A selection names a canvas, timeline or asset pool item; the History panel's selection counts as the canvas.
+    const selectionSurface = surface === 'history' ? 'canvas' : surface
     if (typeof kind !== 'string' || !SELECTION_KINDS.has(kind as ViewSelection['kind'])) {
       throw new ApiRequestError(400, `'kind' must be one of ${[...SELECTION_KINDS].join(', ')}.`)
     }
     const selection: ViewSelection = {
-      kind: kind as ViewSelection['kind'], id: stringOf(body['id'], 'id'), surface: surfaceOf(body['surface']), at: new Date().toISOString(),
+      kind: kind as ViewSelection['kind'], id: stringOf(body['id'], 'id'), surface: selectionSurface, at: new Date().toISOString(),
     }
     this.selections.set(projectId, selection)
     return selection
@@ -401,15 +499,15 @@ export class ApiHandlers {
   /**
    * @param value - a raw project ID.
    * @returns the project ID.
-   * @throws ApiRequestError when it is malformed or names no project.
+   * @throws ApiRequestError `invalid_params` when it is malformed, `unknown_project` when it names no project.
    */
   private requireProject(value: unknown): ProjectId {
     const projectId = projectIdOf(value)
-    if (projectId === null) throw new ApiRequestError(400, "'project' must name a project.")
+    if (projectId === null) throw new ApiRequestError(400, "'project' must name a project.", 'invalid_params')
     try {
       this.services.project.openProject(projectId)
     } catch {
-      throw new ApiRequestError(404, `Unknown project '${projectId}'.`)
+      throw new ApiRequestError(404, `Unknown project '${projectId}'.`, 'unknown_project')
     }
     return projectId
   }

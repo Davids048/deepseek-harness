@@ -33,7 +33,7 @@ import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import type {
   ComposerBarOwnerProps, ConversationContentInputProps, ConversationContentProps,
   ConversationHeaderLineageOwnerProps, ConversationSessionHeaderSlotProps, ConversationSessionSlotProps, ConversationSlotProps,
-  ConversationViewsProps,
+  ConversationViewsProps, ConvViewOwnerProps,
 } from '../src/client/contract/slots.ts'
 import type { ViewTab } from '../src/client/contract/views.ts'
 
@@ -838,5 +838,72 @@ describe('ConversationRoot resident composer', () => {
   it('hero phase renders no width handles (no transcript to size)', () => {
     const b = mount(sessionSnapshotOf({ blank: true }))
     expect(b.view.container.querySelector('[data-width-handle]')).toBeNull()
+  })
+})
+
+describe('ConversationSession owner focus', () => {
+  /** Mount the strict Session body with a pinned View and record the owner props its View receives. */
+  function mountPinned(owner: { view?: string; focus?: string }) {
+    const useSession = bindSnapshotSelector(createSnapshotStore<SessionSnapshot>(sessionSnapshotOf()))
+    const useConversation = bindSnapshotSelector(createSnapshotStore<ConversationSnapshot>(EMPTY_CONVERSATION_SNAPSHOT))
+    const store = createConversationStore().create()
+    const { wiring } = fakeWiring()
+    const viewOwners: { only: string | undefined; owner: ConvViewOwnerProps }[] = []
+    const renderSlot = ((_key: string, viewOwner: ConvViewOwnerProps, opts?: { only?: string }) => {
+      viewOwners.push({ only: opts?.only, owner: viewOwner })
+      return null
+    }) as ConversationSessionSlotProps['renderSlot']
+    const element = (props: { view?: string; focus?: string }) => (
+      <ConversationSession
+        {...props}
+        sessionId={SID}
+        SessionProvider={({ children }) => children}
+        useSession={useSession}
+        useConversation={useConversation}
+        useConversationViews={selector => selector([{ id: 'chat', label: 'Chat' }, { id: 'trajectory', label: 'Trajectory' }])}
+        useInspectCall={selector => selector(undefined)}
+        useChat={useChat}
+        useTrajectory={useTrajectory}
+        useSessions={bindSnapshotSelector(createSnapshotStore<SessionListState>({ ids: [], byId: {}, phase: 'ready', projectionsBySession: {} }))}
+        usePanelInfo={selector => selector({ activePanelId: null })}
+        useResource={useResource}
+        useSessionStatus={bindSnapshotSelector(createSnapshotStore<SessionStatusSnapshot>(new Map()))}
+        useSessionRetainInfo={() => undefined}
+        useWorkspaces={bindSnapshotSelector(createSnapshotStore<WorkspaceSnapshot>(workspaceState([])))}
+        useProjection={(() => undefined)}
+        useInput={bindSnapshotSelector(wiring.state)}
+        inputActions={wiring.actions}
+        useStore={bindSnapshotSelector(store)}
+        actions={store.actions}
+        renderSlot={renderSlot}
+        bindDraftMirror={write => wiring.bindMirror(write)}
+        openView={(view, focus) => { store.actions.openView(view, focus) }}
+      />
+    )
+    const view = render(element(owner))
+    return { view, store, viewOwners, element, last: () => viewOwners[viewOwners.length - 1] }
+  }
+
+  it('addresses an owner focus to the pinned View until the View acknowledges it', () => {
+    const b = mountPinned({ view: 'trajectory', focus: 'call-1' })
+    expect(b.last()?.only).toBe('trajectory')
+    expect(b.last()?.owner.viewRequest).toEqual({ view: 'trajectory', focus: 'call-1' })
+    act(() => { b.last()?.owner.completeViewRequest() })
+    expect(b.last()?.owner.viewRequest).toBeNull()
+    // The owner request never reaches the per-Session store, which other occurrences of the Session share.
+    expect(b.store.getSnapshot().viewRequest).toBeNull()
+  })
+
+  it('addresses a changed owner focus again and leaves the stored request alone without one', () => {
+    const b = mountPinned({ view: 'trajectory', focus: 'call-1' })
+    act(() => { b.last()?.owner.completeViewRequest() })
+    b.view.rerender(b.element({ view: 'trajectory', focus: 'call-2' }))
+    expect(b.last()?.owner.viewRequest).toEqual({ view: 'trajectory', focus: 'call-2' })
+
+    const plain = mountPinned({ view: 'trajectory' })
+    act(() => { plain.store.actions.openView('trajectory', 'call-3') })
+    expect(plain.last()?.owner.viewRequest).toEqual({ view: 'trajectory', focus: 'call-3' })
+    act(() => { plain.last()?.owner.completeViewRequest() })
+    expect(plain.store.getSnapshot().viewRequest).toBeNull()
   })
 })

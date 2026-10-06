@@ -44,7 +44,7 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-`src/index.ts` 中的服务委托给十个私有模块：记录存储（唯一读写 `project.json`、`records.jsonl` 和 `branches.json` 的代码）、运行器、调度器、草稿与分支、历史、归约函数注册表、订阅、聊天会话（绑定、轮次、暂缓的工具调用）、智能体工具（每个操作一个 DSH 工具）和 `dv_proj_*` 工具。`CONTRACTS.md` 列出每个模块的函数、规则、错误和测试。
+`src/index.ts` 中的服务委托给十个私有模块：记录存储（唯一读写 `project.json`、`records.jsonl` 和 `branches.json` 的代码）、运行器、调度器、草稿与分支、历史、归约函数注册表、订阅、聊天会话（绑定、轮次、暂缓的工具调用）、智能体工具（每个操作一个 DSH 工具）和 `dv_proj_*` 工具。`CONTRACTS.md` 列出每个模块的函数、规则、错误和测试。`listHistory(query)` 是唯一的历史查询：`dv_proj_history_list` 工具和 `@dv/api` 的 `POST /api/dv/history` 路由都调用它。它的筛选条件（`branch`、`marks`、`actor`、`component`、`operation`、`kind`、`status`、`session`、`turn`、`tool_call`、`records`、`before`）以“且”组合，`limit` 在筛选之后生效。
 
 <a id="further-exploration"></a>
 ## 进一步探索

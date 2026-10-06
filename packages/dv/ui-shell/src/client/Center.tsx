@@ -20,7 +20,9 @@ import { DV_CURRENT_TIMELINE_EVENT, getTimelineOf, publishCurrentTimeline } from
 import { pickText, useText } from '@dv/ui-kit/locale.ts'
 import { sessionDraft } from '@dv/ui-kit/state.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
-import { DV_CANVAS_FOCUS_EVENT, DV_TIMELINE_INSERT_EVENT, type DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
+import {
+  DV_CANVAS_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT, DV_TIMELINE_INSERT_EVENT, type DvWorkspaceEventMap,
+} from '@dv/ui-kit/workspace-events.ts'
 import type { WireWorkspaces } from '@dv/ui-kit/types.ts'
 import type { ShellActions } from './actions.ts'
 import { InlineRename } from './InlineRename.tsx'
@@ -307,6 +309,16 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     window.addEventListener(DV_CANVAS_FOCUS_EVENT, focus)
     return () => { window.removeEventListener(DV_CANVAS_FOCUS_EVENT, focus) }
   }, [])
+  useEffect(() => {
+    // A `dv:timeline-focus` request selects its timeline and asks the center to show the timeline view.
+    const focus = (event: Event): void => {
+      const { timelineId } = (event as CustomEvent<DvWorkspaceEventMap['dv:timeline-focus']>).detail
+      publishCurrentTimeline(projectId, timelineId)
+      setShell({ view: 'timeline' })
+    }
+    window.addEventListener(DV_TIMELINE_FOCUS_EVENT, focus)
+    return () => { window.removeEventListener(DV_TIMELINE_FOCUS_EVENT, focus) }
+  }, [projectId])
   // 插入片段 appends the asset to the timeline selected in the timeline editor, else to the working branch's first
   // timeline; a working branch without timelines gets timeline `t1` holding the clip.
   const insertClip = (assetId: string): void => {

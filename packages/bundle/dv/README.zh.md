@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概要
 
-用这个 bundle 把 DreamVerse 作为一个 `dsh` profile 运行。它插入 DreamVerse 生成客户端、组件 `@dv/project`、`@dv/asset-pool`、`@dv/inspector`、`@dv/story-bible`、`@dv/shot-plan`、`@dv/shot-render`、`@dv/timeline` 和 `@dv/deliver` 及 ffmpeg 执行器 `@dv/ffmpeg`，API `@dv/api`、智能体集成 `@dv/agent-integration`，以及界面插件 `@dv/ui-composer`、`@dv/ui-canvas`、`@dv/ui-timeline`、`@dv/ui-asset-pool` 和 `@dv/ui-shell`，把 `skill-filesystem` 指向 `@dv/agent-integration` 的 skill，声明到集群 SGLang 服务器的 `deepseek-local` 路由，并从环境变量选择智能体模型。`scripts/video-harness/setup-profile.sh` 把它叠在 `dsh-base` 加 `dsh-web-app` 上成为 profile `video-harness`，叠在 `dsh-base` 加 `dsh-headless` 上成为 `video-harness-headless`；`scripts/video-harness/launch.sh web|headless` 从源码运行二者之一。
+用这个 bundle 把 DreamVerse 作为一个 `dsh` profile 运行。它插入 DreamVerse 生成客户端、组件 `@dv/project`、`@dv/asset-pool`、`@dv/inspector`、`@dv/story-bible`、`@dv/shot-plan`、`@dv/shot-render`、`@dv/timeline` 和 `@dv/deliver` 及 ffmpeg 执行器 `@dv/ffmpeg`，API `@dv/api`、智能体集成 `@dv/agent-integration`，以及界面插件 `@dv/ui-composer`、`@dv/ui-canvas`、`@dv/ui-timeline`、`@dv/ui-asset-pool`、`@dv/ui-history` 和 `@dv/ui-shell`，把 `skill-filesystem` 指向 `@dv/agent-integration` 的 skill，声明到集群 SGLang 服务器的 `deepseek-local` 路由，并从环境变量选择智能体模型。`scripts/video-harness/setup-profile.sh` 把它叠在 `dsh-base` 加 `dsh-web-app` 上成为 profile `video-harness`，叠在 `dsh-base` 加 `dsh-headless` 上成为 `video-harness-headless`；`scripts/video-harness/launch.sh web|headless` 从源码运行二者之一。
 
 ## 目录
 

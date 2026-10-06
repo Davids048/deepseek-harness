@@ -44,7 +44,7 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-canvas` 标签类�
 | 点一个节点 | `POST /api/dv/selection`，kind 为 `record`、`character`、`location` 或 `style`，让宿主能告诉智能体用户指向了什么 |
 | 拖动节点、平移或缩放 | `POST /api/dv/layout`，带以节点 ID 为键的移动位置和视口 |
 
-显示 `draft/*` 分支时编辑器的写入按钮禁用；接受或丢弃草稿，或切到别的分支，才能写入。带 `{recordId}` 的 `dv:canvas-focus` 窗口事件把该记录的节点移到中央并打开。
+显示 `draft/*` 分支时编辑器的写入按钮禁用；接受或丢弃草稿，或切到别的分支，才能写入。带 `{recordId}` 的 `dv:canvas-focus` 窗口事件把该记录的节点移到中央并打开。记录没有自己的节点时，该事件打开它写下的设定版本的节点，否则打开它第一个产出的节点。
 
 -----
 

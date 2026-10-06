@@ -34,8 +34,8 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 
 | Module | Content |
 | --- | --- |
-| `types.ts` | `WireState`, `ProjectRecord`, `Branch`, `Asset`, `Timeline`, `Clip`, `WireOperation`, `WireProject`, `ProjectEvent`, `OperationRequest`, `ApprovalCard`: the JSON `@dv/api` sends and receives, as structural types |
-| `api.ts` | `DvClient` (`listProjects`, `getState`, `listOperations`, `runOperation`, `importAsset`, `acceptDraft`, `discardDraft`, `undo`, `redo`, `createBranch`, `switchBranch`, `acceptStale`, `select`, layout, workspace, and composer calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
+| `types.ts` | `WireState`, `ProjectRecord`, `Branch`, `Asset`, `Timeline`, `Clip`, `WireOperation`, `WireProject`, `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry`, `WireHistory`, `ApprovalCard`: the JSON `@dv/api` sends and receives, as structural types |
+| `api.ts` | `DvClient` (`listProjects`, `getState`, `listOperations`, `runOperation`, `importAsset`, `acceptDraft`, `discardDraft`, `undo`, `redo`, `createBranch`, `switchBranch`, `acceptStale`, `listHistory`, `select`, layout, workspace, and composer calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`, `paramsOf(fields)`, `FieldParseError`: one control per schema property, typed coercion |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`, `timelineName(timeline, numbered)`, `formatSeconds` |
 | `state.ts` | `openDrafts`, `sessionDraft`, `branchNames`, `assetIndex`, `videoAssets` |
@@ -44,7 +44,8 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | `BranchBar.tsx` | The bar: project and branch pickers, a new-project and a new-branch button, undo, and one accept/discard chip per open draft; its copy arrives as `labels`, already localized by the owning plugin |
 | `WorkingBranchBar.tsx` | `WorkingBranchBar`: the working branch of the view's chat session (its open draft, else `main`) with accept and discard for the draft; the canvas and the timeline editor show it (test ID `dv-kit-working-branch`, attribute `data-branch`) |
 | `DiscardDraftDialog.tsx` | `useDiscardDraft(client, project, surface, onChange?)`: every discard reads the draft's counts, asks in a dialog how many agent changes and own edits will be lost (test ID `dv-kit-discard-dialog`), and sends the confirmed counts; on `draft_changed` it shows the current counts again and calls `onChange` |
-| `compose.ts`, `workspace-events.ts` | The window events `dv:compose`, `dv:timeline-insert`, `dv:canvas-focus` and the asset drag type `application/x-dv-asset` |
+| `compose.ts`, `workspace-events.ts` | The window events `dv:compose`, `dv:timeline-insert`, `dv:canvas-focus`, `dv:history-focus`, `dv:trajectory-focus`, `dv:timeline-focus` (`DV_*_EVENT`) and the asset drag type `application/x-dv-asset` |
+| `tool-labels.ts` | `DV_TOOL_LABELS`: the zh and en label of every `dv_*` tool, shown by the composer's tool cards and the History panel |
 | `current-project.ts`, `current-timeline.ts` | The open project and the selected timeline, kept on `window.__dvCurrentProject` and `window.__dvCurrentTimeline` and announced with `dv:current-project` and `dv:current-timeline` |
 | `locale.ts` | `useText`, `pickText`: the Chinese or English string of a pair, following `<html lang>` |
 
