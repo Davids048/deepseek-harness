@@ -1,6 +1,6 @@
 /**
  * The `vh:compose` browser event: a view asks the chat composer to prefill a message that references project items.
- * Every producer (the canvas "让 agent 改", the Tool "让 agent 接着做", the asset "让 agent 使用") calls `dispatchCompose`;
+ * Every producer (the canvas "让 agent 改", the asset "让 agent 使用") calls `dispatchCompose`;
  * the composer listens, fills its draft with `text`, and turns each entry of `refs` into a structured `@` reference.
  * Nothing is sent until the user submits. Example for an asset: `{ kind: 'asset', id: asset.id, label: asset.name }`.
  *

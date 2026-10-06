@@ -1,6 +1,6 @@
 /**
  * Project deletion and renaming for the DreamVerse shell. Deletion is reversible by hand: the project's directory and
- * its side files (canvas layout, Tool sessions) move to `<state root>/trash/<projectId>-<ms>/`, and the trash entry is
+ * its side file (canvas layout) move to `<state root>/trash/<projectId>-<ms>/`, and the trash entry is
  * what hides the project from `GET /api/vh/workspaces`. The browser deletes the project's DSH Workspace registration,
  * because only the client reaches the Workspace service.
  *
@@ -73,11 +73,10 @@ export function projectAdminRoutes(log: VhOpLog): ConnectionFetchRoute[] {
     const root = stateRoot()
     const trash = join(root, TRASH_DIR, `${projectId}-${String(Date.now())}`)
     mkdirSync(trash, { recursive: true })
-    // The project directory and its side files keep their names inside the trash entry.
+    // The project directory and its side file keep their names inside the trash entry.
     const moves: Array<[string, string]> = [
       [join(root, 'projects', projectId), join(trash, 'project')],
       [join(root, 'canvas-layout', `${projectId}.json`), join(trash, 'canvas-layout.json')],
-      [join(root, 'tool-sessions', `${projectId}.json`), join(trash, 'tool-sessions.json')],
     ]
     for (const [from, to] of moves) if (existsSync(from)) renameSync(from, to)
     const { [projectId]: workspaceId, ...links } = readLinks()

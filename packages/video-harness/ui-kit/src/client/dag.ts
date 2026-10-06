@@ -84,7 +84,6 @@ export function opLabel(op: WireOp): string {
   const prompt = op.params['prompt']
   if (typeof prompt === 'string' && prompt.length > 0) return prompt.length > 28 ? `${prompt.slice(0, 28)}…` : prompt
   if (op.tool !== undefined) return op.tool.name
-  if (op.command !== undefined) return op.command.argv.slice(0, 2).join(' ')
   return op.kind
 }
 

@@ -142,10 +142,10 @@ describe('vhViews', () => {
     expect(state.heads['main']).toBe(state.head)
 
     const tools = fixture.views.api.tools()
-    const trim = tools.find(tool => tool.name === 'clip.trim')
-    expect(trim?.deterministic).toBe(true)
-    expect(trim?.params['startSec']).toBeDefined()
-    expect(Object.keys(trim ?? {})).not.toContain('execute')
+    const frame = tools.find(tool => tool.name === 'media.extract_frame')
+    expect(frame?.deterministic).toBe(true)
+    expect(frame?.params['at']).toBeDefined()
+    expect(Object.keys(frame ?? {})).not.toContain('execute')
   })
 
   it('refuses malformed and unknown requests with the matching status', async () => {
@@ -350,7 +350,15 @@ describe('vhViews', () => {
     const fixture = await start()
     const projectId = fixture.project.createProject({ title: 'demo' })
     const slowTurn = fixture.project.beginTurn(projectId, { actor: 'user', surface: 'api', intent: 'slow' })
-    const slow = fixture.project.schedule(projectId, { tool: 'command.run', inputs: [], params: { argv: ['sh', '-c', 'sleep 0.3; printf T > {{out:o}}'], outputs: [{ name: 'o', mime: 'text/plain' }] }, actor: 'user', surface: 'api', intent: 'slow', turn: slowTurn.turn })
+    // A tool that writes its output after 0.3 s keeps its record running while the view call arrives.
+    fixture.project.registerTool({
+      name: 'slow', version: '1', deterministic: false,
+      execute: async (execution) => {
+        await new Promise(resolve => setTimeout(resolve, 300))
+        return { outputs: [execution.assets.put(Buffer.from('T'), { mime: 'text/plain' })] }
+      },
+    })
+    const slow = fixture.project.schedule(projectId, { tool: 'slow', inputs: [], params: {}, actor: 'user', surface: 'api', intent: 'slow', turn: slowTurn.turn })
     const waiting = await fixture.views.api.invoke({
       project: projectId, tool: 'asset.upload', surface: 'canvas', params: { path: fixture.writeFile('t.png', 'T'), mime: 'image/png' },
       inputs: [{ role: 'ignored', ref: `${slow.id}#0` }],

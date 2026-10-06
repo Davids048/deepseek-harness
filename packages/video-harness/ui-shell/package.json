@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The DreamVerse shell over the DSH web app: the entry page and the project workspace (canvas, cuts, Tool mode) in the center, the project navigator in the left sidebar, and the chat and trajectory tabs in the right panel.",
+  "description": "The DreamVerse shell over the DSH web app: the entry page and the project workspace (canvas and cuts) in the center, the project navigator in the left sidebar, and the chat and trajectory tabs in the right panel.",
   "exports": {
     ".": "./src/index.ts",
     "./client": {
@@ -50,7 +50,6 @@
     "@video-harness/ui-canvas": "workspace:*",
     "@video-harness/ui-kit": "workspace:*",
     "@video-harness/ui-timeline": "workspace:*",
-    "@video-harness/ui-tool": "workspace:*",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   }

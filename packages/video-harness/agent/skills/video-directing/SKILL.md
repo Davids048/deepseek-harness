@@ -32,8 +32,8 @@ The `editing-ops` skill has the full table of phrasings and calls. The rules beh
 
 - **Retakes carry the same inputs.** A retake of slot N is `vh_generate_video` with `base_op` = the record that produced slot N, `replaces: [that record]`, `inputs.reference` identical to the base record (read it from the project block or `vh_project_state`; normally `["c1@1"]`), `continue_from` = the same previous-shot record when the original had one, a prompt that changes only what the user named, and `user_requested: true`. Without `inputs.reference` the backend rejects the call ("ref2va requires 1 to 8 reference images").
 - **One named change needs no confirmation.** `user_requested: true` means the user asked for exactly this one generation. A change you propose on your own is not user-requested: describe it, estimate its cost, and stop.
-- **Deterministic edits run at once.** `vh_clip_trim`, `vh_sequence_*`, `vh_media_concat`, `vh_media_extract_frame`, `vh_media_probe` cost no GPU and need no confirmation.
-- **The timeline is edited by slot.** After `vh_clip_trim`, put the result in place with `vh_sequence_replace` (`slot`, `asset`). A retake goes into its slot the same way; the original stays as a take the user can switch back to.
+- **Deterministic edits run at once.** `vh_sequence_*`, `vh_media_concat`, `vh_media_extract_frame`, `vh_media_probe` cost no GPU and need no confirmation.
+- **The timeline is edited by slot.** A trim is `vh_sequence_set_range` (`slot`, `inSec`, `outSec`) and keeps the clip file. A retake goes into its slot with `vh_sequence_replace` (`slot`, `asset`); the original stays as a take the user can switch back to.
 - **Reorder warns, it does not regenerate.** After `vh_sequence_move` on chained shots, say which join may no longer be continuous and offer to retake the shot after the move.
 
 ## 4. When a reference changes
@@ -80,11 +80,9 @@ Reference images reach the model as `Picture 1 … Picture N` in `inputs.referen
 ## 8. Tool pitfalls
 
 - `vh_media_extract_frame` `at`: pass a number of seconds, or the word `first` or `last`. Never a numeric string such as `"6.3"`.
-- `vh_clip_trim` `startSec` is required; `endSec` optional; `reencode` defaults to true (frame-accurate).
 - `vh_generate_video` requires `prompt` and `inputs.reference`; `continue_from` is a record id, not an asset id; `duration_sec` is a whole number.
 - `vh_plan_approve` needs the plan record id and `user_approved: true`; it fails while an earlier draft is open.
 - `vh_wait` before `vh_project_state` when a call returned `scheduled` records.
-- `vh_command_run` only for what no structured tool covers, with declared inputs and outputs.
 
 ## 9. Do not
 

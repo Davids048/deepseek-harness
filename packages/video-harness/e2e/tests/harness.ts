@@ -81,7 +81,7 @@ async function renderPlayableClip(
  */
 export async function startFakeBackend(
   dir: string,
-  options: { playable?: boolean; delayMs?: number; failPrompt?: string } = {},
+  options: { playable?: boolean } = {},
 ): Promise<FakeBackend> {
   // ffmpeg writes the rendered clip into `dir` and does not create it.
   mkdirSync(dir, { recursive: true })
@@ -99,14 +99,6 @@ export async function startFakeBackend(
       void (async () => {
         const body = JSON.parse(Buffer.concat(parts).toString('utf8')) as Record<string, unknown>
         requests.push(body)
-        // `delayMs` holds the request open so a page can observe the queued and generating states; a prompt that
-        // contains `failPrompt` gets an HTTP 500, so the generation record fails.
-        if (options.delayMs !== undefined) await new Promise(resolve => setTimeout(resolve, options.delayMs))
-        if (options.failPrompt !== undefined && String(body['prompt'] ?? '').includes(options.failPrompt)) {
-          response.writeHead(500, { 'content-type': 'application/json', connection: 'close' })
-          response.end(JSON.stringify({ error: 'fake backend: scripted failure' }))
-          return
-        }
         const rendered = options.playable === true
           ? await renderPlayableClip(dir, Number(body['width']), Number(body['height']), Number(body['num_frames']), String(body['prompt'] ?? ''))
           : await renderClip(dir, Number(body['width']), Number(body['height']), Number(body['num_frames']))
@@ -195,19 +187,13 @@ async function sessionCookie(tokenUrl: string): Promise<string> {
  * @param options - `modelBaseUrl` points the agent's OpenAI-compatible route (with `/v1`) at a test model, such as
  *   `startScriptedModel` from `scripted-model.ts`; by default the route points at the Messages mock.
  *   `playableClips` makes the fake backend render VP9 clips with a per-prompt color, which Chromium can play.
- *   `backendDelayMs` holds every generate request open that long; `backendFailPrompt` makes the fake backend answer
- *   HTTP 500 to a generate request whose prompt contains it.
  * @returns the booted harness; call `close` in teardown even on failure.
  */
 export async function bootHarness(
-  options: { modelBaseUrl?: string; playableClips?: boolean; backendDelayMs?: number; backendFailPrompt?: string } = {},
+  options: { modelBaseUrl?: string; playableClips?: boolean } = {},
 ): Promise<BootedHarness> {
   const scratch = mkdtempSync(join(tmpdir(), 'vh-e2e-'))
-  const backend = await startFakeBackend(join(scratch, 'backend'), {
-    playable: options.playableClips === true,
-    ...options.backendDelayMs === undefined ? {} : { delayMs: options.backendDelayMs },
-    ...options.backendFailPrompt === undefined ? {} : { failPrompt: options.backendFailPrompt },
-  })
+  const backend = await startFakeBackend(join(scratch, 'backend'), { playable: options.playableClips === true })
   const model = await startMockLlmServer({ port: 0, sequence: ['tool_call_success'], repeatLast: true, toolName: 'vh_project_state', toolArguments: '{"reason":"smoke"}' })
   // The isolated harness home mirrors scripts/video-harness/setup-profile.sh: a manifest naming the three bundles,
   // an empty profile patch, and a link to this checkout's bundle package.

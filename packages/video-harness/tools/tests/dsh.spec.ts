@@ -86,7 +86,7 @@ describe('DSH tools', () => {
     expect(schema?.description).toContain('Cost: gpu')
     expect(schema?.description).toContain('ask the user')
     expect(JSON.stringify(schema?.parameters)).toContain('continue_from')
-    expect(fixture.context.tools.schemas().find(tool => tool.name === 'vh_clip_trim')?.description).toContain('deterministic')
+    expect(fixture.context.tools.schemas().find(tool => tool.name === 'vh_media_probe')?.description).toContain('deterministic')
     expect(JSON.stringify(fixture.context.tools.schemas().find(tool => tool.name === 'vh_plan_approve')?.parameters)).not.toContain('"inputs"')
     await fixture.toolsFiber.dispose()
     expect(fixture.context.tools.get('vh_asset_upload')).toBeUndefined()
@@ -136,14 +136,11 @@ describe('DSH tools', () => {
     const bad = await fixture.call('vh_generate_video', { reason: 'r', prompt: 'x', inputs: { nope: 'c1@1' } })
     expect(bad.isError).toBe(true)
     expect(resultText(bad)).toContain('Unknown input role')
-    // An empty reason falls back to the tool name; extra outputs beyond the declared roles are numbered.
-    const command = value(await fixture.call('vh_command_run', {
-      reason: '', inputs: { in: shot.outputs[0]?.asset_id }, argv: ['ffmpeg', '-y', '-loglevel', 'error', '-i', '{{in:0}}', '-frames:v', '1', '{{out:a.png}}', '-frames:v', '1', '{{out:b.png}}'],
-      outputs: [{ name: 'a.png', mime: 'image/png' }, { name: 'b.png', mime: 'image/png' }],
-    }))
-    expect(fixture.log.get(projectId as never, command.op_id as OpId).intent).toBe('command.run')
-    expect(command.outputs.map(output => output.role)).toEqual(['output', 'output_1'])
-    expect(command.report).toMatchObject({ stdout: '' })
+    // An empty reason falls back to the tool name.
+    const probe = value(await fixture.call('vh_media_probe', { reason: '', inputs: { media: shot.outputs[0]?.asset_id } }))
+    expect(fixture.log.get(projectId as never, probe.op_id as OpId).intent).toBe('media.probe')
+    expect(probe.outputs.map(output => output.role)).toEqual(['info'])
+    expect(probe.report).toMatchObject({ hasAudio: false })
     expect(resultText(await fixture.call('vh_project_state', {}))).toContain('"report"')
   })
 
@@ -156,15 +153,15 @@ describe('DSH tools', () => {
     expect(approve.status).toBe('done')
     expect(approve.scheduled).toHaveLength(3)
     const firstShot = approve.scheduled[0] as string
-    const trim = value(await fixture.call('vh_clip_trim', { reason: 'cut the head', startSec: 0.2, inputs: { clip: `${firstShot}#0` } }))
-    expect(trim.status).toBe('pending')
-    expect(trim.summary).toBe('clip.trim pending')
-    expect(trim.outputs).toEqual([])
+    const frame = value(await fixture.call('vh_media_extract_frame', { reason: 'look at the start', at: 'first', inputs: { clip: `${firstShot}#0` } }))
+    expect(frame.status).toBe('pending')
+    expect(frame.summary).toBe('media.extract_frame pending')
+    expect(frame.outputs).toEqual([])
     const waited = json(await fixture.call('vh_wait', {}))
     expect((waited['sequence'] as unknown[]).length).toBe(2)
-    expect(fixture.log.get(projectId as never, trim.op_id as OpId).status).toBe('done')
+    expect(fixture.log.get(projectId as never, frame.op_id as OpId).status).toBe('done')
     const recent = waited['recent'] as Array<{ tool: string; status: string; summary: string }>
-    expect(recent.some(record => record.tool === 'clip.trim' && record.status === 'done' && record.summary === 'trimmed from 0.2s')).toBe(true)
+    expect(recent.some(record => record.tool === 'media.extract_frame' && record.status === 'done' && record.summary === 'frame at first')).toBe(true)
     // A record of a tool that is no longer registered is summarized by its kind; a pending record by its status.
     const echo: ToolSpec = { name: 'echo', version: '1', summary: 'echo', inputs: {}, params: {}, outputs: [], deterministic: false, cost: 'free', confirm: 'never', summarize: () => 'echoed', execute: () => Promise.resolve({ outputs: [] }) }
     const removeEcho = fixture.tools.register(echo)

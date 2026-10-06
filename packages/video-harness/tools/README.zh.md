@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包给 agent 和各视图提供同一套作用于视频项目的工具。每个 `ToolSpec` 声明带类型的输入、JSON schema 参数、输出、成本类别、确认策略和一行摘要。`vhTools` 把每个 spec 注册到项目运行时，并在挂载了 DSH `tools` 注册表时注册为 `vh_<name>` 工具，一次调用即成一条操作记录。自带的 spec 覆盖上传、实体版本、计划、序列编辑、媒体处理、任意命令、经 DreamVerse 生成后端的 `generate.video`，以及经默认模型的 `perception.describe`。
+使用本包给 agent 和各视图提供同一套作用于视频项目的工具。每个 `ToolSpec` 声明带类型的输入、JSON schema 参数、输出、成本类别、确认策略和一行摘要。`vhTools` 把每个 spec 注册到项目运行时，并在挂载了 DSH `tools` 注册表时注册为 `vh_<name>` 工具，一次调用即成一条操作记录。自带的 spec 覆盖上传、实体版本、计划、序列编辑、媒体处理、经 DreamVerse 生成后端的 `generate.video`，以及经默认模型的 `perception.describe`。
 
 ## 目录
 
@@ -47,8 +47,8 @@ kind: "package-reference"
 | `plan.create` / `plan.update` | free | 是 | always | 以 JSON 存储的计划文档（镜头、参考、连续性） |
 | `plan.approve` | free | 是 | never | 用户的批准；运行时为每个镜头调度一条 `generate.video` 和一条 `sequence.create` |
 | `sequence.create` / `replace` / `move` / `set_range` / `insert` / `remove` | free | 是 | never | 由折叠解释的时间线编辑 |
-| `clip.trim`、`media.concat`、`media.extract_frame`、`media.probe` | cpu | 是 | never | 经 `vhMedia` 的 ffmpeg 和 ffprobe；`media.extract_frame` 的 `at` 接受 `first`、`last`（默认）或以数字或数字字符串给出的秒数 |
-| `command.run` | cpu | 否 | never | 带 `{{in:<n>}}` 和 `{{out:<name>}}` 占位符与声明输出的任意命令 |
+| `media.concat`、`media.extract_frame`、`media.probe` | cpu | 是 | never | 经 `vhMedia` 的 ffmpeg 和 ffprobe；`media.extract_frame` 的 `at` 接受 `first`、`last`（默认）或以数字或数字字符串给出的秒数 |
+| `clip.trim` | cpu | 是 | never | 经 `vhMedia` 把片段裁到一个范围，供时间线导出；只注册到运行时，因此没有 DSH 工具，也没有画布表单 |
 | `generate.video` | gpu | 否 | cost | 一个镜头：视频和最后一帧；`reference` 输入携带实体版本或图片，`first_frame` 接续更早的镜头 |
 | `perception.describe` | free | 否 | never | 默认模型回答关于某图片素材的问题 |
 
@@ -56,7 +56,7 @@ kind: "package-reference"
 
 ### DSH 工具
 
-每个 spec 是一个名为 `vh_<把点换成下划线的名字>` 的工具，例如 `vh_generate_video`。除 spec 自己的参数外，每个工具还接受 `reason`（必填；记录的 intent）、`project_id`（默认会话项目）、`inputs`（角色到素材 ID、`entity@version` 或 `<record>#<index>`；接受多个的角色用列表）、`replaces`（本次调用替代的记录）和 `base_op`；`vh_generate_video` 还接受 `continue_from`，即新镜头从其最后一帧开始的那条镜头记录。输入指向未完成记录的调用会被调度并返回 `pending`；否则立即运行并返回 `done`。结果给出记录、状态、摘要、带 `/vh/assets/<id>/content` URL 的输出、运行时因本次调用调度的记录、参数和报告；挂载了附件服务时图片输出还以图片块到达。
+每个已注册 spec 是一个名为 `vh_<把点换成下划线的名字>` 的工具，例如 `vh_generate_video`。除 spec 自己的参数外，每个工具还接受 `reason`（必填；记录的 intent）、`project_id`（默认会话项目）、`inputs`（角色到素材 ID、`entity@version` 或 `<record>#<index>`；接受多个的角色用列表）、`replaces`（本次调用替代的记录）和 `base_op`；`vh_generate_video` 还接受 `continue_from`，即新镜头从其最后一帧开始的那条镜头记录。输入指向未完成记录的调用会被调度并返回 `pending`；否则立即运行并返回 `done`。结果给出记录、状态、摘要、带 `/vh/assets/<id>/content` URL 的输出、运行时因本次调用调度的记录、参数和报告；挂载了附件服务时图片输出还以图片块到达。
 
 一个 agent 会话的记录都进入草稿分支上的一个开着的 turn，直到会话接受或拒绝它。管理工具有 `vh_project_create`、`vh_project_use`、`vh_project_state`、`vh_turn_accept`、`vh_turn_reject`、`vh_undo`、`vh_branch_create`、`vh_branch_use` 和 `vh_wait`；每个都返回项目状态：实体、时间线、计划、过期记录、分支、开着的 turn 和最近的记录。
 
@@ -68,7 +68,7 @@ kind: "package-reference"
 <details>
 <summary>实现内部 — 点击展开</summary>
 
-`VhTools` 保存 spec 映射并把每个 spec 注册到 `vhProject.registerTool`；在 `ctx.inject(['tools'])` 内创建 DSH 桥接器，它为每个 spec 定义一个 `defineTool` 工具以及管理工具，并在注册表或服务消失时移除它们。桥接器为每个 agent 会话保存一份 `SessionState`（以 agent 的会话 ID 为键，直接调用用 `anonymous`）：项目、开着的 turn 及其项目、探索分支。一次调用解析项目，没有开着的 turn 时以调用的 reason 开一个，按 spec 的角色解析 `inputs`，然后调用 `vhProject.invoke`，输入指向未完成记录时改为 `vhProject.schedule`。
+`VhTools` 保存 spec 映射并把每个 spec 注册到 `vhProject.registerTool`；`clip.trim` 只注册到运行时，不进入该映射；在 `ctx.inject(['tools'])` 内创建 DSH 桥接器，它为每个 spec 定义一个 `defineTool` 工具以及管理工具，并在注册表或服务消失时移除它们。桥接器为每个 agent 会话保存一份 `SessionState`（以 agent 的会话 ID 为键，直接调用用 `anonymous`）：项目、开着的 turn 及其项目、探索分支。一次调用解析项目，没有开着的 turn 时以调用的 reason 开一个，按 spec 的角色解析 `inputs`，然后调用 `vhProject.invoke`，输入指向未完成记录时改为 `vhProject.schedule`。
 
 `generate.video` 从 `dreamverseGeneration.model()` 读取模型事实，按参数和模型默认值解析帧尺寸与帧数，用 DreamVerse 规则校验参考图数量，用 `segmentRequestImages` 排列请求图片（先参考图，再前一镜头的最后一帧），没给种子时抽取一个，把片段流写入临时文件，然后以该记录为产生者存储视频和 PNG 最后一帧。
 
@@ -76,7 +76,7 @@ kind: "package-reference"
 | --- | --- |
 | [`src/types.ts`](src/types.ts) | `ToolSpec`、`InputSpec`、`OutputSpec`、`Confirm` |
 | [`src/specs-basic.ts`](src/specs-basic.ts) | 上传、实体、计划、序列编辑 |
-| [`src/specs-media.ts`](src/specs-media.ts) | 裁剪、拼接、抽帧、探测、`command.run` |
+| [`src/specs-media.ts`](src/specs-media.ts) | 裁剪、拼接、抽帧、探测 |
 | [`src/specs-generate.ts`](src/specs-generate.ts) | `generate.video` 和 `shotGeometry` |
 | [`src/specs-perception.ts`](src/specs-perception.ts) | `perception.describe` |
 | [`src/dsh.ts`](src/dsh.ts) | DSH 桥接器：工具定义、会话状态、管理工具、渲染 |

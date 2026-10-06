@@ -2,7 +2,7 @@
  * The center of the DreamVerse shell, shadowing DSH's `main.conversation`. Without an open project it is the entry
  * page: a DreamVerse headline, the DSH composer, and recent project cards, and the chat itself once it starts. With a
  * project open it is the workspace: a top bar (breadcrumb, 画布 | 剪辑 toggle, panel control, agent draft bar) above
- * the canvas, the cuts editor, or the selected Tool session.
+ * the canvas or the cuts editor.
  *
  * The center also keeps the shell's open project and the DSH main session together: once the client lists are ready
  * it restores the location the URL names, and afterwards it adopts the project of a main session that moves to
@@ -11,7 +11,7 @@
  * @module @video-harness/ui-shell/Center
  */
 import type { ReactNode } from 'react'
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ConversationViewsProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
@@ -24,13 +24,12 @@ import { useProjectState } from '@video-harness/ui-kit/useProject.ts'
 import type { VhWorkspaceEventMap } from '@video-harness/ui-kit/workspace-events.ts'
 import type { ShellActions } from './actions.ts'
 import { InlineRename } from './InlineRename.tsx'
-import { useToolSessionTitle } from './useToolSessionTitle.ts'
 import type { Links, ShellLocation } from './store.ts'
 import {
   applyingLocation, formatLocation, getShell, NO_PROJECTS, parseLocation, postJson, projectOfSession, refreshLinks, setShell,
   startUrlMirror, useShell,
 } from './store.ts'
-import { CanvasView, CutsView, ToolView } from './views.ts'
+import { CanvasView, CutsView } from './views.ts'
 import css from './shell.module.css'
 
 /** What the shell's slot registrations inject. */
@@ -70,7 +69,7 @@ function NoWidthControls(): ReactNode {
 
 /**
  * Move the page to a location the URL names, without adding browser history entries: open its project (and its
- * session), or the entry page, then its center view, Tool session, navigator list, and cuts episode.
+ * session), or the entry page, then its center view and cuts episode.
  * @param shell - the shell actions.
  * @param links - the project links.
  * @param target - the location.
@@ -82,7 +81,6 @@ function applyLocation(shell: ShellActions, links: Links, target: ShellLocation,
     const projectId = target.projectId !== null && links.projects.some(p => p.projectId === target.projectId) ? target.projectId : null
     if (projectId === null) {
       run(() => shell.goHome(target.sessionId))
-      setShell({ list: target.list })
       return
     }
     const current = getShell()
@@ -90,7 +88,7 @@ function applyLocation(shell: ShellActions, links: Links, target: ShellLocation,
       run(() => shell.openProject(projectId, target.sessionId))
     }
     if (target.episode !== null) publishCurrentEpisode(projectId, target.episode)
-    setShell({ view: target.view, toolSession: target.toolSession, list: target.list, episode: target.episode ?? getEpisodeOf(projectId) })
+    setShell({ view: target.view, episode: target.episode ?? getEpisodeOf(projectId) })
   })
 }
 
@@ -172,7 +170,7 @@ export function CenterPanel(props: CenterProps): ReactNode {
     const open = getShell().projectId
     if (sessionProject === null || sessionProject === previous || sessionProject === open) return
     if (open !== null && open !== previous) return
-    setShell({ projectId: sessionProject, toolSession: null })
+    setShell({ projectId: sessionProject })
   }, [sessionProject])
   return projectId === null
     ? <EntryPage {...props} />
@@ -253,13 +251,11 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
   const { sessionId, useSessions, projectId, sessionInProject, shell } = props
   const t = useText()
   const view = useShell(s => s.view)
-  const toolSession = useShell(s => s.toolSession)
   const title = useShell(s => s.links?.projects.find(p => p.projectId === projectId)?.title ?? projectId)
   const sessionTitle = useSessions((s) => {
     const row = sessionId === undefined ? undefined : s.byId[sessionId]
     return row?.blank === false ? row.displayTitle : undefined
   })
-  const toolTitle = useToolSessionTitle(projectId, toolSession)
   const [renaming, setRenaming] = useState(false)
   const state = useProjectState(client, projectId, 'main')
   const drafts = state.value === null ? [] : openDrafts(state.value).map(draft => draft.turn)
@@ -301,8 +297,8 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     return stop
   }, [mounted, sessionId, sessionInProject, shell])
   useEffect(() => {
-    // A Tool result's 在画布打开 asks the center to show the canvas.
-    const focus = (): void => { setShell({ view: 'canvas', toolSession: null }) }
+    // A `vh:canvas-focus` request asks the center to show the canvas.
+    const focus = (): void => { setShell({ view: 'canvas' }) }
     window.addEventListener('vh:canvas-focus', focus)
     return () => { window.removeEventListener('vh:canvas-focus', focus) }
   }, [])
@@ -319,9 +315,6 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     void client.invoke({ project: projectId, ...call, surface: 'timeline' })
       .then(() => { state.reload() }, (error: unknown) => { console.warn('ui-shell: insert failed', error) })
   }
-  // A link to a deleted Tool session drops tool= from the location (replacing the history entry) once ToolView finds
-  // no such session.
-  const leaveMissingTool = useCallback((): void => { applyingLocation(() => { setShell({ toolSession: null }) }) }, [])
   const insertRef = useRef(insertToCut)
   insertRef.current = insertToCut
   useEffect(() => {
@@ -329,7 +322,7 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     const insert = (event: Event): void => {
       const { assetId } = (event as CustomEvent<VhWorkspaceEventMap['vh:cut-insert']>).detail
       insertRef.current(assetId)
-      setShell({ view: 'cuts', toolSession: null })
+      setShell({ view: 'cuts' })
     }
     window.addEventListener('vh:cut-insert', insert)
     return () => { window.removeEventListener('vh:cut-insert', insert) }
@@ -364,14 +357,14 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
               <span className={css.crumbProject} title={t('双击重命名', 'Double-click to rename')} onDoubleClick={() => { setRenaming(true) }}>{title}</span>
             )}
           <span className={css.crumbSep}>/</span>
-          <span className={css.crumbSession}>{toolSession !== null ? toolTitle ?? t('Tool 会话', 'Tool session') : sessionTitle ?? t('新对话', 'New chat')}</span>
+          <span className={css.crumbSession}>{sessionTitle ?? t('新对话', 'New chat')}</span>
         </div>
         <div className={css.toggle} role="tablist">
           {(['canvas', 'cuts'] as const).map(id => (
             <button
               key={id} type="button" role="tab" className={css.toggleItem}
-              data-active={toolSession === null && view === id ? '' : undefined}
-              onClick={() => { setShell({ view: id, toolSession: null }) }}
+              data-active={view === id ? '' : undefined}
+              onClick={() => { setShell({ view: id }) }}
             >{id === 'canvas' ? t('画布', 'Canvas') : t('剪辑', 'Cuts')}</button>
           ))}
         </div>
@@ -381,8 +374,8 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
           </button>
         </div>
       </header>
-      {/* The canvas draws its own draft bar; the cuts and Tool views get this strip under the top bar. */}
-      {drafts.length > 0 && (toolSession !== null || view !== 'canvas') && (
+      {/* The canvas draws its own draft bar; the cuts view gets this strip under the top bar. */}
+      {drafts.length > 0 && view !== 'canvas' && (
         <div className={css.draft}>
           <span>{t('agent 草稿待确认', 'Agent draft to review')}</span>
           <button type="button" className={`${css.draftButton} ${css.draftAccept}`} onClick={() => { decide('accept') }}>{t('接受', 'Accept')}</button>
@@ -390,20 +383,9 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
         </div>
       )}
       <div className={css.viewArea}>
-        {toolSession !== null
-          ? (
-            <ToolView
-              key={toolSession}
-              projectId={projectId}
-              toolSessionId={toolSession}
-              onInsertToCut={insertToCut}
-              onMissing={leaveMissingTool}
-              client={client}
-            />
-          )
-          : view === 'canvas'
-            ? <CanvasView projectId={projectId} branch="main" client={client} />
-            : <CutsView projectId={projectId} branch="main" client={client} />}
+        {view === 'canvas'
+          ? <CanvasView projectId={projectId} branch="main" client={client} />
+          : <CutsView projectId={projectId} branch="main" client={client} />}
       </div>
     </div>
   )

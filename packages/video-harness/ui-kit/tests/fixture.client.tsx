@@ -53,8 +53,8 @@ export function fixtureState(): WireState {
       op({ id: 'g1', turn: 't3', actor: 'agent', tool: { name: 'generate.video', version: '1' }, deterministic: false, inputs: [hero], params: { prompt: 'hero walks through the rain at night in the city' }, outputs: ['shot1.mp4', 'shot1-last.png'] }),
       op({ id: 'g2', turn: 't3', actor: 'agent', tool: { name: 'generate.video', version: '1' }, deterministic: false, inputs: [hero, { role: 'first_frame', ref: 'g1#1', resolved: 'shot1-last.png' }], params: { prompt: 'hero turns' }, outputs: ['shot2.mp4', 'shot2-last.png'] }),
       op({ id: 's1', turn: 't3', actor: 'agent', tool: { name: 'sequence.create', version: '1' }, params: { assets: ['shot1.mp4', 'shot2.mp4'] } }),
-      op({ id: 'c1', turn: 't4', surface: 'timeline', tool: { name: 'clip.trim', version: '2' }, inputs: [{ role: 'clip', ref: 'shot2.mp4', resolved: 'shot2.mp4' }], params: { startSec: 1, endSec: 4 }, outputs: ['cut.mp4'], status: 'failed', error: 'ffmpeg exit 1' }),
-      op({ id: 'x1', turn: 't4', command: { argv: ['ffprobe', '-i', 'cut.mp4'] }, kind: 'command', inputs: [{ role: 'in', ref: 'c1#0', resolved: 'cut.mp4' }], outputs: ['notes.txt'] }),
+      op({ id: 'c1', turn: 't4', surface: 'timeline', tool: { name: 'media.concat', version: '1' }, inputs: [{ role: 'clip', ref: 'shot2.mp4', resolved: 'shot2.mp4' }], outputs: ['cut.mp4'], status: 'failed', error: 'ffmpeg exit 1' }),
+      op({ id: 'x1', turn: 't4', tool: { name: 'media.probe', version: '1' }, inputs: [{ role: 'media', ref: 'c1#0', resolved: 'cut.mp4' }], outputs: ['notes.txt'] }),
       op({ id: 'g3', turn: 't5', branch: 'draft/t5', actor: 'agent', tool: { name: 'generate.video', version: '1' }, deterministic: false, base_op: 'g1', inputs: [hero], params: { prompt: 'hero walks, wider' }, status: 'running' }),
     ],
     assets: [

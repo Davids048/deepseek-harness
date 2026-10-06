@@ -45,7 +45,7 @@ kind: "package-reference"
 | [`skills/video-directing/SKILL.md`](skills/video-directing/SKILL.md) | 计划、批准、生成、裁剪、重拍、换参考图、分支，以及参考图生视频的 prompt 规则 |
 | [`skills/branching-story/SKILL.md`](skills/branching-story/SKILL.md) | 每个节点两个方向，都从父节点生成，用户选，未选分支保留 |
 
-某个 agent loop turn 打开的草稿不能被后面的 turn 继续写：桥会拒绝调用，直到 `vh_turn_accept` 或 `vh_turn_reject` 关闭它，提示词节也会说明这一点。turn 正常完成时，若每条记录都是确定性的（上传、实体、plan、序列编辑、裁剪）或带 `user_requested: true`，且没有一条是 `confirm: always` 工具，桥会自行把草稿并入 `main`；其他正常完成的草稿和所有被打断且带记录的草稿保持打开，规则要求模型以"草稿待确认"结束这样的回复。草稿打开期间 `main` 被视图改动过的，同样保留。提示词节还会写出用户最近在画布或时间线上选中的对象，装载了 `vhViews` 插件时从它读取。确认遵循设计表：`always` 工具需要 `user_approved: true` 或用户对问题的回答；`cost` 工具只在本 turn 的预估 GPU 秒数超过桥的预算、且调用没有带 `user_requested: true` 时才问。
+某个 agent loop turn 打开的草稿不能被后面的 turn 继续写：桥会拒绝调用，直到 `vh_turn_accept` 或 `vh_turn_reject` 关闭它，提示词节也会说明这一点。turn 正常完成时，若每条记录都是确定性的（上传、实体、plan、序列编辑、拼接、抽帧、探测）或带 `user_requested: true`，且没有一条是 `confirm: always` 工具，桥会自行把草稿并入 `main`；其他正常完成的草稿和所有被打断且带记录的草稿保持打开，规则要求模型以"草稿待确认"结束这样的回复。草稿打开期间 `main` 被视图改动过的，同样保留。提示词节还会写出用户最近在画布或时间线上选中的对象，装载了 `vhViews` 插件时从它读取。确认遵循设计表：`always` 工具需要 `user_approved: true` 或用户对问题的回答；`cost` 工具只在本 turn 的预估 GPU 秒数超过桥的预算、且调用没有带 `user_requested: true` 时才问。
 
 <a id="further-exploration"></a>
 ## 延伸阅读

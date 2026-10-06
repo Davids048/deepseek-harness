@@ -13861,28 +13861,6 @@ importers:
         specifier: ^22.20.0
         version: 22.20.0
 
-  packages/video-harness/dreamverse-bridge:
-    dependencies:
-      '@dreamverse/segment-generation':
-        specifier: workspace:*
-        version: link:../../dreamverse/segment-generation
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:~
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-host-webserver':
-        specifier: workspace:*
-        version: link:../../host/webserver
-      '@dreamverse/assets-manager':
-        specifier: workspace:*
-        version: link:../../dreamverse/assets-manager
-      '@dreamverse/generation-client':
-        specifier: workspace:*
-        version: link:../../dreamverse/generation-client
-      '@types/node':
-        specifier: ^22.20.0
-        version: 22.20.0
-
   packages/video-harness/e2e:
     devDependencies:
       '@deepseek-ai/dsh-llm-mock-server':

@@ -1,9 +1,9 @@
 /**
  * Browser state the DreamVerse shell shares between its center panel and its left navigator: the open project, the
- * center view, the selected Tool session, the main chat session, and the project ↔ Workspace links read from
+ * center view, the main chat session, and the project ↔ Workspace links read from
  * `/api/vh/workspaces`. Both components live in this one bundle, so a module-level store is enough.
  *
- * The location (project, view, Tool session, navigator list, chat session) is mirrored into the URL hash, for example
+ * The location (project, view, cuts episode, chat session) is mirrored into the URL hash, for example
  * `#project=<id>&view=cuts&session=<id>`, so a reload restores it. Every change of the open project is published to
  * the other DreamVerse bundles through `publishCurrentProject`.
  *
@@ -43,10 +43,6 @@ export interface ShellState {
   projectId: string | null
   /** The center view while a project is open. */
   view: 'canvas' | 'cuts'
-  /** The Tool session shown in the center instead of the canvas or cuts, or null. */
-  toolSession: string | null
-  /** Which list the navigator shows under each project. */
-  list: 'chat' | 'tool'
   /** The cuts episode selected in the open project, or null before the cuts editor or the URL names one. */
   episode: string | null
   links: Links | null
@@ -56,8 +52,6 @@ export interface ShellState {
 export interface ShellLocation {
   projectId: string | null
   view: 'canvas' | 'cuts'
-  toolSession: string | null
-  list: 'chat' | 'tool'
   episode: string | null
   sessionId: string | undefined
 }
@@ -72,8 +66,6 @@ export function parseLocation(hash: string): ShellLocation {
   return {
     projectId: params.get('project'),
     view: params.get('view') === 'cuts' ? 'cuts' : 'canvas',
-    toolSession: params.get('tool'),
-    list: params.get('list') === 'tool' ? 'tool' : 'chat',
     episode: params.get('ep'),
     sessionId: params.get('session') ?? undefined,
   }
@@ -89,11 +81,9 @@ export function formatLocation(location: ShellLocation): string {
   if (location.projectId !== null) {
     params.set('project', location.projectId)
     if (location.view !== 'canvas') params.set('view', location.view)
-    if (location.toolSession !== null) params.set('tool', location.toolSession)
     if (location.episode !== null) params.set('ep', location.episode)
   }
   if (location.sessionId !== undefined) params.set('session', location.sessionId)
-  if (location.list !== 'chat') params.set('list', location.list)
   const text = params.toString()
   return text === '' ? '' : `#${text}`
 }
@@ -146,9 +136,9 @@ export function applyingLocation(apply: () => void): void {
 
 /**
  * Merge fields into the shared state, mirror the location into the URL hash, publish a changed open project, and
- * notify subscribers when something changed. A change of project, center view, or Tool session, and a session the
- * user chose, add a browser history entry; other changes (a session the shell opened for a project, the episode, the
- * navigator list) replace the current entry.
+ * notify subscribers when something changed. A change of project or center view, and a session the user chose, add a
+ * browser history entry; other changes (a session the shell opened for a project, the episode) replace the current
+ * entry.
  * @param patch - the fields to set.
  */
 export function setShell(patch: Partial<ShellState>): void {
@@ -160,7 +150,7 @@ export function setShell(patch: Partial<ShellState>): void {
   state = next
   const hash = formatLocation(next)
   if (mirrorUrl && (hash !== formatLocation(previous) || hash !== window.location.hash)) {
-    const moved = next.projectId !== previous.projectId || next.view !== previous.view || next.toolSession !== previous.toolSession
+    const moved = next.projectId !== previous.projectId || next.view !== previous.view
       || (sessionChoice && next.sessionId !== previous.sessionId)
     const url = `${window.location.pathname}${window.location.search}${hash}`
     if (moved && !applyingUrl && hash !== window.location.hash) window.history.pushState(null, '', url)

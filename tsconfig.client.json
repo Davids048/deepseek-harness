@@ -140,7 +140,6 @@
     { "path": "./packages/video-harness/ui-kit" },
     { "path": "./packages/video-harness/ui-canvas" },
     { "path": "./packages/video-harness/ui-timeline" },
-    { "path": "./packages/video-harness/ui-tool" },
     { "path": "./packages/video-harness/ui-assets" },
     { "path": "./packages/video-harness/ui-shell" },
     { "path": "./packages/video-harness/ui-composer" },

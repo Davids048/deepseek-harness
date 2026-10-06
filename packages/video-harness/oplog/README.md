@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package as the single source of truth of a video project. Every change is one `Op` record: who did it, from which view, the request, the tool or command, the inputs and what they resolved to, the params, the outputs, and the parent record. Records are appended and never rewritten; a status change is an appended patch line. Branches are named pointers to records, so undo, drafts, and explorations are pointer moves and new branches, and the state at any record is reconstructed by folding its ancestors.
+Use this package as the single source of truth of a video project. Every change is one `Op` record: who did it, from which view, the request, the tool, the inputs and what they resolved to, the params, the outputs, and the parent record. Records are appended and never rewritten; a status change is an appended patch line. Branches are named pointers to records, so undo, drafts, and explorations are pointer moves and new branches, and the state at any record is reconstructed by folding its ancestors.
 
 ## Table of Contents
 

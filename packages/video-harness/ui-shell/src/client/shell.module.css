@@ -158,7 +158,7 @@
   min-width: 0;
 }
 
-/* The agent draft strip between the top bar and the cuts or Tool view. */
+/* The agent draft strip between the top bar and the cuts view. */
 .draft {
   display: flex;
   flex: none;
@@ -257,19 +257,6 @@
 .treeRow[data-active] {
   background: var(--dsw-alias-interactive-bg-hover);
   font-weight: 500;
-}
-
-.navToggle {
-  display: flex;
-  margin: 10px 0 6px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.navToggle .toggleItem {
-  flex: 1;
-  padding: 4px 6px;
 }
 
 .section {
@@ -425,11 +412,6 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
-}
-
-/* The open project's Tool sessions, indented under its row like chat sessions. */
-.treeTool {
-  padding-left: 16px;
 }
 
 /* Empty-state hint inside a right-panel tab. */

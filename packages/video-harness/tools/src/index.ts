@@ -82,7 +82,11 @@ export default class VhTools extends Service {
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'vhTools')
-    for (const spec of [...basicTools(), ...mediaTools(ctx.vhMedia)]) ctx.effect(() => this.register(spec), `vhTools.${spec.name}`)
+    for (const spec of [...basicTools(), ...mediaTools(ctx.vhMedia)]) {
+      // `clip.trim` serves only the timeline export, so it is registered with the runtime alone: no agent tool, no canvas form.
+      const register = spec.name === 'clip.trim' ? () => ctx.vhProject.registerTool(spec) : () => this.register(spec)
+      ctx.effect(register, `vhTools.${spec.name}`)
+    }
     ctx.inject(['dreamverseGeneration'], (child) => {
       child.effect(() => this.register(generateVideoTool(child.dreamverseGeneration)), 'vhTools.generate.video')
     })

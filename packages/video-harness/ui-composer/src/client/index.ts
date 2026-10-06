@@ -6,7 +6,7 @@
  * - creator-facing names for the other `vh_*` tools in their chat rows and in the running group title;
  * - the approval cards (批准 / 跳过, and 全部批准 when several wait) in `conversation.input.dock`;
  * - an empty `conversation.input.permission` entry that hides DSH's file-permission chip;
- * - the `vh:compose` prefill from the canvas, Tool, and asset views, which also brings the 对话 tab to the front.
+ * - the `vh:compose` prefill from the canvas and asset views, which also brings the 对话 tab to the front.
  *
  * @module @video-harness/ui-composer/client
  */

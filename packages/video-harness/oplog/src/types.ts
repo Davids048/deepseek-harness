@@ -34,10 +34,10 @@ export type InputRef = AssetId | EntityRef | OutputRef
 export type Actor = 'user' | 'agent' | 'system'
 
 /** Which view the operation came from. */
-export type Surface = 'chat' | 'timeline' | 'canvas' | 'api' | 'tool'
+export type Surface = 'chat' | 'timeline' | 'canvas' | 'api'
 
 /** What a record represents. */
-export type OpKind = 'tool' | 'command' | 'plan' | 'approve' | 'reject' | 'revert' | 'branch' | 'accept_stale' | 'intent'
+export type OpKind = 'tool' | 'plan' | 'approve' | 'reject' | 'revert' | 'branch' | 'accept_stale' | 'intent'
 
 /** Lifecycle of an operation; transitions only move forward. */
 export type OpStatus = 'pending' | 'running' | 'done' | 'failed'
@@ -64,7 +64,6 @@ export interface Op {
   intent: string
   kind: OpKind
   tool?: { name: string; version: string }
-  command?: { argv: string[] }
   inputs: OpInput[]
   params: Record<string, unknown>
   outputs: AssetId[]

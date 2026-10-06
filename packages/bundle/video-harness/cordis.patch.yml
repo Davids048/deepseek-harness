@@ -76,9 +76,6 @@
     - id: vh-ui-timeline
       name: '@video-harness/ui-timeline'
 
-    - id: vh-ui-tool
-      name: '@video-harness/ui-tool'
-
     - id: vh-ui-assets
       name: '@video-harness/ui-assets'
 

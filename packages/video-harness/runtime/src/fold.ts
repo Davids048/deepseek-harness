@@ -259,7 +259,7 @@ export function foldChain(projectId: ProjectId, chain: Op[], mainChain: Set<OpId
   // is itself stale, or when an entity input is older than the entity's current version. Consumers of an accepted
   // record are not stale through it.
   for (const op of chain) {
-    if (op.kind !== 'tool' && op.kind !== 'command' && op.kind !== 'plan') continue
+    if (op.kind !== 'tool' && op.kind !== 'plan') continue
     // An `accept_stale` record is the user's decision that the result still stands; the mark is not recomputed.
     if (acceptedStale.has(op.id)) continue
     for (const input of op.inputs) {

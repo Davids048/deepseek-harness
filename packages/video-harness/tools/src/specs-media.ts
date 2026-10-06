@@ -1,6 +1,5 @@
 /**
- * Media tools over `vhMedia`: deterministic cuts, joins, frames, and probes, and the one escape hatch for anything
- * else, `command.run`, which records the command text and its declared outputs.
+ * Media tools over `vhMedia`: deterministic trims, joins, frames, and probes.
  *
  * @module @video-harness/tools/specs-media
  */
@@ -47,6 +46,8 @@ export function frameAt(value: unknown): FrameAt {
 }
 
 export function mediaTools(media: VhMedia): ToolSpec[] {
+  // `clip.trim` exists only for the timeline export, which trims each clip with an in or out point before the join. The
+  // agent and the canvas do not get it.
   const clipTrim: ToolSpec = {
     name: 'clip.trim',
     version: '2',
@@ -131,39 +132,7 @@ export function mediaTools(media: VhMedia): ToolSpec[] {
     },
   }
 
-  const commandRun: ToolSpec = {
-    name: 'command.run',
-    version: '1',
-    summary: 'Run an arbitrary command such as ffmpeg over inputs. Use {{in:0}} for the first input path and {{out:name}} for each declared output. Prefer the structured tools when one fits.',
-    inputs: { in: { type: 'any', many: true, description: 'Input assets, referenced as {{in:0}}, {{in:1}}, …' } },
-    params: {
-      argv: { type: 'array', required: true, items: { type: 'string' }, description: 'The program and its arguments.' },
-      outputs: {
-        type: 'array', required: true,
-        items: { type: 'object', additionalProperties: false, properties: { name: { type: 'string', required: true }, mime: { type: 'string', required: true } } },
-        description: 'Files the command writes, referenced as {{out:name}}.',
-      },
-    },
-    outputs: [{ role: 'output', type: 'any' }],
-    deterministic: false,
-    cost: 'cpu',
-    confirm: 'never',
-    summarize: op => `ran ${(op.params['argv'] as string[] | undefined)?.join(' ').slice(0, 80) ?? 'command'}`,
-    async execute(execution): Promise<ToolResult> {
-      const argv = execution.params['argv']
-      const outputs = execution.params['outputs']
-      if (!Array.isArray(argv) || argv.length === 0) throw new Error('command.run needs a non-empty `argv`.')
-      const result = await media.run({
-        argv: argv.map(String),
-        inputs: inputAssets(execution, 'in'),
-        outputs: Array.isArray(outputs) ? (outputs as Array<{ name: string; mime: string }>) : [],
-        producedBy: execution.op.id,
-      })
-      return { outputs: result.outputs, report: { stdout: result.stdout.slice(-2000), stderr: result.stderr.slice(-2000) } }
-    },
-  }
-
-  return [clipTrim, mediaConcat, extractFrame, probe, commandRun]
+  return [clipTrim, mediaConcat, extractFrame, probe]
 }
 
 export { text }

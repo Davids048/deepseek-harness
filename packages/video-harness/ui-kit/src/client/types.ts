@@ -23,7 +23,6 @@ export interface WireOp {
   intent: string
   kind: string
   tool?: { name: string; version: string }
-  command?: { argv: string[] }
   inputs: WireInput[]
   params: Record<string, unknown>
   outputs: string[]

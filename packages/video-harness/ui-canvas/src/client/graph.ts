@@ -1,7 +1,7 @@
 /**
  * Canvas nodes and edges derived from a folded project state. A node is an item a creator works with: an entity
- * (character, style, location), an uploaded reference, a plan, or a generated clip. Deterministic edits (trims, frame
- * extraction, probes, sequence records) do not become nodes; a trim shows as a badge on the clip it shortened.
+ * (character, style, location), an uploaded reference, a plan, or a generated clip. Deterministic edits (frame
+ * extraction, probes, sequence records) do not become nodes; a timeline trim shows as a badge on the clip it shortened.
  */
 import type { WireOp, WireState } from '@video-harness/ui-kit/types.ts'
 
@@ -251,7 +251,7 @@ function numberTakes(nodes: CanvasNode[], edges: CanvasEdge[]): void {
 }
 
 /**
- * Mark clips whose media a deterministic edit changed: a finished trim record, or a sequence item with an in or out point.
+ * Mark clips that the timeline trims: a timeline clip with an in or out point.
  * @param state - the folded state.
  * @param nodes - the drawn nodes, badged in place.
  * @param nodeOfAsset - resolves an asset to its node.
@@ -261,11 +261,6 @@ function addBadges(state: WireState, nodes: CanvasNode[], nodeOfAsset: (assetId:
   const badge = (id: string | null, label: string): void => {
     const node = id === null ? undefined : byId.get(id)
     if (node !== undefined && !node.badges.includes(label)) node.badges.push(label)
-  }
-  for (const op of state.ops) {
-    if (op.tool?.name !== 'clip.trim' || op.status !== 'done' || state.superseded[op.id] !== undefined) continue
-    const source = op.inputs[0]?.resolved
-    if (source !== undefined) badge(nodeOfAsset(source), 'trim')
   }
   for (const item of state.sequence?.items ?? []) {
     if (item.inSec !== null || item.outSec !== null) badge(nodeOfAsset(item.assetId), 'trim')

@@ -4,7 +4,7 @@ import { fixtureState } from '../../ui-kit/tests/fixture.client.tsx'
 import { buildCanvasGraph, overlayDraft, withUploadNames } from '../src/client/graph.ts'
 
 describe('buildCanvasGraph', () => {
-  it('draws entities, plans, and clips, and hides uploads, trims, commands, and sequence records', () => {
+  it('draws entities, plans, and clips, and hides uploads, joins, probes, and sequence records', () => {
     const graph = buildCanvasGraph(fixtureState())
     expect(graph.nodes.map(node => [node.id, node.kind])).toEqual([
       ['entity:hero', 'entity'], ['p1', 'plan'], ['g1', 'clip'], ['g2', 'clip'], ['g3', 'clip'],

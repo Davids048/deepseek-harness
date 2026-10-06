@@ -45,6 +45,7 @@ describe('CutsView', () => {
     expect(clip(2).style.width).toBe('120px')
     expect(clip(2).getAttribute('data-clip-stale')).toBe('true')
     expect(view.getByTestId('vh-cuts-time').textContent).toBe('0:00.0 / 0:07.0')
+    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 'v1' }) })
     fireEvent.click(view.getAllByRole('tab')[1] as HTMLElement)
     expect(view.container.querySelectorAll('[data-clip-slot]')).toHaveLength(1)
   })
@@ -105,6 +106,7 @@ describe('CutsView', () => {
     fireEvent.pointerUp(view.getByTestId('vh-cuts-ruler'), { clientX: 200 })
     expect(view.getByTestId('vh-cuts-time').textContent).toBe('0:05.0 / 0:07.0')
 
+    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 'v1' }) })
     fireEvent.click(view.getAllByRole('tab')[1] as HTMLElement)
     expect(view.getByTestId('vh-cuts-time').textContent).toBe('0:00.0 / 0:03.0')
     expect(frames()[0]?.getAttribute('src')).toBe('/vh/assets/upload.mp4/content')
@@ -129,6 +131,7 @@ describe('CutsView', () => {
   it('renames an episode by double-click and deletes it from the tab menu after a confirmation', async () => {
     const { view, invokes, track } = mount()
     await track()
+    await waitFor(() => { expect(getCurrentEpisode()).toEqual({ projectId: 'p1', episodeId: 'v1' }) })
     fireEvent.doubleClick(view.getAllByRole('tab')[1] as HTMLElement)
     const box = within(view.getByRole('tablist')).getByRole('textbox')
     fireEvent.change(box, { target: { value: '片尾' } })

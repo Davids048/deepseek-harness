@@ -1,5 +1,5 @@
 /**
- * The project assets panel: filters (全部 / 上传 / 生成 / 文件夹), an upload drop zone, a thumbnail grid in sections
+ * The project assets panel: filters (全部 / 上传 / 生成), an upload drop zone, a thumbnail grid in sections
  * (人物 · 参考 · 生成), drag sources that carry the asset ID as `application/x-vh-asset`, and a preview on click. Assets
  * of an agent draft that the user has not accepted yet are listed too, with a 草稿 (Draft) badge.
  */
@@ -7,8 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { VhClient, assetUrl } from '@video-harness/ui-kit/api.ts'
-import { ToolApi, VH_TOOL_SESSIONS_CHANGED_EVENT, toolSessionTitle } from '@video-harness/ui-kit/tool-api.ts'
-import type { WireToolSession } from '@video-harness/ui-kit/tool-api.ts'
+import { ToolApi } from '@video-harness/ui-kit/tool-api.ts'
 import type { WireAsset, WireState } from '@video-harness/ui-kit/types.ts'
 import { dispatchCompose } from '@video-harness/ui-kit/compose.ts'
 import { useCurrentProject } from '@video-harness/ui-kit/current-project.ts'
@@ -16,8 +15,8 @@ import { useText } from '@video-harness/ui-kit/locale.ts'
 import { openDrafts } from '@video-harness/ui-kit/state.ts'
 import { useProjectState } from '@video-harness/ui-kit/useProject.ts'
 import { VH_ASSET_DRAG_TYPE, dispatchWorkspaceEvent } from '@video-harness/ui-kit/workspace-events.ts'
-import { OTHER_FOLDER_ID, assetLibrary } from './library.ts'
-import type { AssetFolder, DraftState } from './library.ts'
+import { assetLibrary } from './library.ts'
+import type { DraftState } from './library.ts'
 
 /** Props of {@link AssetsPanel}. */
 export interface AssetsPanelProps {
@@ -28,11 +27,10 @@ export interface AssetsPanelProps {
 }
 
 /** The filters above the grid. */
-type Filter = 'all' | 'uploads' | 'generated' | 'folders'
+type Filter = 'all' | 'uploads' | 'generated'
 
 const FILTERS: Array<{ id: Filter; zh: string; en: string }> = [
   { id: 'all', zh: '全部', en: 'All' }, { id: 'uploads', zh: '上传', en: 'Uploads' }, { id: 'generated', zh: '生成', en: 'Generated' },
-  { id: 'folders', zh: '文件夹', en: 'Folders' },
 ]
 
 const line = 'var(--vh-line, rgba(127, 127, 127, 0.25))'
@@ -43,26 +41,6 @@ const chip = (active: boolean): CSSProperties => ({
   padding: '3px 10px', fontSize: 12, cursor: 'pointer',
 })
 const button: CSSProperties = { border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '5px 12px', fontSize: 13, cursor: 'pointer' }
-
-/**
- * A project's Tool sessions, which name the folders.
- * @param api - the Tool API.
- * @param projectId - the project.
- * @param version - changes whenever the project's state reloads, so a session created elsewhere shows up.
- * @returns the sessions.
- */
-function useToolSessions(api: ToolApi, projectId: string, version: unknown): WireToolSession[] {
-  const [sessions, setSessions] = useState<WireToolSession[]>([])
-  // Refetch on every state reload and whenever a view creates, renames, or deletes a session of this project.
-  useEffect(() => {
-    const load = (): void => { api.sessions(projectId).then(setSessions, () => { setSessions([]) }) }
-    load()
-    const onChanged = (event: Event): void => { if ((event as CustomEvent<string>).detail === projectId) load() }
-    window.addEventListener(VH_TOOL_SESSIONS_CHANGED_EVENT, onChanged)
-    return () => { window.removeEventListener(VH_TOOL_SESSIONS_CHANGED_EVENT, onChanged) }
-  }, [api, projectId, version])
-  return sessions
-}
 
 /**
  * The folded states of the project's open agent drafts, refetched whenever the state of `main` reloads, which happens
@@ -95,16 +73,12 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
   const client = useMemo(() => props.client ?? new VhClient(), [props.client])
   const api = useMemo(() => props.api ?? new ToolApi(), [props.api])
   const state = useProjectState(client, props.projectId, 'main')
-  const sessions = useToolSessions(api, props.projectId, state.value)
   const drafts = useDraftStates(client, props.projectId, state.value)
   const t = useText()
   const [filter, setFilter] = useState<Filter>('all')
-  const [folder, setFolder] = useState<string | null>(null)
   const [preview, setPreview] = useState<WireAsset | null>(null)
-  const library = useMemo(() => state.value === null ? null : assetLibrary(state.value, sessions, drafts), [state.value, sessions, drafts])
+  const library = useMemo(() => state.value === null ? null : assetLibrary(state.value, drafts), [state.value, drafts])
   const draft = library?.draft ?? new Set<string>()
-  const folderTitle = (row: AssetFolder): string => row.id === OTHER_FOLDER_ID ? t('其他生成', 'Other generations') : toolSessionTitle(row.title)
-  const openFolder = library?.folders.find(row => row.id === folder) ?? null
 
   let body: ReactNode
   if (library === null) body = <p style={{ color: muted, fontSize: 12 }}>{state.error === null ? t('正在读取…', 'Loading…') : t(`读取失败：${state.error}`, `Failed to load: ${state.error}`)}</p>
@@ -117,21 +91,14 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
       </>
     )
   } else if (filter === 'uploads') body = <Section title={t('上传', 'Uploads')} assets={library.uploads} draft={draft} onOpen={setPreview} />
-  else if (filter === 'generated') body = <Section title={t('生成', 'Generated')} assets={library.generated} draft={draft} onOpen={setPreview} />
-  else if (openFolder === null) body = <FolderList folders={library.folders} title={folderTitle} onOpen={setFolder} />
-  else {
-    body = (
-      <>
-        <button type="button" style={{ ...chip(false), marginBottom: 8 }} onClick={() => { setFolder(null) }}>{t('← 文件夹', '← Folders')}</button>
-        <Section title={folderTitle(openFolder)} assets={openFolder.assets} draft={draft} onOpen={setPreview} />
-      </>
-    )
-  }
+  else body = <Section title={t('生成', 'Generated')} assets={library.generated} draft={draft} onOpen={setPreview} />
   return (
     <div data-testid="vh-assets-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: 12, gap: 10 }}>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {FILTERS.map(row => (
-          <button key={row.id} type="button" style={chip(filter === row.id)} onClick={() => { setFilter(row.id); setFolder(null) }}>{t(row.zh, row.en)}</button>
+          <button key={row.id} type="button" style={chip(filter === row.id)} onClick={() => { setFilter(row.id) }}>
+            {t(row.zh, row.en)}
+          </button>
         ))}
       </div>
       <UploadZone api={api} projectId={props.projectId} />
@@ -145,7 +112,7 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
 
 /**
  * The drop zone that uploads files through `POST /api/vh/assets/upload`; also opens a file chooser on click.
- * @param props - the Tool API and the project.
+ * @param props - the asset import client and the project.
  * @returns the zone.
  */
 function UploadZone(props: { api: ToolApi; projectId: string }): ReactNode {
@@ -230,32 +197,6 @@ function Thumb(props: { asset: WireAsset; draft: boolean; onOpen: (asset: WireAs
         ? <span style={{ position: 'absolute', left: 3, top: 3, fontSize: 10, background: accent, color: '#fff', borderRadius: 3, padding: '0 4px' }}>{t('草稿', 'Draft')}</span>
         : null}
     </button>
-  )
-}
-
-/**
- * The folder list of the 文件夹 filter.
- * @param props - the folders, their display titles, and the open callback.
- * @returns the list.
- */
-function FolderList(props: { folders: AssetFolder[]; title: (folder: AssetFolder) => string; onOpen: (id: string) => void }): ReactNode {
-  const t = useText()
-  if (props.folders.length === 0) {
-    return (
-      <p style={{ fontSize: 12, color: muted }}>
-        {t('还没有文件夹。每个 Tool 会话的生成结果会放进以会话命名的文件夹。', 'No folders yet. Each Tool session\'s generations go into a folder named after the session.')}
-      </p>
-    )
-  }
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      {props.folders.map(folder => (
-        <button key={folder.id} type="button" onClick={() => { props.onOpen(folder.id) }} style={{ ...button, display: 'flex', justifyContent: 'space-between', textAlign: 'left' }}>
-          <span>📁 {props.title(folder)}</span>
-          <span style={{ color: muted }}>{folder.assets.length}</span>
-        </button>
-      ))}
-    </div>
   )
 }
 

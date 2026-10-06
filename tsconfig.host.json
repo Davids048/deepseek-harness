@@ -468,7 +468,6 @@
     { "path": "./packages/video-harness/agent" },
     { "path": "./packages/video-harness/views" },
     { "path": "./packages/video-harness/stream" },
-    { "path": "./packages/video-harness/dreamverse-bridge" },
     { "path": "./packages/video-harness/mentions" },
     { "path": "./apps/cli" },
     { "path": "./apps/desktop-host" },

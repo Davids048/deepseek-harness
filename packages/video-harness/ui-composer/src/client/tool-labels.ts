@@ -36,11 +36,9 @@ export const VH_TOOL_LABELS: Readonly<Record<string, readonly [string, string]>>
   vh_sequence_rename: ['重命名这一集', 'Rename episode'],
   vh_sequence_delete: ['删除这一集', 'Delete episode'],
   vh_generate_video: ['生成视频', 'Generate video'],
-  vh_clip_trim: ['裁剪片段', 'Trim clip'],
   vh_media_concat: ['拼接视频', 'Join videos'],
   vh_media_extract_frame: ['截取画面', 'Extract frame'],
   vh_media_probe: ['读取媒体信息', 'Read media info'],
-  vh_command_run: ['处理媒体', 'Process media'],
   vh_perception_describe: ['查看画面', 'Look at image'],
 }
 

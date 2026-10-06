@@ -12,10 +12,10 @@ describe('buildDag', () => {
     expect(plan?.kind).toBe('plan')
     expect(plan?.children).toEqual(['g1', 'g2', 's1'])
     expect(plan?.detail).toBe('plan')
-    // The trim's clip came from a hidden child, so the edge comes from the plan.
+    // The join's clip came from a hidden child, so the edge comes from the plan.
     expect(dag.edges).toContainEqual({ from: 'p1', to: 'c1', label: 'clip', asset: 'shot2.mp4' })
-    // The command's input is the trim's output.
-    expect(dag.edges).toContainEqual({ from: 'c1', to: 'x1', label: 'in', asset: 'cut.mp4' })
+    // The probe's input is the join's output.
+    expect(dag.edges).toContainEqual({ from: 'c1', to: 'x1', label: 'media', asset: 'cut.mp4' })
     // The entity edge points at the retake on the draft branch.
     expect(dag.edges).toContainEqual({ from: 'entity:hero', to: 'g3', label: 'reference', asset: 'ref.png' })
     const take = dag.nodes.find(node => node.id === 'g3')
@@ -58,11 +58,10 @@ describe('buildDag', () => {
 })
 
 describe('opLabel', () => {
-  it('prefers the prompt, then the tool, then the command, then the kind', () => {
+  it('prefers the prompt, then the tool, then the kind', () => {
     expect(opLabel(op({ id: 'a', params: { prompt: 'short' } }))).toBe('short')
     expect(opLabel(op({ id: 'b', params: { prompt: 'hero walks through the rain at night in the city' } }))).toBe('hero walks through the rain …')
     expect(opLabel(op({ id: 'c', tool: { name: 'media.probe', version: '1' } }))).toBe('media.probe')
-    expect(opLabel(op({ id: 'd', command: { argv: ['ffprobe', '-i', 'x'] } }))).toBe('ffprobe -i')
     expect(opLabel(op({ id: 'e', kind: 'branch' }))).toBe('branch')
   })
 })

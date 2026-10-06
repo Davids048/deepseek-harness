@@ -17,11 +17,11 @@ import type {} from '@video-harness/oplog'
 import type {} from '@video-harness/runtime'
 import type {} from '@video-harness/tools'
 import { ViewsApi, ViewsRequestError, type ViewsServices, messageOf } from './api.ts'
+import { assetImportRoutes } from './asset-import.ts'
 import { serveEventStream } from './events.ts'
 import { layoutRoutes } from './layout.ts'
 import { projectAdminRoutes } from './projects-admin.ts'
 import { redoRoutes } from './redo.ts'
-import { toolSessionRoutes } from './tool-sessions.ts'
 import { workspaceRoutes } from './workspaces.ts'
 import { projectIdOf, type ViewSelection } from './wire.ts'
 
@@ -166,7 +166,7 @@ export default class VhViews extends Service {
       ...redoRoutes(this.ctx.vhOpLog),
       ...workspaceRoutes(this.ctx.vhOpLog, this.ctx.vhTools),
       ...projectAdminRoutes(this.ctx.vhOpLog),
-      ...toolSessionRoutes({ project: this.ctx.vhProject, log: this.ctx.vhOpLog, assets: this.ctx.vhAssets, model: () => this.ctx.get('dreamverseGeneration')?.model() ?? null }),
+      ...assetImportRoutes({ project: this.ctx.vhProject, log: this.ctx.vhOpLog, assets: this.ctx.vhAssets }),
     ]
   }
 

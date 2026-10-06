@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the web application a timeline over a video project beside the chat. The `vh-timeline` tab type of the right Sidebar draws the shown branch's sequence as one track: each clip as wide as it plays, with its producer's last frame, marked when stale or a draft. Clicking a clip previews it and offers the gestures: set in and out points, move, bake the range into a replacing clip, or insert an asset after it. An empty timeline starts from any video asset. The bar switches project and branch, decides drafts, undoes, and branches.
+Use this package to give the web application a timeline over a video project beside the chat. The `vh-timeline` tab type of the right Sidebar draws the shown branch's sequence as one track: each clip as wide as it plays, with its producer's last frame, marked when stale or a draft. Clicking a clip previews it and offers the gestures: set in and out points, move, or insert an asset after it. An empty timeline starts from any video asset. The bar switches project and branch, decides drafts, undoes, and branches.
 
 ## Table of Contents
 
@@ -37,7 +37,7 @@ The Host half registers nothing. The browser half registers the `vh-timeline` ta
 | --- | --- |
 | Set range | `sequence.set_range {slot, inSec, outSec}`; an empty field means "from the start" or "to the end" |
 | Move left or right | `sequence.move {from, to}` |
-| Bake trim | `clip.trim` on the clip's asset with the in and out points, then `sequence.replace {slot, asset}` with the new clip |
+| Export | `clip.trim` on each clip with an in or out point, then `media.concat` over the clips in order |
 | Insert after this clip | `sequence.insert {at, asset}` with the chosen video asset |
 | Remove from the timeline | `sequence.remove {slot}`; the clip before it is selected afterwards |
 | Start the timeline from this asset | `sequence.create {assets: [asset]}` |
@@ -53,7 +53,7 @@ Every record carries `surface: 'timeline'` and an intent in the DSH interface la
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`TimelineBody` holds the view session from `@video-harness/ui-kit/useView.ts` and the selected slot. `placeClips` from the kit turns the state's sequence into positioned clips; `Track` draws them as buttons over an absolutely positioned strip; `ClipPanel`, keyed by slot and asset so a new selection reseeds its fields, holds the in and out texts and calls the body's actions. Each action is one `client.invoke` call followed by a state refetch, except bake, which awaits the trim record and then writes the replace with its first output; a trim without output writes nothing. A successful move reselects the moved clip.
+`TimelineBody` holds the view session from `@video-harness/ui-kit/useView.ts` and the selected slot. `placeClips` from the kit turns the state's sequence into positioned clips; `Track` draws them as buttons over an absolutely positioned strip; `ClipPanel`, keyed by slot and asset so a new selection reseeds its fields, holds the in and out texts and calls the body's actions. Each action is one `client.invoke` call followed by a state refetch. A successful move reselects the moved clip.
 
 | File | Content |
 | --- | --- |

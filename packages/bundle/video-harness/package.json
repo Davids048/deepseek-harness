@@ -25,7 +25,6 @@
     "@video-harness/ui-canvas": "workspace:*",
     "@video-harness/ui-composer": "workspace:*",
     "@video-harness/ui-timeline": "workspace:*",
-    "@video-harness/ui-tool": "workspace:*",
     "@video-harness/ui-assets": "workspace:*",
     "@video-harness/ui-shell": "workspace:*",
     "@video-harness/views": "workspace:*"

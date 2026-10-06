@@ -31,7 +31,7 @@ const RULES: ScriptedRule[] = [
 interface ProjectWire { projectId: string; title: string }
 
 /** The location fields of the URL hash. */
-interface Location { project: string | null; session: string | null; view: string | null; tool: string | null }
+interface Location { project: string | null; session: string | null; view: string | null }
 
 describe('navigation, projects, sessions, and panels', () => {
   let harness: BootedHarness
@@ -106,7 +106,7 @@ describe('navigation, projects, sessions, and panels', () => {
   /** The location of the URL hash. */
   function locationOf(page: Page): Location {
     const params = new URLSearchParams(new URL(page.url()).hash.replace(/^#/, ''))
-    return { project: params.get('project'), session: params.get('session'), view: params.get('view'), tool: params.get('tool') }
+    return { project: params.get('project'), session: params.get('session'), view: params.get('view') }
   }
 
   /** The projects the server lists. */
@@ -447,7 +447,7 @@ describe('navigation, projects, sessions, and panels', () => {
     expect(errors).toEqual([])
   })
 
-  it('switching between two projects on canvas, cuts, and a Tool session: nothing from one shows in the other', async () => {
+  it('switching between two projects on canvas and cuts: nothing from one shows in the other', async () => {
     const a = await createProject('NAV 切换甲')
     const b = await createProject('NAV 切换乙')
     await upload(a, 'only-in-jia.png', GREEN_PNG)
@@ -460,7 +460,6 @@ describe('navigation, projects, sessions, and panels', () => {
     const checkSwitch = async (title: string, projectId: string, word: string, otherWord: string): Promise<void> => {
       await openProject(page, title)
       await expectProjectShown(page, projectId)
-      expect(await page.locator('[data-testid="vh-tool-view"]').count()).toBe(0)
       await waitFor(async () => (await userMessages(page)).includes(`只回复${word}`), `${title} chat`, 10_000)
       expect(await userMessages(page)).not.toContain(`只回复${otherWord}`)
       await selectTab(page, '素材')
@@ -478,14 +477,6 @@ describe('navigation, projects, sessions, and panels', () => {
     // From cuts.
     await page.locator('[data-vh-workspace] [role="tab"]', { hasText: '剪辑' }).click()
     await checkSwitch('NAV 切换甲', a, '甲', '乙')
-    // From a Tool session of 甲: the Tool view and its breadcrumb do not follow into 乙.
-    await navigator(page).getByRole('button', { name: 'Tool 会话' }).click()
-    await page.locator('[data-testid="vh-tool-sessions"] button', { hasText: '新建 Tool 会话' }).click()
-    await page.locator('[data-testid="vh-tool-view"]').waitFor({ timeout: 20_000 })
-    await navigator(page).getByRole('button', { name: '对话', exact: true }).click()
-    await checkSwitch('NAV 切换乙', b, '乙', '甲')
-    expect(locationOf(page).tool).toBeNull()
-    expect((await crumbs(page))?.[1]).not.toBe('Tool 会话')
     // Fast clicks end on the last project clicked.
     for (const title of ['NAV 切换甲', 'NAV 切换乙', 'NAV 切换甲', 'NAV 切换乙', 'NAV 切换甲']) {
       await projectRow(page, title).locator('span[role="button"][title]').click()
@@ -539,21 +530,6 @@ describe('navigation, projects, sessions, and panels', () => {
     }
     await page.waitForTimeout(5000)
     expect(await activeProject(page)).toBe('NAV 很早的项目')
-    expect(errors).toEqual([])
-  })
-
-  it('the Tool 会话 list names the open project and still lets the user switch projects', async () => {
-    const other = await createProject('NAV Tool 另一个')
-    const { page, errors } = await openPage()
-    const { title } = await newProject(page)
-    await navigator(page).getByRole('button', { name: 'Tool 会话' }).click()
-    await page.locator('[data-testid="vh-tool-sessions"]').waitFor({ timeout: 10_000 })
-    expect(await navigator(page).innerText()).toContain(title)
-    // The other project is reachable without first leaving the Tool list.
-    const otherLabel = navigator(page).locator('[role="button"][title="NAV Tool 另一个"], button', { hasText: 'NAV Tool 另一个' })
-    await otherLabel.first().click({ timeout: 5000 })
-    await waitProject(page, 'NAV Tool 另一个')
-    await expectProjectShown(page, other)
     expect(errors).toEqual([])
   })
 
@@ -626,18 +602,6 @@ describe('navigation, projects, sessions, and panels', () => {
     await waitFor(() => Promise.resolve(locationOf(page).session === older), 'the older session open', 10_000)
     await expectReloadKeeps(page, 'older chat session')
     expect(await userMessages(page)).toEqual(['只回复旧'])
-    expect(errors).toEqual([])
-  })
-
-  it('reload restores an open Tool session', async () => {
-    const { page, errors } = await openPage()
-    await newProject(page)
-    await navigator(page).getByRole('button', { name: 'Tool 会话' }).click()
-    await page.locator('[data-testid="vh-tool-sessions"] button', { hasText: '新建 Tool 会话' }).click()
-    await page.locator('[data-testid="vh-tool-view"]').waitFor({ timeout: 20_000 })
-    expect(locationOf(page).tool).not.toBeNull()
-    await expectReloadKeeps(page, 'tool session')
-    expect(await page.locator('[data-testid="vh-tool-view"]').count()).toBe(1)
     expect(errors).toEqual([])
   })
 
@@ -747,7 +711,7 @@ describe('navigation, projects, sessions, and panels', () => {
     try {
       await waitFor(async () => await page.evaluate(() => document.documentElement.lang) === 'en', '<html lang> en', 5000)
       const nav = await navigator(page).innerText()
-      for (const label of ['New project', 'Home', 'Chat', 'Tool sessions', 'Projects']) expect(nav).toContain(label)
+      for (const label of ['New project', 'Home', 'Projects']) expect(nav).toContain(label)
       const bar = await page.locator('[data-vh-workspace] header').innerText()
       for (const label of ['Canvas', 'Cuts', 'Panels', 'New chat']) expect(bar).toContain(label)
       expect([...await rightTabs(page)].sort()).toEqual(['Assets', 'Chat', 'Trajectory'])

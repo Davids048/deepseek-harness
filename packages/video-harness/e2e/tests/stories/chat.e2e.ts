@@ -138,9 +138,9 @@ describe('chat with the agent', () => {
   }
 
   /** The project and session of the URL hash. */
-  function locationOf(page: Page): { project: string | null; session: string | null; view: string | null; tool: string | null } {
+  function locationOf(page: Page): { project: string | null; session: string | null; view: string | null } {
     const params = new URLSearchParams(new URL(page.url()).hash.replace(/^#/, ''))
-    return { project: params.get('project'), session: params.get('session'), view: params.get('view'), tool: params.get('tool') }
+    return { project: params.get('project'), session: params.get('session'), view: params.get('view') }
   }
 
   /** The visible chat composer of the right panel. */
@@ -349,19 +349,6 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  /** Open a Tool session of the open project from the navigator's Tool 会话 list. */
-  async function openToolSession(page: Page, title: string): Promise<void> {
-    const toggle = page.locator('[data-vh-navigator] button', { hasText: 'Tool 会话' }).first()
-    const row = page.locator(`[data-testid="vh-tool-sessions"] button[title^="${title}"]`).first()
-    // Opening a project from a link finishes its restore asynchronously; click the toggle until the list stays.
-    await waitFor(async () => {
-      if (await toggle.getAttribute('data-active') === null) await toggle.click()
-      return await row.isVisible()
-    }, 'the Tool session list', 15_000)
-    await row.click()
-    await waitFor(() => Promise.resolve(locationOf(page).tool), 'a Tool session in the URL', 10_000)
-  }
-
   it('accepting the agent draft on the canvas clears the draft bar, and the agent is told no draft is open', async () => {
     const { page, errors } = await openPage()
     await newProject(page)
@@ -544,26 +531,6 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('让 agent 接着做 on a Tool result prefills the chat composer with the result as a reference', async () => {
-    const { projectId, assetId } = await seedProject('Tool 接着做', 'ref.png')
-    const session = await harness.api.post('/api/vh/tool-sessions', { project: projectId, title: '试镜' }) as { id: string }
-    await harness.api.post('/api/vh/tool-sessions/generate', { project: projectId, session: session.id, prompt: '工具生成的镜头', references: [assetId], duration_sec: 1 })
-    const { page, errors } = await openPage('zh', `#project=${projectId}`)
-    await openToolSession(page, '试镜')
-    const result = page.locator('[data-testid="vh-tool-result"]').first()
-    await result.locator('video').waitFor({ timeout: 60_000 })
-    await composer(page).waitFor({ timeout: 30_000 })
-    await result.getByRole('button', { name: '让 agent 接着做', exact: true }).click()
-    await waitFor(async () => (await composer(page).innerText()).includes('工具生成的镜头'), 'the prefilled composer', 10_000)
-    await page.keyboard.type(' 只回复十二')
-    await page.keyboard.press('Enter')
-    await waitChat(page, '收到十二')
-    const state = await harness.api.get(`/api/vh/state?project=${projectId}&head=main`) as StateWire
-    const toolOp = state.ops.find(op => op.tool?.name === 'generate.video')
-    expect(referencesOf(requestFor('只回复十二') as ChatRequest)).toContain(`made by record ${toolOp?.id ?? 'missing'}`)
-    expect(errors).toEqual([])
-  })
-
   it('a second chat session in the same project sees what the first session made', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
@@ -591,18 +558,6 @@ describe('chat with the agent', () => {
     await waitChat(page, '收到十四')
     expect(locationOf(page)).toMatchObject({ project: projectId, view: 'cuts' })
     expect(await page.getByRole('tab', { name: '剪辑' }).getAttribute('data-active')).toBe('')
-    expect(errors).toEqual([])
-  })
-
-  it('chatting while a Tool session is open keeps the Tool session in the center', async () => {
-    const { projectId } = await seedProject('Tool 中对话', 'ref.png')
-    const session = await harness.api.post('/api/vh/tool-sessions', { project: projectId, title: '对话中' }) as { id: string }
-    const { page, errors } = await openPage('zh', `#project=${projectId}`)
-    await openToolSession(page, '对话中')
-    await composer(page).waitFor({ timeout: 30_000 })
-    await send(page, '只回复十五')
-    await waitChat(page, '收到十五')
-    expect(locationOf(page)).toMatchObject({ project: projectId, tool: session.id })
     expect(errors).toEqual([])
   })
 

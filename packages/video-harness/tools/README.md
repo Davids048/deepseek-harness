@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the agent and the views one set of tools over a video project. Each `ToolSpec` declares typed inputs, JSON-schema params, outputs, a cost class, a confirmation policy, and a one-line summary. `vhTools` registers every spec with the project runtime and, when the DSH `tools` registry is mounted, as a `vh_<name>` tool whose call becomes one operation record. The shipped specs cover uploads, entity versions, plans, sequence edits, media processing, arbitrary commands, `generate.video` through the DreamVerse generation backend, and `perception.describe` through the default model.
+Use this package to give the agent and the views one set of tools over a video project. Each `ToolSpec` declares typed inputs, JSON-schema params, outputs, a cost class, a confirmation policy, and a one-line summary. `vhTools` registers every spec with the project runtime and, when the DSH `tools` registry is mounted, as a `vh_<name>` tool whose call becomes one operation record. The shipped specs cover uploads, entity versions, plans, sequence edits, media processing, `generate.video` through the DreamVerse generation backend, and `perception.describe` through the default model.
 
 ## Table of Contents
 
@@ -47,8 +47,8 @@ Mount the plugin after `@video-harness/assets`, `@video-harness/oplog`, `@video-
 | `plan.create` / `plan.update` | free | yes | always | A plan document (shots, references, continuity) stored as JSON |
 | `plan.approve` | free | yes | never | The user's approval; the runtime schedules one `generate.video` per shot and a `sequence.create` |
 | `sequence.create` / `replace` / `move` / `set_range` / `insert` / `remove` | free | yes | never | Timeline edits the fold interprets |
-| `clip.trim`, `media.concat`, `media.extract_frame`, `media.probe` | cpu | yes | never | ffmpeg and ffprobe through `vhMedia`; `media.extract_frame` takes `at` as `first`, `last` (default), or seconds as a number or numeric string |
-| `command.run` | cpu | no | never | Any command with `{{in:<n>}}` and `{{out:<name>}}` placeholders and declared outputs |
+| `media.concat`, `media.extract_frame`, `media.probe` | cpu | yes | never | ffmpeg and ffprobe through `vhMedia`; `media.extract_frame` takes `at` as `first`, `last` (default), or seconds as a number or numeric string |
+| `clip.trim` | cpu | yes | never | Trims a clip to a range through `vhMedia` for the timeline export; registered with the runtime alone, so it has no DSH tool and no canvas form |
 | `generate.video` | gpu | no | cost | One shot: video and last frame; `reference` inputs carry entity versions or images, `first_frame` continues an earlier shot |
 | `perception.describe` | free | no | never | The default model answers a question about an image asset |
 
@@ -56,7 +56,7 @@ Mount the plugin after `@video-harness/assets`, `@video-harness/oplog`, `@video-
 
 ### DSH tools
 
-Every spec is a tool named `vh_<name with dots as underscores>`, such as `vh_generate_video`. Beside the spec's own params, each takes `reason` (required; the record's intent), `project_id` (defaults to the session project), `inputs` (role to asset ID, `entity@version`, or `<record>#<index>`; a list for roles that take several), `replaces` (records this call supersedes), and `base_op`; `vh_generate_video` also takes `continue_from`, a shot record whose last frame the new shot starts from. A call whose inputs name an unfinished record is scheduled and returns `pending`; otherwise it runs and returns `done`. The result names the record, its status, the summary, the outputs with `/vh/assets/<id>/content` URLs, records the runtime scheduled because of the call, the params, and the report; image outputs also arrive as image blocks when an attachment service is mounted.
+Every registered spec is a tool named `vh_<name with dots as underscores>`, such as `vh_generate_video`. Beside the spec's own params, each takes `reason` (required; the record's intent), `project_id` (defaults to the session project), `inputs` (role to asset ID, `entity@version`, or `<record>#<index>`; a list for roles that take several), `replaces` (records this call supersedes), and `base_op`; `vh_generate_video` also takes `continue_from`, a shot record whose last frame the new shot starts from. A call whose inputs name an unfinished record is scheduled and returns `pending`; otherwise it runs and returns `done`. The result names the record, its status, the summary, the outputs with `/vh/assets/<id>/content` URLs, records the runtime scheduled because of the call, the params, and the report; image outputs also arrive as image blocks when an attachment service is mounted.
 
 Records of one agent session go to one open turn on a draft branch until the session accepts or rejects it. The management tools are `vh_project_create`, `vh_project_use`, `vh_project_state`, `vh_turn_accept`, `vh_turn_reject`, `vh_undo`, `vh_branch_create`, `vh_branch_use`, and `vh_wait`; each returns the project state: entities, timeline, plans, stale records, branches, the open turn, and recent records.
 
@@ -68,7 +68,7 @@ Records of one agent session go to one open turn on a draft branch until the ses
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`VhTools` keeps the spec map and registers each spec with `vhProject.registerTool`; inside `ctx.inject(['tools'])` it creates the DSH bridge, which defines one `defineTool` per spec and the management tools, and removes them when the registry or the service goes away. The bridge keeps one `SessionState` per agent session (keyed by the agent's session ID, or `anonymous` for direct calls): the project, the open turn and its project, and the exploration branch. A call resolves the project, opens a turn with the call's reason when none is open, parses `inputs` against the spec's roles, and calls `vhProject.invoke`, or `vhProject.schedule` when an input names an unfinished record.
+`VhTools` keeps the spec map and registers each spec with `vhProject.registerTool`; `clip.trim` goes to the runtime alone and stays out of the map; inside `ctx.inject(['tools'])` it creates the DSH bridge, which defines one `defineTool` per spec and the management tools, and removes them when the registry or the service goes away. The bridge keeps one `SessionState` per agent session (keyed by the agent's session ID, or `anonymous` for direct calls): the project, the open turn and its project, and the exploration branch. A call resolves the project, opens a turn with the call's reason when none is open, parses `inputs` against the spec's roles, and calls `vhProject.invoke`, or `vhProject.schedule` when an input names an unfinished record.
 
 `generate.video` reads the model facts from `dreamverseGeneration.model()`, resolves frame size and frame count from the params with the model's defaults, validates the reference count with the DreamVerse rules, orders the request images with `segmentRequestImages` (references first, then the predecessor's last frame), draws a seed when none is given, streams the segment into a scratch file, and stores the video and the PNG last frame with the record as producer.
 
@@ -76,7 +76,7 @@ Records of one agent session go to one open turn on a draft branch until the ses
 | --- | --- |
 | [`src/types.ts`](src/types.ts) | `ToolSpec`, `InputSpec`, `OutputSpec`, `Confirm` |
 | [`src/specs-basic.ts`](src/specs-basic.ts) | Upload, entities, plans, sequence edits |
-| [`src/specs-media.ts`](src/specs-media.ts) | Trim, concat, frame, probe, `command.run` |
+| [`src/specs-media.ts`](src/specs-media.ts) | Trim, concat, frame, probe |
 | [`src/specs-generate.ts`](src/specs-generate.ts) | `generate.video` and `shotGeometry` |
 | [`src/specs-perception.ts`](src/specs-perception.ts) | `perception.describe` |
 | [`src/dsh.ts`](src/dsh.ts) | The DSH bridge: tool definitions, session state, management tools, rendering |

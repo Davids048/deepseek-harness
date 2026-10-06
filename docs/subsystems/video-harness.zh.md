@@ -20,7 +20,7 @@ runtime (@video-harness/runtime)                 fold, turns, drafts, undo, bran
 
 ## 操作记录
 
-项目的每次变化都是一条记录：谁（`actor`）、来自哪个视图（`surface`）、用户的原话或手势（`intent`）、工具或命令、各输入及其解析到的素材、参数、输出、状态、turn、父记录，以及驱动过期的两个链接：`base_op`（本记录修改了那条记录的副本）和 `supersedes`（本记录替代了那些记录的输出）。记录只追加不改写；状态变化以补丁行追加。分支是指向记录的命名指针。
+项目的每次变化都是一条记录：谁（`actor`）、来自哪个视图（`surface`）、用户的原话或手势（`intent`）、工具、各输入及其解析到的素材、参数、输出、状态、turn、父记录，以及驱动过期的两个链接：`base_op`（本记录修改了那条记录的副本）和 `supersedes`（本记录替代了那些记录的输出）。记录只追加不改写；状态变化以补丁行追加。分支是指向记录的命名指针。
 
 ## 视图如何写入
 
@@ -36,7 +36,7 @@ agent turn 在 `main` 头处开 `draft/<turn>` 并写入其中。`acceptTurn` �
 
 ## 视图
 
-[`@video-harness/views`](../../packages/video-harness/views/README.zh.md) 是运行时面向浏览器的 HTTP 面：`/api/vh/state` 把一个 head 折叠成一份 JSON 文档，`/api/vh/invoke` 以用户 turn 运行一个工具，其记录带 `surface: 'canvas'` 或 `'timeline'`，`/api/vh/turn`、`/api/vh/undo` 和 `/api/vh/branch` 暴露草稿、撤销和分支操作，`/vh/events` 推送每一次日志变化。[`@video-harness/ui-canvas`](../../packages/video-harness/ui-canvas/README.zh.md) 和 [`@video-harness/ui-timeline`](../../packages/video-harness/ui-timeline/README.zh.md) 是 web 应用右侧栏的标签类型，因此在同一个 profile 里与聊天页并存：画布把所示 head 的记录按素材流向画成 DAG（实体是源头，计划折叠成一个节点，版本挨着它的基准，草稿用虚线，过期记录有标记），让用户修改某条记录的参数并把修改写成替代记录或新版本；时间线把折叠出的序列画成一条轨道，把排序、设范围、裁剪、插入手势变成 `sequence.*` 和 `clip.trim` 记录。两者都不保存项目状态：它们折叠宿主发来的东西，每次事件都重新拉取，并把选中的节点或片段报告给 `/api/vh/selection`，以便告诉 agent 用户指向了什么。[`@video-harness/ui-kit`](../../packages/video-harness/ui-kit/README.zh.md) 放两者共用的浏览器代码。
+[`@video-harness/views`](../../packages/video-harness/views/README.zh.md) 是运行时面向浏览器的 HTTP 面：`/api/vh/state` 把一个 head 折叠成一份 JSON 文档，`/api/vh/invoke` 以用户 turn 运行一个工具，其记录带 `surface: 'canvas'` 或 `'timeline'`，`/api/vh/turn`、`/api/vh/undo` 和 `/api/vh/branch` 暴露草稿、撤销和分支操作，`/vh/events` 推送每一次日志变化。[`@video-harness/ui-canvas`](../../packages/video-harness/ui-canvas/README.zh.md) 和 [`@video-harness/ui-timeline`](../../packages/video-harness/ui-timeline/README.zh.md) 是 web 应用右侧栏的标签类型，因此在同一个 profile 里与聊天页并存：画布把所示 head 的记录按素材流向画成 DAG（实体是源头，计划折叠成一个节点，版本挨着它的基准，草稿用虚线，过期记录有标记），让用户修改某条记录的参数并把修改写成替代记录或新版本；时间线把折叠出的序列画成一条轨道，把排序、设范围、裁剪、插入手势变成 `sequence.*` 记录，把导出变成 `clip.trim` 和 `media.concat` 记录。两者都不保存项目状态：它们折叠宿主发来的东西，每次事件都重新拉取，并把选中的节点或片段报告给 `/api/vh/selection`，以便告诉 agent 用户指向了什么。[`@video-harness/ui-kit`](../../packages/video-harness/ui-kit/README.zh.md) 放两者共用的浏览器代码。
 
 ## 过期
 

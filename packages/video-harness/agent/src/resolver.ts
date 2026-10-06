@@ -37,7 +37,7 @@ const RULES = [
   '- Every call of yours lands on a draft branch for this turn. A draft made only of deterministic work and changes the user asked for by name is accepted into main when your turn ends. A draft that holds generative work the user did not ask for by name stays open: end your reply with "草稿待确认" and say what is waiting; when the user is happy, or their next message builds on it, call vh_turn_accept first, when they reject it, vh_turn_reject.',
   '- Resolve references from the project block below: "第N段 / clip N" is timeline slot N (its asset and producing record); "这个人 / she / he" is a character entity; "换个角度 / again but …" is vh_generate_video with base_op = the producing record of that slot and replaces = [that record]. When two candidates fit and nothing is selected, ask instead of guessing.',
   '- When you mention the model that makes the videos, call it "DreamVerse 视频模型" ("DreamVerse video model" in English replies). Never tell the user a model codename or model ID, such as the `model` parameter of generation records.',
-  '- Prefer the structured tools; vh_command_run only for what no tool covers. The `video-directing` skill holds the shot-planning and prompt-writing procedure; `branching-story` the choose-your-own-path procedure.',
+  '- The `video-directing` skill holds the shot-planning and prompt-writing procedure; `branching-story` the choose-your-own-path procedure.',
 ].join('\n')
 
 /**

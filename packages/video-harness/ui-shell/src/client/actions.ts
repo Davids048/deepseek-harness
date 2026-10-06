@@ -243,13 +243,12 @@ export function createActions(ctx: ClientContext): ShellActions {
   }
 
   const openSession = (sessionId: string): void => {
-    setShell({ toolSession: null })
     markSessionChoice()
     showSession(sessionId as SessionId)
   }
 
   const goHome = async (sessionId?: string): Promise<void> => {
-    setShell({ projectId: null, toolSession: null })
+    setShell({ projectId: null })
     const links = getShell().links ?? await refreshLinks()
     await Promise.all([whenReady(ctx.sessions.list), whenReady(ctx.workspaces.list)])
     const workspaceId = await workspaceAt(links.entryPath, 'DreamVerse')
@@ -267,7 +266,7 @@ export function createActions(ctx: ClientContext): ShellActions {
   }
 
   const openProject = async (projectId: string, sessionId?: string): Promise<void> => {
-    setShell({ projectId, toolSession: null })
+    setShell({ projectId })
     const workspaceId = await projectWorkspace(projectId)
     const sessions = await projectSessions(projectId, workspaceId)
     // A later navigation superseded this one while the lists loaded.
@@ -292,7 +291,7 @@ export function createActions(ctx: ClientContext): ShellActions {
       for (let n = 2; titles.has(title); n += 1) title = `${base} ${String(n)}`
       const created = await postJson<{ projectId: string }>('/api/vh/projects', { title, surface: 'canvas' })
       await refreshLinks()
-      setShell({ projectId: created.projectId, toolSession: null, view: 'canvas' })
+      setShell({ projectId: created.projectId, view: 'canvas' })
       const workspaceId = await projectWorkspace(created.projectId)
       if (getShell().projectId !== created.projectId) return
       await openBlank(workspaceId, () => getShell().projectId === created.projectId)
@@ -300,7 +299,7 @@ export function createActions(ctx: ClientContext): ShellActions {
     openProject,
     openSession,
     async newSession(projectId) {
-      setShell({ projectId, toolSession: null })
+      setShell({ projectId })
       const workspaceId = await projectWorkspace(projectId)
       if (getShell().projectId !== projectId) return
       markSessionChoice()

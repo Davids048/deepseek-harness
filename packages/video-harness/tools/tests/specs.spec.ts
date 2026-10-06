@@ -39,10 +39,12 @@ describe('record-only and small-file tools', () => {
     const names = fixture.tools.list().map(spec => spec.name)
     expect(names).toEqual(expect.arrayContaining([
       'asset.upload', 'entity.character.create', 'entity.character.update', 'entity.style.create', 'entity.location.update', 'plan.create', 'plan.update', 'plan.approve',
-      'sequence.create', 'sequence.replace', 'sequence.move', 'sequence.set_range', 'sequence.insert', 'sequence.remove', 'sequence.split', 'sequence.rename', 'sequence.delete', 'clip.trim', 'media.concat', 'media.extract_frame', 'media.probe',
-      'command.run', 'generate.video', 'perception.describe',
+      'sequence.create', 'sequence.replace', 'sequence.move', 'sequence.set_range', 'sequence.insert', 'sequence.remove', 'sequence.split', 'sequence.rename', 'sequence.delete', 'media.concat', 'media.extract_frame', 'media.probe',
+      'generate.video', 'perception.describe',
     ]))
-    expect(fixture.project.toolNames().sort()).toEqual([...names].sort())
+    // `clip.trim` is registered with the runtime alone, for the timeline export.
+    expect(fixture.tools.get('clip.trim')).toBeUndefined()
+    expect(fixture.project.toolNames().sort()).toEqual([...names, 'clip.trim'].sort())
     expect(fixture.tools.get('generate.video')?.cost).toBe('gpu')
     expect(fixture.tools.get('plan.create')?.confirm).toBe('never')
     expect(fixture.tools.get('plan.approve')?.confirm).toBe('always')
@@ -152,9 +154,8 @@ describe('media tools', () => {
     const { projectId, turn, clip } = await projectWithShot(fixture)
     const trim = await fixture.project.invoke(projectId, request('clip.trim', turn, { startSec: 0.5, endSec: 1.5 }, [{ role: 'clip', ref: clip }]))
     expect((await fixture.media.probe(trim.outputs[0] as AssetId)).durationSec).toBeCloseTo(1, 0)
-    expect(fixture.tools.get('clip.trim')?.summarize(trim)).toBe('trimmed from 0.5s to 1.5s')
     const copy = await fixture.project.invoke(projectId, request('clip.trim', turn, { startSec: 1, reencode: false }, [{ role: 'clip', ref: clip }]))
-    expect(fixture.tools.get('clip.trim')?.summarize(copy)).toBe('trimmed from 1s')
+    expect((await fixture.media.probe(copy.outputs[0] as AssetId)).durationSec).toBeCloseTo(1, 0)
     await expect(fixture.project.invoke(projectId, request('clip.trim', turn, { startSec: 0 }))).rejects.toThrow('Input "clip" is required.')
     const joined = await fixture.project.invoke(projectId, request('media.concat', turn, {}, [{ role: 'clip', ref: clip }, { role: 'clip', ref: trim.outputs[0] as AssetId }]))
     expect((await fixture.media.probe(joined.outputs[0] as AssetId)).durationSec).toBeCloseTo(3, 0)
@@ -175,24 +176,6 @@ describe('media tools', () => {
     expect(fixture.assets.get(probe.outputs[0] as AssetId).mime).toBe('application/json')
     expect(fixture.tools.get('media.probe')?.summarize(probe)).toBe(`probed ${clip.slice(0, 8)}`)
     expect(fixture.tools.get('media.probe')?.summarize({ ...probe, inputs: [] })).toBe('probed asset')
-  })
-
-  it('runs declared commands and records their output', async () => {
-    const fixture = await start()
-    const { projectId, turn, clip } = await projectWithShot(fixture)
-    const command = await fixture.project.invoke(projectId, request('command.run', turn, {
-      argv: ['ffmpeg', '-y', '-loglevel', 'error', '-i', '{{in:0}}', '-frames:v', '1', '{{out:still.png}}'], outputs: [{ name: 'still.png', mime: 'image/png' }],
-    }, [{ role: 'in', ref: clip }]))
-    expect(command.deterministic).toBe(false)
-    expect(fixture.assets.get(command.outputs[0] as AssetId).mime).toBe('image/png')
-    expect(command.report).toMatchObject({ stdout: '', stderr: '' })
-    expect(fixture.tools.get('command.run')?.summarize(command)).toContain('ran ffmpeg -y')
-    expect(fixture.tools.get('command.run')?.summarize({ ...command, params: {} })).toBe('ran command')
-    const noOutputs = await fixture.project.invoke(projectId, request('command.run', turn, { argv: ['ffmpeg', '-version'] }))
-    expect(noOutputs.outputs).toEqual([])
-    expect(String(noOutputs.report?.['stdout'])).toContain('ffmpeg version')
-    await expect(fixture.project.invoke(projectId, request('command.run', turn, { argv: [] }))).rejects.toThrow('non-empty `argv`')
-    await expect(fixture.project.invoke(projectId, request('command.run', turn, { argv: ['ffmpeg', '-i', '/nonexistent.mp4', '{{out:x.mp4}}'], outputs: [{ name: 'x.mp4', mime: 'video/mp4' }] }))).rejects.toThrow()
   })
 })
 
