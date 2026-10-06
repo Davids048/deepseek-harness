@@ -37,13 +37,13 @@ The Host half registers nothing. The browser half registers the `vh-canvas` tab 
 | --- | --- |
 | Edit params and press Apply | The same tool with the edited params, `base_op` and `supersedes` set to the shown record, `surface: 'canvas'` |
 | Press Rerun | The same tool and params as a new take: `base_op` set, nothing superseded |
-| Accept or reject a draft chip | `/api/vh/turn`, which fast-forwards `main` or leaves the draft in the log |
+| Accept or discard the draft | `/api/vh/drafts/accept` or `/api/vh/drafts/discard` for the chat session's draft |
 | Undo | `/api/vh/undo`, which moves `main` back one turn |
 | New project | `POST /api/vh/projects` with the title asked for; the canvas then shows the new project on `main` |
 | New branch | `/api/vh/branch` at the shown head; the canvas then shows the new branch |
 | Click a node | `/api/vh/selection` with the record or entity id, so the host can tell the agent what the user pointed at |
 
-While a `draft/*` branch is shown the form is disabled; accept or reject the draft, or switch to another branch, to write. A gesture on an exploration branch writes to that branch.
+While a `draft/*` branch is shown the form is disabled; accept or discard the draft, or switch to another branch, to write. A gesture on an exploration branch writes to that branch.
 
 -----
 

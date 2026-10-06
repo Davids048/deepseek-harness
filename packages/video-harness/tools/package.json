@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The structured tools of the video harness: typed inputs, JSON-schema params, cost and confirmation policy, registered with the project runtime and exposed to the DSH agent as tool calls that become operation records.",
+  "description": "The structured tools of the video harness: typed inputs, JSON-schema params, cost and confirmation policy, registered with dvProject as operations and exposed to the DSH agent as tool calls that become project records.",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"
@@ -17,10 +17,9 @@
     "@deepseek-ai/dsh-util-values": "workspace:*",
     "@dreamverse/generation-client": "workspace:*",
     "@dreamverse/segment-generation": "workspace:*",
+    "@dv/project": "workspace:*",
     "@video-harness/assets": "workspace:*",
-    "@video-harness/media": "workspace:*",
-    "@video-harness/oplog": "workspace:*",
-    "@video-harness/runtime": "workspace:*"
+    "@video-harness/media": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

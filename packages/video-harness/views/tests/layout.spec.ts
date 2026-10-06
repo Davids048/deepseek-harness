@@ -3,18 +3,18 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import type VhOpLog from '@video-harness/oplog'
+import type DvProject from '@dv/project'
 import { CanvasLayoutStore, LAYOUT_ROUTE, layoutRoutes } from '../src/layout.ts'
 
 const roots: string[] = []
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
 
-/** The route over a temporary directory and a log that knows only project `p1`. */
+/** The route over a temporary directory and a Project service that knows only project `p1`. */
 function route() {
   const root = mkdtempSync(join(tmpdir(), 'vh-layout-'))
   roots.push(root)
-  const log = { project: (id: string) => { if (id !== 'p1') throw new Error('unknown') } } as Pick<VhOpLog, 'project'>
-  const [entry] = layoutRoutes(log, new CanvasLayoutStore(root))
+  const project = { openProject: (id: string) => { if (id !== 'p1') throw new Error('unknown') } } as unknown as Pick<DvProject, 'openProject'>
+  const [entry] = layoutRoutes(project, new CanvasLayoutStore(root))
   if (entry === undefined) throw new Error('no route')
   const call = async (method: 'GET' | 'POST', query: string, body?: unknown) => {
     const response = await entry.fetch(new Request(`http://host${LAYOUT_ROUTE}${query}`, { method, ...body === undefined ? {} : { body: JSON.stringify(body) } }))

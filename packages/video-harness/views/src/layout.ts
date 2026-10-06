@@ -1,6 +1,6 @@
 /**
  * Canvas node positions per project, so a user's arrangement survives reloads. The positions are view state, not
- * project history: they live in one JSON file per project beside the state root and never enter the operation log.
+ * project history: they live in one JSON file per project beside the state root and are never written as records.
  *
  * Route: `GET /api/vh/layout?project=<id>` returns the stored layout; `POST /api/vh/layout` with
  * `{project, positions?, viewport?}` merges the given node positions into the stored ones and replaces the viewport.
@@ -11,8 +11,8 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
-import type VhOpLog from '@video-harness/oplog'
-import type { ProjectId } from '@video-harness/oplog'
+import type DvProject from '@dv/project'
+import type { ProjectId } from '@dv/project'
 import { projectIdOf } from './wire.ts'
 
 /** The Fetch route path. */
@@ -138,18 +138,18 @@ function json(value: unknown, status = 200): Response {
 
 /**
  * The layout Fetch route. GET reads, POST merges; both answer 404 for an unknown project.
- * @param log - the operation log, used to check that the project exists.
+ * @param project - the Project service, used to check that the project exists.
  * @param store - the layout files; defaults to {@link layoutRoot}.
  * @returns the route.
  */
-export function layoutRoutes(log: Pick<VhOpLog, 'project'>, store: CanvasLayoutStore = new CanvasLayoutStore(layoutRoot())): ConnectionFetchRoute[] {
+export function layoutRoutes(project: Pick<DvProject, 'openProject'>, store: CanvasLayoutStore = new CanvasLayoutStore(layoutRoot())): ConnectionFetchRoute[] {
   const projectOf = (value: unknown): ProjectId => {
     const projectId = projectIdOf(value)
     if (projectId === null) throw new LayoutRequestError(400, "'project' must name a project.")
     try {
-      log.project(projectId)
+      project.openProject(projectId)
     } catch {
-      // The log throws for an unknown project; the route reports it as 404.
+      // Project throws for an unknown project; the route reports it as 404.
       throw new LayoutRequestError(404, `Unknown project '${projectId}'.`)
     }
     return projectId

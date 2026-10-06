@@ -1,8 +1,9 @@
 /**
  * The structured tools of the video harness as the `vhTools` Cordis service: the registry of {@link ToolSpec}s, each
- * registered into the project runtime so views and the agent invoke it, and exposed to the DSH agent as a `vh_<name>`
- * tool when the `tools` registry is mounted. `generate.video` is mounted when `dreamverseGeneration` is, and
- * `perception.describe` when `llm`, `agentDefaultModel`, and `attachments` are.
+ * registered with `dvProject` as an operation so views and the agent run it, and exposed to the DSH agent as a
+ * `vh_<name>` tool when the `tools` registry is mounted, beside the `dv_proj_*` registry tools. The service also
+ * registers the stage 2 bridge reducers (`timeline`, `bible`, `plan`, `shot`). `generate.video` is mounted when
+ * `dreamverseGeneration` is, and `perception.describe` when `llm`, `agentDefaultModel`, and `attachments` are.
  *
  * @module @video-harness/tools
  */
@@ -10,12 +11,11 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@dreamverse/generation-client'
-import type { AssetId, ProjectId } from '@video-harness/oplog'
+import type { AssetId, ProjectId } from '@dv/project'
 import type {} from '@video-harness/assets'
 import type {} from '@video-harness/media'
-import type {} from '@video-harness/oplog'
-import type {} from '@video-harness/runtime'
-import { assetUrl, DshTools, type ConfirmGate, type ConfirmPolicy, type SessionState, type TurnSettlement } from './dsh.ts'
+import { assetUrl, DshTools, estimateGpuSeconds, type ConfirmPolicy, type SessionState } from './dsh.ts'
+import { bridgeReducers } from './reducers.ts'
 import { assetUpload, entityTools, planApprove, planCreate, planUpdate, sequenceTools } from './specs-basic.ts'
 import { generateVideoTool } from './specs-generate.ts'
 import { mediaTools } from './specs-media.ts'
@@ -23,7 +23,10 @@ import { perceptionTool } from './specs-perception.ts'
 import type { ToolSpec } from './types.ts'
 
 export * from './types.ts'
-export { assetUrl, dshToolName, estimateGpuSeconds, parseInputs, renderValue, sessionKey, type BridgeOptions, type ConfirmGate, type ConfirmPolicy, type ConfirmRequest, type SessionState, type ToolCallValue, type TurnSettlement } from './dsh.ts'
+export {
+  assetUrl, dshToolName, estimateGpuSeconds, parseInputs, renderValue, sessionKey, type BridgeOptions, type ConfirmPolicy,
+  type ConfirmRequest, type SessionState, type ToolCallValue,
+} from './dsh.ts'
 export { assetUpload, entityTools, planApprove, planCreate, planUpdate, sequenceTools } from './specs-basic.ts'
 export { assetRecord, backendSeconds, generateVideoTool, shotGeometry } from './specs-generate.ts'
 export { inputAssets, mediaTools, requireInput } from './specs-media.ts'
@@ -42,11 +45,11 @@ export interface Config {
   perceptionMaxTokens: number
   /** Whether the agent model accepts images; false makes `perception.describe` report that instead of calling the model. */
   imageInput: boolean
-  /** Directory of one JSON file per session with its project binding and open turn, so a restart continues the session. */
+  /** Directory of one JSON file per session with its project binding, so a restart continues the session. */
   sessionStateRoot: string
   /** Base of asset URLs in results and chat cards, such as a tunnel origin; empty keeps them relative. */
   publicBaseUrl: string
-  /** Estimated GPU seconds a turn may spend on `confirm: cost` tools before the user must agree. */
+  /** Estimated GPU seconds a turn may spend on `generate.video` calls before the user must agree. */
   confirmGpuSecondsThreshold: number
   /** Estimated GPU seconds per generated video second. */
   gpuSecondsPerVideoSecond: number
@@ -63,48 +66,61 @@ export const Config: z<Config> = z.object({
 })
 
 /**
- * The record-only and small-file tools: upload, entities, plans, sequence edits.
+ * The record-only and small-file tools: import, characters, locations and styles, plans, timeline edits.
+ * @param project - the Project service `plan.approve` schedules its shot renders through.
+ * @param assets - the asset store that holds plan documents.
  * @returns the specs.
  */
-export function basicTools(): ToolSpec[] {
-  return [assetUpload, ...entityTools('character'), ...entityTools('style'), ...entityTools('location'), planCreate, planUpdate, planApprove, ...sequenceTools]
+export function basicTools(project: Parameters<typeof planApprove>[0], assets: Parameters<typeof planApprove>[1]): ToolSpec[] {
+  return [
+    assetUpload, ...entityTools('character'), ...entityTools('style'), ...entityTools('location'), planCreate, planUpdate,
+    planApprove(project, assets), ...sequenceTools,
+  ]
 }
 
-/** The spec registry and its two consumers: the project runtime and the DSH tool registry. */
+/** The operations that serve only the timeline export: registered with `dvProject`, with no agent tool and no canvas form. */
+const EXPORT_ONLY: ReadonlySet<string> = new Set(['clip.trim'])
+
+/** The spec registry and its two consumers: the Project service and the DSH tool registry. */
 export default class VhTools extends Service {
-  static inject = ['vhProject', 'vhOpLog', 'vhAssets', 'vhMedia']
+  static inject = ['dvProject', 'vhAssets', 'vhMedia'] // names:allow (the asset store service until stage 3)
   static Config = Config
 
   private readonly specs = new Map<string, ToolSpec>()
   private dsh: DshTools | null = null
   private policy: ConfirmPolicy | null = null
-  private gate: ConfirmGate | null = null
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'vhTools')
-    for (const spec of [...basicTools(), ...mediaTools(ctx.vhMedia)]) {
-      // `clip.trim` serves only the timeline export, so it is registered with the runtime alone: no agent tool, no canvas form.
-      const register = spec.name === 'clip.trim' ? () => ctx.vhProject.registerTool(spec) : () => this.register(spec)
-      ctx.effect(register, `vhTools.${spec.name}`)
+    for (const [key, reducer] of Object.entries(bridgeReducers)) {
+      ctx.effect(() => ctx.dvProject.registerReducer(key as keyof typeof bridgeReducers, reducer as never), `bridge reducer ${key}`)
+    }
+    for (const spec of [...basicTools(ctx.dvProject, ctx.vhAssets), ...mediaTools(ctx.vhMedia)]) {
+      ctx.effect(() => this.register(spec), `vhTools.${spec.name}`)
     }
     ctx.inject(['dreamverseGeneration'], (child) => {
-      child.effect(() => this.register(generateVideoTool(child.dreamverseGeneration)), 'vhTools.generate.video')
+      const spec = generateVideoTool(child.dreamverseGeneration, ctx.vhAssets) // names:allow
+      // The approval card shows the GPU time of the shot before it renders.
+      const estimate = (params: Record<string, unknown>): { gpu_seconds: number } => ({
+        gpu_seconds: estimateGpuSeconds(spec, params, config.gpuSecondsPerVideoSecond, 5),
+      })
+      child.effect(() => this.register({ ...spec, estimate }), 'vhTools.generate.video')
     })
     ctx.inject(['llm', 'agentDefaultModel', 'attachments'], (child) => {
-      child.effect(() => this.register(perceptionTool(child, config.perceptionMaxTokens, config.imageInput)), 'vhTools.perception.describe')
+      const tool = perceptionTool(child, ctx.vhAssets, config.perceptionMaxTokens, config.imageInput) // names:allow
+      child.effect(() => this.register(tool), 'vhTools.perception.describe')
     })
     ctx.inject(['tools'], (child) => {
       child.effect(() => {
-        const dsh = new DshTools(child, ctx.vhProject, ctx.vhOpLog, ctx.vhAssets, {
+        const dsh = new DshTools(child, ctx.dvProject, ctx.vhAssets, {
           sessionStateRoot: config.sessionStateRoot,
           publicBaseUrl: config.publicBaseUrl,
           confirmGpuSecondsThreshold: config.confirmGpuSecondsThreshold,
           gpuSecondsPerVideoSecond: config.gpuSecondsPerVideoSecond,
         })
         dsh.setConfirmPolicy(this.policy)
-        dsh.setConfirmGate(this.gate)
         this.dsh = dsh
-        for (const spec of this.specs.values()) dsh.add(spec)
+        for (const spec of this.list()) dsh.add(spec)
         dsh.addManagement()
         return () => {
           dsh.dispose()
@@ -115,17 +131,17 @@ export default class VhTools extends Service {
   }
 
   /**
-   * Register a structured tool with the runtime and, when the DSH registry is mounted, as a DSH tool. A later spec of
-   * the same name replaces the earlier one.
+   * Register a structured tool as a `dvProject` operation and, when the DSH registry is mounted and the operation is
+   * not export-only, as a DSH tool.
    * @param spec - the tool.
-   * @returns a function that removes both registrations.
+   * @returns a function that removes both registrations. Throws `operation_exists` for a registered name.
    */
   register(spec: ToolSpec): () => void {
+    const removeOperation = this.ctx.dvProject.registerOperation(spec)
     this.specs.set(spec.name, spec)
-    const removeFromRuntime = this.ctx.vhProject.registerTool(spec)
-    this.dsh?.add(spec)
+    if (!EXPORT_ONLY.has(spec.name)) this.dsh?.add(spec)
     return () => {
-      removeFromRuntime()
+      removeOperation()
       if (this.specs.get(spec.name) !== spec) return
       this.specs.delete(spec.name)
       this.dsh?.remove(spec.name)
@@ -133,16 +149,16 @@ export default class VhTools extends Service {
   }
 
   /**
-   * @param name - a spec name such as `generate.video`.
-   * @returns the registered spec, or undefined.
+   * @param name - a spec name such as `generate.video` or `clip.trim`.
+   * @returns the registered spec, export-only operations included, or undefined.
    */
   get(name: string): ToolSpec | undefined {
     return this.specs.get(name)
   }
 
-  /** @returns every registered spec, in registration order. */
+  /** @returns every registered spec that has an agent tool and a canvas form, in registration order. */
   list(): ToolSpec[] {
-    return [...this.specs.values()]
+    return [...this.specs.values()].filter(spec => !EXPORT_ONLY.has(spec.name))
   }
 
   /**
@@ -155,15 +171,6 @@ export default class VhTools extends Service {
   }
 
   /**
-   * Install or remove the gate that makes selected calls always ask the confirmation policy.
-   * @param gate - true for calls that must ask; null restores the plain confirmation table.
-   */
-  setConfirmGate(gate: ConfirmGate | null): void {
-    this.gate = gate
-    this.dsh?.setConfirmGate(gate)
-  }
-
-  /**
    * The bridge state of an agent session, or undefined while no DSH tool registry is mounted.
    * @param sessionId - the agent's session ID.
    * @returns the state, created empty on first use.
@@ -173,29 +180,21 @@ export default class VhTools extends Service {
   }
 
   /**
-   * Tell the bridge which agent-loop turn a session entered.
+   * Tell the bridge which agent turn a session is in and the human's words that started it, so the turn's records
+   * carry the turn and its first record writes the turn's request record.
    * @param sessionId - the agent's session ID.
-   * @param turn - the turn number.
+   * @param turn - the agent loop's turn number.
+   * @param requestText - the human's words; empty while they are not known.
    */
-  noteTurn(sessionId: string, turn: number): void {
-    this.dsh?.noteTurn(sessionId, turn)
+  noteTurn(sessionId: string, turn: number, requestText: string): void {
+    this.dsh?.noteTurn(sessionId, turn, requestText)
   }
 
   /**
-   * Settle a session's open draft when its agent-loop turn ends.
-   * @param sessionId - the agent's session ID.
-   * @param outcome - how the turn ended.
-   * @returns what happened to the draft; `none` when there was none or no bridge.
-   */
-  settleTurn(sessionId: string, outcome: 'completed' | 'interrupted' | 'aborted'): TurnSettlement {
-    return this.dsh?.settleTurn(sessionId, outcome) ?? 'none'
-  }
-
-  /**
-   * Record the images a user attached in a chat as assets of the session's project.
+   * Import the images a user attached in a chat as assets of the session's project.
    * @param sessionId - the agent's session ID.
    * @param refs - the image attachments of the user message.
-   * @returns the recorded asset IDs; none without a bound project, an attachment service, or a bridge.
+   * @returns the imported asset IDs; none without a bound project, an attachment service, or a bridge.
    */
   recordChatImages(sessionId: string, refs: readonly ImageAttachmentRef[]): Promise<AssetId[]> {
     return this.dsh?.recordChatImages(sessionId, refs) ?? Promise.resolve([])

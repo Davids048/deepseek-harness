@@ -1,26 +1,26 @@
 /**
  * The asset import route of the assets panel and the canvas.
  *
- * `POST /api/vh/assets/upload?project=<id>&name=<name>&mime=<type>` takes the raw file bytes as the body, stores them,
- * and records an `asset.upload` user turn with surface `canvas`. It answers `{assetId, op}`; a malformed request answers
- * `400`, an unknown project `404`, and every error body is `{error}`.
+ * `POST /api/vh/assets/upload?project=<id>&name=<name>&mime=<type>[&session=<id>]` takes the raw file bytes as the
+ * body, stores them, and runs `asset.upload` as the human with surface `canvas`; the record goes to the working branch
+ * of the named chat session, else to `main`. It answers `{assetId, op}`; a malformed request answers `400`, an unknown
+ * project `404`, and every error body is `{error}`.
  *
  * @module @video-harness/views/asset-import
  */
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type VhAssets from '@video-harness/assets'
-import type VhOpLog from '@video-harness/oplog'
-import type { ProjectId } from '@video-harness/oplog'
-import type VhProject from '@video-harness/runtime'
-import { projectIdOf } from './wire.ts'
+import type DvProject from '@dv/project'
+import type { ProjectId } from '@dv/project'
+import { sessionOf } from './api.ts'
+import { projectIdOf, toWireOp } from './wire.ts'
 
 /** The Fetch route path of the asset import. */
 export const ASSET_IMPORT_ROUTE = '/api/vh/assets/upload'
 
 /** The services the route reads and writes. */
 export interface AssetImportServices {
-  project: VhProject
-  log: VhOpLog
+  project: DvProject
   assets: VhAssets
 }
 
@@ -44,8 +44,8 @@ function json(value: unknown, status = 200): Response {
 }
 
 /**
- * Store the request body as an asset and record it in one accepted user turn on `main`.
- * @param services - the runtime, the log, and the asset store.
+ * Store the request body as an asset and record it with one `asset.upload` run as the human.
+ * @param services - the Project service and the asset store.
  * @param request - the import request.
  * @returns the asset ID and the `asset.upload` record.
  * @throws AssetImportRequestError when the project, the MIME type, or the body is missing or unknown.
@@ -55,9 +55,9 @@ async function importAsset(services: AssetImportServices, request: Request): Pro
   const projectId: ProjectId | null = projectIdOf(url.searchParams.get('project'))
   if (projectId === null) throw new AssetImportRequestError(400, "'project' must name a project.")
   try {
-    services.log.project(projectId)
+    services.project.openProject(projectId)
   } catch {
-    // The log throws for an unknown project; the route reports it as 404.
+    // Project throws for an unknown project; the route reports it as 404.
     throw new AssetImportRequestError(404, `Unknown project '${projectId}'.`)
   }
   const mime = url.searchParams.get('mime')?.trim() ?? ''
@@ -68,21 +68,17 @@ async function importAsset(services: AssetImportServices, request: Request): Pro
   // Store the bytes first so the record names the stored file by path instead of carrying base64 in its params.
   const stored = services.assets.put(bytes, { mime, name })
   const intent = `upload ${name}`
-  const open = services.project.beginTurn(projectId, { actor: 'user', surface: 'canvas', intent })
-  try {
-    const op = await services.project.invoke(projectId, {
-      tool: 'asset.upload', inputs: [], params: { path: services.assets.path(stored), mime, name },
-      actor: 'user', surface: 'canvas', intent, turn: open.turn,
-    })
-    return { assetId: op.outputs[0] ?? stored, op }
-  } finally {
-    services.project.acceptTurn(projectId, open.turn, { actor: 'user', surface: 'canvas' })
-  }
+  const { record } = await services.project.run({
+    project: projectId, operation: 'asset.upload', inputs: [], params: { path: services.assets.path(stored), mime, name },
+    actor: 'user', surface: 'canvas', session: sessionOf(url.searchParams.get('session')), turn: null, tool_call: null, intent,
+  })
+  if (record === null) throw new Error('asset.upload wrote no record.')
+  return { assetId: record.outputs[0] ?? stored, op: toWireOp(record) }
 }
 
 /**
  * The asset import Fetch route.
- * @param services - the runtime, the log, and the asset store.
+ * @param services - the Project service and the asset store.
  * @returns the route.
  */
 export function assetImportRoutes(services: AssetImportServices): ConnectionFetchRoute[] {

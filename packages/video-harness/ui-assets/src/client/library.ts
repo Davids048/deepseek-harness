@@ -1,12 +1,12 @@
 /**
  * Sorting of a project's assets into the panel's sections and filters, read from the folded state of `main` and the
- * folded states of the project's open agent drafts.
+ * folded states of the project's open drafts.
  */
 import type { WireAsset, WireOp, WireState } from '@video-harness/ui-kit/types.ts'
 
-/** The folded state of one open agent draft branch. */
+/** The folded state of one open draft branch. */
 export interface DraftState {
-  /** The `draft/<turn>` branch name. */
+  /** The `draft/<session>` branch name. */
   branch: string
   state: WireState
 }
@@ -21,13 +21,12 @@ export interface AssetLibrary {
   generated: WireAsset[]
   /** Outputs of `asset.upload` records, newest first. */
   uploads: WireAsset[]
-  /** IDs of the listed assets that only an unaccepted agent draft mentions. */
+  /** IDs of the listed assets that only an open draft mentions. */
   draft: Set<string>
 }
 
 /**
- * Merge the open drafts into the state of `main`: records, assets, and entity versions that `main` lacks. A draft whose
- * turn was rejected adds nothing.
+ * Merge the open drafts into the state of `main`: records, assets, and entity versions that `main` lacks.
  * @param main - the folded state of `main`.
  * @param drafts - the folded states of the draft branches.
  * @returns the merged records, assets, and entities.
@@ -38,8 +37,7 @@ function mergeDrafts(main: WireState, drafts: readonly DraftState[]): Pick<WireS
   const entities = { ...main.entities }
   const knownOps = new Set(ops.map(op => op.id))
   const knownAssets = new Set(assets.map(asset => asset.id))
-  for (const { branch, state } of drafts) {
-    if (state.turns[branch.slice('draft/'.length)]?.rejected === true) continue
+  for (const { state } of drafts) {
     for (const op of state.ops) if (!knownOps.has(op.id)) { knownOps.add(op.id); ops.push(op) }
     for (const asset of state.assets) if (!knownAssets.has(asset.id)) { knownAssets.add(asset.id); assets.push(asset) }
     for (const [name, versions] of Object.entries(state.entities)) {
@@ -52,7 +50,7 @@ function mergeDrafts(main: WireState, drafts: readonly DraftState[]): Pick<WireS
 /**
  * Sort a project's assets.
  * @param main - the folded state of `main`.
- * @param drafts - the folded states of the project's open agent drafts; their assets are listed and flagged as drafts.
+ * @param drafts - the folded states of the project's open drafts; their assets are listed and flagged as drafts.
  * @returns the sections, filters, and draft flags.
  */
 export function assetLibrary(main: WireState, drafts: readonly DraftState[] = []): AssetLibrary {

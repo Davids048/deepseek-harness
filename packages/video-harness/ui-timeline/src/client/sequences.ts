@@ -59,13 +59,13 @@ export function nextVideoId(videos: CutsVideo[]): string {
 }
 
 /**
- * Place the clips of one video on the track in slot order. A clip is a draft when the shown head is an agent draft
+ * Place the clips of one video on the track in slot order. A clip is a draft when the shown head is a draft
  * branch and the clip is new there: the draft produced its asset, or the same video on `main` has no matching clip
  * (same asset, in point, and out point). Records of an accepted draft keep their `draft/` branch name but are on
  * `main`, so nothing on `main` is a draft.
  * @param state - the folded state, for asset durations, thumbnails, and stale marks.
  * @param video - the video, or null when the project has none.
- * @param head - the shown head: `main`, a branch, or a `draft/<turn>` branch.
+ * @param head - the shown head: `main`, a branch, or a `draft/<session>` branch.
  * @param baseItems - the clips of the same video on `main`, when a draft is shown.
  * @returns the clips and the total length in seconds.
  */

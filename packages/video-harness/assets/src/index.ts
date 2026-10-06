@@ -34,7 +34,7 @@ declare module '@deepseek-ai/cordis' {
 /** The SHA-256 hex digest of an asset's bytes, which is also its file name under `objects/`. */
 export type AssetId = Branded<'VhAssetId'>
 
-/** The ID of the operation-log record that produced an asset; the brand is shared with `@video-harness/oplog`. */
+/** The ID of the record that produced an asset: a `@dv/project` `RecordId`, which `dvProject` rebrands when it stores the asset. */
 export type OpId = Branded<'VhOpId'>
 
 /** What the store knows about one asset. */

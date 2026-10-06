@@ -351,8 +351,6 @@
       "@dreamverse/user-actions/rewrite-video-sequence": ["./packages/dreamverse/user-actions/src/rewrite-video-sequence.ts"],
       // Video harness plugin entries, mapped to source for the same reason as the DreamVerse entries above.
       "@video-harness/assets": ["./packages/video-harness/assets/src/index.ts"],
-      "@video-harness/oplog": ["./packages/video-harness/oplog/src/index.ts"],
-      "@video-harness/runtime": ["./packages/video-harness/runtime/src/index.ts"],
       "@video-harness/media": ["./packages/video-harness/media/src/index.ts"],
       "@video-harness/tools": ["./packages/video-harness/tools/src/index.ts"],
       "@video-harness/agent": ["./packages/video-harness/agent/src/index.ts"],
@@ -365,6 +363,8 @@
       "@video-harness/ui-shell": ["./packages/video-harness/ui-shell/src/index.ts"],
       "@video-harness/mentions": ["./packages/video-harness/mentions/src/index.ts"],
       "@video-harness/ui-composer": ["./packages/video-harness/ui-composer/src/index.ts"],
+      // DreamVerse component entries, mapped to source for the same reason as the video harness entries above.
+      "@dv/project": ["./packages/dv/project/src/index.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
       "@deepseek-ai/dsh-acp": ["./packages/acp/acp/src"],
       "@deepseek-ai/dsh-acp-app": ["./packages/bundle/acp-app/src"],

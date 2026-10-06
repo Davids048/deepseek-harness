@@ -69,7 +69,7 @@ kind: "package-reference"
 ## 进一步探索
 
 - [视频 harness 子系统](../../../docs/subsystems/video-harness.zh.md) — 素材、记录和运行时的关系。
-- [`@video-harness/oplog`](../oplog/README.zh.md) — 产生和消费素材的记录。
+- [`@dv/project`](../../dv/project/README.zh.md) — 产生和消费素材的记录。
 
 -----
 

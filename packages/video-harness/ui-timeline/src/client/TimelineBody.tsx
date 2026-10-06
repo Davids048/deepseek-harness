@@ -27,7 +27,7 @@ export type TimelineBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & Timelin
  */
 export function barLabels(t: TimelineBodyProps['t']): BranchBarLabels {
   return {
-    project: t('bar.project'), branch: t('bar.branch'), accept: t('bar.accept'), reject: t('bar.reject'), undo: t('bar.undo'),
+    project: t('bar.project'), branch: t('bar.branch'), accept: t('bar.accept'), discard: t('bar.discard'), undo: t('bar.undo'),
     newBranch: t('bar.newBranch'), newBranchPrompt: t('bar.newBranchPrompt'), newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
     draftTitle: t('bar.draft'), noProject: t('bar.noProject'),
   }
@@ -48,7 +48,10 @@ export function TimelineBody({ client, t }: TimelineBodyProps): ReactNode {
   else if (state === null || view.project === null) content = <p style={{ padding: 8 }}>{t('loading')}</p>
   else {
     content = (
-      <CutsEditor client={client} t={t} project={view.project} head={view.head} state={state} readOnly={view.readOnly} run={view.run} />
+      <CutsEditor
+        client={client} t={t} project={view.project} head={view.head} session={view.session} state={state}
+        readOnly={view.readOnly} run={view.run}
+      />
     )
   }
   return (

@@ -1,7 +1,8 @@
 /**
  * Composer support of the video harness as the `vhComposer` Cordis service:
  * - per-session composer modes (ask before every generation or not; quality or speed), stored in one JSON file;
- * - the approval cards: a generation the agent's ask mode holds back waits here until the user approves or skips it;
+ * - the approval cards: as `dvProject`'s approval channel, it holds an agent's `agent_ask_first` call (a shot render
+ *   or a plan approval) of a session in ask mode until the user approves or skips its card;
  * - an `agent/pre-step` listener that expands the composer's `vh:` references in new user messages into a context
  *   message with the concrete record and asset IDs.
  *
@@ -20,11 +21,13 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContextFormed, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
-import type { ComposerApprovalRequest, ComposerChannel, ComposerMode } from '@video-harness/agent'
-import type { AssetId, EntityId, ProjectId } from '@video-harness/oplog'
-import { parseOutputRef } from '@video-harness/runtime'
-import type {} from '@video-harness/tools'
-import { expansionBlock, parseVhReferences, type ExpansionSources } from './expand.ts'
+import type {
+  ApprovalChannel, AssetId, PendingApproval, ProjectId, ProjectRecord, RecordId, SessionId,
+} from '@dv/project'
+import type { ComposerChannel, ComposerMode } from '@video-harness/agent'
+import type {} from '@video-harness/assets'
+import type { PlanDocument } from '@video-harness/tools'
+import { expansionBlock, parseVhReferences, refText, type ExpansionSources } from './expand.ts'
 
 export { describeReference, expansionBlock, formatVhReference, parseVhReferences, type ExpansionSources, type VhReference } from './expand.ts'
 
@@ -59,7 +62,7 @@ export interface ApprovalReference {
 }
 
 /** One generation waiting for the user, as the approvals route returns it. */
-export interface PendingApproval {
+export interface ApprovalCard {
   id: string
   sessionId: string
   callId: string
@@ -76,15 +79,23 @@ export interface PendingApproval {
 /** The stored composer choices before a session changes them. */
 const DEFAULT_MODE: ComposerMode = { confirm: 'direct', speed: 'quality' }
 
+/** One reference of a pending call before its asset is looked up: the role, the reference text, and the known asset. */
+interface CardInput {
+  role: string
+  ref: string
+  assetId: string | null
+}
+
 /** The composer service. */
-export default class VhComposer extends Service implements ComposerChannel {
-  static inject = ['vhProject', 'vhOpLog', 'vhTools']
+export default class VhComposer extends Service implements ComposerChannel, ApprovalChannel {
+  static inject = ['dvProject', 'vhAssets', 'vhTools'] // names:allow (the asset store service until stage 3)
 
   private modes: Record<string, ComposerMode> | null = null
-  private readonly pending = new Map<string, PendingApproval & { resolve: (approved: boolean) => void }>()
+  private readonly pending = new Map<string, ApprovalCard & { resolve: (approved: boolean) => void }>()
 
   constructor(ctx: Context) {
     super(ctx, 'vhComposer')
+    ctx.effect(() => ctx.dvProject.registerApprovalChannel(this), 'composer approval channel')
     ctx.inject(['vhAgent'], (child) => {
       child.effect(() => {
         child.vhAgent.setComposer(this)
@@ -137,37 +148,84 @@ export default class VhComposer extends Service implements ComposerChannel {
   }
 
   /**
-   * Hold a generation until the user approves or skips its card; an aborted turn skips it.
-   * @param request - the generation.
+   * @param session - a chat session.
+   * @returns whether the session's composer asks before the agent's shot renders and plan approvals.
+   */
+  asksFirst(session: SessionId): boolean {
+    return this.mode(session).confirm === 'ask'
+  }
+
+  /**
+   * Hold an agent's pending call until the user approves or skips its card; an aborted turn skips it. A plan approval's
+   * card shows every shot of the plan, their total duration, the plan's references, and the GPU estimate of all shots.
+   * @param approval - the pending record and its estimate.
    * @returns true when approved.
    */
-  requestApproval(request: ComposerApprovalRequest): Promise<boolean> {
+  requestApproval(approval: PendingApproval): Promise<boolean> {
+    const { record, signal } = approval
+    const plan = record.operation === 'plan.approve' ? this.planCard(approval.project, record) : null
+    const params = plan?.params ?? record.params
+    const inputs: CardInput[] = plan?.inputs ?? record.inputs.map(input => ({
+      role: input.role, ref: refText(input.ref), assetId: input.resolved_asset ?? ('asset' in input.ref ? input.ref.asset : null),
+    }))
     return new Promise((resolve) => {
       const id = randomUUID()
       const settle = (approved: boolean): void => {
         if (!this.pending.delete(id)) return
-        request.signal.removeEventListener('abort', onAbort)
+        signal.removeEventListener('abort', onAbort)
         resolve(approved)
       }
       const onAbort = (): void => { settle(false) }
-      const duration = request.params['duration_sec']
+      const duration = params['duration_sec']
       this.pending.set(id, {
-        id, sessionId: request.sessionId, callId: request.callId, tool: request.tool, summary: request.summary,
-        prompt: typeof request.params['prompt'] === 'string' ? request.params['prompt'] : '',
+        id, sessionId: record.session ?? '', callId: record.tool_call ?? '', tool: record.operation ?? '',
+        summary: `${record.operation ?? ''}: ${record.intent}`,
+        prompt: typeof params['prompt'] === 'string' ? params['prompt'] : '',
         durationSec: typeof duration === 'number' ? duration : null, model: MODEL_LABEL,
-        estimateGpuSeconds: request.estimateGpuSeconds, references: this.referencesOf(request), createdAt: new Date().toISOString(),
-        resolve: settle,
+        estimateGpuSeconds: plan?.estimate ?? approval.gpu_seconds, references: this.referencesOf(approval.project, inputs),
+        createdAt: new Date().toISOString(), resolve: settle,
       })
-      if (request.signal.aborted) settle(false)
-      else request.signal.addEventListener('abort', onAbort, { once: true })
+      if (signal.aborted) settle(false)
+      else signal.addEventListener('abort', onAbort, { once: true })
     })
+  }
+
+  /**
+   * What a plan approval's card shows: one numbered line per shot as the prompt, the total duration, the plan's
+   * references, and the estimate of rendering every shot.
+   * @param projectId - the project.
+   * @param record - the pending `plan.approve` record.
+   * @returns the card fields, or null when the record names no readable plan document.
+   */
+  private planCard(
+    projectId: ProjectId, record: ProjectRecord,
+  ): { params: Record<string, unknown>; inputs: CardInput[]; estimate: number } | null {
+    let document: PlanDocument
+    try {
+      const asset = this.ctx.dvProject.getRecord(projectId, brandString<RecordId>(String(record.params['plan']))).outputs[0]
+      if (asset === undefined) return null
+      document = JSON.parse(this.ctx.vhAssets.read(asset).toString('utf8')) as PlanDocument // names:allow
+    } catch {
+      // An unreadable plan leaves the card with the record's own params; the call fails when it runs.
+      return null
+    }
+    const seconds = document.shots.map(shot => shot.duration_sec ?? 5)
+    const total = seconds.reduce((sum, value) => sum + value, 0)
+    const references = [...new Set(document.shots.flatMap(shot => shot.references ?? document.references ?? []))]
+    return {
+      params: {
+        prompt: document.shots.map((shot, index) => `${index + 1}. ${shot.prompt} (${seconds[index]} s)`).join('\n'), duration_sec: total,
+      },
+      inputs: references.map(ref => ({ role: 'reference', ref, assetId: null })),
+      estimate: this.ctx.vhTools.get('generate.video')?.estimate?.({ duration_sec: total }).gpu_seconds ?? 0,
+    }
   }
 
   /**
    * @param sessionId - a chat session.
    * @returns the session's waiting generations, oldest first.
    */
-  approvals(sessionId: string): PendingApproval[] {
+  approvals(sessionId: string): ApprovalCard[] {
     return [...this.pending.values()].filter(entry => entry.sessionId === sessionId).map(({ resolve: _resolve, ...entry }) => entry)
   }
 
@@ -228,21 +286,21 @@ export default class VhComposer extends Service implements ComposerChannel {
     const bound = this.ctx.vhTools.sessionProject(sessionId)
     if (bound !== null) return bound
     const assets = parseVhReferences(text).flatMap(reference => reference.uri.split('/').slice(-1))
-    const projects = this.ctx.vhOpLog.listProjects().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const projects = this.ctx.dvProject.listProjects().sort((a, b) => b.created_at.localeCompare(a.created_at))
     const match = projects.find((info) => {
-      const producers = this.ctx.vhProject.fold(info.projectId).producers
-      return assets.some(asset => producers[brandString<AssetId>(asset)] !== undefined)
+      const createdBy = this.ctx.dvProject.getState(info.id).components.proj.created_by
+      return assets.some(asset => createdBy[brandString<AssetId>(asset)] !== undefined)
     })
-    return match?.projectId ?? projects[0]?.projectId ?? null
+    return match?.id ?? projects[0]?.id ?? null
   }
 
-  /** The runtime reads expansion needs. */
+  /** The Project reads expansion needs. */
   private sources(): ExpansionSources {
     return {
-      fold: projectId => this.ctx.vhProject.fold(projectId),
-      op: (projectId, opId) => {
+      getState: projectId => this.ctx.dvProject.getState(projectId),
+      getRecord: (projectId, record) => {
         try {
-          return this.ctx.vhOpLog.get(projectId, opId)
+          return this.ctx.dvProject.getRecord(projectId, record)
         } catch {
           // An unknown record ID is reported in the expansion text, not as a failed step.
           return undefined
@@ -251,23 +309,23 @@ export default class VhComposer extends Service implements ComposerChannel {
     }
   }
 
-  /** The assets a generation's inputs stand for, with their URLs. */
-  private referencesOf(request: ComposerApprovalRequest): ApprovalReference[] {
-    const projectId = this.ctx.vhTools.sessionProject(request.sessionId)
-    return request.inputs.map((input) => {
-      const assetId = projectId === null ? null : this.assetOf(projectId, input.ref)
+  /** The assets a pending call's inputs stand for, with their URLs. */
+  private referencesOf(projectId: ProjectId, inputs: readonly CardInput[]): ApprovalReference[] {
+    return inputs.map((input) => {
+      const assetId = input.assetId ?? this.assetOf(projectId, input.ref)
       return {
         role: input.role, ref: input.ref, assetId, url: assetId === null ? null : this.ctx.vhTools.assetUrl(brandString<AssetId>(assetId)),
       }
     })
   }
 
-  /** The asset an input reference stands for: an asset ID, a record output, or an entity version's first image. */
+  /** The asset a reference text stands for: an asset ID, a record output, or a character, location, or style version's first image. */
   private assetOf(projectId: ProjectId, ref: string): string | null {
-    const output = parseOutputRef(brandString<AssetId>(ref))
-    if (output !== null) {
+    const hash = ref.lastIndexOf('#')
+    const output = hash > 0 ? Number(ref.slice(hash + 1)) : Number.NaN
+    if (Number.isInteger(output)) {
       try {
-        return this.ctx.vhOpLog.get(projectId, output.op).outputs[output.index] ?? null
+        return this.ctx.dvProject.getRecord(projectId, brandString<RecordId>(ref.slice(0, hash))).outputs[output] ?? null
       } catch {
         // A reference to an unknown record has no thumbnail; the card shows the reference text.
         return null
@@ -275,7 +333,7 @@ export default class VhComposer extends Service implements ComposerChannel {
     }
     const at = ref.lastIndexOf('@')
     if (at > 0) {
-      const versions = this.ctx.vhProject.fold(projectId).entities[brandString<EntityId>(ref.slice(0, at))] ?? []
+      const versions = this.ctx.dvProject.getState(projectId).components.bible.entities[ref.slice(0, at)] ?? []
       return versions.find(version => String(version.version) === ref.slice(at + 1))?.refs[0] ?? null
     }
     return ref

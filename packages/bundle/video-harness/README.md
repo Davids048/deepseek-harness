@@ -1,5 +1,5 @@
 ---
-description: "The video-harness profile layer: the DreamVerse generation client, the harness runtime, tools, agent, browser API, and view plugins, the directing skills, and the model routes, stacked on dsh-base and dsh-web-app or dsh-headless."
+description: "The video-harness profile layer: the DreamVerse generation client, the Project component, the harness tools, agent, browser API, and view plugins, the directing skills, and the model routes, stacked on dsh-base and dsh-web-app or dsh-headless."
 kind: "package-bundle"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this bundle to run the video harness as a `dsh` profile. It inserts the DreamVerse generation client and the nine harness plugins (`media`, `assets`, `oplog`, `runtime`, `tools`, `agent`, `views`, `ui-canvas`, `ui-timeline`), points `skill-filesystem` at the agent package's skills, declares the `deepseek-local` route to the cluster's SGLang server, and selects the agent model from the environment. `scripts/video-harness/setup-profile.sh` stacks it on `dsh-base` plus `dsh-web-app` as profile `video-harness` and on `dsh-base` plus `dsh-headless` as `video-harness-headless`; `scripts/video-harness/launch.sh web|headless` runs either from source.
+Use this bundle to run the video harness as a `dsh` profile. It inserts the DreamVerse generation client, the Project component `@dv/project`, and the harness plugins (`media`, `assets`, `tools`, `agent`, `views`, `mentions`, `ui-composer`, `ui-canvas`, `ui-timeline`, `ui-assets`, `ui-shell`), points `skill-filesystem` at the agent package's skills, declares the `deepseek-local` route to the cluster's SGLang server, and selects the agent model from the environment. `scripts/video-harness/setup-profile.sh` stacks it on `dsh-base` plus `dsh-web-app` as profile `video-harness` and on `dsh-base` plus `dsh-headless` as `video-harness-headless`; `scripts/video-harness/launch.sh web|headless` runs either from source.
 
 ## Table of Contents
 

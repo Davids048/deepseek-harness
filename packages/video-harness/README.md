@@ -1,5 +1,5 @@
 ---
-description: "The video-harness package group: the operation log, the content-addressed asset store, the project runtime that every video view and the agent write through, the media service, the structured tools, the browser API, and the canvas and timeline views."
+description: "The video-harness package group: the content-addressed asset store, the media service, the structured tools that run as `@dv/project` operations, the agent integration, the browser API, and the canvas and timeline views."
 kind: "package-group"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-These packages are the project layer of the video agent harness. A project is a set of immutable media assets plus an append-only log of operations; the canvas, the timeline, and the chat are projections of that log, and the agent and every view change a project only by invoking a tool through the runtime. The runtime folds the log into state, opens a draft branch per agent turn, fast-forwards `main` on acceptance, undoes turns, starts exploration branches, and marks downstream results stale when an input is replaced.
+These packages are the project layer of the video agent harness. A project is a set of immutable media assets plus the append-only records of the Project component [`@dv/project`](../dv/project/README.md); the canvas, the timeline, and the chat are projections of those records, and the agent and every view change a project only by running an operation through `dvProject.run`. Project computes state from the records, keeps one draft per chat session until the human accepts or discards it, writes undo and redo as records, starts exploration branches, and marks downstream results stale when an input is replaced.
 
 ## Table of Contents
 
@@ -27,11 +27,9 @@ The [video harness subsystem page](../../docs/subsystems/video-harness.md) expla
 | Package | Role |
 | --- | --- |
 | [`assets`](assets/README.md) | Content-addressed immutable media store and the `/vh/assets/<id>/content` route |
-| [`oplog`](oplog/README.md) | Per-project append-only operation records, branch heads, and change subscriptions |
-| [`runtime`](runtime/README.md) | `invoke` and `schedule`, state folding, turns and drafts, undo, branches, staleness, the deterministic cache, plan scheduling, and automatic replay |
 | [`media`](media/README.md) | ffmpeg and ffprobe over stored assets: probe, extract frames, trim, concatenate, run declared commands |
-| [`tools`](tools/README.md) | The typed tool specs, their runtime registration, and the `vh_*` DSH tools whose calls become records |
-| [`agent`](agent/README.md) | Turn boundaries of the DSH agent loop as drafts, confirmation questions, the project prompt section, and the directing skills |
+| [`tools`](tools/README.md) | The typed tool specs, their registration as `dvProject` operations, the bridge reducers, and the `vh_*` and `dv_proj_*` DSH tools |
+| [`agent`](agent/README.md) | The turns of the DSH agent loop and their request text, chat image imports, confirmation questions, the project prompt section, and the directing skills |
 | [`views`](views/README.md) | Authenticated `/api/vh/*` routes and the `/vh/events` stream through which the browser views read state and write user records |
 | [`ui-kit`](ui-kit/README.md) | Browser code the two views share: the API client, the state types, the graph layout, the form model, the track geometry, and the branch bar |
 | [`ui-canvas`](ui-canvas/README.md) | The canvas tab of the right Sidebar: records as a DAG of asset flow, with a parameter form that edits or reruns any record |

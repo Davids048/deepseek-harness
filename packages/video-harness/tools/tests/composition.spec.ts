@@ -1,5 +1,5 @@
 /**
- * The REAL composition: a test-only `cordis.yml` boots the five harness plugins plus the DSH tool registry through
+ * The REAL composition: a test-only `cordis.yml` boots the four harness plugins plus the DSH tool registry through
  * the Loader, with the generation backend as the one fake, and a model-visible tool call becomes a durable record.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -12,10 +12,9 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
+import DvProject, { type ProjectId, type RecordId } from '@dv/project'
 import VhAssets from '@video-harness/assets'
 import VhMedia from '@video-harness/media'
-import VhOpLog from '@video-harness/oplog'
-import VhProject from '@video-harness/runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 import VhTools, { type ToolCallValue } from '../src/index.ts'
 import { FakeGeneration, FFMPEG, FFPROBE } from './support.ts'
@@ -29,7 +28,7 @@ afterEach(async () => {
 })
 
 /** The plugin classes the fixture rows resolve through `globalThis`, because Node imports the rows outside Vite. */
-const PLUGINS = { SystemPrompt, ToolRuntime, VhAssets, VhOpLog, VhMedia, VhProject, VhTools }
+const PLUGINS = { SystemPrompt, ToolRuntime, VhAssets, DvProject, VhMedia, VhTools }
 
 describe('video harness composition', () => {
   it('boots from cordis.yml through the Loader and turns a model tool call into a durable record', async () => {
@@ -45,9 +44,8 @@ describe('video harness composition', () => {
     row('system-prompt', 'SystemPrompt', [])
     row('tools', 'ToolRuntime', [])
     row('vh-assets', 'VhAssets', [`root: ${join(dir, 'assets')}`])
-    row('vh-oplog', 'VhOpLog', [`root: ${join(dir, 'projects')}`])
+    row('dv-project', 'DvProject', [`root: ${join(dir, 'projects')}`])
     row('vh-media', 'VhMedia', [`ffmpegPath: ${FFMPEG}`, `ffprobePath: ${FFPROBE}`])
-    row('vh-runtime', 'VhProject', [`ffmpegPath: ${FFMPEG}`, 'builtinTools: false'])
     row('vh-tools', 'VhTools', [`sessionStateRoot: ${join(dir, 'sessions')}`])
     writeFileSync(join(dir, 'cordis.yml'), `${rows.join('\n')}\n`)
 
@@ -63,7 +61,7 @@ describe('video harness composition', () => {
     const tools = ctx.get('vhTools')
     expect(tools).toBeDefined()
     expect(tools?.get('generate.video')?.version).toBe('dreamverse-1')
-    expect(ctx.get('vhProject')?.toolNames()).toContain('generate.video')
+    expect(ctx.get('dvProject')?.listOperations().map(spec => spec.name)).toContain('generate.video') // names:allow
     const registry = ctx.get('tools')
     expect(registry?.get('vh_generate_video')).toBeDefined()
 
@@ -73,8 +71,8 @@ describe('video harness composition', () => {
       if (result.isError) throw new Error(result.error.message)
       return result
     }
-    const created = await call('vh_project_create', { title: 'composed' })
-    const projectId = (created.value as { project_id: string }).project_id
+    const created = await call('dv_proj_create', { title: 'composed' })
+    const projectId = (created.value as { project_id: ProjectId }).project_id
     writeFileSync(join(dir, 'ref.png'), 'PNG-FAKE')
     await call('vh_asset_upload', { reason: 'reference', path: join(dir, 'ref.png'), mime: 'image/png' })
     const refs = ctx.vhAssets.list().map(asset => asset.id)
@@ -86,13 +84,16 @@ describe('video harness composition', () => {
     const text = shot.content.find(block => block.type === 'text')
     expect(text?.type === 'text' ? text.text : '').toContain(`done ${shotValue.op_id}`)
     expect(text?.type === 'text' ? text.text : '').toContain('/vh/assets/')
-    // Durable: the log holds the record with its outputs, and the store holds the bytes.
-    const record = ctx.vhOpLog.get(projectId as never, shotValue.op_id as never)
-    expect(record).toMatchObject({ status: 'done', intent: 'the opening shot', tool: { name: 'generate.video', version: 'dreamverse-1' } })
+    // Durable: the project holds the record with its outputs on the session's draft, and the store holds the bytes.
+    const record = ctx.dvProject.getRecord(projectId, shotValue.op_id as RecordId)
+    expect(record).toMatchObject({ status: 'done', intent: 'the opening shot', operation: 'generate.video', operation_version: 'dreamverse-1', actor: 'agent' }) // names:allow
+    expect(record.branch).toBe('draft/anonymous')
     expect(record.outputs).toHaveLength(2)
-    expect(ctx.vhAssets.has(record.outputs[0] as never)).toBe(true)
+    const [video] = record.outputs
+    expect(video !== undefined && ctx.vhAssets.has(video)).toBe(true)
     expect(generation.requests).toHaveLength(1)
-    await call('vh_turn_accept', {})
-    expect(ctx.vhProject.fold(projectId as never).assets.size).toBe(3)
+    expect(Object.keys(ctx.dvProject.getState(projectId).components.proj.created_by)).toHaveLength(0)
+    await call('dv_proj_draft_accept', {})
+    expect(Object.keys(ctx.dvProject.getState(projectId).components.proj.created_by)).toHaveLength(3)
   })
 })

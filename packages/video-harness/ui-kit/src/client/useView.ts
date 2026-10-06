@@ -1,6 +1,7 @@
 /**
- * The state one view keeps about the project it shows: which project and head, the folded state and the tool
- * declarations, the last failure, and the branch-bar gestures (accept, reject, undo, new branch) as API calls.
+ * The state one view keeps about the project it shows: which project and head, the branch state and the tool
+ * declarations, the last failure, and the branch-bar gestures (accept, discard, undo, new branch, branch switch) as API
+ * calls on behalf of the chat session the view sits beside.
  *
  * @module @video-harness/ui-kit/useView
  */
@@ -18,6 +19,8 @@ export type ViewSurface = 'canvas' | 'timeline'
 export interface ViewSession {
   client: VhClient
   surface: ViewSurface
+  /** The chat session the view sits beside; the view's writes go to its working branch. */
+  session: string | null
   projects: Loading<WireProject[]>
   project: string | null
   head: string
@@ -25,7 +28,7 @@ export interface ViewSession {
   tools: Loading<WireToolSpec[]>
   /** The message of the last failed call, cleared by the next successful one. */
   notice: string | null
-  /** Whether `head` is an agent draft, where user writes are refused. */
+  /** Whether `head` is a draft, which the view shows without writing to it. */
   readOnly: boolean
   /**
    * Run one write, refetch the state afterwards, and keep the failure message when it throws.
@@ -80,19 +83,26 @@ export function useViewSession(client: VhClient, surface: ViewSurface, session: 
     }
   }, [reload])
   const onProject = useCallback((next: string) => { setProject(next); setHead('main') }, [])
+  const countsOf = (branch: string) =>
+    state.value?.branches.find(entry => entry.name === branch)?.counts ?? { agent_changes: 0, human_edits: 0 }
   const bar: ViewSession['bar'] = {
     projects: projects.value ?? [],
     project,
     state: state.value,
     head,
     onProject,
-    onHead: setHead,
-    onAccept: (turn) => { if (project !== null) void run(() => client.turn(project, turn, 'accept', surface)) },
-    onReject: (turn) => { if (project !== null) void run(() => client.turn(project, turn, 'reject', surface)) },
-    onUndo: () => { if (project !== null) void run(() => client.undo(project)) },
+    onHead: (next) => {
+      setHead(next)
+      // The session's writes go to its working branch, so showing `main` or an exploration branch also switches to it.
+      if (project !== null && session !== null && !next.startsWith('draft/')) void run(() => client.switchBranch(project, next, session))
+    },
+    onAccept: (branch) => { if (project !== null) void run(() => client.acceptDraft(project, { branch }, surface)) },
+    // Discard confirms the counts the bar's state showed; the server refuses when the draft changed since.
+    onDiscard: (branch) => { if (project !== null) void run(() => client.discardDraft(project, { branch }, surface, countsOf(branch))) },
+    onUndo: () => { if (project !== null) void run(() => client.undo(project, session)) },
     onBranch: (name, at) => {
       if (project === null) return
-      void run(() => client.branch(project, name, at)).then((ok) => { if (ok) setHead(name) })
+      void run(() => client.branch(project, name, at)).then((ok) => { if (ok) setHead(`explore/${name}`) })
     },
     onCreate: (title) => {
       void run(() => client.createProject(title, surface)).then((ok) => {
@@ -103,5 +113,5 @@ export function useViewSession(client: VhClient, surface: ViewSurface, session: 
       })
     },
   }
-  return { client, surface, projects, project, head, state, tools, notice, readOnly: head.startsWith('draft/'), run, bar }
+  return { client, surface, session, projects, project, head, state, tools, notice, readOnly: head.startsWith('draft/'), run, bar }
 }

@@ -1,14 +1,15 @@
 /**
  * The cuts editor for one project and branch, without the branch bar: the center area's 剪辑 view. It reads the
- * folded state itself and refetches it after every log event and every write. While an agent draft is open on `main`,
- * the view shows the draft's state read-only, with the draft's clips marked, the way the canvas overlays draft nodes.
+ * branch state itself and refetches it after every project change and every write. While the chat session the view sits
+ * beside has an open draft, the view shows the draft's state with the draft's clips marked, the way the canvas overlays
+ * draft nodes; the view's edits carry that session, so they land on the draft.
  */
 import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { VhClient } from '@video-harness/ui-kit/api.ts'
 import { useLanguage } from '@video-harness/ui-kit/locale.ts'
-import { openDrafts } from '@video-harness/ui-kit/state.ts'
+import { sessionDraft } from '@video-harness/ui-kit/state.ts'
 import type { VhLanguage } from '@video-harness/ui-kit/locale.ts'
 import { useProjectState } from '@video-harness/ui-kit/useProject.ts'
 import { CutsEditor } from './CutsEditor.tsx'
@@ -20,6 +21,8 @@ export interface CutsViewProps {
   projectId: string
   branch: string
   client?: VhClient
+  /** The chat session the view sits beside: its draft is shown, and the view's edits go to its working branch. */
+  session?: string | null
   t?: Translate<VhTimelineKey>
 }
 
@@ -41,11 +44,11 @@ const sharedClient = new VhClient()
  * @param props - the project, the branch, and optionally the API client and copy.
  * @returns the element.
  */
-export function CutsView({ projectId, branch, client = sharedClient, t: givenCopy }: CutsViewProps): ReactNode {
+export function CutsView({ projectId, branch, client = sharedClient, session = null, t: givenCopy }: CutsViewProps): ReactNode {
   const language = useLanguage()
   const t = useMemo(() => givenCopy ?? copyFor(language), [givenCopy, language])
   const base = useProjectState(client, projectId, branch)
-  const draft = branch.startsWith('draft/') || base.value === null ? null : openDrafts(base.value).at(-1) ?? null
+  const draft = branch.startsWith('draft/') || base.value === null ? null : sessionDraft(base.value, session)
   const draftState = useProjectState(client, draft === null ? null : projectId, draft?.branch ?? branch)
   const showDraft = draft !== null && draftState.value !== null
   const state = showDraft ? draftState : base
@@ -65,7 +68,7 @@ export function CutsView({ projectId, branch, client = sharedClient, t: givenCop
       return false
     }
   }, [reload])
-  const readOnly = head.startsWith('draft/')
+  const readOnly = branch.startsWith('draft/')
   if (state.value === null) {
     return <p style={{ padding: 12 }} role={state.error === null ? undefined : 'alert'}>{state.error === null ? t('loading') : t('error', { message: state.error })}</p>
   }
@@ -78,6 +81,7 @@ export function CutsView({ projectId, branch, client = sharedClient, t: givenCop
           t={t}
           project={projectId}
           head={head}
+          session={session}
           state={state.value}
           baseState={showDraft ? base.value : null}
           readOnly={readOnly}

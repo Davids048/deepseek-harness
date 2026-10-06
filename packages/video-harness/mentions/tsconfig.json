@@ -24,10 +24,10 @@
       "path": "../../client/connection/tsconfig.host.json"
     },
     {
-      "path": "../oplog"
+      "path": "../../dv/project"
     },
     {
-      "path": "../runtime"
+      "path": "../assets"
     },
     {
       "path": "../tools"

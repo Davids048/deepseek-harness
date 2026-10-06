@@ -30,6 +30,9 @@
       "path": "../../dreamverse/generation-client"
     },
     {
+      "path": "../../dv/project"
+    },
+    {
       "path": "../../dreamverse/segment-generation"
     },
     {
@@ -46,12 +49,6 @@
     },
     {
       "path": "../media"
-    },
-    {
-      "path": "../oplog"
-    },
-    {
-      "path": "../runtime"
     }
   ]
 }

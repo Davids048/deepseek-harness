@@ -1,31 +1,31 @@
 /**
- * The operation log as a server-sent event stream: one `op` event per append or patch, one `head` event per head move,
- * and a comment line every keep-alive interval so proxies keep the response open.
+ * A project's changes as a server-sent event stream: one event per Project change, named by its kind (`record` for an
+ * appended record, `update` for a record update, `branch` for a branch that was created, moved, or removed), and a
+ * comment line every keep-alive interval so proxies keep the response open.
  *
  * @module @video-harness/views/events
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { OpLogEvent, ProjectId } from '@video-harness/oplog'
+import type { ProjectEvent, ProjectId } from '@dv/project'
 
 /** What the stream needs from its owner. */
 export interface EventStreamSources {
-  subscribe(projectId: ProjectId, listener: (event: OpLogEvent) => void): () => void
+  subscribe(projectId: ProjectId, listener: (event: ProjectEvent) => void): () => void
   /** Milliseconds between keep-alive comments. */
   keepaliveMs: number
 }
 
 /**
- * Serialize one log event as an SSE frame.
- * @param event - the log event.
+ * Serialize one Project change as an SSE frame named by its kind.
+ * @param event - the change.
  * @returns the frame text.
  */
-export function frameOf(event: OpLogEvent): string {
-  const name = event.kind === 'head' ? 'head' : 'op'
-  return `event: ${name}\ndata: ${JSON.stringify(event)}\n\n`
+export function frameOf(event: ProjectEvent): string {
+  return `event: ${event.kind}\ndata: ${JSON.stringify(event)}\n\n`
 }
 
 /**
- * Serve one project's log changes until the client disconnects.
+ * Serve one project's changes until the client disconnects.
  * @param projectId - the project.
  * @param request - the HTTP request; its close ends the subscription.
  * @param response - the HTTP response kept open for the stream.

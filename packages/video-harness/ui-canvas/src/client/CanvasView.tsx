@@ -1,16 +1,17 @@
 /**
  * The project canvas as a standalone component: an infinite surface of entity, reference, plan, and clip nodes. Drag
  * empty space to pan, scroll to zoom around the cursor, drag a node to move it, click a node to open its floating
- * editor. Node positions and the viewport are stored per project through `/api/vh/layout`. An open agent draft is
- * overlaid with dashed nodes and a bar to accept or discard it. Colors come from the DSH theme tokens, so the canvas follows
- * the app's light and dark themes. Dropping a 素材 tile places that asset's node under the pointer; dropping image or
- * video files uploads them and places their nodes there.
+ * editor. Node positions and the viewport are stored per project through `/api/vh/layout`. The open draft of the chat
+ * session the canvas sits beside is overlaid with dashed nodes and a bar to accept or discard it; the canvas's own writes
+ * carry that session, so they land on the draft while it is open. Colors come from the DSH theme tokens, so the canvas
+ * follows the app's light and dark themes. Dropping a 素材 tile places that asset's node under the pointer; dropping
+ * image or video files uploads them and places their nodes there.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { VhClient } from '@video-harness/ui-kit/api.ts'
 import { useLanguage } from '@video-harness/ui-kit/locale.ts'
-import { openDrafts } from '@video-harness/ui-kit/state.ts'
+import { sessionDraft } from '@video-harness/ui-kit/state.ts'
 import { ToolApi } from '@video-harness/ui-kit/tool-api.ts'
 import { VH_ASSET_DRAG_TYPE } from '@video-harness/ui-kit/workspace-events.ts'
 import type { VhWorkspaceEventMap } from '@video-harness/ui-kit/workspace-events.ts'
@@ -32,6 +33,8 @@ export interface CanvasViewProps {
   branch?: string
   /** The API client; a same-origin client when omitted. */
   client?: VhClient
+  /** The chat session the canvas sits beside: its draft is overlaid, and the canvas writes go to its working branch. */
+  session?: string | null
   /** The `vhCanvas` translate; when omitted, the dictionary of the DSH interface language that `<html lang>` names. */
   t?: CanvasTranslate
 }
@@ -85,25 +88,33 @@ type Gesture =
 
 /**
  * The canvas.
- * @param props - the project, branch, and optional client and translate.
+ * @param props - the project, branch, chat session, and optional client and translate.
  * @returns the element.
  */
-export function CanvasView({ projectId, branch = 'main', client: given, t: givenT }: CanvasViewProps): ReactNode {
+export function CanvasView({ projectId, branch = 'main', client: given, session = null, t: givenT }: CanvasViewProps): ReactNode {
   const client = useMemo(() => given ?? new VhClient(), [given])
   const language = useLanguage()
   const t = givenT ?? translates[language]
   const readOnly = branch.startsWith('draft/')
   const base = useProjectState(client, projectId, branch)
-  const draft = readOnly || base.value === null ? null : openDrafts(base.value).at(-1) ?? null
+  const draft = readOnly || base.value === null ? null : sessionDraft(base.value, session)
   const draftState = useProjectState(client, draft === null ? null : projectId, draft?.branch ?? branch)
   const graph = useMemo(() => {
     if (base.value === null) return null
     const overlay = draft === null ? null : draftState.value
     const known = new Set(base.value.ops.map(op => op.id))
-    const draftOps = new Set((overlay?.ops ?? []).filter(op => !known.has(op.id)).map(op => op.id))
+    // Drawn dashed: the overlaid draft's records, or, when a draft branch itself is drawn, its records after the fork.
+    const forkedAt = base.value.branches.find(entry => entry.name === branch)?.forked_at ?? null
+    const forkIndex = readOnly && forkedAt !== null ? base.value.ops.findIndex(op => op.id === forkedAt) : -1
+    const draftOps = new Set([
+      ...(overlay?.ops ?? []).filter(op => !known.has(op.id)).map(op => op.id),
+      ...forkIndex === -1 ? [] : base.value.ops.slice(forkIndex + 1).map(op => op.id),
+    ])
     const state = withUploadNames(overlayDraft(base.value, overlay))
-    return { state, ...buildCanvasGraph(state, draftOps) }
-  }, [base.value, draft, draftState.value])
+    // The draft bar names the human's latest request that the draft answers.
+    const draftIntent = state.ops.filter(op => draftOps.has(op.id) && op.kind === 'request').at(-1)?.intent ?? ''
+    return { state, draftIntent, ...buildCanvasGraph(state, draftOps) }
+  }, [base.value, branch, readOnly, draft, draftState.value])
 
   const [positions, setPositions] = useState<Record<string, NodePosition>>({})
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 40, y: 40, zoom: 1 })
@@ -392,7 +403,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, t: given
       if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { setNotice(t('drop.notMedia', { name: file.name })); return }
       const position = { x: point.x + index * 32, y: point.y + index * 32 }
       void run(async () => {
-        pendingDrops.current.set(await tools.upload(projectId, file), position)
+        pendingDrops.current.set(await tools.upload(projectId, file, session), position)
         placePending()
       })
     })
@@ -487,9 +498,9 @@ export function CanvasView({ projectId, branch = 'main', client: given, t: given
       {draft !== null
         ? (
           <div style={{ ...floating, position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', display: 'flex', alignItems: 'center', gap: 8, padding: '6px 6px 6px 12px', borderRadius: 10, border: '1px dashed var(--dsw-alias-label-tertiary)', fontSize: 13 }} onPointerDown={(event) => { event.stopPropagation() }}>
-            <span>{t('draft.bar', { intent: draft.intent })}</span>
-            <button type="button" style={primaryButton} onClick={() => { void run(() => client.turn(projectId, draft.turn, 'accept', 'canvas')) }}>{t('draft.accept')}</button>
-            <button type="button" style={secondaryButton} onClick={() => { void run(() => client.turn(projectId, draft.turn, 'reject', 'canvas')) }}>{t('draft.reject')}</button>
+            <span>{t('draft.bar', { intent: graph?.draftIntent ?? '' })}</span>
+            <button type="button" style={primaryButton} onClick={() => { void run(() => client.acceptDraft(projectId, { session: draft.session }, 'canvas')) }}>{t('draft.accept')}</button>
+            <button type="button" style={secondaryButton} onClick={() => { void run(() => client.discardDraft(projectId, { session: draft.session }, 'canvas', draft.counts)) }}>{t('draft.discard')}</button>
           </div>
         )
         : null}
@@ -508,7 +519,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, t: given
             state={graph.state}
             client={client}
             project={projectId}
-            branch={branch}
+            session={session}
             readOnly={readOnly}
             t={t}
             onClose={() => { setSelected(null) }}

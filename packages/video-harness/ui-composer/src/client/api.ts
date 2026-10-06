@@ -20,7 +20,7 @@ export interface ApprovalReference {
 }
 
 /** One generation waiting for the user. */
-export interface PendingApproval {
+export interface ApprovalCard {
   id: string
   sessionId: string
   callId: string
@@ -70,14 +70,14 @@ export async function writeMode(session: string, patch: Partial<ComposerMode>): 
 
 /** One session's approval list, refreshed while it has subscribers. */
 class ApprovalStore {
-  private list: PendingApproval[] = []
+  private list: ApprovalCard[] = []
   private readonly listeners = new Set<() => void>()
   private timer: ReturnType<typeof setInterval> | null = null
 
   constructor(private readonly session: string) {}
 
   /** @returns the latest list. */
-  readonly snapshot = (): PendingApproval[] => this.list
+  readonly snapshot = (): ApprovalCard[] => this.list
 
   /**
    * @param listener - called after the list changes.
@@ -101,7 +101,7 @@ class ApprovalStore {
   /** Fetch the list and notify when it changed. */
   async refresh(): Promise<void> {
     try {
-      const next = await decode<PendingApproval[]>(await fetch(`${APPROVALS_ROUTE}?session=${encodeURIComponent(this.session)}`))
+      const next = await decode<ApprovalCard[]>(await fetch(`${APPROVALS_ROUTE}?session=${encodeURIComponent(this.session)}`))
       if (JSON.stringify(next) === JSON.stringify(this.list)) return
       this.list = next
       for (const listener of this.listeners) listener()

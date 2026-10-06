@@ -1,16 +1,20 @@
 /**
- * Project rename and delete routes over the real log: renamed titles stay unique and reach the project list, a deleted
- * project moves to the trash and leaves the list with its Workspace record and bindings, and the sessions route finds
- * a project's DSH sessions by directory.
+ * Project rename and delete routes over the real Project service: renamed titles stay unique and reach the project list,
+ * a deleted project moves to the Project store's trash and leaves the list with its Workspace record and bindings, and
+ * the sessions route finds a project's DSH sessions by directory.
  */
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
+import type { RecordOrigin } from '@dv/project'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { startTools, type ToolsFixture } from '../../tools/tests/support.ts'
 import { PROJECT_ADMIN_ROUTES, projectAdminRoutes } from '../src/projects-admin.ts'
 import { WORKSPACE_ROUTES, workspaceRoutes } from '../src/workspaces.ts'
+
+/** A human action outside any chat session. */
+const HUMAN: RecordOrigin = { actor: 'user', surface: 'api', session: null, turn: null, tool_call: null, intent: 'test' }
 
 let root = ''
 let fixture: ToolsFixture | null = null
@@ -46,15 +50,15 @@ async function call(
   return { status: response.status, json: await response.json() }
 }
 
-it('renames a project to a unique title and deletes it into the trash', async () => {
+it('renames a project to a unique title and deletes it into the Project store\'s trash', async () => {
   fixture = await startTools({ perception: false, generation: 'none', root })
-  const routes = [...workspaceRoutes(fixture.log, fixture.tools), ...projectAdminRoutes(fixture.log)]
-  const first = fixture.project.createProject({ title: '未命名项目' })
-  const second = fixture.project.createProject({ title: '未命名项目' })
+  const routes = [...workspaceRoutes(fixture.project, fixture.tools), ...projectAdminRoutes(fixture.project)]
+  const first = (await fixture.project.createProject('未命名项目', HUMAN)).id
+  const second = (await fixture.project.createProject('未命名项目', HUMAN)).id
 
   expect((await call(routes, PROJECT_ADMIN_ROUTES.rename, { json: { project: second, title: '未命名项目' } })).json).toEqual({ title: '未命名项目 2' })
   expect((await call(routes, PROJECT_ADMIN_ROUTES.rename, { json: { project: first, title: '  广告  ' } })).json).toEqual({ title: '广告' })
-  expect(fixture.log.project(first).title).toBe('广告')
+  expect(fixture.project.openProject(first).title).toBe('广告')
   expect((await call(routes, PROJECT_ADMIN_ROUTES.rename, { json: { project: first, title: ' ' } })).status).toBe(400)
 
   await call(routes, WORKSPACE_ROUTES.workspaces, { json: { project: second, workspaceId: 'ws-2' } })
@@ -62,7 +66,7 @@ it('renames a project to a unique title and deletes it into the trash', async ()
   const removed = await call(routes, PROJECT_ADMIN_ROUTES.delete, { json: { project: second } })
   expect(removed.json).toEqual({ ok: true, workspaceId: 'ws-2' })
   expect(existsSync(join(root, 'projects', second))).toBe(false)
-  expect(readdirSync(join(root, 'trash'))).toEqual([expect.stringMatching(new RegExp(`^${second}-\\d+$`))])
+  expect(readdirSync(join(root, 'projects', '.trash'))).toEqual([expect.stringMatching(new RegExp(`^${second}-\\d+$`))])
   const listed = (await call(routes, WORKSPACE_ROUTES.workspaces)).json as {
     projects: Array<{ projectId: string; title: string }>
     bindings: Record<string, string>
@@ -75,8 +79,8 @@ it('renames a project to a unique title and deletes it into the trash', async ()
 
 it('lists the DSH sessions stored under a project directory, newest first', async () => {
   fixture = await startTools({ perception: false, generation: 'none', root })
-  const routes = workspaceRoutes(fixture.log, fixture.tools)
-  const projectId = fixture.project.createProject({ title: 'chats' })
+  const routes = workspaceRoutes(fixture.project, fixture.tools)
+  const projectId = (await fixture.project.createProject('chats', HUMAN)).id
   const group = join(root, 'dsh-home', 'sessions', `--tmp-state-projects-${projectId}--`)
   for (const [id, size] of [['session-a', 10], ['session-b', 3000]] as const) {
     mkdirSync(join(group, id), { recursive: true })

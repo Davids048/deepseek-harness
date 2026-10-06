@@ -12,9 +12,9 @@
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
+    "@dv/project": "workspace:*",
     "@video-harness/agent": "workspace:*",
-    "@video-harness/oplog": "workspace:*",
-    "@video-harness/runtime": "workspace:*",
+    "@video-harness/assets": "workspace:*",
     "@video-harness/tools": "workspace:*"
   },
   "peerDependencies": {

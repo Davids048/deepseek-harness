@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The agent layer of the video harness: turn boundaries of the DSH agent loop become draft branches, confirmation questions reach the user, the project state becomes a system-prompt section, and the directing skills ship with the package.",
+  "description": "The agent layer of the video harness: agent turns and their requests reach the project records, confirmation questions reach the user, the state of the session's working branch becomes a system-prompt section, and the directing skills ship with the package.",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"
@@ -14,8 +14,7 @@
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-user-questions": "workspace:*",
-    "@video-harness/oplog": "workspace:*",
-    "@video-harness/runtime": "workspace:*",
+    "@dv/project": "workspace:*",
     "@video-harness/tools": "workspace:*",
     "@video-harness/views": "workspace:*"
   },

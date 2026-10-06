@@ -1,0 +1,468 @@
+/**
+ * Types of the Project component: IDs, the record format of `records.jsonl`, branches, operations, reducers, project
+ * state, history queries, and run requests.
+ *
+ * Field case: types that are written to disk or sent over the wire (records, update lines, `branches.json`,
+ * `project.json`, run requests, history queries) use snake_case fields, matching the record format. Types that only
+ * code sees (operation specs, the execute context, reducers) use camelCase members.
+ *
+ * @module @dv/project/types
+ */
+import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { ParameterSchemaSpec } from '@deepseek-ai/dsh-tools'
+import type { AssetId } from '@video-harness/assets' // names:allow (AssetId is owned by the asset package until stage 3)
+
+/**
+ * The content-hash ID of an asset. The asset package owns this type until stage 3; Project re-exports it so that
+ * callers import every record type from `@dv/project`. Stage 3 moves the definition into this file and the asset pool
+ * re-exports it, because the asset pool depends on Project and Project cannot import it back.
+ */
+export type { AssetId } from '@video-harness/assets' // names:allow
+
+/** The ID of a project; it names the project's directory under the store root. */
+export type ProjectId = Branded<'DvProjectId'>
+
+/** The ID of one record in a project's `records.jsonl`. */
+export type RecordId = Branded<'DvRecordId'>
+
+/** The ID of one agent turn: one run of the agent from a request to its reply. The agent integration assigns it. */
+export type TurnId = Branded<'DvTurnId'>
+
+/** The ID of one chat session; the DSH session ID of the agent that the human talks to. */
+export type SessionId = Branded<'DvSessionId'>
+
+/** What a record represents: the human's words that start an agent turn, or one call of one operation. */
+export type RecordKind = 'request' | 'operation'
+
+/** Who caused a record. `system` is used only for automatic actions, such as a scheduled render. */
+export type Actor = 'user' | 'agent' | 'system'
+
+/** Where the action that caused a record came from. */
+export type Surface = 'chat' | 'canvas' | 'timeline' | 'asset_pool' | 'api'
+
+/**
+ * The state of an operation call. It only moves forward: `pending` → `running` → `done` | `failed` | `cancelled`;
+ * `pending` may also move straight to `done` (reused outputs), `failed` or `cancelled`.
+ */
+export type RecordStatus = 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
+
+/**
+ * What one record input refers to: an asset, the n-th output of an earlier record, or one version of a character, a
+ * location or a style. Their IDs are plain strings until the story bible defines its ID types in stage 3.
+ */
+export type RecordInputRef =
+  | { asset: AssetId }
+  | { record: RecordId; output: number }
+  | { character: string; version: number }
+  | { location: string; version: number }
+  | { style: string; version: number }
+
+/** One input of a record: what the operation read. */
+export interface RecordInput {
+  /** The input's role, one of the operation's `inputRoles`, for example `reference`. */
+  role: string
+  ref: RecordInputRef
+  /**
+   * The asset the input stood for when the operation ran. Null on the record line for a `{record, output}` ref whose
+   * producer had not finished when the record was written; the record store fills it in the current form of the
+   * record once the producer is done.
+   */
+  resolved_asset: AssetId | null
+}
+
+/** The cost of one operation call, written by its final update line. */
+export interface RecordCost {
+  gpu_seconds: number
+  wall_seconds: number
+  /** Whether the outputs were reused from an earlier identical deterministic call instead of executed. */
+  reused: boolean
+}
+
+/**
+ * Why a call failed or was cancelled, in words a creator can read. `code` is one of `operation_failed` (the
+ * operation's execute threw), `input_failed` (a record the scheduled call waited for failed), `skipped` (the human
+ * skipped the approval card), or `stopped` (the turn was stopped: the run request's signal aborted). A skipped or
+ * stopped record ends with status `cancelled`.
+ */
+export interface RecordFailure {
+  code: string
+  message: string
+}
+
+/**
+ * One record of a project, in its current form: the fields of the record line, plus the fields that its update lines
+ * set. The record line on disk carries only the fields up to `created_at`; `started_at`, `finished_at`, `error`,
+ * `cost` and `report` appear only after an update line sets them.
+ */
+export interface ProjectRecord {
+  id: RecordId
+  /** The record this one follows on its branch; empty only for the first record of a project. */
+  parents: RecordId[]
+  /** The branch the record was appended to: `main`, `draft/<session>`, or `explore/<name>`. */
+  branch: string
+  kind: RecordKind
+  /** The component key that owns the operation, for example `timeline`; `proj` for request records. */
+  component: string
+  /** The operation name, for example `shot.render`; null only for request records. */
+  operation: string | null
+  /** The version of the operation's parameter schema; null only for request records. */
+  operation_version: string | null
+  actor: Actor
+  surface: Surface
+  /** The agent turn that made the record; null for direct human actions. */
+  turn: TurnId | null
+  /** The chat session of the turn, or of the human's edit; null when the action has no chat session. */
+  session: SessionId | null
+  /** The agent's tool-call ID that made the record; null when the human acted directly. */
+  tool_call: string | null
+  /** Why: the human's words, or a short description of the gesture, such as "move clip 3 before clip 1". */
+  intent: string
+  /** The operation's parameters, valid against its schema. The owning component defines their meaning. */
+  params: Record<string, unknown>
+  inputs: RecordInput[]
+  /** Assets the operation created; empty for operations that only change data. */
+  outputs: AssetId[]
+  /** The record this one repeats with changes, such as a new take with an edited prompt. */
+  based_on: RecordId | null
+  /** Records whose outputs this one replaces; their dependents become stale. */
+  supersedes: RecordId[]
+  /** Whether the same inputs and parameters always give the same outputs, which allows reuse. */
+  deterministic: boolean
+  status: RecordStatus
+  /** When the record was written, ISO-8601 UTC. */
+  created_at: string
+  /** When the call started running, ISO-8601 UTC; set by an update line. */
+  started_at?: string
+  /** When the call ended, ISO-8601 UTC; set by an update line. */
+  finished_at?: string
+  /** Why the call failed or was cancelled; set by an update line. */
+  error?: RecordFailure
+  /** Set by the final update line of an executed call. */
+  cost?: RecordCost
+  /** Facts the operation found besides its outputs, such as the seed it drew; set by an update line. */
+  report?: Record<string, unknown>
+}
+
+/**
+ * One update line of `records.jsonl`: `{"update": "<RecordId>", …}` with the fields that changed. Only these fields
+ * may change, only while the record is not finished, and `status` only moves forward.
+ */
+export interface RecordUpdate {
+  update: RecordId
+  status?: RecordStatus
+  started_at?: string
+  finished_at?: string
+  outputs?: AssetId[]
+  error?: RecordFailure
+  cost?: RecordCost
+  report?: Record<string, unknown>
+}
+
+/**
+ * Who caused an action, from where, and why: the fields every record copies from the call that wrote it. Run requests
+ * and the `proj.*` service methods take it.
+ */
+export interface RecordOrigin {
+  actor: Actor
+  surface: Surface
+  /** The chat session the action belongs to; null for an action outside any chat session. */
+  session: SessionId | null
+  /** The agent turn; null for direct human actions. */
+  turn: TurnId | null
+  /** The agent's tool-call ID; null when the human acted directly. */
+  tool_call: string | null
+  intent: string
+}
+
+/** The contents of `project.json`. */
+export interface ProjectInfo {
+  id: ProjectId
+  title: string
+  /** When the project was created, ISO-8601 UTC. */
+  created_at: string
+}
+
+/** How many records a draft holds, as the discard dialog shows them. */
+export interface DraftCounts {
+  /** Operation records on the draft whose actor is `agent` or `system`. */
+  agent_changes: number
+  /** Operation records on the draft whose actor is `user`. */
+  human_edits: number
+}
+
+/** One branch of a project: a named pointer to a record. `branches.json` stores every field except `counts`. */
+export interface Branch {
+  /** `main`, `draft/<session>`, or `explore/<name>`. */
+  name: string
+  /** The record the branch points at. */
+  head: RecordId
+  /** The branch that accepting this branch merges into; null for `main` and exploration branches. */
+  base: string | null
+  /** The head of `base` when the draft was opened, or when an accept last replayed it; null for `main`. */
+  forked_at: RecordId | null
+  /** The chat session that owns the draft; null for `main` and exploration branches. */
+  session: SessionId | null
+  /** The draft's record counts; null for branches that are not drafts. Computed on read, never stored. */
+  counts: DraftCounts | null
+}
+
+/** The result of an operation's execute function. */
+export interface OperationResult {
+  /** The created assets, in the order the operation declares them. */
+  outputs: AssetId[]
+  /** Facts besides the outputs, such as the seed a renderer drew; a read returns its answer here. */
+  report?: Record<string, unknown>
+  /** GPU time the call used; the runner measures wall time itself. */
+  cost?: { gpu_seconds: number }
+}
+
+/** What an operation's execute function receives. */
+export interface OperationContext {
+  project: ProjectId
+  /** The running record; null for a read-only operation, which writes no record. */
+  record: ProjectRecord | null
+  params: Record<string, unknown>
+  /** The record's inputs; every `resolved_asset` is set. */
+  inputs: RecordInput[]
+  /** The project state at the record's parent on its branch (for a read, at the head of the working branch). */
+  state: ProjectState
+  /** A directory the call may write temporary files into; the runner removes it after the call. */
+  scratchDir: string
+  /** Aborted when the caller's run request aborts. */
+  signal: AbortSignal
+  /**
+   * Import a file or bytes the operation produced into the asset pool, as an asset created by this record.
+   * @param source - the bytes, or a file path to copy.
+   * @param meta - the asset's media type, display name, duration for audio and video, and pixel width and height of
+   *   images and video when the operation knows them.
+   * @returns the asset's ID.
+   */
+  importAsset(
+    source: Uint8Array | { path: string }, meta: { mime: string; name: string; durationSec?: number; width?: number; height?: number },
+  ): AssetId
+}
+
+/**
+ * An operation a component implements and registers with `dvProject.registerOperation`. Each operation is run only
+ * through `dvProject.run`.
+ */
+export interface OperationSpec {
+  /** `<component key>.<verb>` or `<component key>.<object>_<verb>`, for example `timeline.clip_move`. */
+  name: string
+  /** The owning component's key; it equals the part of `name` before the dot. */
+  component: string
+  /** The version of the parameter schema, written to each record's `operation_version`. */
+  version: string
+  /** The parameter schema in the DSH tool parameter format; the runner validates `params` against it. */
+  params: ParameterSchemaSpec
+  /** The input roles the operation accepts; the runner refuses an input with any other role. */
+  inputRoles: readonly string[]
+  /**
+   * `agent_ask_first`: when the actor is `agent` and the session's composer asks first, the runner waits for the
+   * human's approval before executing. `never`: the runner never waits.
+   */
+  confirm: 'never' | 'agent_ask_first'
+  /** Whether identical inputs and parameters always give identical outputs; the runner then reuses earlier outputs. */
+  deterministic: boolean
+  /** The scheduler's concurrency class: `gpu` and `cpu` calls share a configured limit each; `none` is unlimited. */
+  resource: 'none' | 'cpu' | 'gpu'
+  /**
+   * The expected GPU time of a call, shown on the approval card.
+   * @param params - the call's parameters.
+   * @returns the estimate; omit the function for operations that use no GPU.
+   */
+  estimate?(params: Record<string, unknown>): { gpu_seconds: number }
+  /** A read: the runner writes no record, asks no confirmation, and takes no lock. */
+  readOnly?: boolean
+  /**
+   * The records a call of this operation replaces; the runner adds them to the record's `supersedes`.
+   * @param params - the call's parameters.
+   * @param state - the state of the working branch the call writes to.
+   * @returns the replaced records; omit the function for operations that replace nothing by themselves.
+   */
+  supersedes?(params: Record<string, unknown>, state: ProjectState): RecordId[]
+  /**
+   * Run the operation. A throw fails the record with code `operation_failed` and the error's message.
+   * @param context - the record, resolved inputs, parameters, state, and asset storage.
+   * @returns the outputs, the report, and the GPU time.
+   */
+  execute(context: OperationContext): Promise<OperationResult>
+}
+
+/**
+ * The state slice of each component, keyed by component key. Each component adds its slice by declaration merging:
+ *
+ * ```ts
+ * declare module '@dv/project' {
+ *   interface ComponentStates { timeline: TimelineState }
+ * }
+ * ```
+ *
+ * Project declares its own slice, `proj`.
+ */
+export interface ComponentStates {
+  proj: {
+    /** The records of the branch's effective chain, oldest first (undo and redo records jump; see the history module). */
+    records: ProjectRecord[]
+    /** Stale records: record → the record whose change made it stale. */
+    stale: Record<RecordId, RecordId>
+    /** Superseded records: record → the record that superseded it. */
+    superseded: Record<RecordId, RecordId>
+    /** The record that created each output asset. */
+    created_by: Record<AssetId, RecordId>
+  }
+}
+
+/** A component key that has a declared state slice. */
+type ComponentKey = keyof ComponentStates
+
+/**
+ * A component's reducer: it turns the records of a branch into the component's state slice. Reducers are pure: they
+ * read only their arguments and return a new slice or the same slice unchanged.
+ */
+export interface Reducer<K extends ComponentKey = ComponentKey> {
+  /**
+   * @returns the slice before any record.
+   */
+  initial(): ComponentStates[K]
+  /**
+   * Apply one record. The reducer receives every record of the effective chain, of every component, in order, and
+   * ignores the records it does not interpret.
+   * @param slice - the slice before the record.
+   * @param record - the record in its current form.
+   * @returns the slice after the record.
+   */
+  reduce(slice: ComponentStates[K], record: ProjectRecord): ComponentStates[K]
+  /**
+   * Whether a record from a draft can apply on a slice computed from a different `main`; accept replay calls it.
+   * @param slice - the slice on the new `main` before the record.
+   * @param record - a draft record.
+   * @returns a reason a creator can read when the record conflicts, else null.
+   */
+  conflict?(slice: ComponentStates[K], record: ProjectRecord): string | null
+  /**
+   * The assets a character, location or style reference stands for. The runner calls the `bible` reducer's function.
+   * @param slice - the slice at the record's parent.
+   * @param ref - a character, location or style reference.
+   * @returns the assets, or null when the reference names an unknown version.
+   */
+  assetsOf?(slice: ComponentStates[K], ref: RecordInputRef): AssetId[] | null
+  /**
+   * The record that created the character, location or style version a reference names; Project's `proj` reducer
+   * treats it as the producer of that input, so a record that read a superseded version is stale. Project calls the
+   * `bible` reducer's function.
+   * @param slice - the slice before the record being reduced.
+   * @param ref - a character, location or style reference.
+   * @returns the record, or null for an unknown version.
+   */
+  createdBy?(slice: ComponentStates[K], ref: RecordInputRef): RecordId | null
+}
+
+/** The state of one branch at its head. */
+export interface ProjectState {
+  project: ProjectInfo
+  /** The branch the state was computed for. */
+  branch: string
+  /** The record the branch points at. */
+  head: RecordId
+  /** One slice per registered reducer. */
+  components: ComponentStates
+}
+
+/** What a history query selects. Every filter is optional; filters combine with AND. */
+export interface HistoryQuery {
+  project: ProjectId
+  /** Only records appended to this branch name. */
+  branch?: string
+  actor?: Actor
+  component?: string
+  operation?: string
+  kind?: RecordKind
+  status?: RecordStatus
+  session?: SessionId
+  turn?: TurnId
+  /** Only these records. */
+  records?: RecordId[]
+  /** Only records written before this record, for paging. */
+  before?: RecordId
+  /** At most this many entries. */
+  limit?: number
+}
+
+/** One row of the history list. */
+export interface HistoryEntry {
+  record: ProjectRecord
+  /**
+   * Where the record stands: `main` (on the effective chain of `main`), `draft` (on an open draft), `undone` (left
+   * behind by an undo), `discarded` (on a discarded draft), `replayed` (a draft record that accept replay copied onto
+   * `main`; the copy has its own entry), or `branch` (only on an exploration branch).
+   */
+  mark: 'main' | 'draft' | 'undone' | 'discarded' | 'replayed' | 'branch'
+}
+
+/** One operation call through `dvProject.run`. */
+export interface RunRequest extends RecordOrigin {
+  project: ProjectId
+  /** The operation name. */
+  operation: string
+  params: Record<string, unknown>
+  inputs: Array<{ role: string; ref: RecordInputRef }>
+  /**
+   * The human's words that started the agent turn. When set and the turn has no request record yet, the runner writes
+   * the turn's `request` record before the turn's first operation record.
+   */
+  request_text?: string
+  /**
+   * Schedule the call instead of running it now: the runner writes the pending record at once and the scheduler runs
+   * it after these records and the producers of its `{record, output}` inputs are done.
+   */
+  after?: RecordId[]
+  based_on?: RecordId | null
+  supersedes?: RecordId[]
+  /** The turn's stop signal: aborting it cancels a confirmation wait (code `stopped`) and aborts the execution. */
+  signal?: AbortSignal
+}
+
+/** What `dvProject.run` returns. */
+export interface RunResult {
+  /** The record in its final status; pending for a scheduled call; null for a read. */
+  record: ProjectRecord | null
+  outputs: AssetId[]
+  report: Record<string, unknown> | null
+}
+
+/** What a subscriber learns about a project change. */
+export type ProjectEvent =
+  | { kind: 'record'; record: ProjectRecord }
+  | { kind: 'update'; record: ProjectRecord }
+  /** A branch was created or its pointer moved (`branch` set), or a closed draft was removed (`branch` null). */
+  | { kind: 'branch'; name: string; branch: Branch | null }
+
+/** An agent call that waits for the human's approval card. */
+export interface PendingApproval {
+  project: ProjectId
+  /** The pending record; its params and inputs are what the card shows. */
+  record: ProjectRecord
+  /** The operation's estimate, or 0 when it has none. */
+  gpu_seconds: number
+  /** Aborted when the run request aborts; the channel then resolves false. */
+  signal: AbortSignal
+}
+
+/**
+ * The composer's side of confirmation. During stage 2 the composer service in the mentions package implements it and
+ * registers it with `dvProject.registerApprovalChannel`.
+ */
+export interface ApprovalChannel {
+  /**
+   * @param session - a chat session.
+   * @returns whether the session's composer asks before agent renders.
+   */
+  asksFirst(session: SessionId): boolean
+  /**
+   * Show an approval card and wait for the human.
+   * @param approval - the pending call.
+   * @returns true when approved; false when skipped or aborted.
+   */
+  requestApproval(approval: PendingApproval): Promise<boolean>
+}

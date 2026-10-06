@@ -1,45 +1,51 @@
 /**
- * The operations behind the browser routes, independent of transport: list projects, fold a head, list tools, invoke a
- * tool as a user turn, accept or reject a draft, undo, branch, and remember a view's selection. The Fetch routes and the
- * tests call these methods directly.
+ * The operations behind the browser routes, independent of transport: list and create projects, read a branch state,
+ * list tools, run an operation as the human, accept or discard a chat session's draft, undo and redo, create and switch
+ * branches, and remember a view's selection. The Fetch routes and the tests call these methods directly.
+ *
+ * Every write goes through `dvProject` with actor `user`, the surface the request names, and the chat session the view
+ * sits beside (`session`, when the request names one), so a human edit lands on that session's working branch: its open
+ * draft, else its exploration branch, else `main`.
  *
  * @module @video-harness/views/api
  */
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type VhAssets from '@video-harness/assets'
-import type { AssetId } from '@video-harness/assets'
-import { MAIN_BRANCH, type Op, type OpId, type ProjectId, type TurnId } from '@video-harness/oplog'
-import type VhOpLog from '@video-harness/oplog'
-import type VhProject from '@video-harness/runtime'
-import type { InvokeRequest } from '@video-harness/runtime'
+import { draftBranch, MAIN_BRANCH, ProjectError } from '@dv/project'
+import type DvProject from '@dv/project'
+import type { AssetId, Branch, DraftCounts, ProjectId, RecordId, RecordOrigin, RunRequest, SessionId, Surface } from '@dv/project'
 import type VhTools from '@video-harness/tools'
-import { deletedProjectIds } from './workspaces.ts'
-import { projectIdOf, toWireState, toWireToolSpec, type ViewSelection, type WireState, type WireToolSpec } from './wire.ts'
+import { parseInputs } from '@video-harness/tools'
+import { projectIdOf, toWireOp, toWireState, toWireToolSpec, type ViewSelection, type WireOp, type WireState, type WireToolSpec } from './wire.ts'
 
-/** A request a route could not serve, with the HTTP status that answers it. */
+/** A request a route could not serve, with the HTTP status that answers it and the Project error code, when any. */
 export class ViewsRequestError extends Error {
-  constructor(readonly status: 400 | 404 | 409, message: string) {
+  constructor(
+    readonly status: 400 | 404 | 409, message: string, readonly code: string | null = null,
+    readonly details: Record<string, unknown> = {},
+  ) {
     super(message)
     this.name = 'ViewsRequestError'
   }
 }
 
-/** What a view sends to run a tool. */
+/** What a view sends to run an operation. */
 export interface ViewInvokeBody {
   project: string
   tool: string
   inputs?: Array<{ role: string; ref: string }>
   params?: Record<string, unknown>
   intent?: string
-  surface: 'canvas' | 'timeline'
-  /** The exploration branch to write to; omitted writes to `main`. */
-  branch?: string
+  surface: 'canvas' | 'timeline' | 'asset_pool'
+  /** The chat session the view sits beside; the record goes to that session's working branch. */
+  session?: string
   base_op?: string
   supersedes?: string[]
 }
 
 /**
  * The text of a thrown value.
- * @param error - what a runtime call threw.
+ * @param error - what a call threw.
  * @returns the error's message, or the value as text.
  */
 export function messageOf(error: unknown): string {
@@ -48,10 +54,29 @@ export function messageOf(error: unknown): string {
 
 /** The services the API reads and writes. */
 export interface ViewsServices {
-  project: VhProject
-  log: VhOpLog
+  project: DvProject
   assets: VhAssets
   tools: VhTools
+}
+
+/** The HTTP status of each refused Project call that a browser request can cause. */
+const STATUS_OF: Partial<Record<ProjectError['code'], 400 | 404 | 409>> = {
+  unknown_project: 404, unknown_branch: 404, unknown_record: 404, unknown_operation: 404, unknown_asset: 404,
+  invalid_params: 400, invalid_inputs: 400, input_not_ready: 400,
+}
+
+/**
+ * Run a Project call and turn its refusal into a request error with the matching status and code.
+ * @param call - the call.
+ * @returns the call's result.
+ */
+async function refused<T>(call: () => T | Promise<T>): Promise<T> {
+  try {
+    return await call()
+  } catch (error) {
+    if (error instanceof ProjectError) throw new ViewsRequestError(STATUS_OF[error.code] ?? 409, error.message, error.code)
+    throw error
+  }
 }
 
 /**
@@ -74,18 +99,44 @@ function stringOf(value: unknown, field: string): string {
 }
 
 /**
- * The input list of an invoke body.
- * @param value - the raw `inputs`.
- * @returns the typed inputs.
- * @throws ViewsRequestError when an entry lacks a role or a ref.
+ * @param value - the raw `surface` of a request.
+ * @returns the surface; anything but `timeline` or `asset_pool` counts as the canvas.
  */
-function inputsOf(value: unknown): InvokeRequest['inputs'] {
-  if (value === undefined) return []
-  if (!Array.isArray(value)) throw new ViewsRequestError(400, "'inputs' must be an array.")
-  return value.map((entry) => {
-    const record = objectOf(entry)
-    return { role: stringOf(record['role'], 'inputs[].role'), ref: stringOf(record['ref'], 'inputs[].ref') as InvokeRequest['inputs'][number]['ref'] }
-  })
+function surfaceOf(value: unknown): Surface {
+  return value === 'timeline' || value === 'asset_pool' ? value : 'canvas'
+}
+
+/**
+ * @param value - the raw `session` of a request.
+ * @returns the chat session, or null when the request names none.
+ */
+export function sessionOf(value: unknown): SessionId | null {
+  return typeof value === 'string' && value.length > 0 ? brandString<SessionId>(value) : null
+}
+
+/**
+ * The origin of a human action from a view.
+ * @param body - the request body, for `surface` and `session`.
+ * @param intent - what the action does, in words a creator can read.
+ * @returns the origin.
+ */
+function humanOrigin(body: Record<string, unknown>, intent: string): RecordOrigin {
+  return { actor: 'user', surface: surfaceOf(body['surface']), session: sessionOf(body['session']), turn: null, tool_call: null, intent }
+}
+
+/**
+ * The draft counts of a discard request.
+ * @param value - the raw `counts`.
+ * @returns the counts, or null when the request sends none (a dry read).
+ * @throws ViewsRequestError when `counts` is present but malformed.
+ */
+function countsOf(value: unknown): DraftCounts | null {
+  if (value === undefined || value === null) return null
+  const counts = objectOf(value)
+  const agent = counts['agent_changes']
+  const human = counts['human_edits']
+  if (typeof agent !== 'number' || typeof human !== 'number') throw new ViewsRequestError(400, "'counts' must hold numbers 'agent_changes' and 'human_edits'.")
+  return { agent_changes: agent, human_edits: human }
 }
 
 /** Reads and writes a project on behalf of the canvas and the timeline. */
@@ -104,12 +155,14 @@ export class ViewsApi {
     projectId: ProjectId
     title: string
     createdAt: string
-    heads: Record<string, OpId>
+    heads: Record<string, RecordId>
     current: boolean
   }> {
     const bound = session === null || session.length === 0 ? null : this.services.tools.sessionProject(session)
-    return this.services.log.listProjects()
-      .map(info => ({ ...info, heads: this.services.log.heads(info.projectId), current: info.projectId === bound }))
+    return this.services.project.listProjects()
+      .map(info => ({
+        projectId: info.id, title: info.title, createdAt: info.created_at, heads: this.heads(info.id), current: info.id === bound,
+      }))
       .sort((a, b) => Number(b.current) - Number(a.current) || b.createdAt.localeCompare(a.createdAt))
   }
 
@@ -119,12 +172,11 @@ export class ViewsApi {
    * @param raw - `{title, surface}`.
    * @returns the project row with the title it was created with.
    */
-  create(raw: unknown): { projectId: ProjectId; title: string } {
+  async create(raw: unknown): Promise<{ projectId: ProjectId; title: string }> {
     const body = objectOf(raw)
     const title = this.freeTitle(stringOf(body['title'], 'title'))
-    const surface = body['surface'] === 'timeline' ? 'timeline' : 'canvas'
-    const projectId = this.services.project.createProject({ title, actor: 'user', surface })
-    return { projectId, title }
+    const info = await this.services.project.createProject(title, { ...humanOrigin(body, `create project ${title}`), session: null })
+    return { projectId: info.id, title }
   }
 
   /**
@@ -133,8 +185,7 @@ export class ViewsApi {
    *   lowest free number from the requested one, or from 2, upwards.
    */
   private freeTitle(wanted: string): string {
-    const deleted = deletedProjectIds()
-    const taken = new Set(this.services.log.listProjects().filter(info => !deleted.has(info.projectId)).map(info => info.title))
+    const taken = new Set(this.services.project.listProjects().map(info => info.title))
     if (!taken.has(wanted)) return wanted
     const numbered = /^(.*\S)\s+(\d+)$/.exec(wanted)
     const base = numbered?.[1] ?? wanted
@@ -144,29 +195,23 @@ export class ViewsApi {
   }
 
   /**
-   * The folded state at a head.
+   * The state of a branch at its head.
    * @param project - the raw project ID.
-   * @param head - a branch name or record ID; defaults to `main`.
-   * @returns the wire state, plus the agent draft turns that are still open (neither accepted nor rejected), which a
-   *   fold of `main` cannot tell apart from closed ones because their accept or reject records sit on the draft branch.
-   * @throws ViewsRequestError when the project is unknown.
+   * @param head - a branch name; defaults to `main`.
+   * @returns the wire state, with every branch and the counts of each open draft.
+   * @throws ViewsRequestError when the project or the branch is unknown.
    */
-  state(project: unknown, head: unknown = MAIN_BRANCH): WireState & { openTurns: TurnId[] } {
+  state(project: unknown, head: unknown = MAIN_BRANCH): WireState {
     const projectId = this.requireProject(project)
-    const headName = typeof head === 'string' && head.length > 0 ? head : MAIN_BRANCH
+    const branch = typeof head === 'string' && head.length > 0 ? head : MAIN_BRANCH
     let state
     try {
-      state = this.services.project.fold(projectId, headName)
+      state = this.services.project.getState(projectId, branch)
     } catch (error) {
       throw new ViewsRequestError(404, messageOf(error))
     }
-    const info = this.services.log.project(projectId)
-    const heads = this.services.log.heads(projectId)
-    const openTurns = Object.keys(heads)
-      .filter(branch => branch.startsWith('draft/'))
-      .map(branch => branch.slice('draft/'.length) as TurnId)
-      .filter(turn => this.services.project.openTurn(turn) !== undefined)
-    return { ...toWireState(info, state, heads, id => this.assetOrNull(id)), openTurns }
+    const info = this.services.project.openProject(projectId)
+    return toWireState(info, state, this.services.project.listBranches(projectId), id => this.assetOrNull(id))
   }
 
   /** @returns every registered tool's declaration. */
@@ -175,89 +220,147 @@ export class ViewsApi {
   }
 
   /**
-   * Run a tool as one user turn from a view. The turn writes to `main`, or to the named exploration branch, and closes
-   * when the record exists; a record whose inputs name an unfinished record is scheduled instead of run.
+   * Run an operation as the human, from a view. The record goes to the working branch of the request's chat session
+   * (`main` without one). A call whose inputs name an unfinished record is scheduled to run once that record is done.
    * @param raw - the request body.
    * @returns the record, finished or pending.
-   * @throws ViewsRequestError when the body or the tool is unknown.
+   * @throws ViewsRequestError when the body or the operation is unknown, or Project refuses the call.
    */
-  async invoke(raw: unknown): Promise<Op> {
+  async invoke(raw: unknown): Promise<WireOp> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
     const tool = stringOf(body['tool'], 'tool')
-    if (this.services.project.tool(tool) === undefined) throw new ViewsRequestError(404, `Unknown tool '${tool}'.`)
-    const surface = body['surface'] === 'timeline' ? 'timeline' : 'canvas'
+    const spec = this.services.tools.get(tool)
+    if (spec === undefined) throw new ViewsRequestError(404, `Unknown tool '${tool}'.`)
+    const surface = surfaceOf(body['surface'])
     const intent = typeof body['intent'] === 'string' && body['intent'].length > 0 ? body['intent'] : `${surface}: ${tool}`
-    const branch = typeof body['branch'] === 'string' && body['branch'].length > 0 && body['branch'] !== MAIN_BRANCH ? body['branch'] : undefined
-    const inputs = inputsOf(body['inputs'])
-    const open = this.services.project.beginTurn(projectId, { actor: 'user', surface, intent, ...(branch === undefined ? {} : { branch }) })
-    const request: InvokeRequest = {
-      tool, inputs, params: objectOf(body['params']), actor: 'user', surface, intent, turn: open.turn,
-      ...(typeof body['base_op'] === 'string' ? { base_op: body['base_op'] as OpId } : {}),
-      ...(Array.isArray(body['supersedes']) ? { supersedes: body['supersedes'].filter((id): id is string => typeof id === 'string') as OpId[] } : {}),
-    }
+    const origin = humanOrigin(body, intent)
+    const working = this.services.project.workingBranch(projectId, origin.session).name
+    const state = await refused(() => this.services.project.getState(projectId, working))
+    const byRole = this.inputsByRole(body['inputs'])
+    let inputs: RunRequest['inputs']
     try {
-      return this.waitsForProducer(projectId, inputs)
-        ? this.services.project.schedule(projectId, request)
-        : await this.services.project.invoke(projectId, request)
-    } finally {
-      this.services.project.acceptTurn(projectId, open.turn, { actor: 'user', surface })
+      inputs = parseInputs(spec, byRole, state)
+    } catch (error) {
+      // The tools' input parser explains an unknown role or a malformed reference; the request is at fault.
+      throw new ViewsRequestError(400, messageOf(error))
     }
+    const request: RunRequest = {
+      ...origin, project: projectId, operation: tool, params: objectOf(body['params']), inputs,
+      ...typeof body['base_op'] === 'string' ? { based_on: body['base_op'] as RecordId } : {},
+      ...Array.isArray(body['supersedes']) ? { supersedes: body['supersedes'].filter((id): id is RecordId => typeof id === 'string') } : {},
+      ...await refused(() => this.waitsForProducer(projectId, inputs)) ? { after: [] } : {},
+    }
+    const result = await refused(() => this.services.project.run(request))
+    if (result.record === null) throw new ViewsRequestError(400, `'${tool}' is a read and writes no record.`)
+    return toWireOp(result.record)
   }
 
   /**
-   * Accept or reject an agent's draft turn.
-   * @param raw - `{project, turn, action}`.
-   * @returns the branch heads after the change.
-   * @throws ViewsRequestError when the turn is not open or `main` moved.
+   * Accept a chat session's draft into the branch it was forked from.
+   * @param raw - `{project, session | branch, surface}`; `branch` names the draft when the request has no session.
+   * @returns the `proj.draft_accept` record and the heads afterwards.
+   * @throws ViewsRequestError when no draft is open, a draft record still runs, or a record conflicts with `main`.
    */
-  turn(raw: unknown): Record<string, OpId> {
+  async acceptDraft(raw: unknown): Promise<{ record: WireOp; heads: Record<string, RecordId> }> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
-    const turn = stringOf(body['turn'], 'turn') as TurnId
-    const action = body['action']
-    if (action !== 'accept' && action !== 'reject') throw new ViewsRequestError(400, "'action' must be accept or reject.")
-    const surface = body['surface'] === 'timeline' ? 'timeline' : 'canvas'
-    try {
-      if (action === 'accept') this.services.project.acceptTurn(projectId, turn, { actor: 'user', surface })
-      else this.services.project.rejectTurn(projectId, turn)
-    } catch (error) {
-      throw new ViewsRequestError(409, messageOf(error))
-    }
-    return this.services.log.heads(projectId)
+    const draft = this.draftOf(projectId, body)
+    const record = await refused(() => this.services.project.acceptDraft(projectId, { ...humanOrigin(body, `accept ${draft.name}`), session: draft.session }))
+    return { record: toWireOp(record), heads: this.heads(projectId) }
   }
 
   /**
-   * Move `main` back one turn.
-   * @param raw - `{project}`.
-   * @returns the undone turn and the heads after the move.
+   * Discard a chat session's draft, including the human's edits on it. Without `counts` the call is a dry read that
+   * returns the counts a confirmation shows; with the counts the human confirmed, it discards the draft, unless the
+   * draft changed meanwhile.
+   * @param raw - `{project, session | branch, surface, counts?}`.
+   * @returns the draft and its counts (dry read), or the discarded counts and the heads afterwards.
+   * @throws ViewsRequestError (409, code `draft_changed`, with the current `counts`) when the counts differ.
    */
-  undo(raw: unknown): { turn: TurnId; heads: Record<string, OpId> } {
-    const projectId = this.requireProject(objectOf(raw)['project'])
-    try {
-      const turn = this.services.project.undoLatestTurn(projectId)
-      return { turn, heads: this.services.log.heads(projectId) }
-    } catch (error) {
-      throw new ViewsRequestError(409, messageOf(error))
-    }
-  }
-
-  /**
-   * Start an exploration branch.
-   * @param raw - `{project, name, at}` where `at` is a record ID or a branch name.
-   * @returns the branch record and the heads after creation.
-   */
-  branch(raw: unknown): { op: Op; heads: Record<string, OpId> } {
+  async discardDraft(raw: unknown): Promise<{ draft: string; counts: DraftCounts; heads?: Record<string, RecordId> }> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
-    const name = stringOf(body['name'], 'name')
+    const draft = this.draftOf(projectId, body)
+    const current = draft.counts ?? { agent_changes: 0, human_edits: 0 }
+    const confirmed = countsOf(body['counts'])
+    if (confirmed === null) return { draft: draft.name, counts: current }
+    try {
+      const counts = await this.services.project.discardDraft(projectId, { ...humanOrigin(body, `discard ${draft.name}`), session: draft.session }, confirmed)
+      return { draft: draft.name, counts, heads: this.heads(projectId) }
+    } catch (error) {
+      if (!(error instanceof ProjectError)) throw error
+      // A changed draft answers with its current counts, so the confirmation can show them again.
+      const counts = this.services.project.listBranches(projectId).find(branch => branch.name === draft.name)?.counts ?? current
+      throw new ViewsRequestError(STATUS_OF[error.code] ?? 409, error.message, error.code, error.code === 'draft_changed' ? { counts } : {})
+    }
+  }
+
+  /**
+   * Move `main` back by one accepted change.
+   * @param raw - `{project, session?, surface}`.
+   * @returns the `proj.undo` record and the heads afterwards.
+   */
+  async undo(raw: unknown): Promise<{ record: WireOp; heads: Record<string, RecordId> }> {
+    const body = objectOf(raw)
+    const projectId = this.requireProject(body['project'])
+    const record = await refused(() => this.services.project.undo(projectId, humanOrigin(body, 'undo')))
+    return { record: toWireOp(record), heads: this.heads(projectId) }
+  }
+
+  /**
+   * Re-apply the change the latest undo removed, while nothing else changed `main` after it.
+   * @param raw - `{project, session?, surface}`.
+   * @returns the `proj.redo` record and the heads afterwards.
+   */
+  async redo(raw: unknown): Promise<{ record: WireOp; heads: Record<string, RecordId> }> {
+    const body = objectOf(raw)
+    const projectId = this.requireProject(body['project'])
+    const record = await refused(() => this.services.project.redo(projectId, humanOrigin(body, 'redo')))
+    return { record: toWireOp(record), heads: this.heads(projectId) }
+  }
+
+  /**
+   * Start an exploration branch `explore/<name>`.
+   * @param raw - `{project, name, at, session?, surface}` where `at` is a record ID or a branch name.
+   * @returns the branch and the heads after creation.
+   */
+  async branch(raw: unknown): Promise<{ branch: Branch; heads: Record<string, RecordId> }> {
+    const body = objectOf(raw)
+    const projectId = this.requireProject(body['project'])
+    const name = `explore/${stringOf(body['name'], 'name')}`
     const at = typeof body['at'] === 'string' && body['at'].length > 0 ? body['at'] : MAIN_BRANCH
-    try {
-      const op = this.services.project.createBranch(projectId, name, at)
-      return { op, heads: this.services.log.heads(projectId) }
-    } catch (error) {
-      throw new ViewsRequestError(409, messageOf(error))
-    }
+    const branch = await refused(() => this.services.project.createBranch(projectId, name, at, humanOrigin(body, `create ${name}`)))
+    return { branch, heads: this.heads(projectId) }
+  }
+
+  /**
+   * Switch the working branch of a chat session to `main` or an exploration branch.
+   * @param raw - `{project, branch, session, surface}`.
+   * @returns the target branch and the heads afterwards.
+   */
+  async switchBranch(raw: unknown): Promise<{ branch: Branch; heads: Record<string, RecordId> }> {
+    const body = objectOf(raw)
+    const projectId = this.requireProject(body['project'])
+    const target = stringOf(body['branch'], 'branch')
+    stringOf(body['session'], 'session')
+    const branch = await refused(() => this.services.project.switchBranch(projectId, target, humanOrigin(body, `switch to ${target}`)))
+    return { branch, heads: this.heads(projectId) }
+  }
+
+  /**
+   * Keep a stale record as it is: a `proj.stale_accept` record on the working branch of the request's chat session
+   * (`main` without one) removes its stale mark and the marks of the records made from it.
+   * @param raw - `{project, record, session?, surface}`.
+   * @returns the `proj.stale_accept` record and the heads afterwards.
+   * @throws ViewsRequestError (404, code `unknown_record`) when the record does not exist.
+   */
+  async acceptStale(raw: unknown): Promise<{ record: WireOp; heads: Record<string, RecordId> }> {
+    const body = objectOf(raw)
+    const projectId = this.requireProject(body['project'])
+    const target = brandString<RecordId>(stringOf(body['record'], 'record'))
+    const record = await refused(() => this.services.project.acceptStale(projectId, target, humanOrigin(body, `keep ${target}`)))
+    return { record: toWireOp(record), heads: this.heads(projectId) }
   }
 
   /**
@@ -297,11 +400,54 @@ export class ViewsApi {
     const projectId = projectIdOf(value)
     if (projectId === null) throw new ViewsRequestError(400, "'project' must name a project.")
     try {
-      this.services.log.project(projectId)
+      this.services.project.openProject(projectId)
     } catch {
       throw new ViewsRequestError(404, `Unknown project '${projectId}'.`)
     }
     return projectId
+  }
+
+  /**
+   * The open draft a request names: the draft of its `session`, else the draft branch `branch`.
+   * @param projectId - the project.
+   * @param body - the request body.
+   * @returns the draft branch, with its session and counts.
+   * @throws ViewsRequestError (409, code `no_open_draft`) when that draft is not open.
+   */
+  private draftOf(projectId: ProjectId, body: Record<string, unknown>): Branch & { session: SessionId } {
+    const session = sessionOf(body['session'])
+    const name = session === null ? stringOf(body['branch'], 'branch') : draftBranch(session)
+    const draft = this.services.project.listBranches(projectId).find(branch => branch.name === name)
+    if (draft === undefined || draft.session === null || draft.counts === null) {
+      throw new ViewsRequestError(409, `No draft ${name} is open in project ${projectId}.`, 'no_open_draft')
+    }
+    return { ...draft, session: draft.session }
+  }
+
+  /**
+   * @param projectId - the project.
+   * @returns the head record of every branch, by branch name.
+   */
+  private heads(projectId: ProjectId): Record<string, RecordId> {
+    return Object.fromEntries(this.services.project.listBranches(projectId).map(branch => [branch.name, branch.head]))
+  }
+
+  /**
+   * The inputs of a request grouped by role, the form the tools' input parser reads.
+   * @param value - the raw `inputs`: an array of `{role, ref}`.
+   * @returns the refs by role.
+   * @throws ViewsRequestError when an entry lacks a role or a ref.
+   */
+  private inputsByRole(value: unknown): Record<string, string[]> {
+    if (value === undefined) return {}
+    if (!Array.isArray(value)) throw new ViewsRequestError(400, "'inputs' must be an array.")
+    const byRole: Record<string, string[]> = {}
+    for (const entry of value) {
+      const input = objectOf(entry)
+      const role = stringOf(input['role'], 'inputs[].role')
+      ;(byRole[role] ??= []).push(stringOf(input['ref'], 'inputs[].ref'))
+    }
+    return byRole
   }
 
   private assetOrNull(id: AssetId) {
@@ -313,15 +459,7 @@ export class ViewsApi {
    * @param inputs - the request inputs.
    * @returns whether an input names the output of a record that has not finished.
    */
-  private waitsForProducer(projectId: ProjectId, inputs: InvokeRequest['inputs']): boolean {
-    return inputs.some((input) => {
-      const match = /^(.+)#(\d+)$/.exec(input.ref)
-      if (match === null) return false
-      try {
-        return this.services.log.get(projectId, match[1] as OpId).status !== 'done'
-      } catch {
-        return false
-      }
-    })
+  private waitsForProducer(projectId: ProjectId, inputs: RunRequest['inputs']): boolean {
+    return inputs.some(input => 'record' in input.ref && this.services.project.getRecord(projectId, input.ref.record).status !== 'done')
   }
 }

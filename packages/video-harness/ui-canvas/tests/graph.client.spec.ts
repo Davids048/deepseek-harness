@@ -5,7 +5,7 @@ import { buildCanvasGraph, overlayDraft, withUploadNames } from '../src/client/g
 
 describe('buildCanvasGraph', () => {
   it('draws entities, plans, and clips, and hides uploads, joins, probes, and sequence records', () => {
-    const graph = buildCanvasGraph(fixtureState())
+    const graph = buildCanvasGraph(fixtureState(), new Set(['g3']))
     expect(graph.nodes.map(node => [node.id, node.kind])).toEqual([
       ['entity:hero', 'entity'], ['p1', 'plan'], ['g1', 'clip'], ['g2', 'clip'], ['g3', 'clip'],
     ])

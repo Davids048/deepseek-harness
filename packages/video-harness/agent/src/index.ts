@@ -1,8 +1,10 @@
 /**
- * The agent layer of the video harness as the `vhAgent` Cordis service. It ties the DSH agent loop to the project
- * runtime: each agent-loop turn is reported to the tool bridge so its records land on one draft, a draft is settled
- * when the turn ends, confirmation questions reach the user through the `userQuestions` service when one is mounted,
- * and a system-prompt section carries the project state the model needs to resolve references.
+ * The agent layer of the video harness as the `vhAgent` Cordis service. It ties the DSH agent loop to the Project
+ * service: each agent turn and the human's words that started it are reported to the tool bridge, so the turn's
+ * records carry the turn and its request record; confirmation questions reach the user through the `userQuestions`
+ * service when one is mounted; and a system-prompt section carries the state of the session's working branch, which
+ * the model needs to resolve references. Drafts belong to the chat session and span turns: this plugin never accepts
+ * or discards one.
  *
  * @module @video-harness/agent
  */
@@ -13,13 +15,12 @@ import type {} from '@deepseek-ai/dsh-agent'
 import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-user-questions'
-import type { AssetId } from '@video-harness/oplog'
-import { GENERATE_VIDEO_TOOL, PLAN_APPROVE_TOOL } from '@video-harness/runtime'
-import type { ConfirmRequest, SessionState, TurnSettlement } from '@video-harness/tools'
+import type { AssetId, SessionId } from '@dv/project'
+import type { ConfirmRequest } from '@video-harness/tools'
 import type {} from '@video-harness/views'
-import { renderResolverBlock, sessionBranch } from './resolver.ts'
+import { renderResolverBlock } from './resolver.ts'
 
-export { renderResolverBlock, sessionBranch, type ResolverInput } from './resolver.ts'
+export { renderResolverBlock, type ResolverInput } from './resolver.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -54,57 +55,29 @@ export interface ComposerMode {
   speed: 'quality' | 'speed'
 }
 
-/** One generation that waits for the user's approval card. */
-export interface ComposerApprovalRequest {
-  sessionId: string
-  callId: string
-  tool: string
-  summary: string
-  estimateGpuSeconds: number
-  params: Record<string, unknown>
-  inputs: Array<{ role: string; ref: string }>
-  signal: AbortSignal
-}
-
-/** The composer plugin's face: per-session modes and the approval cards. */
+/** The composer plugin's face: per-session modes. Its approval cards reach `dvProject` as the approval channel. */
 export interface ComposerChannel {
   /**
    * @param sessionId - a chat session.
    * @returns the session's composer choices.
    */
   mode(sessionId: string): ComposerMode
-  /**
-   * Show an approval card and wait for the user's answer.
-   * @param request - the generation.
-   * @returns true when approved, false when skipped or aborted.
-   */
-  requestApproval(request: ComposerApprovalRequest): Promise<boolean>
 }
-
-/** The tools that start video generation, which the composer's ask mode puts behind an approval card. */
-const GATED_TOOLS: ReadonlySet<string> = new Set([GENERATE_VIDEO_TOOL, PLAN_APPROVE_TOOL])
-
-/** Turn-end reasons that stop the agent before it finished: the draft keeps its records and waits for the user. */
-const INTERRUPTED_REASONS: ReadonlySet<string> = new Set(['blocked', 'max-tokens', 'interrupted', 'forked'])
 
 /** Turn wiring, confirmation, and the prompt section over the tool bridge. */
 export default class VhAgent extends Service {
-  static inject = ['vhProject', 'vhTools']
+  static inject = ['dvProject', 'vhTools']
   static Config = Config
 
-  /** How each settled turn ended, by session, for tests and diagnostics. */
-  readonly settled: Array<{ session: string; turn: number; outcome: TurnSettlement }> = []
   private composer: ComposerChannel | null = null
+  /** The agent turn number each live session is in, so a user message is noted on its turn. */
+  private readonly turns = new Map<string, number>()
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'vhAgent')
     ctx.on('session/event', (session: Session, event: SessionEvent) => { this.onSessionEvent(session, event) })
     ctx.vhTools.setConfirmPolicy(request => this.confirm(request))
     ctx.effect(() => () => { ctx.vhTools.setConfirmPolicy(null) }, 'vhAgent confirm policy')
-    // In the composer's ask mode every video generation of a root agent waits for an approval card, including the
-    // shots an approved plan schedules: the plan approval itself asks once for all of them.
-    ctx.vhTools.setConfirmGate((spec, exec) => GATED_TOOLS.has(spec.name) && this.asksFirst(exec.agent))
-    ctx.effect(() => () => { ctx.vhTools.setConfirmGate(null) }, 'vhAgent confirm gate')
     ctx.inject(['systemPrompt'], (child) => {
       child.effect(() => child.systemPrompt.section({
         name: PROMPT_SECTION,
@@ -123,7 +96,7 @@ export default class VhAgent extends Service {
     this.composer = channel
   }
 
-  /** Whether a live root agent's session is in the composer's ask mode. */
+  /** Whether a live root agent's session is in the composer's ask mode, where `dvProject` shows the approval card. */
   private asksFirst(agent: ConfirmRequest['exec']['agent']): boolean {
     const agents = this.ctx.get('agents')
     if (this.composer === null || agent === undefined || agents === undefined || !agents.roots().includes(agent)) return false
@@ -139,18 +112,16 @@ export default class VhAgent extends Service {
     const tools = this.ctx.vhTools
     const session = sessionId === undefined ? undefined : tools.sessionState(sessionId)
     const url = (id: string): string => tools.assetUrl(brandString<AssetId>(id))
-    if (session === undefined) return renderResolverBlock({ session: emptySession(), projectId: null, state: null, branch: 'main', openDraft: false, draftFromEarlierTurn: false, url, selection: null })
-    const preference = sessionId === undefined ? '' : this.preferenceLines(sessionId)
+    if (sessionId === undefined || session === undefined || session.projectId === null) {
+      return renderResolverBlock({ projectId: null, state: null, branch: null, url, selection: null })
+    }
     const projectId = session.projectId
-    const open = session.turn === null ? undefined : this.ctx.vhProject.openTurn(session.turn)
-    const branch = sessionBranch(session, open?.branch)
-    const state = projectId === null ? null : this.ctx.vhProject.fold(projectId, branch)
-    const openDraft = open !== undefined && open.draft
-    const draftFromEarlierTurn = openDraft && session.dshTurn !== null && session.turnOpenedAt !== null
-      && session.turnOpenedAt !== session.dshTurn
+    // The session's working branch: its draft when one is open, else the branch it switched to, else main.
+    const branch = this.ctx.dvProject.workingBranch(projectId, brandString<SessionId>(sessionId))
+    const state = this.ctx.dvProject.getState(projectId, branch.name)
     // What the user last clicked in the canvas or the timeline, when the views plugin is mounted beside this one.
-    const selection = projectId === null ? null : this.ctx.get('vhViews')?.selection(projectId) ?? null
-    return renderResolverBlock({ session, projectId, state, branch, openDraft, draftFromEarlierTurn, url, selection }) + preference
+    const selection = this.ctx.get('vhViews')?.selection(projectId) ?? null
+    return renderResolverBlock({ projectId, state, branch, url, selection }) + this.preferenceLines(sessionId)
   }
 
   /** The composer choices of a session as prompt lines, or nothing without a composer. */
@@ -166,55 +137,50 @@ export default class VhAgent extends Service {
     return `\n${speed}${confirm}`
   }
 
-  /** Route turn boundaries of live sessions to the bridge. */
+  /** Report turn starts and the human's words of live sessions to the bridge, and import chat images. */
   private onSessionEvent(session: Session, event: SessionEvent): void {
     const agents = this.ctx.get('agents')
     if (agents !== undefined) {
       const agent = agents.get(session.id)
       if (agent === undefined || agent.session !== session) return
     }
-    if (event.type === 'user/message') {
-      this.recordChatImages(session.id, event.data)
-      return
-    }
     if (event.type === 'turn/start') {
-      this.ctx.vhTools.noteTurn(session.id, event.data.turn)
+      this.turns.set(session.id, event.data.turn)
+      this.ctx.vhTools.noteTurn(session.id, event.data.turn, '')
       return
     }
-    if (event.type !== 'turn/end') return
-    const kind = event.data.reason.kind
-    const outcome = this.ctx.vhTools.settleTurn(session.id, kind === 'completed' ? 'completed' : INTERRUPTED_REASONS.has(kind) ? 'interrupted' : 'aborted')
-    this.settled.push({ session: session.id, turn: event.data.turn, outcome })
+    if (event.type !== 'user/message' || event.data.source.kind !== 'user') return
+    // The agent loop appends the user's message after it opened the turn the message starts.
+    const turn = this.turns.get(session.id)
+    const text = event.data.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+    if (turn !== undefined && text !== '') this.ctx.vhTools.noteTurn(session.id, turn, text)
+    this.recordChatImages(session.id, event.data)
   }
 
   /**
-   * Record the images a user attached to a chat message as project assets, so the assets panel lists them.
+   * Import the images a user attached to a chat message as project assets, so the asset pool lists them.
    * @param sessionId - the chat session.
-   * @param message - the appended user message; only messages the user typed count.
+   * @param message - the appended user message, which the user typed.
    */
   private recordChatImages(sessionId: string, message: SessionEventMap['user/message']): void {
-    if (message.source.kind !== 'user') return
     const refs = message.content.flatMap(block => block.type === 'image' ? [block.attachment] : [])
     if (refs.length === 0) return
     this.ctx.vhTools.recordChatImages(sessionId, refs).catch((error: unknown) => {
-      this.ctx.logger('vhAgent').warn('could not record chat images of session %s as assets: %s', sessionId, error instanceof Error ? error.message : String(error))
+      const reason = error instanceof Error ? error.message : String(error)
+      this.ctx.logger('vhAgent').warn('could not import chat images of session %s as assets: %s', sessionId, reason)
     })
   }
 
   /**
-   * Ask the user through the questions service when the calling agent is a live root agent; otherwise leave the
-   * decision to the argument protocol by answering null.
+   * Answer a call that needs agreement. In the composer's ask mode an `agent_ask_first` operation runs: `dvProject`
+   * holds its record behind the approval card, which is the question. Otherwise ask the user through the questions
+   * service when the calling agent is a live root agent, else leave the decision to the argument protocol by answering
+   * null.
    * @param request - the call that needs agreement.
    * @returns true to run, false when declined, null when no channel applies.
    */
   async confirm(request: ConfirmRequest): Promise<boolean | null> {
-    if (request.forced === true && this.composer !== null && request.exec.agent !== undefined) {
-      return this.composer.requestApproval({
-        sessionId: request.exec.agent.id, callId: request.exec.callId, tool: request.spec.name, summary: request.summary,
-        estimateGpuSeconds: request.estimateGpuSeconds, params: request.params ?? {},
-        inputs: (request.inputs ?? []).map(input => ({ role: input.role, ref: input.ref })), signal: request.exec.signal,
-      })
-    }
+    if (request.spec.confirm === 'agent_ask_first' && this.asksFirst(request.exec.agent)) return true
     const questions = this.ctx.get('userQuestions')
     const agents = this.ctx.get('agents')
     const agent = request.exec.agent
@@ -235,9 +201,4 @@ export default class VhAgent extends Service {
       return null
     }
   }
-}
-
-/** The state of a session that never called a tool. */
-function emptySession(): SessionState {
-  return { projectId: null, turn: null, turnProject: null, branch: null, dshTurn: null, turnOpenedAt: null }
 }

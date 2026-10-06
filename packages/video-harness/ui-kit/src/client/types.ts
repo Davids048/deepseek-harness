@@ -12,21 +12,24 @@ export interface WireInput {
   resolved: string | null
 }
 
-/** One operation record. */
+/** One record: a request that started an agent turn, or one operation call. */
 export interface WireOp {
   id: string
   parents: string[]
-  turn: string
+  /** The agent turn; null for direct human actions. */
+  turn: string | null
+  /** The chat session of the action; null outside any chat session. */
+  session: string | null
   branch: string
   actor: 'user' | 'agent' | 'system'
-  surface: 'chat' | 'timeline' | 'canvas' | 'api'
+  surface: 'chat' | 'timeline' | 'canvas' | 'asset_pool' | 'api'
   intent: string
-  kind: string
+  kind: 'request' | 'operation'
   tool?: { name: string; version: string }
   inputs: WireInput[]
   params: Record<string, unknown>
   outputs: string[]
-  status: 'pending' | 'running' | 'done' | 'failed'
+  status: 'pending' | 'running' | 'done' | 'failed' | 'cancelled'
   base_op?: string
   supersedes?: string[]
   cost?: { gpu_s?: number; wall_s?: number; cached?: boolean }
@@ -68,21 +71,33 @@ export interface WireSequenceItem {
   outSec: number | null
 }
 
-/** What the fold knows about a turn. */
-export interface WireTurn {
-  ops: string[]
-  actor: WireOp['actor']
-  surface: WireOp['surface']
-  intent: string
-  accepted: boolean
-  rejected: boolean
+/** How many records a draft holds, as a discard confirmation shows them. */
+export interface WireDraftCounts {
+  agent_changes: number
+  human_edits: number
 }
 
-/** The folded state of one head. */
+/** One branch of a project. */
+export interface WireBranch {
+  /** `main`, `draft/<session>`, or `explore/<name>`. */
+  name: string
+  head: string
+  /** The branch an accept merges into; null for `main` and exploration branches. */
+  base: string | null
+  forked_at: string | null
+  /** The chat session that owns the draft; null for `main` and exploration branches. */
+  session: string | null
+  /** The draft's counts; null for branches that are not open drafts. */
+  counts: WireDraftCounts | null
+}
+
+/** The state of one branch at its head. */
 export interface WireState {
   project: { projectId: string; title: string; createdAt: string }
   head: string
   heads: Record<string, string>
+  /** Every branch of the project; an open draft has `counts`. */
+  branches: WireBranch[]
   ops: WireOp[]
   assets: WireAsset[]
   entities: Record<string, WireEntityVersion[]>
@@ -91,12 +106,9 @@ export interface WireState {
   sequences?: Array<{ id: string; title: string; items: WireSequenceItem[] }>
   stale: Record<string, { because: string }>
   superseded: Record<string, string>
-  turns: Record<string, WireTurn>
   takes: Record<string, string[]>
   plans: Array<{ op: string; approved: boolean; approvedBy: string | null }>
   producers: Record<string, string>
-  /** The agent draft turns that are still open: neither accepted nor rejected. */
-  openTurns: string[]
 }
 
 /** One property of a tool's parameter schema, in the DSH tool format. */
@@ -122,7 +134,7 @@ export interface WireToolSpec {
   outputs: Array<{ role: string; type: string }>
   deterministic: boolean
   cost: 'free' | 'cpu' | 'gpu'
-  confirm: 'never' | 'cost' | 'always'
+  confirm: 'never' | 'agent_ask_first'
 }
 
 /** A project row. */
@@ -135,8 +147,11 @@ export interface WireProject {
   current?: boolean
 }
 
-/** One change of the operation log, as the event stream sends it. */
-export type WireLogEvent =
-  | { kind: 'append'; op: WireOp }
-  | { kind: 'patch'; op: WireOp }
-  | { kind: 'head'; branch: string; to: string }
+/**
+ * One project change, as the event stream sends it: an appended record, a record update, or a branch that was created,
+ * moved (`branch` set), or removed (`branch` null). Records arrive in the Project record format, not as {@link WireOp}.
+ */
+export type WireProjectEvent =
+  | { kind: 'record'; record: { id: string; branch: string; status: string } }
+  | { kind: 'update'; record: { id: string; branch: string; status: string } }
+  | { kind: 'branch'; name: string; branch: WireBranch | null }

@@ -69,7 +69,7 @@ Mount the plugin with a root directory. Other plugins inject `vhAssets`.
 ## Further Exploration
 
 - [Video harness subsystem](../../../docs/subsystems/video-harness.md) — how assets, records, and the runtime relate.
-- [`@video-harness/oplog`](../oplog/README.md) — the records that produce and consume assets.
+- [`@dv/project`](../../dv/project/README.md) — the records that produce and consume assets.
 
 -----
 

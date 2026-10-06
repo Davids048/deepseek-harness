@@ -10,7 +10,7 @@ export type CanvasNodeKind = 'entity' | 'reference' | 'plan' | 'clip'
 
 /** Display states of a node. */
 export interface CanvasNodeFlags {
-  /** Added by an agent turn the user has not accepted yet. */
+  /** On an open draft that the user has not accepted yet. */
   draft: boolean
   stale: boolean
   generating: boolean
@@ -125,7 +125,7 @@ export function overlayDraft(base: WireState, draft: WireState | null): WireStat
  * The canvas graph of a folded state, with a default layout: entities and references in column 0, plans in column 1,
  * clips from column 2 rightwards by first-frame chain depth, retakes in their source clip's column.
  * @param state - a folded state, possibly with a draft overlaid by {@link overlayDraft}.
- * @param draftOps - IDs of records that belong to an unaccepted draft; records on an unaccepted `draft/*` branch count too.
+ * @param draftOps - IDs of records that belong to an open draft.
  * @returns the nodes and edges.
  */
 export function buildCanvasGraph(state: WireState, draftOps: ReadonlySet<string> = new Set()): CanvasGraph {
@@ -134,7 +134,7 @@ export function buildCanvasGraph(state: WireState, draftOps: ReadonlySet<string>
   const isImage = (id: string | undefined): boolean => id !== undefined && assets.get(id)?.mime.startsWith('image/') === true
   const isVideo = (id: string | undefined): boolean => id !== undefined && assets.get(id)?.mime.startsWith('video/') === true
   const flagsOf = (op: WireOp | null): CanvasNodeFlags => ({
-    draft: op !== null && (draftOps.has(op.id) || (op.branch.startsWith('draft/') && state.turns[op.turn]?.accepted !== true)),
+    draft: op !== null && draftOps.has(op.id),
     stale: op !== null && state.stale[op.id] !== undefined,
     generating: op !== null && (op.status === 'pending' || op.status === 'running'),
     failed: op?.status === 'failed',

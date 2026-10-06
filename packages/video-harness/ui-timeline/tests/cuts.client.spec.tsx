@@ -77,7 +77,8 @@ describe('CutsView', () => {
     fireEvent.pointerMove(start, { clientX: 40 })
     fireEvent.pointerUp(start, { clientX: 40 })
     await waitFor(() => { expect(invokes()).toHaveLength(4) })
-    expect(invokes()[3]).toMatchObject({ tool: 'sequence.set_range', params: { sequence: 'v1', slot: 1, inSec: 1, outSec: null } })
+    expect(invokes()[3]).toMatchObject({ tool: 'sequence.set_range', params: { sequence: 'v1', slot: 1, inSec: 1 } })
+    expect(invokes()[3]?.['params']).not.toHaveProperty('outSec')
 
     fireEvent.click(view.getByText('＋ 新建'))
     await waitFor(() => { expect(invokes()).toHaveLength(5) })
@@ -145,11 +146,22 @@ describe('CutsView', () => {
     expect(invokes()[1]).toMatchObject({ tool: 'sequence.delete', params: { sequence: 'v2' } })
   })
 
-  it('shows an open agent draft read-only with a note instead of the main state', async () => {
-    const { fetch } = scriptedFetch({ state: fixtureState })
-    const view = render(<CutsView projectId="p1" branch="main" client={new VhClient(fetch)} />)
-    await view.findByText('agent 的草稿还没确认，虚线框的片段来自草稿。接受或丢弃草稿后才能修改。')
-    expect((view.getByText('分割') as HTMLButtonElement).disabled).toBe(true)
+  it('shows the open draft of its chat session for editing, and a draft branch it is given read-only with a note', async () => {
+    const heads: string[] = []
+    const { fetch, writes } = scriptedFetch({ state: (head) => { heads.push(head); return fixtureState() } })
+    const editing = render(<CutsView projectId="p1" branch="main" session="s5" client={new VhClient(fetch)} />)
+    await waitFor(() => { expect(heads).toContain('draft/s5') })
+    await waitFor(() => { expect((editing.getByText('分割') as HTMLButtonElement).disabled).toBe(false) })
+    expect(editing.queryByText('草稿还没确认，虚线框的片段来自草稿。接受或丢弃草稿后才能修改。')).toBeNull()
+    fireEvent.contextMenu(editing.getAllByRole('tab')[0] as HTMLElement)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    fireEvent.click(editing.getByRole('menuitem', { name: '删除这一集' }))
+    // The edit carries the session, so it lands on the session's draft.
+    await waitFor(() => { expect(writes.find(write => write.path === '/api/vh/invoke')?.body).toMatchObject({ session: 's5', tool: 'sequence.delete' }) })
+    cleanup()
+    const viewing = render(<CutsView projectId="p1" branch="draft/s5" client={new VhClient(fetch)} />)
+    await viewing.findByText('草稿还没确认，虚线框的片段来自草稿。接受或丢弃草稿后才能修改。')
+    expect((viewing.getByText('分割') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('keeps a dropped file from reaching document listeners and explains that the track takes assets only', async () => {
@@ -169,7 +181,7 @@ describe('CutsView', () => {
     const base = state.sequences?.[0]?.items ?? []
     const added = { slot: base.length + 1, assetId: 'upload.mp4', inSec: null, outSec: null }
     const video = { id: 'v1', title: '', items: [...base, added] }
-    expect(placeVideo(state, video, 'draft/t9', base).clips.map(clip => clip.draft)).toEqual([...base.map(() => false), true])
+    expect(placeVideo(state, video, 'draft/s9', base).clips.map(clip => clip.draft)).toEqual([...base.map(() => false), true])
     expect(placeVideo(state, video, 'main', base).clips.some(clip => clip.draft)).toBe(false)
   })
 

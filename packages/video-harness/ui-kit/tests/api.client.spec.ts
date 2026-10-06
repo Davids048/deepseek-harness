@@ -11,19 +11,32 @@ describe('VhClient', () => {
     const client = new VhClient(fetch)
     expect(await client.projects()).toEqual([PROJECT])
     expect(await client.projects(undefined, 's1')).toEqual([PROJECT])
-    expect(await client.createProject('Demo 2', 'canvas')).toMatchObject({ heads: { main: 'x' }, turn: 't9' })
-    expect((await client.state('p1', 'style-b')).project.projectId).toBe('p1')
+    expect(await client.createProject('Demo 2', 'canvas')).toMatchObject({ heads: { main: 'x' } })
+    expect((await client.state('p1', 'explore/style-b')).project.projectId).toBe('p1')
     expect((await client.tools()).map(tool => tool.name)).toContain('generate.video')
     const record = await client.invoke({ project: 'p1', tool: 'sequence.move', params: { from: 2, to: 1 }, surface: 'timeline' })
     expect(record.tool?.name).toBe('sequence.move')
-    await client.turn('p1', 't5', 'accept', 'canvas')
+    await client.acceptDraft('p1', { session: 's5' }, 'canvas')
     await client.undo('p1')
     await client.branch('p1', 'alt', 'main')
     await client.select({ project: 'p1', kind: 'op', id: 'g1', surface: 'canvas' })
-    expect(writes.map(write => write.path)).toEqual(['/api/vh/projects', '/api/vh/invoke', '/api/vh/turn', '/api/vh/undo', '/api/vh/branch', '/api/vh/selection'])
+    await client.discardDraft('p1', { branch: 'draft/s5' }, 'timeline')
+    await client.discardDraft('p1', { session: 's5' }, 'canvas', { agent_changes: 1, human_edits: 0 })
+    await client.redo('p1', 's5')
+    await client.switchBranch('p1', 'main', 's5')
+    expect(writes.map(write => write.path)).toEqual([
+      '/api/vh/projects', '/api/vh/invoke', '/api/vh/drafts/accept', '/api/vh/undo', '/api/vh/branch', '/api/vh/selection',
+      '/api/vh/drafts/discard', '/api/vh/drafts/discard', '/api/vh/redo', '/api/vh/branch/switch',
+    ])
     expect(writes[0]?.body).toEqual({ title: 'Demo 2', surface: 'canvas' })
-    expect(writes[2]?.body).toEqual({ project: 'p1', turn: 't5', action: 'accept', surface: 'canvas' })
+    expect(writes[2]?.body).toEqual({ project: 'p1', session: 's5', surface: 'canvas' })
+    expect(writes[3]?.body).toEqual({ project: 'p1' })
     expect(writes[4]?.body).toEqual({ project: 'p1', name: 'alt', at: 'main' })
+    // Without counts the discard is a dry read; with them it discards.
+    expect(writes[6]?.body).toEqual({ project: 'p1', branch: 'draft/s5', surface: 'timeline' })
+    expect(writes[7]?.body).toEqual({ project: 'p1', session: 's5', surface: 'canvas', counts: { agent_changes: 1, human_edits: 0 } })
+    expect(writes[8]?.body).toEqual({ project: 'p1', session: 's5' })
+    expect(writes[9]?.body).toEqual({ project: 'p1', branch: 'main', session: 's5' })
     expect(assetUrl('a/b')).toBe('/vh/assets/a%2Fb/content')
   })
 
@@ -41,9 +54,16 @@ describe('VhClient', () => {
     const noBody: typeof fetch = () => Promise.resolve(new Response('not json', { status: 500 }))
     await expect(new VhClient(noBody).projects()).rejects.toThrow(new VhApiError(500, 'HTTP 500'))
     await expect(client.select({ project: 'nope', kind: 'clip', id: 'a', slot: 1, surface: 'timeline' })).resolves.toBeUndefined()
+    // A refused Project call carries its code and the rest of the body, such as a changed draft's counts.
+    const changed: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({
+      error: 'The draft changed.', code: 'draft_changed', counts: { agent_changes: 2, human_edits: 0 },
+    }), { status: 409 }))
+    await expect(new VhClient(changed).discardDraft('p1', { session: 's5' }, 'canvas', { agent_changes: 1, human_edits: 0 })).rejects.toMatchObject({
+      status: 409, code: 'draft_changed', body: { counts: { agent_changes: 2, human_edits: 0 } },
+    })
   })
 
-  it('follows the log through EventSource when the browser has it', () => {
+  it('follows the project changes through EventSource when the browser has it', () => {
     const listeners = new Map<string, EventListener>()
     const close = vi.fn()
     class FakeEventSource {
@@ -55,9 +75,10 @@ describe('VhClient', () => {
     vi.stubGlobal('EventSource', FakeEventSource)
     const seen: unknown[] = []
     const stop = new VhClient().subscribe('p1', (event) => { seen.push(event) })
-    listeners.get('op')?.(new MessageEvent('op', { data: JSON.stringify({ kind: 'append', op: fixtureState().ops[1] }) }))
-    listeners.get('head')?.(new MessageEvent('head', { data: 'not json' }))
-    expect(seen).toEqual([{ kind: 'append', op: fixtureState().ops[1] }, null])
+    expect([...listeners.keys()]).toEqual(['ready', 'record', 'update', 'branch'])
+    listeners.get('record')?.(new MessageEvent('record', { data: JSON.stringify({ kind: 'record', record: fixtureState().ops[1] }) }))
+    listeners.get('branch')?.(new MessageEvent('branch', { data: 'not json' }))
+    expect(seen).toEqual([{ kind: 'record', record: fixtureState().ops[1] }, null])
     stop()
     expect(close).toHaveBeenCalledOnce()
   })

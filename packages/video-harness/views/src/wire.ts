@@ -1,34 +1,74 @@
 /**
- * The JSON the browser views receive: the folded project state with the asset records it references, the branch
- * heads, and the tool declarations the canvas turns into parameter forms. Sets become arrays and nothing else changes,
- * so a view can reason about the state the way the runtime does.
+ * The JSON the browser views receive: the state of one branch with the asset records it references, the branch heads
+ * and branches (with the counts of each open draft), and the tool declarations the canvas turns into parameter forms.
+ * Records keep the field names the views read (`tool`, `base_op`, `resolved`, `cost.gpu_s`), converted from the
+ * Project record format into the field names that the views read.
  *
  * @module @video-harness/views/wire
  */
-import type { AssetId, AssetMeta } from '@video-harness/assets'
-import type { Op, OpId, ProjectId, ProjectInfo } from '@video-harness/oplog'
-import type { ProjectState } from '@video-harness/runtime'
+import type { AssetMeta } from '@video-harness/assets'
+import type { AssetId, Branch, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordInputRef } from '@dv/project'
 import type { ToolSpec } from '@video-harness/tools'
 
-/** The folded state of one branch or record as the views read it. */
+/** One input of a record as the views read it: the reference as text and the asset it stood for. */
+export interface WireInput {
+  role: string
+  /** An asset ID, `<record>#<output>`, or `<character|location|style>@<version>`. */
+  ref: string
+  resolved: AssetId | null
+}
+
+/** One record as the views read it. */
+export interface WireOp {
+  id: string
+  parents: string[]
+  /** The agent turn; null for direct human actions. */
+  turn: string | null
+  /** The chat session of the action; null outside any chat session. */
+  session: string | null
+  branch: string
+  actor: ProjectRecord['actor']
+  surface: ProjectRecord['surface']
+  intent: string
+  kind: ProjectRecord['kind']
+  /** The operation; absent on a request record. */
+  tool?: { name: string; version: string }
+  inputs: WireInput[]
+  params: Record<string, unknown>
+  outputs: AssetId[]
+  status: ProjectRecord['status']
+  base_op?: string
+  supersedes: string[]
+  cost?: { gpu_s: number; wall_s: number; cached: boolean }
+  report?: Record<string, unknown>
+  deterministic: boolean
+  created_at: string
+  finished_at?: string
+  /** Why the call failed or was cancelled, in words a creator can read. */
+  error?: string
+}
+
+/** The state of one branch as the views read it. */
 export interface WireState {
-  project: ProjectInfo
-  head: OpId
-  /** The branch heads of the project; a `draft/<turn>` head belongs to an open or abandoned agent turn. */
-  heads: Record<string, OpId>
-  ops: Op[]
-  /** The records of every asset a record produced, uploaded, or still references. */
+  project: { projectId: ProjectId; title: string; createdAt: string }
+  head: string
+  /** The head record of every branch, by branch name. */
+  heads: Record<string, string>
+  /** Every branch of the project; an open draft has `counts`. */
+  branches: Branch[]
+  ops: WireOp[]
+  /** The records of every asset a record created, imported, or still references. */
   assets: AssetMeta[]
-  entities: ProjectState['entities']
-  sequence: ProjectState['sequence']
-  sequences: ProjectState['sequences']
-  stale: ProjectState['stale']
-  superseded: ProjectState['superseded']
-  turns: ProjectState['turns']
-  takes: ProjectState['takes']
-  plans: ProjectState['plans']
-  /** The asset each record produced, by asset. */
-  producers: ProjectState['producers']
+  entities: ProjectState['components']['bible']['entities']
+  sequence: ProjectState['components']['timeline']['sequence']
+  sequences: ProjectState['components']['timeline']['sequences']
+  /** Stale records: record → the record whose change made it stale. */
+  stale: Record<string, { because: string }>
+  superseded: Record<string, string>
+  takes: ProjectState['components']['shot']['takes']
+  plans: ProjectState['components']['plan']['plans']
+  /** The record that created each asset, by asset. */
+  producers: Record<string, string>
 }
 
 /** A tool declaration without its executable parts. */
@@ -40,7 +80,8 @@ export interface WireToolSpec {
   params: ToolSpec['params']
   outputs: ToolSpec['outputs']
   deterministic: boolean
-  cost: ToolSpec['cost']
+  /** The scheduler class: `free` for operations that use no CPU or GPU slot. */
+  cost: 'free' | 'cpu' | 'gpu'
   confirm: ToolSpec['confirm']
 }
 
@@ -56,36 +97,72 @@ export interface ViewSelection {
 }
 
 /**
- * Collect every asset a state mentions: produced or uploaded assets, record outputs, resolved inputs, entity references,
- * and sequence clips. Records that failed before producing anything add nothing.
- * @param state - a folded state.
+ * A record input reference as the text the views and the agent read.
+ * @param ref - the reference.
+ * @returns an asset ID, `<record>#<output>`, or `<id>@<version>`.
+ */
+export function refText(ref: RecordInputRef): string {
+  if ('asset' in ref) return ref.asset
+  if ('record' in ref) return `${ref.record}#${String(ref.output)}`
+  const id = 'character' in ref ? ref.character : 'location' in ref ? ref.location : ref.style
+  return `${id}@${String(ref.version)}`
+}
+
+/**
+ * Convert one record into the form the views read.
+ * @param record - a record in its current form.
+ * @returns the wire record.
+ */
+export function toWireOp(record: ProjectRecord): WireOp {
+  return {
+    id: record.id, parents: record.parents, turn: record.turn, session: record.session, branch: record.branch,
+    actor: record.actor, surface: record.surface, intent: record.intent, kind: record.kind,
+    ...record.operation === null ? {} : { tool: { name: record.operation, version: record.operation_version ?? '' } },
+    inputs: record.inputs.map(input => ({ role: input.role, ref: refText(input.ref), resolved: input.resolved_asset })),
+    params: record.params, outputs: record.outputs, status: record.status,
+    ...record.based_on === null ? {} : { base_op: record.based_on },
+    supersedes: record.supersedes,
+    ...record.cost === undefined
+      ? {}
+      : { cost: { gpu_s: record.cost.gpu_seconds, wall_s: record.cost.wall_seconds, cached: record.cost.reused } },
+    ...record.report === undefined ? {} : { report: record.report },
+    deterministic: record.deterministic, created_at: record.created_at,
+    ...record.finished_at === undefined ? {} : { finished_at: record.finished_at },
+    ...record.error === undefined ? {} : { error: record.error.message },
+  }
+}
+
+/**
+ * Collect every asset a state mentions: created assets, record outputs, resolved inputs, character, location and
+ * style references, and timeline clips. Records that failed before creating anything add nothing.
+ * @param state - a branch state.
  * @returns the asset IDs, each once, in first-mention order.
  */
 export function mentionedAssets(state: ProjectState): AssetId[] {
-  const seen = new Set<AssetId>(state.assets)
-  for (const op of state.ops) {
-    for (const id of op.outputs) seen.add(id)
-    for (const input of op.inputs) if (input.resolved !== null) seen.add(input.resolved)
+  const seen = new Set<AssetId>(Object.keys(state.components.proj.created_by) as AssetId[])
+  for (const record of state.components.proj.records) {
+    for (const id of record.outputs) seen.add(id)
+    for (const input of record.inputs) if (input.resolved_asset !== null) seen.add(input.resolved_asset)
   }
-  for (const versions of Object.values(state.entities)) {
+  for (const versions of Object.values(state.components.bible.entities)) {
     for (const version of versions) for (const id of version.refs) seen.add(id)
   }
-  for (const sequence of state.sequences) for (const item of sequence.items) seen.add(item.assetId)
+  for (const timeline of state.components.timeline.sequences) for (const item of timeline.items) seen.add(item.assetId)
   return [...seen]
 }
 
 /**
- * Turn a folded state into the wire form.
- * @param project - the project's record.
- * @param state - the folded state.
- * @param heads - the project's branch heads.
+ * Turn a branch state into the wire form.
+ * @param project - the project's metadata.
+ * @param state - the branch state.
+ * @param branches - the project's branches.
  * @param asset - looks an asset record up; unknown IDs return null and are left out.
  * @returns the wire state.
  */
 export function toWireState(
   project: ProjectInfo,
   state: ProjectState,
-  heads: Record<string, OpId>,
+  branches: Branch[],
   asset: (id: AssetId) => AssetMeta | null,
 ): WireState {
   const assets: AssetMeta[] = []
@@ -93,21 +170,24 @@ export function toWireState(
     const meta = asset(id)
     if (meta !== null) assets.push(meta)
   }
+  const { proj, bible, timeline, shot, plan } = state.components
+  const stale: WireState['stale'] = {}
+  for (const [record, because] of Object.entries(proj.stale)) stale[record] = { because }
   return {
-    project,
+    project: { projectId: project.id, title: project.title, createdAt: project.created_at },
     head: state.head,
-    heads,
-    ops: state.ops,
+    heads: Object.fromEntries(branches.map(branch => [branch.name, branch.head])),
+    branches,
+    ops: proj.records.map(toWireOp),
     assets,
-    entities: state.entities,
-    sequence: state.sequence,
-    sequences: state.sequences,
-    stale: state.stale,
-    superseded: state.superseded,
-    turns: state.turns,
-    takes: state.takes,
-    plans: state.plans,
-    producers: state.producers,
+    entities: bible.entities,
+    sequence: timeline.sequence,
+    sequences: timeline.sequences,
+    stale,
+    superseded: proj.superseded,
+    takes: shot.takes,
+    plans: plan.plans,
+    producers: proj.created_by,
   }
 }
 
@@ -125,7 +205,7 @@ export function toWireToolSpec(spec: ToolSpec): WireToolSpec {
     params: spec.params,
     outputs: spec.outputs,
     deterministic: spec.deterministic,
-    cost: spec.cost,
+    cost: spec.resource === 'none' ? 'free' : spec.resource,
     confirm: spec.confirm,
   }
 }

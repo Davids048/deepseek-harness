@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The hooks: loading, reload on log events, and the view session's gestures as API calls. */
+/** The hooks: loading, reload on project changes, and the view session's gestures as API calls. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { VhClient } from '../src/client/api.ts'
@@ -44,20 +44,36 @@ describe('useViewSession', () => {
     expect(result.current.project).toBe('p1')
     expect(result.current.tools.value?.length).toBeGreaterThan(0)
     expect(result.current.readOnly).toBe(false)
-    act(() => { result.current.bar.onAccept('t5') })
-    act(() => { result.current.bar.onReject('t5') })
+    act(() => { result.current.bar.onAccept('draft/s5') })
+    act(() => { result.current.bar.onDiscard('draft/s5') })
     act(() => { result.current.bar.onUndo() })
     await waitFor(() => { expect(writes).toHaveLength(3) })
-    expect(writes.map(write => write.path)).toEqual(['/api/vh/turn', '/api/vh/turn', '/api/vh/undo'])
-    expect(writes[0]?.body).toMatchObject({ action: 'accept', surface: 'canvas' })
+    expect(writes.map(write => write.path)).toEqual(['/api/vh/drafts/accept', '/api/vh/drafts/discard', '/api/vh/undo'])
+    expect(writes[0]?.body).toEqual({ project: 'p1', branch: 'draft/s5', surface: 'canvas' })
+    // Discard confirms the counts the state showed for that draft.
+    expect(writes[1]?.body).toEqual({ project: 'p1', branch: 'draft/s5', surface: 'canvas', counts: { agent_changes: 1, human_edits: 0 } })
     act(() => { result.current.bar.onBranch('alt', 'main') })
-    await waitFor(() => { expect(result.current.head).toBe('alt') })
+    await waitFor(() => { expect(result.current.head).toBe('explore/alt') })
     expect(writes[3]?.body).toEqual({ project: 'p1', name: 'alt', at: 'main' })
-    act(() => { result.current.bar.onHead('draft/t5') })
+    act(() => { result.current.bar.onHead('draft/s5') })
     expect(result.current.readOnly).toBe(true)
     act(() => { result.current.bar.onProject('p2') })
     expect(result.current.project).toBe('p2')
     expect(result.current.head).toBe('main')
+  })
+
+  it('switches the chat session\'s working branch when the bar shows main or an exploration branch', async () => {
+    const { fetch, writes } = scriptedFetch()
+    const client = new VhClient(fetch)
+    const { result } = renderHook(() => useViewSession(client, 'canvas', 's5'))
+    await waitFor(() => { expect(result.current.state.value).not.toBeNull() })
+    expect(result.current.session).toBe('s5')
+    act(() => { result.current.bar.onHead('explore/style-b') })
+    act(() => { result.current.bar.onHead('draft/s5') })
+    act(() => { result.current.bar.onUndo() })
+    await waitFor(() => { expect(writes).toHaveLength(2) })
+    expect(writes[0]).toEqual({ path: '/api/vh/branch/switch', body: { project: 'p1', branch: 'explore/style-b', session: 's5' } })
+    expect(writes[1]).toEqual({ path: '/api/vh/undo', body: { project: 'p1', session: 's5' } })
   })
 
   it('keeps the failure message of a write and clears it on the next success', async () => {
@@ -69,7 +85,7 @@ describe('useViewSession', () => {
     await act(async () => { ok = await result.current.run(() => client.undo('p1')) })
     expect(ok).toBe(false)
     expect(result.current.notice).toBe('nothing to undo')
-    await act(async () => { ok = await result.current.run(() => client.turn('p1', 't5', 'accept', 'timeline')) })
+    await act(async () => { ok = await result.current.run(() => client.acceptDraft('p1', { session: 's5' }, 'timeline')) })
     expect(ok).toBe(true)
     expect(result.current.notice).toBeNull()
     await act(async () => { ok = await result.current.run(() => Promise.reject(new Error('boom'))) })
@@ -80,10 +96,10 @@ describe('useViewSession', () => {
     act(() => { result.current.bar.onBranch('alt', 'main') })
     await waitFor(() => { expect(result.current.notice).toBe('nothing to undo') })
     expect(result.current.head).toBe('main')
-    act(() => { result.current.bar.onHead('style-b') })
+    act(() => { result.current.bar.onHead('explore/style-b') })
     act(() => { result.current.bar.onCreate('refused') })
     await waitFor(() => { expect(result.current.notice).toBe('nothing to undo') })
-    expect(result.current.head).toBe('style-b')
+    expect(result.current.head).toBe('explore/style-b')
     expect(result.current.project).toBe('p1')
   })
 
@@ -95,7 +111,7 @@ describe('useViewSession', () => {
     await waitFor(() => { expect(result.current.state.error).toBe('no project') })
     act(() => {
       result.current.bar.onAccept('t')
-      result.current.bar.onReject('t')
+      result.current.bar.onDiscard('t')
       result.current.bar.onUndo()
       result.current.bar.onBranch('x', 'main')
     })
@@ -104,7 +120,7 @@ describe('useViewSession', () => {
 })
 
 describe('useProjectState', () => {
-  it('refetches once per burst of log events and stops following on unmount', async () => {
+  it('refetches once per burst of project changes and stops following on unmount', async () => {
     const listeners = new Map<string, EventListener>()
     const close = vi.fn()
     class FakeEventSource {
@@ -122,7 +138,7 @@ describe('useProjectState', () => {
     expect(reads).toBe(1)
     expect(result.current.loading).toBe(false)
     vi.useFakeTimers()
-    const fire = (): void => { listeners.get('op')?.(new MessageEvent('op', { data: '{"kind":"head","branch":"main","to":"x"}' })) }
+    const fire = (): void => { listeners.get('branch')?.(new MessageEvent('branch', { data: '{"kind":"branch","name":"main","branch":null}' })) }
     act(() => { fire(); fire(); fire() })
     act(() => { vi.advanceTimersByTime(200) })
     vi.useRealTimers()

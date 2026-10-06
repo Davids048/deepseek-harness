@@ -1,6 +1,6 @@
 /**
- * Mounting for the tools specs: the real assets store, operation log, media service, runtime, tool registry, and
- * `vhTools` over a temporary root, with fakes for the generation backend, the model, and the attachment service.
+ * Mounting for the tools specs: the real asset store, Project service, media service, tool registry, and `vhTools`
+ * over a temporary root, with fakes for the generation backend, the model, and the attachment service.
  */
 import { execFile } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -14,10 +14,9 @@ import { ToolCallId, type GenerateOptions, type StreamChunk } from '@deepseek-ai
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import DreamverseGeneration, { type ModelFacts, type SegmentOutput, type SegmentRequest } from '@dreamverse/generation-client'
+import DvProject from '@dv/project'
 import VhAssets from '@video-harness/assets'
 import VhMedia from '@video-harness/media'
-import VhOpLog from '@video-harness/oplog'
-import VhProject from '@video-harness/runtime'
 import VhTools from '../src/index.ts'
 
 /** The ffmpeg and ffprobe the fixtures use; the native build on this host, overridable for other machines. */
@@ -168,9 +167,8 @@ export interface ToolsFixture {
   context: Context
   tools: VhTools
   toolsFiber: Fiber
-  project: VhProject
+  project: DvProject
   assets: VhAssets
-  log: VhOpLog
   media: VhMedia
   generation: FakeGeneration
   llm: FakeLlm
@@ -178,7 +176,7 @@ export interface ToolsFixture {
   /** The selection the fake default model reports; tests change it in place. */
   route: TestRoute
   root: string
-  /** Write a file with the given content and return its path, for uploads. */
+  /** Write a file with the given content and return its path, for imports. */
   writeFile(name: string, content?: string | Buffer): string
   /** Run one DSH tool through the real registry. */
   call(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>
@@ -223,15 +221,14 @@ export async function startTools(options: ToolsFixtureOptions = {}): Promise<Too
     await context.plugin(ToolRuntime).await()
   }
   await context.plugin(VhAssets, { root: join(root, 'assets') }).await()
-  await context.plugin(VhOpLog, { root: join(root, 'projects') }).await()
+  await context.plugin(DvProject, { root: join(root, 'projects'), gpuConcurrency: 1, cpuConcurrency: 4 }).await()
   await context.plugin(VhMedia, { ffmpegPath: FFMPEG, ffprobePath: FFPROBE, outputLimitBytes: 1_048_576 }).await()
-  await context.plugin(VhProject, { ffmpegPath: FFMPEG, builtinTools: false, gpuConcurrency: 1, cpuConcurrency: 4 }).await()
   const toolsFiber = context.plugin(VhTools, { perceptionMaxTokens: 1024, imageInput: options.imageInput ?? true, sessionStateRoot: join(root, 'sessions'), publicBaseUrl: '', confirmGpuSecondsThreshold: 60, gpuSecondsPerVideoSecond: 4 })
   await toolsFiber.await()
   let calls = 0
   return {
-    context, tools: context.vhTools, toolsFiber, project: context.vhProject, assets: context.vhAssets, log: context.vhOpLog,
-    media: context.vhMedia, generation, llm, attachments, route, root,
+    context, tools: context.vhTools, toolsFiber, project: context.dvProject, assets: context.vhAssets, media: context.vhMedia,
+    generation, llm, attachments, route, root,
     writeFile(name, content = `FILE:${name}`) {
       const path = join(root, name)
       writeFileSync(path, content)

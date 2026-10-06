@@ -1,8 +1,8 @@
 /**
  * The link between video projects and DSH Workspaces. A project's Workspace is the DSH Workspace whose directory is the
- * project's directory under the operation-log root, so the chat sessions of a project are the sessions of that
+ * project's directory under the Project store root, so the chat sessions of a project are the sessions of that
  * Workspace. The browser creates the Workspace (only the client can), then records its ID here; the record is one JSON
- * file beside the canvas layout files and never enters the operation log.
+ * file beside the canvas layout files and is never written as a project record.
  *
  * Routes:
  * - `GET /api/vh/workspaces` returns `{entryPath, projects: [{projectId, title, path, workspaceId}], bindings}`, where
@@ -14,8 +14,8 @@
  *   (`$DSH_HOME/sessions/<encoded cwd>/`) and the sessions bound to the project, newest first, so the browser can find
  *   a project's chats before its own session list has loaded them.
  *
- * Projects deleted through `@video-harness/views/projects-admin` leave a directory in `<state root>/trash/`; the list
- * omits them and their bindings.
+ * Projects deleted through `@video-harness/views/projects-admin` are no longer listed by `dvProject`; the list omits
+ * them and their bindings.
  *
  * @module @video-harness/views/workspaces
  */
@@ -23,8 +23,8 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSy
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
-import type VhOpLog from '@video-harness/oplog'
-import type { ProjectId } from '@video-harness/oplog'
+import type DvProject from '@dv/project'
+import type { ProjectId } from '@dv/project'
 import type VhTools from '@video-harness/tools'
 import { projectIdOf } from './wire.ts'
 
@@ -34,9 +34,6 @@ export const WORKSPACE_ROUTES = {
   bind: '/api/vh/workspaces/bind',
   sessions: '/api/vh/workspaces/sessions',
 } as const
-
-/** The directory under the state root that holds deleted projects, one `<projectId>-<ms>` directory each. */
-export const TRASH_DIR = 'trash'
 
 /**
  * The state root the bundle configures: `$VH_STATE_ROOT`, else the default.
@@ -79,19 +76,6 @@ export function writeLinks(links: Record<string, string>): void {
   const target = join(stateRoot(), 'workspaces.json')
   writeFileSync(`${target}.tmp`, JSON.stringify(links))
   renameSync(`${target}.tmp`, target)
-}
-
-/**
- * The projects moved to the trash, read from the `<projectId>-<ms>` directory names.
- * @returns the deleted project IDs.
- */
-export function deletedProjectIds(): Set<string> {
-  try {
-    return new Set(readdirSync(join(stateRoot(), TRASH_DIR)).map(name => name.slice(0, name.lastIndexOf('-'))))
-  } catch {
-    // No trash directory yet: nothing was deleted.
-    return new Set()
-  }
 }
 
 /**
@@ -166,16 +150,16 @@ function readBindings(): Record<string, string> {
 
 /**
  * The project ↔ Workspace Fetch routes.
- * @param log - the operation log, for the project list and the project check.
+ * @param project - the Project service, for the project list and the project check.
  * @param tools - the tools service, which holds session bindings.
  * @returns the routes.
  */
-export function workspaceRoutes(log: VhOpLog, tools: VhTools): ConnectionFetchRoute[] {
+export function workspaceRoutes(project: DvProject, tools: VhTools): ConnectionFetchRoute[] {
   const projectsRoot = join(stateRoot(), 'projects')
   const projectOf = (value: unknown): ProjectId => {
     const projectId = projectIdOf(value)
     if (projectId === null) throw new Error("'project' must name a project.")
-    log.project(projectId)
+    project.openProject(projectId)
     return projectId
   }
   const bodyOf = async (request: Request): Promise<Record<string, unknown>> => {
@@ -184,16 +168,17 @@ export function workspaceRoutes(log: VhOpLog, tools: VhTools): ConnectionFetchRo
   }
   const list = (): Response => {
     const links = readLinks()
-    const deleted = deletedProjectIds()
+    const projects = project.listProjects()
+    const live = new Set<string>(projects.map(info => info.id))
     const entryPath = join(stateRoot(), 'entry')
     mkdirSync(entryPath, { recursive: true })
     return json({
       entryPath,
-      projects: log.listProjects().filter(info => !deleted.has(info.projectId)).map(info => ({
-        projectId: info.projectId, title: info.title, createdAt: info.createdAt,
-        path: join(projectsRoot, info.projectId), workspaceId: links[info.projectId] ?? null,
+      projects: projects.map(info => ({
+        projectId: info.id, title: info.title, createdAt: info.created_at,
+        path: join(projectsRoot, info.id), workspaceId: links[info.id] ?? null,
       })),
-      bindings: Object.fromEntries(Object.entries(readBindings()).filter(([, projectId]) => !deleted.has(projectId))),
+      bindings: Object.fromEntries(Object.entries(readBindings()).filter(([, projectId]) => live.has(projectId))),
     })
   }
   const link = async (request: Request): Promise<Response> => {

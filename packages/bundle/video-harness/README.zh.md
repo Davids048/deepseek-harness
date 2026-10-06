@@ -1,5 +1,5 @@
 ---
-description: "视频 harness 的 profile 层：DreamVerse 生成客户端、harness 的运行时、工具、agent、浏览器 API 和视图插件、导演 skill 以及模型路由，叠在 dsh-base 加 dsh-web-app 或 dsh-headless 之上。"
+description: "视频 harness 的 profile 层：DreamVerse 生成客户端、项目组件、harness 的工具、agent、浏览器 API 和视图插件、导演 skill 以及模型路由，叠在 dsh-base 加 dsh-web-app 或 dsh-headless 之上。"
 kind: "package-bundle"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概要
 
-用这个 bundle 把视频 harness 作为一个 `dsh` profile 运行。它插入 DreamVerse 生成客户端和九个 harness 插件（`media`、`assets`、`oplog`、`runtime`、`tools`、`agent`、`views`、`ui-canvas`、`ui-timeline`），把 `skill-filesystem` 指向 agent 包的 skill，声明到集群 SGLang 服务器的 `deepseek-local` 路由，并从环境变量选择 agent 模型。`scripts/video-harness/setup-profile.sh` 把它叠在 `dsh-base` 加 `dsh-web-app` 上成为 profile `video-harness`，叠在 `dsh-base` 加 `dsh-headless` 上成为 `video-harness-headless`；`scripts/video-harness/launch.sh web|headless` 从源码运行二者之一。
+用这个 bundle 把视频 harness 作为一个 `dsh` profile 运行。它插入 DreamVerse 生成客户端、项目组件 `@dv/project` 和各 harness 插件（`media`、`assets`、`tools`、`agent`、`views`、`mentions`、`ui-composer`、`ui-canvas`、`ui-timeline`、`ui-assets`、`ui-shell`），把 `skill-filesystem` 指向 agent 包的 skill，声明到集群 SGLang 服务器的 `deepseek-local` 路由，并从环境变量选择 agent 模型。`scripts/video-harness/setup-profile.sh` 把它叠在 `dsh-base` 加 `dsh-web-app` 上成为 profile `video-harness`，叠在 `dsh-base` 加 `dsh-headless` 上成为 `video-harness-headless`；`scripts/video-harness/launch.sh web|headless` 从源码运行二者之一。
 
 ## 目录
 

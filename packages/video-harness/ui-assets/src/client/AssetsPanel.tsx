@@ -1,7 +1,7 @@
 /**
  * The project assets panel: filters (全部 / 上传 / 生成), an upload drop zone, a thumbnail grid in sections
  * (人物 · 参考 · 生成), drag sources that carry the asset ID as `application/x-vh-asset`, and a preview on click. Assets
- * of an agent draft that the user has not accepted yet are listed too, with a 草稿 (Draft) badge.
+ * of an open draft that the user has not accepted yet are listed too, with a 草稿 (Draft) badge.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent, ReactNode } from 'react'
@@ -43,8 +43,8 @@ const chip = (active: boolean): CSSProperties => ({
 const button: CSSProperties = { border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '5px 12px', fontSize: 13, cursor: 'pointer' }
 
 /**
- * The folded states of the project's open agent drafts, refetched whenever the state of `main` reloads, which happens
- * on every change of the project's log, draft branches included.
+ * The folded states of the project's open drafts, refetched whenever the state of `main` reloads, which happens on
+ * every change of the project, draft branches included.
  * @param client - the API client.
  * @param projectId - the project.
  * @param main - the folded state of `main`, or null while it loads.

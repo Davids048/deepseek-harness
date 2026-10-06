@@ -482,23 +482,31 @@ describe('canvas stories', () => {
     expect(await page.locator('[data-node-id]').count()).toBe(0)
   })
 
-  it('clips whose reference changed are drawn stale (red) on the canvas and the track', async () => {
+  it('clips whose character changed are drawn stale (red) on the canvas and the track until the creator keeps them', async () => {
     const project = await seedProject('canvas-stale', 2)
     const state = await stateOf(project.id)
     const frame = state.assets.find(asset => asset.mime.startsWith('image/') && asset.name !== 'ref.png')
     await invoke(project.id, 'entity.character.update', { entity: 'c1', refs: [frame?.id ?? ''] })
     const page = await openPage()
     await gotoProject(page, project.id)
-    await expect.poll(() => page.locator('[data-node-stale="true"]').count()).toBe(2)
-    const border = await page.locator('[data-node-stale="true"]').first().evaluate(el => getComputedStyle(el).borderTopColor)
+    const staleClips = page.locator('[data-node-kind="clip"][data-node-stale="true"]')
+    await expect.poll(() => staleClips.count()).toBe(2)
+    const border = await staleClips.first().evaluate(el => getComputedStyle(el).borderTopColor)
     const [r = 0, g = 0, b = 0] = border.match(/\d+/g)?.map(Number) ?? []
     expect(r).toBeGreaterThan(150)
     expect(g + b).toBeLessThan(r)
     await viewToggle(page, '剪辑').click()
     await expect.poll(() => page.locator('[data-clip-stale="true"]').count()).toBe(2)
+    // Keeping both renders (proj.stale_accept) clears the marks on the track and, back on the canvas, on the clips.
+    for (const shot of project.shots) {
+      await harness.api.post('/api/vh/stale/accept', { project: project.id, record: shot, surface: 'canvas' })
+    }
+    await expect.poll(() => page.locator('[data-clip-stale="true"]').count()).toBe(0)
+    await viewToggle(page, '画布').click()
+    await expect.poll(() => page.locator('[data-node-stale="true"]').count()).toBe(0)
   })
 
-  it('an agent draft draws dashed nodes with an accept bar; accepting makes them solid', async () => {
+  it('a draft draws dashed nodes with an accept bar; accepting makes them solid', async () => {
     const project = await seedProject('canvas-draft', 2)
     model.rules.push({ match: 'draft-shot-please', steps: [{ calls: [{ name: 'vh_generate_video', args: { reason: 'draft shot', project_id: project.id, prompt: 'canvas-draft extra shot', duration_sec: 1, inputs: { reference: ['c1@1'] } } }] }], endText: '草稿待确认' })
     const page = await openPage()
@@ -632,7 +640,7 @@ describe('cuts stories', () => {
 
   it('a very short clip can still be selected by clicking its middle at the default zoom', async () => {
     const project = await seedProject('cuts-narrow', 3)
-    await invoke(project.id, 'sequence.set_range', { sequence: 'v1', slot: 1, inSec: null, outSec: 0.2 })
+    await invoke(project.id, 'sequence.set_range', { sequence: 'v1', slot: 1, outSec: 0.2 })
     const page = await openPage()
     await gotoProject(page, project.id, 'cuts')
     const clip = await page.locator('[data-clip-slot="1"]').boundingBox()

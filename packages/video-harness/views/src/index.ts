@@ -1,8 +1,8 @@
 /**
  * Browser API of the video harness. While a Connection service is mounted, the plugin registers authenticated Fetch
- * routes under `/api/vh/*`; while a web server is mounted, it serves the operation log as server-sent events at
- * `/vh/events`, admitting a request only when Connection accepts its cookie. The canvas and the timeline read folded
- * state through these routes and write records through `invoke`, the same entry point the agent's tools use.
+ * routes under `/api/vh/*`; while a web server is mounted, it serves a project's changes as server-sent events at
+ * `/vh/events`, admitting a request only when Connection accepts its cookie. The canvas and the timeline read branch
+ * state through these routes and write records through `dvProject.run`, the same entry point the agent's tools use.
  *
  * @module @video-harness/views
  */
@@ -11,17 +11,14 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import type { ProjectId } from '@video-harness/oplog'
+import type { ProjectId } from '@dv/project'
 import type {} from '@video-harness/assets'
-import type {} from '@video-harness/oplog'
-import type {} from '@video-harness/runtime'
 import type {} from '@video-harness/tools'
 import { ViewsApi, ViewsRequestError, type ViewsServices, messageOf } from './api.ts'
 import { assetImportRoutes } from './asset-import.ts'
 import { serveEventStream } from './events.ts'
 import { layoutRoutes } from './layout.ts'
 import { projectAdminRoutes } from './projects-admin.ts'
-import { redoRoutes } from './redo.ts'
 import { workspaceRoutes } from './workspaces.ts'
 import { projectIdOf, type ViewSelection } from './wire.ts'
 
@@ -31,7 +28,7 @@ export { mentionedAssets, projectIdOf, toWireState, toWireToolSpec, type ViewSel
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** The browser API: folded state, tool declarations, user invocations, and view selections. */
+    /** The browser API: branch state, tool declarations, human operation calls, drafts, and view selections. */
     vhViews: VhViews
   }
 }
@@ -56,9 +53,13 @@ export const ROUTES = {
   state: '/api/vh/state',
   tools: '/api/vh/tools',
   invoke: '/api/vh/invoke',
-  turn: '/api/vh/turn',
+  acceptDraft: '/api/vh/drafts/accept',
+  discardDraft: '/api/vh/drafts/discard',
   undo: '/api/vh/undo',
+  redo: '/api/vh/redo',
   branch: '/api/vh/branch',
+  switchBranch: '/api/vh/branch/switch',
+  acceptStale: '/api/vh/stale/accept',
   selection: '/api/vh/selection',
 } as const
 
@@ -81,7 +82,9 @@ async function answer(run: () => unknown): Promise<Response> {
   try {
     return json(await run())
   } catch (error) {
-    if (error instanceof ViewsRequestError) return json({ error: error.message }, error.status)
+    if (error instanceof ViewsRequestError) {
+      return json({ ...error.details, error: error.message, ...error.code === null ? {} : { code: error.code } }, error.status)
+    }
     return json({ error: messageOf(error) }, 500)
   }
 }
@@ -102,7 +105,7 @@ async function bodyOf(request: Request): Promise<unknown> {
 
 /** The views service. */
 export default class VhViews extends Service {
-  static inject = ['vhProject', 'vhOpLog', 'vhAssets', 'vhTools']
+  static inject = ['dvProject', 'vhAssets', 'vhTools']
   static Config = Config
 
   /** The transport-independent operations. */
@@ -110,7 +113,7 @@ export default class VhViews extends Service {
 
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'vhViews')
-    const services: ViewsServices = { project: ctx.vhProject, log: ctx.vhOpLog, assets: ctx.vhAssets, tools: ctx.vhTools }
+    const services: ViewsServices = { project: ctx.dvProject, assets: ctx.vhAssets, tools: ctx.vhTools }
     this.api = new ViewsApi(services)
     ctx.inject(['connection'], (connected) => {
       for (const route of this.fetchRoutes()) {
@@ -153,26 +156,29 @@ export default class VhViews extends Service {
       { path: ROUTES.state, methods: ['GET'], requestBody: 'buffered', fetch: request => answer(() => api.state(query(request, 'project'), query(request, 'head') ?? undefined)) },
       { path: ROUTES.tools, methods: ['GET'], requestBody: 'buffered', fetch: () => answer(() => api.tools()) },
       { path: ROUTES.invoke, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.invoke(body)) },
-      { path: ROUTES.turn, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.turn(body)) },
+      { path: ROUTES.acceptDraft, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.acceptDraft(body)) },
+      { path: ROUTES.discardDraft, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.discardDraft(body)) },
       { path: ROUTES.undo, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.undo(body)) },
+      { path: ROUTES.redo, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.redo(body)) },
       { path: ROUTES.branch, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.branch(body)) },
+      { path: ROUTES.switchBranch, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.switchBranch(body)) },
+      { path: ROUTES.acceptStale, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.acceptStale(body)) },
       {
         path: ROUTES.selection, methods: ['GET', 'POST'], requestBody: 'buffered',
         fetch: request => request.method === 'GET'
           ? answer(() => api.selection(query(request, 'project')))
           : withBody(body => api.select(body))(request),
       },
-      ...layoutRoutes(this.ctx.vhOpLog),
-      ...redoRoutes(this.ctx.vhOpLog),
-      ...workspaceRoutes(this.ctx.vhOpLog, this.ctx.vhTools),
-      ...projectAdminRoutes(this.ctx.vhOpLog),
-      ...assetImportRoutes({ project: this.ctx.vhProject, log: this.ctx.vhOpLog, assets: this.ctx.vhAssets }),
+      ...layoutRoutes(this.ctx.dvProject),
+      ...workspaceRoutes(this.ctx.dvProject, this.ctx.vhTools),
+      ...projectAdminRoutes(this.ctx.dvProject),
+      ...assetImportRoutes({ project: this.ctx.dvProject, assets: this.ctx.vhAssets }),
     ]
   }
 
   /**
    * Serve `/vh/events?project=<id>`: refuse requests the Connection rejects, 400 without a project, 404 for an unknown
-   * one, else stream the log.
+   * one, else stream the project's changes.
    * @param web - the context that holds the web server, used to look the Connection up.
    * @param request - the HTTP request.
    * @param response - the HTTP response.
@@ -191,13 +197,13 @@ export default class VhViews extends Service {
       return
     }
     try {
-      this.ctx.vhOpLog.project(projectId)
+      this.ctx.dvProject.openProject(projectId)
     } catch {
       response.writeHead(404, { 'content-type': 'text/plain' }).end(`Unknown project '${projectId}'.`)
       return
     }
     serveEventStream(projectId, request, response, {
-      subscribe: (id, listener) => this.ctx.vhOpLog.subscribe(id, listener),
+      subscribe: (id, listener) => this.ctx.dvProject.subscribe(id, listener),
       keepaliveMs: this.config.keepaliveMs,
     })
   }

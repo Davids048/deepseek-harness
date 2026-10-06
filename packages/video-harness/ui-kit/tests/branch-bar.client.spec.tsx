@@ -9,14 +9,14 @@ import { fixtureState, PROJECT } from './fixture.client.tsx'
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 const labels: BranchBarLabels = {
-  project: 'project', branch: 'branch', accept: 'accept', reject: 'reject', undo: 'undo', newBranch: 'new branch',
+  project: 'project', branch: 'branch', accept: 'accept', discard: 'discard', undo: 'undo', newBranch: 'new branch',
   newBranchPrompt: 'name?', newProject: 'new project', newProjectPrompt: 'title?', draftTitle: 'draft', noProject: 'none',
 }
 
 function mount(overrides: Partial<BranchBarProps> = {}) {
   const props: BranchBarProps = {
     projects: [PROJECT, { ...PROJECT, projectId: 'p2', title: 'Other' }], project: 'p1', state: fixtureState(), head: 'main', labels,
-    onProject: vi.fn(), onHead: vi.fn(), onAccept: vi.fn(), onReject: vi.fn(), onUndo: vi.fn(), onBranch: vi.fn(), onCreate: vi.fn(),
+    onProject: vi.fn(), onHead: vi.fn(), onAccept: vi.fn(), onDiscard: vi.fn(), onUndo: vi.fn(), onBranch: vi.fn(), onCreate: vi.fn(),
     ...overrides,
   }
   const view = render(<BranchBar {...props} />)
@@ -31,20 +31,20 @@ describe('BranchBar', () => {
     fireEvent.change(project, { target: { value: 'p2' } })
     expect(props.onProject).toHaveBeenCalledWith('p2')
     const branch = bar.getByLabelText('branch')
-    expect([...branch.querySelectorAll('option')].map(option => option.value)).toEqual(['main', 'style-b', 'draft/t5', 'draft/t6'])
-    fireEvent.change(branch, { target: { value: 'style-b' } })
-    expect(props.onHead).toHaveBeenCalledWith('style-b')
+    expect([...branch.querySelectorAll('option')].map(option => option.value)).toEqual(['main', 'explore/style-b', 'draft/s5'])
+    fireEvent.change(branch, { target: { value: 'explore/style-b' } })
+    expect(props.onHead).toHaveBeenCalledWith('explore/style-b')
     fireEvent.click(bar.getByText('undo'))
     expect(props.onUndo).toHaveBeenCalledOnce()
   })
 
-  it('shows one chip per open draft with accept and reject', () => {
+  it('shows one chip per open draft with accept and discard, addressed by branch', () => {
     const { props, bar } = mount()
     expect(bar.getAllByText('draft')).toHaveLength(1)
     fireEvent.click(bar.getByText('accept'))
-    fireEvent.click(bar.getByText('reject'))
-    expect(props.onAccept).toHaveBeenCalledWith('t5')
-    expect(props.onReject).toHaveBeenCalledWith('t5')
+    fireEvent.click(bar.getByText('discard'))
+    expect(props.onAccept).toHaveBeenCalledWith('draft/s5')
+    expect(props.onDiscard).toHaveBeenCalledWith('draft/s5')
   })
 
   it('asks for a branch name and ignores an empty or cancelled answer', () => {

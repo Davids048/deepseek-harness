@@ -1,6 +1,6 @@
 /** Track geometry and the state readings both views share. */
 import { describe, expect, it } from 'vitest'
-import { assetIndex, branchNames, openDrafts, videoAssets } from '../src/client/state.ts'
+import { assetIndex, branchNames, openDrafts, sessionDraft, videoAssets } from '../src/client/state.ts'
 import { clipSeconds, FALLBACK_CLIP_SECONDS, formatSeconds, placeClips } from '../src/client/timeline.ts'
 import { asset, fixtureState } from './fixture.client.tsx'
 
@@ -40,15 +40,15 @@ describe('placeClips', () => {
 describe('state readings', () => {
   it('lists open drafts, orders branches, indexes assets, and picks videos newest first', () => {
     const state = fixtureState()
-    expect(openDrafts(state)).toEqual([{ turn: 't5', branch: 'draft/t5', intent: 'retake shot 1', ops: 1 }])
-    state.heads['draft/t7'] = 'x'
-    state.openTurns.push('t7')
-    expect(openDrafts(state).map(draft => [draft.turn, draft.intent, draft.ops])).toEqual([['t5', 'retake shot 1', 1], ['t7', '', 0]])
-    // A rejected or stopped draft keeps its head, and its reject record is not on `main`; the server no longer lists it as open.
-    state.openTurns.splice(state.openTurns.indexOf('t5'), 1)
-    expect(openDrafts(state).map(draft => draft.turn)).toEqual(['t7'])
-    state.openTurns.push('t5')
-    expect(branchNames(state)).toEqual(['main', 'style-b', 'draft/t5', 'draft/t6', 'draft/t7'])
+    expect(openDrafts(state)).toEqual([{ branch: 'draft/s5', session: 's5', counts: { agent_changes: 1, human_edits: 0 } }])
+    expect(sessionDraft(state, 's5')?.branch).toBe('draft/s5')
+    expect(sessionDraft(state, 's7')).toBeNull()
+    expect(sessionDraft(state, null)).toBeNull()
+    // A closed draft leaves the branch list; a second session's open draft is listed beside the first.
+    state.branches.push({ name: 'draft/s7', head: 'x', base: 'main', forked_at: 's1', session: 's7', counts: { agent_changes: 0, human_edits: 2 } })
+    state.heads['draft/s7'] = 'x'
+    expect(openDrafts(state).map(draft => draft.session)).toEqual(['s5', 's7'])
+    expect(branchNames(state)).toEqual(['main', 'explore/style-b', 'draft/s5', 'draft/s7'])
     expect(assetIndex(state).get('cut.mp4')?.mime).toBe('video/mp4')
     expect(videoAssets(state).map(video => video.id)).toEqual(['shot1.mp4', 'shot2.mp4', 'cut.mp4'])
   })

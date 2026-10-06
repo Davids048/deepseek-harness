@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
-    "@video-harness/oplog": "workspace:*"
+    "@dv/project": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

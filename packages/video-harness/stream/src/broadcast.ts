@@ -6,7 +6,7 @@
  *
  * @module @video-harness/stream/broadcast
  */
-import type { OpId, ProjectId } from '@video-harness/oplog'
+import type { ProjectId, RecordId } from '@dv/project'
 
 /** What `openSegment` learns about the shot. */
 export interface SegmentInit {
@@ -28,7 +28,7 @@ export type StreamFrame = { kind: 'json'; data: Record<string, unknown> } | { ki
 
 /** A segment whose `done` has not arrived yet. */
 interface InFlightSegment {
-  streamId: OpId
+  streamId: RecordId
   segmentIdx: number
   mime: string
   chunks: Uint8Array[]
@@ -40,25 +40,25 @@ interface InFlightSegment {
 /** Fan-out of in-flight segments to per-project subscribers, with bounded replay for late subscribers. */
 export class SegmentBroadcaster {
   private readonly subscribers = new Map<ProjectId, Set<(frame: StreamFrame) => void>>()
-  private readonly inFlightSegments = new Map<ProjectId, Map<OpId, InFlightSegment>>()
+  private readonly inFlightSegments = new Map<ProjectId, Map<RecordId, InFlightSegment>>()
 
   /** @param bufferBytes - the most bytes one in-flight segment keeps for late subscribers. */
   constructor(private readonly bufferBytes: number) {}
 
   /**
    * Start a segment: subscribers receive `media_init` now, chunks as they arrive, and `media_segment_complete` at the
-   * end. The op ID is the `stream_id` the browser sees.
+   * end. The record ID is the `stream_id` the browser sees.
    * @param projectId - the project the shot belongs to.
-   * @param opId - the generating record.
+   * @param record - the generating record.
    * @param init - MIME type and slot.
    * @returns the writer's end.
    */
-  openSegment(projectId: ProjectId, opId: OpId, init: SegmentInit): SegmentStream {
+  openSegment(projectId: ProjectId, record: RecordId, init: SegmentInit): SegmentStream {
     const segment: InFlightSegment = {
-      streamId: opId, segmentIdx: init.segmentIdx, mime: init.mime, chunks: [], bufferedBytes: 0, truncated: false,
+      streamId: record, segmentIdx: init.segmentIdx, mime: init.mime, chunks: [], bufferedBytes: 0, truncated: false,
     }
-    const segments = this.inFlightSegments.get(projectId) ?? new Map<OpId, InFlightSegment>()
-    segments.set(opId, segment)
+    const segments = this.inFlightSegments.get(projectId) ?? new Map<RecordId, InFlightSegment>()
+    segments.set(record, segment)
     this.inFlightSegments.set(projectId, segments)
     this.emit(projectId, { kind: 'json', data: mediaInit(segment) })
     return {
@@ -72,12 +72,12 @@ export class SegmentBroadcaster {
         this.emit(projectId, { kind: 'binary', data: bytes })
       },
       complete: () => {
-        segments.delete(opId)
-        this.emit(projectId, { kind: 'json', data: { type: 'media_segment_complete', segment_idx: segment.segmentIdx, stream_id: opId } })
+        segments.delete(record)
+        this.emit(projectId, { kind: 'json', data: { type: 'media_segment_complete', segment_idx: segment.segmentIdx, stream_id: record } })
       },
       fail: (error) => {
-        segments.delete(opId)
-        this.emit(projectId, { kind: 'json', data: { type: 'error', stream_id: opId, message: error.message } })
+        segments.delete(record)
+        this.emit(projectId, { kind: 'json', data: { type: 'error', stream_id: record, message: error.message } })
       },
     }
   }
@@ -105,7 +105,7 @@ export class SegmentBroadcaster {
    * @param projectId - the project.
    * @returns the stream IDs of its segments still generating.
    */
-  inFlight(projectId: ProjectId): OpId[] {
+  inFlight(projectId: ProjectId): RecordId[] {
     return [...this.inFlightSegments.get(projectId)?.keys() ?? []]
   }
 

@@ -51,7 +51,7 @@ function freshPng(): Buffer {
 
 /**
  * The scripted agent. `只回复<X>` answers `收到<X>`; `做草稿` uploads a reference, plans two shots, approves, and waits,
- * leaving an open agent draft whose assets the panel flags.
+ * leaving an open draft whose assets the panel flags.
  */
 const RULES: ScriptedRule[] = [
   { match: /只回复\S+/, steps: [view => ({ text: `收到${/只回复(\S+)/.exec(view.userText)?.[1] ?? ''}` })] },
@@ -64,7 +64,7 @@ const RULES: ScriptedRule[] = [
         shots: [{ prompt: '草稿镜头一', duration_sec: 1 }],
       } }] }),
       view => ({ calls: [{ name: 'vh_plan_approve', args: { reason: '用户同意', plan: opIdOf(view.toolResults[1]), user_approved: true } }] }),
-      { calls: [{ name: 'vh_wait', args: {} }] },
+      { calls: [{ name: 'dv_proj_wait', args: {} }] },
     ],
     endText: '镜头已生成。草稿待确认',
   },
@@ -253,7 +253,7 @@ describe('The assets panel', () => {
       expect(errors).toEqual([])
     })
 
-    it('flags the assets of an unaccepted agent draft with 草稿', async () => {
+    it('flags the assets of an open draft with 草稿', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
       await openProject(page, project.title)

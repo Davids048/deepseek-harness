@@ -8,7 +8,7 @@ import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { AssetId, TurnId } from '@video-harness/oplog'
+import type { AssetId, ProjectId, ProjectRecord, RunRequest } from '@dv/project'
 import { afterEach, describe, expect, it } from 'vitest'
 import { renderClip, startTools, type ToolsFixture } from './support.ts'
 
@@ -78,25 +78,34 @@ async function startFakeBackend(): Promise<FakeBackend> {
   return fake
 }
 
-/** A project whose character c1@1 is the given image file. */
-async function projectWith(fixture: ToolsFixture, imagePath: string, mime: string): Promise<{ projectId: ReturnType<ToolsFixture['project']['createProject']>; turn: TurnId }> {
-  const projectId = fixture.project.createProject({ title: 'backend' })
-  const turn = fixture.project.beginTurn(projectId, { actor: 'user', surface: 'chat', intent: 'start' }).turn
-  const upload = await fixture.project.invoke(projectId, { tool: 'asset.upload', inputs: [], params: { path: imagePath, mime }, actor: 'user', surface: 'chat', intent: 'upload', turn })
-  await fixture.project.invoke(projectId, { tool: 'entity.character.create', inputs: [], params: { entity: 'c1', name: 'Lead', refs: upload.outputs }, actor: 'user', surface: 'chat', intent: 'character', turn })
-  return { projectId, turn }
+/** A human action outside any chat session: it lands on `main` directly. */
+const user = { actor: 'user' as const, surface: 'chat' as const, session: null, turn: null, tool_call: null }
+
+/** Run one operation on `main` and return its record. */
+async function record(fixture: ToolsFixture, project: ProjectId, operation: string, params: Record<string, unknown>, inputs: RunRequest['inputs'] = []): Promise<ProjectRecord> {
+  const result = await fixture.project.run({ ...user, project, operation, params, inputs, intent: operation })
+  if (result.record === null) throw new Error(`${operation} wrote no record`)
+  return result.record
 }
+
+/** A project whose character c1@1 is the given image file. */
+async function projectWith(fixture: ToolsFixture, imagePath: string, mime: string): Promise<ProjectId> {
+  const projectId = (await fixture.project.createProject('backend', { ...user, intent: 'create' })).id
+  const image = await record(fixture, projectId, 'asset.upload', { path: imagePath, mime })
+  await record(fixture, projectId, 'entity.character.create', { entity: 'c1', name: 'Lead', refs: image.outputs })
+  return projectId
+}
+
+/** The reference input of character c1 at version 1. */
+const c1 = [{ role: 'reference', ref: { character: 'c1', version: 1 } }]
 
 describe('generate.video through the generation client', () => {
   it('sends the wire request the backend expects and stores the streamed clip', async () => {
     const backend = await startFakeBackend()
     const fixture = await startTools({ dsh: false, perception: false, generation: { baseUrl: `http://127.0.0.1:${backend.port}` } })
     fixtures.push(fixture)
-    const { projectId, turn } = await projectWith(fixture, fixture.writeFile('ref.png', 'PNG-FAKE'), 'image/png')
-    const shot = await fixture.project.invoke(projectId, {
-      tool: 'generate.video', inputs: [{ role: 'reference', ref: 'c1@1' }], params: { prompt: 'Picture 1 smiles', duration_sec: 2, seed: 7 },
-      actor: 'agent', surface: 'chat', intent: 'shot', turn,
-    })
+    const projectId = await projectWith(fixture, fixture.writeFile('ref.png', 'PNG-FAKE'), 'image/png')
+    const shot = await record(fixture, projectId, 'generate.video', { prompt: 'Picture 1 smiles', duration_sec: 2, seed: 7 }, c1) // names:allow
     expect(shot.status).toBe('done')
     expect(backend.requests[0]).toMatchObject({ prompt: 'Picture 1 smiles', width: 192, height: 112, num_frames: 49, seed: 7, return_last_frame: true })
     expect((backend.requests[0]?.['reference_images'] as string[])).toEqual([Buffer.from('PNG-FAKE').toString('base64')])
@@ -108,13 +117,11 @@ describe('generate.video through the generation client', () => {
   it.skipIf(REAL_BACKEND === undefined || !existsSync(REAL_REFERENCE))('generates a real five-second shot against the running backend', async () => {
     const fixture = await startTools({ dsh: false, perception: false, generation: { baseUrl: REAL_BACKEND as string } })
     fixtures.push(fixture)
-    const { projectId, turn } = await projectWith(fixture, REAL_REFERENCE, 'image/jpeg')
+    const projectId = await projectWith(fixture, REAL_REFERENCE, 'image/jpeg')
     const started = performance.now()
-    const shot = await fixture.project.invoke(projectId, {
-      tool: 'generate.video', inputs: [{ role: 'reference', ref: 'c1@1' }],
-      params: { prompt: 'Picture 1 is a man speaking to the camera in a bright office, slow push-in, natural light.', duration_sec: 5 },
-      actor: 'agent', surface: 'chat', intent: 'real shot', turn,
-    })
+    const shot = await record(fixture, projectId, 'generate.video', { // names:allow
+      prompt: 'Picture 1 is a man speaking to the camera in a bright office, slow push-in, natural light.', duration_sec: 5,
+    }, c1)
     const wallSec = (performance.now() - started) / 1000
     const probe = await fixture.media.probe(shot.outputs[0] as AssetId)
     console.log(`[vh real backend] wall ${wallSec.toFixed(1)} s; record cost ${JSON.stringify(shot.cost)}; report ${JSON.stringify(shot.report)}; video ${JSON.stringify(probe)}`)

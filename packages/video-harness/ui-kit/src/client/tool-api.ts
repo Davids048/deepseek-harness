@@ -27,10 +27,12 @@ export class ToolApi {
    * Store a file as a project asset through an `asset.upload` record.
    * @param project - a project.
    * @param file - the file.
+   * @param session - the chat session the view sits beside; the record goes to that session's working branch.
    * @returns the asset ID.
    */
-  async upload(project: string, file: File): Promise<string> {
+  async upload(project: string, file: File, session: string | null = null): Promise<string> {
     const query = new URLSearchParams({ project, name: file.name, mime: file.type.length > 0 ? file.type : 'application/octet-stream' })
+    if (session !== null) query.set('session', session)
     const response = await this.fetchImpl(`/api/vh/assets/upload?${query.toString()}`, { method: 'POST', body: file })
     return (await decode<{ assetId: string }>(response)).assetId
   }

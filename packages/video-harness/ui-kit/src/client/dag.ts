@@ -57,8 +57,15 @@ export interface DagLayout {
   height: number
 }
 
-/** Record kinds the canvas hides: bookkeeping that would only add noise. `plan.approve` records are hidden the same way. */
-const HIDDEN_KINDS = new Set(['intent', 'branch', 'approve', 'reject'])
+/**
+ * Records the graph hides, bookkeeping that would only add noise: request records, Project's own `proj.*` records
+ * (accept, discard, undo, redo, branches), and `plan.approve` records.
+ * @param op - a record.
+ * @returns whether the graph leaves it out.
+ */
+function hiddenRecord(op: WireOp): boolean {
+  return op.kind === 'request' || op.tool?.name.startsWith('proj.') === true || op.tool?.name === 'plan.approve'
+}
 
 /**
  * The records a plan scheduled: every record whose params name the plan or whose turn is the approval's turn and
@@ -69,9 +76,10 @@ const HIDDEN_KINDS = new Set(['intent', 'branch', 'approve', 'reject'])
  */
 function planChildren(plan: WireOp, ops: WireOp[]): string[] {
   const approvals = ops.filter(op => op.tool?.name === 'plan.approve' && op.params['plan'] === plan.id)
-  const turns = new Set(approvals.map(op => op.turn))
+  // A plan approved outside an agent turn has no turn to group by.
+  const turns = new Set(approvals.flatMap(op => op.turn === null ? [] : [op.turn]))
   return ops
-    .filter(op => op.id !== plan.id && !approvals.some(a => a.id === op.id) && turns.has(op.turn) && op.tool?.name !== 'plan.approve')
+    .filter(op => op.id !== plan.id && !approvals.some(a => a.id === op.id) && op.turn !== null && turns.has(op.turn) && op.tool?.name !== 'plan.approve')
     .map(op => op.id)
 }
 
@@ -116,7 +124,7 @@ export function buildDag(state: WireState, expanded: ReadonlySet<string> = new S
   }
   const producerNode = new Map<string, string>()
   for (const op of state.ops) {
-    if (HIDDEN_KINDS.has(op.kind) || op.tool?.name === 'plan.approve' || hidden.has(op.id)) continue
+    if (hiddenRecord(op) || hidden.has(op.id)) continue
     const isPlan = op.tool?.name === 'plan.create' || op.tool?.name === 'plan.update'
     nodes.push({
       id: op.id, kind: isPlan ? 'plan' : 'op', label: opLabel(op), detail: isPlan ? 'plan' : (op.tool?.name ?? op.kind),

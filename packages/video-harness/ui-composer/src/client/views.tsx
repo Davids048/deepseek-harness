@@ -7,7 +7,7 @@
 import { useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { assetUrl } from '@video-harness/ui-kit/api.ts'
 import { useText } from '@video-harness/ui-kit/locale.ts'
-import { approvalStore, readMode, writeMode, type ComposerMode, type PendingApproval } from './api.ts'
+import { approvalStore, readMode, writeMode, type ComposerMode, type ApprovalCard } from './api.ts'
 
 const chip: CSSProperties = { display: 'inline-flex', borderRadius: 999, border: '1px solid var(--dsh-border, #3a3a3a)', overflow: 'hidden', fontSize: 12 }
 const button = (active: boolean): CSSProperties => ({
@@ -58,7 +58,7 @@ export function ModeControls(props: { sessionId: string; onMount: () => () => vo
 }
 
 /** The approval list of a session, kept fresh while mounted. */
-function useApprovals(sessionId: string): PendingApproval[] {
+function useApprovals(sessionId: string): ApprovalCard[] {
   const store = approvalStore(sessionId)
   return useSyncExternalStore(store.subscribe, store.snapshot)
 }
@@ -78,7 +78,7 @@ export function PendingBar(props: { sessionId: string }) {
       <span>{t('待批准', 'Pending approval')} ({approvals.length})</span>
       {approvals.length > 1 && <button type="button" style={primary} onClick={() => { void approvalStore(props.sessionId).answer('all', 'approve') }}>{t('全部批准', 'Approve all')}</button>}
     </div>
-    {approvals.map(approval => <ApprovalCard key={approval.id} approval={approval} />)}
+    {approvals.map(approval => <ApprovalCardView key={approval.id} approval={approval} />)}
   </div>
 }
 
@@ -151,7 +151,7 @@ export function ToolLabelRow(props: { label: readonly [string, string]; toolName
 }
 
 /** The approval card of one waiting generation. */
-function ApprovalCard(props: { approval: PendingApproval }) {
+function ApprovalCardView(props: { approval: ApprovalCard }) {
   const t = useText()
   const { approval } = props
   const store = approvalStore(approval.sessionId)

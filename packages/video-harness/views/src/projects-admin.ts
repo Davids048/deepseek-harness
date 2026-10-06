@@ -1,23 +1,21 @@
 /**
- * Project deletion and renaming for the DreamVerse shell. Deletion is reversible by hand: the project's directory and
- * its side file (canvas layout) move to `<state root>/trash/<projectId>-<ms>/`, and the trash entry is
- * what hides the project from `GET /api/vh/workspaces`. The browser deletes the project's DSH Workspace registration,
- * because only the client reaches the Workspace service.
+ * Project deletion and renaming for the DreamVerse shell, through `dvProject`. Deletion is reversible by hand:
+ * `dvProject.deleteProject` moves the project's directory into the Project store's trash, after which the project is
+ * no longer listed. The browser deletes the project's DSH Workspace registration, because only the client reaches the
+ * Workspace service.
  *
  * Routes:
- * - `POST /api/vh/projects/delete` with `{project}` moves the project to the trash and drops its Workspace record.
+ * - `POST /api/vh/projects/delete` with `{project}` deletes the project and drops its Workspace record.
  * - `POST /api/vh/projects/rename` with `{project, title}` stores a title that no other project has, appending ` 2`,
  *   ` 3`, … on a clash, and returns `{title}`.
  *
  * @module @video-harness/views/projects-admin
  */
-import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
-import type VhOpLog from '@video-harness/oplog'
-import type { ProjectId } from '@video-harness/oplog'
+import type DvProject from '@dv/project'
+import type { ProjectId } from '@dv/project'
 import { projectIdOf } from './wire.ts'
-import { TRASH_DIR, deletedProjectIds, readLinks, stateRoot, writeLinks } from './workspaces.ts'
+import { readLinks, writeLinks } from './workspaces.ts'
 
 /** The Fetch route paths. */
 export const PROJECT_ADMIN_ROUTES = {
@@ -36,16 +34,14 @@ function json(value: unknown, status = 200): Response {
 }
 
 /**
- * A title no other live project uses: the trimmed title, else the title with the smallest free ` N` suffix.
- * @param log - the operation log.
+ * A title no other project uses: the trimmed title, else the title with the smallest free ` N` suffix.
+ * @param project - the Project service.
  * @param projectId - the project being titled, whose own title does not count as a clash.
  * @param wanted - the requested title.
  * @returns the unique title.
  */
-export function uniqueProjectTitle(log: VhOpLog, projectId: string | null, wanted: string): string {
-  const deleted = deletedProjectIds()
-  const others = log.listProjects().filter(info => info.projectId !== projectId && !deleted.has(info.projectId))
-  const taken = new Set(others.map(info => info.title))
+export function uniqueProjectTitle(project: Pick<DvProject, 'listProjects'>, projectId: string | null, wanted: string): string {
+  const taken = new Set(project.listProjects().filter(info => info.id !== projectId).map(info => info.title))
   if (!taken.has(wanted)) return wanted
   let suffix = 2
   while (taken.has(`${wanted} ${String(suffix)}`)) suffix += 1
@@ -54,14 +50,14 @@ export function uniqueProjectTitle(log: VhOpLog, projectId: string | null, wante
 
 /**
  * The project deletion and rename Fetch routes.
- * @param log - the operation log, for the project check and the stored titles.
+ * @param project - the Project service, which owns the project files.
  * @returns the routes.
  */
-export function projectAdminRoutes(log: VhOpLog): ConnectionFetchRoute[] {
+export function projectAdminRoutes(project: DvProject): ConnectionFetchRoute[] {
   const projectOf = (value: unknown): ProjectId => {
     const projectId = projectIdOf(value)
-    if (projectId === null || deletedProjectIds().has(projectId)) throw new Error("'project' must name a project.")
-    log.project(projectId)
+    if (projectId === null) throw new Error("'project' must name a project.")
+    project.openProject(projectId)
     return projectId
   }
   const bodyOf = async (request: Request): Promise<Record<string, unknown>> => {
@@ -70,15 +66,7 @@ export function projectAdminRoutes(log: VhOpLog): ConnectionFetchRoute[] {
   }
   const remove = async (request: Request): Promise<Response> => {
     const projectId = projectOf((await bodyOf(request))['project'])
-    const root = stateRoot()
-    const trash = join(root, TRASH_DIR, `${projectId}-${String(Date.now())}`)
-    mkdirSync(trash, { recursive: true })
-    // The project directory and its side file keep their names inside the trash entry.
-    const moves: Array<[string, string]> = [
-      [join(root, 'projects', projectId), join(trash, 'project')],
-      [join(root, 'canvas-layout', `${projectId}.json`), join(trash, 'canvas-layout.json')],
-    ]
-    for (const [from, to] of moves) if (existsSync(from)) renameSync(from, to)
+    await project.deleteProject(projectId)
     const { [projectId]: workspaceId, ...links } = readLinks()
     writeLinks(links)
     return json({ ok: true, workspaceId: workspaceId ?? null })
@@ -88,16 +76,9 @@ export function projectAdminRoutes(log: VhOpLog): ConnectionFetchRoute[] {
     const projectId = projectOf(body['project'])
     const wanted = typeof body['title'] === 'string' ? body['title'].trim() : ''
     if (wanted.length === 0) return json({ error: "'title' must be a non-empty string." }, 400)
-    const title = uniqueProjectTitle(log, projectId, wanted)
-    const info = log.project(projectId)
-    const file = join(root(), projectId, 'project.json')
-    writeFileSync(`${file}.tmp`, `${JSON.stringify({ ...info, title })}\n`)
-    renameSync(`${file}.tmp`, file)
-    // The log keeps the record it loaded; update it in place so listings show the title without a restart.
-    ;(info as { title: string }).title = title
-    return json({ title })
+    const info = await project.renameProject(projectId, uniqueProjectTitle(project, projectId, wanted))
+    return json({ title: info.title })
   }
-  const root = (): string => join(stateRoot(), 'projects')
   const guard = (run: (request: Request) => Promise<Response>) => async (request: Request): Promise<Response> => {
     try {
       return await run(request)

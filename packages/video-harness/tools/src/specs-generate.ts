@@ -13,10 +13,9 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import {
   segmentImageLabels, segmentRequestImages, validateReferenceAssets, type AssetRecord, type DreamverseGeneration, type ModelFacts,
 } from '@dreamverse/segment-generation'
-import type { AssetId, OpId, ProjectId } from '@video-harness/oplog'
-import { GENERATE_VIDEO_TOOL, type ToolExecution, type ToolResult } from '@video-harness/runtime'
+import type { AssetId, OperationContext, OperationResult, ProjectId, RecordId } from '@dv/project'
 import type VhAssets from '@video-harness/assets'
-import { label, number, text } from './specs-basic.ts'
+import { GENERATE_VIDEO_TOOL, label, number, text } from './specs-basic.ts'
 import { inputAssets } from './specs-media.ts'
 import type { ToolSpec } from './types.ts'
 
@@ -28,7 +27,7 @@ const SEED_LIMIT = 2 ** 31
  * shape is `@video-harness/stream`'s `openSegment`; the tool only needs the structural type.
  */
 export interface SegmentStreamSink {
-  openSegment(projectId: ProjectId, opId: OpId, init: { mime: string; segmentIdx: number }): {
+  openSegment(projectId: ProjectId, record: RecordId, init: { mime: string; segmentIdx: number }): {
     chunk(bytes: Uint8Array): void
     complete(): void
     fail(error: Error): void
@@ -105,29 +104,34 @@ function baseMime(mime: string): string {
  * Request one shot from the backend and store its video and last frame. While a stream sink is mounted, the chunks
  * also go to it as they arrive, so browsers watch the shot before the record completes.
  * @param generation - the backend client.
- * @param execution - the tool call.
+ * @param assets - the asset store the reference images are read from.
+ * @param context - the running call.
  * @param streamSink - looks the live sink up per call, so a sink mounted later is still used.
  * @returns the video and last-frame assets with the recorded generation facts.
  */
 async function generateShot(
   generation: DreamverseGeneration,
-  execution: ToolExecution,
+  assets: VhAssets,
+  context: OperationContext,
   streamSink?: () => SegmentStreamSink | undefined,
-): Promise<ToolResult> {
+): Promise<OperationResult> {
+  const record = context.record
+  /* v8 ignore next -- a shot render is not read-only, so it always runs with a record. */
+  if (record === null) throw new Error('A shot render runs only with a record.')
   const facts = await generation.model()
-  const geometry = shotGeometry(facts, execution.params)
-  const prompt = text(execution.params['prompt'])
+  const geometry = shotGeometry(facts, context.params)
+  const prompt = text(context.params['prompt'])
   if (prompt === '') throw new Error('generate.video needs a `prompt`.')
-  const references = inputAssets(execution, 'reference')
-  const firstFrame = inputAssets(execution, 'first_frame')[0]
+  const references = inputAssets(context, 'reference')
+  const firstFrame = inputAssets(context, 'first_frame')[0]
   validateReferenceAssets(facts, geometry.mode, references.length)
   const continues = firstFrame !== undefined
   const referenceImages = await segmentRequestImages(
-    facts, geometry.mode, references.map(id => assetRecord(execution.assets, id)),
-    continues ? assetRecord(execution.assets, firstFrame) : null,
+    facts, geometry.mode, references.map(id => assetRecord(assets, id)),
+    continues ? assetRecord(assets, firstFrame) : null,
   )
-  const seed = number(execution.params['seed'], randomInt(SEED_LIMIT))
-  const videoPath = join(execution.scratchDir, 'shot.mp4')
+  const seed = number(context.params['seed'], randomInt(SEED_LIMIT))
+  const videoPath = join(context.scratchDir, 'shot.mp4')
   const file = createWriteStream(videoPath)
   let lastFrame: Buffer | null = null
   let mime: string | null = null
@@ -146,7 +150,9 @@ async function generateShot(
         case 'video_start':
           mime = output.mime
           // The slot a plan assigned the shot tells the page which clip is playing; a free-standing shot has none.
-          live = streamSink?.()?.openSegment(execution.projectId, execution.op.id, { mime: output.mime, segmentIdx: number(execution.params['shot'], 0) }) ?? null
+          live = streamSink?.()?.openSegment(context.project, record.id, {
+            mime: output.mime, segmentIdx: number(context.params['shot'], 0),
+          }) ?? null
           break
         case 'chunk':
           live?.chunk(output.bytes)
@@ -175,15 +181,17 @@ async function generateShot(
   if (live !== null) live.fail(new Error('The generation stream ended before the backend reported completion.'))
   if (!finished || mime === null) throw new Error('The generation stream ended before the backend reported completion.')
   if (lastFrame === null) throw new Error('The backend returned no last frame.')
-  const shortId = execution.op.id.slice(0, 8)
-  const video = execution.assets.put({ path: videoPath }, {
-    mime: baseMime(mime), name: `${shortId}.mp4`, producedBy: execution.op.id, width: geometry.width, height: geometry.height, durationSec: geometry.durationSec,
+  const shortId = record.id.slice(0, 8)
+  const video = context.importAsset({ path: videoPath }, {
+    mime: baseMime(mime), name: `${shortId}.mp4`, durationSec: geometry.durationSec, width: geometry.width, height: geometry.height,
   })
-  const frame = execution.assets.put(lastFrame, { mime: 'image/png', name: `${shortId}-last.png`, producedBy: execution.op.id, width: geometry.width, height: geometry.height })
+  const frame = context.importAsset(lastFrame, {
+    mime: 'image/png', name: `${shortId}-last.png`, width: geometry.width, height: geometry.height,
+  })
   const labels = segmentImageLabels(facts, geometry.mode, references.length, continues)
   return {
     outputs: [video, frame],
-    cost: { gpu_s: backendSeconds(timings) },
+    cost: { gpu_seconds: backendSeconds(timings) },
     report: {
       seed, model: facts.modelId, generation_mode: geometry.mode, aspect_ratio: geometry.aspectRatio, resolution: geometry.resolution,
       duration_sec: geometry.durationSec, frame_width: geometry.width, frame_height: geometry.height, num_frames: geometry.numFrames,
@@ -195,18 +203,23 @@ async function generateShot(
 /**
  * The `generate.video` tool over a generation backend client.
  * @param generation - the backend client.
+ * @param assets - the asset store the reference images are read from.
  * @param streamSink - looks up the live media sink (`vhStream`) per call; omitted, shots are only stored.
  * @returns the spec.
  */
-export function generateVideoTool(generation: DreamverseGeneration, streamSink?: () => SegmentStreamSink | undefined): ToolSpec {
+export function generateVideoTool(
+  generation: DreamverseGeneration, assets: VhAssets, streamSink?: () => SegmentStreamSink | undefined,
+): ToolSpec {
   return {
     name: GENERATE_VIDEO_TOOL,
+    component: 'shot',
     version: 'dreamverse-1',
     summary: 'Generate one shot from a prompt and reference images. Name characters and styles through the reference input (c1@1); pass continue_from to start from the last frame of an earlier shot. Outputs: the video, then its last frame. Every call is a new take; a changed prompt for the same shot passes base_op.',
     inputs: {
       reference: { type: 'image', many: true, entity: true, description: 'Reference images or entity versions whose reference images the shot carries, in prompt order (Picture 1, Picture 2, …).' },
       first_frame: { type: 'image', description: 'The frame the shot starts from, usually output #1 of the previous shot.' },
     },
+    inputRoles: ['reference', 'first_frame'],
     params: {
       prompt: { type: 'string', required: true, description: 'The complete shot prompt; refer to reference images as Picture 1, Picture 2, … in input order.' },
       duration_sec: { type: 'integer', description: 'Whole seconds within the model range; default the model minimum.' },
@@ -217,9 +230,10 @@ export function generateVideoTool(generation: DreamverseGeneration, streamSink?:
     },
     outputs: [{ role: 'video', type: 'video' }, { role: 'last_frame', type: 'image' }],
     deterministic: false,
-    cost: 'gpu',
-    confirm: 'cost',
-    summarize: op => `shot "${text(op.params['prompt']).slice(0, 60)}" (${label(op.report?.['duration_sec'] ?? op.params['duration_sec'])}s, seed ${label(op.report?.['seed'])})`,
-    execute: execution => generateShot(generation, execution, streamSink),
+    resource: 'gpu',
+    confirm: 'agent_ask_first',
+    summarize: record => `shot "${text(record.params['prompt']).slice(0, 60)}" `
+      + `(${label(record.report?.['duration_sec'] ?? record.params['duration_sec'])}s, seed ${label(record.report?.['seed'])})`,
+    execute: context => generateShot(generation, assets, context, streamSink),
   }
 }

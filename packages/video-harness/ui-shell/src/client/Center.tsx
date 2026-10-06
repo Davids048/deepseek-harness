@@ -1,7 +1,7 @@
 /**
  * The center of the DreamVerse shell, shadowing DSH's `main.conversation`. Without an open project it is the entry
  * page: a DreamVerse headline, the DSH composer, and recent project cards, and the chat itself once it starts. With a
- * project open it is the workspace: a top bar (breadcrumb, 画布 | 剪辑 toggle, panel control, agent draft bar) above
+ * project open it is the workspace: a top bar (breadcrumb, 画布 | 剪辑 toggle, panel control, draft bar) above
  * the canvas or the cuts editor.
  *
  * The center also keeps the shell's open project and the DSH main session together: once the client lists are ready
@@ -19,7 +19,7 @@ import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client
 import { VhClient } from '@video-harness/ui-kit/api.ts'
 import { getEpisodeOf, publishCurrentEpisode, VH_CURRENT_EPISODE_EVENT } from '@video-harness/ui-kit/current-episode.ts'
 import { pickText, useText } from '@video-harness/ui-kit/locale.ts'
-import { openDrafts } from '@video-harness/ui-kit/state.ts'
+import { sessionDraft } from '@video-harness/ui-kit/state.ts'
 import { useProjectState } from '@video-harness/ui-kit/useProject.ts'
 import type { VhWorkspaceEventMap } from '@video-harness/ui-kit/workspace-events.ts'
 import type { ShellActions } from './actions.ts'
@@ -258,7 +258,10 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
   })
   const [renaming, setRenaming] = useState(false)
   const state = useProjectState(client, projectId, 'main')
-  const drafts = state.value === null ? [] : openDrafts(state.value).map(draft => draft.turn)
+  // The chat session the workspace sits beside: its draft is the one the bar accepts or discards, and the views' edits
+  // go to its working branch. Until the main session belongs to this project, edits go to `main`.
+  const session = sessionInProject ? sessionId ?? null : null
+  const draft = state.value === null ? null : sessionDraft(state.value, session)
   const mounted = useSyncExternalStore(shell.mountedSeat.subscribe, shell.mountedSeat.getSnapshot)
   const opened = useRef(new Set<string>())
   useEffect(() => {
@@ -312,7 +315,7 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
       ? { tool: 'sequence.create', params: { sequence: 'v1', title: '第 1 集', assets: [assetId] }, intent: pickText('新建第 1 集并加入片段', 'Create Episode 1 with the clip') }
       : { tool: 'sequence.insert', params: { sequence: episode.id, at, asset: assetId }, intent: pickText(`加入剪辑第 ${String(at)} 段`, `Add to Cuts at clip ${String(at)}`) }
     if (episode === undefined) publishCurrentEpisode(projectId, 'v1')
-    void client.invoke({ project: projectId, ...call, surface: 'timeline' })
+    void client.invoke({ project: projectId, ...call, surface: 'timeline', ...session === null ? {} : { session } })
       .then(() => { state.reload() }, (error: unknown) => { console.warn('ui-shell: insert failed', error) })
   }
   const insertRef = useRef(insertToCut)
@@ -327,8 +330,12 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     window.addEventListener('vh:cut-insert', insert)
     return () => { window.removeEventListener('vh:cut-insert', insert) }
   }, [])
-  const decide = (action: 'accept' | 'reject'): void => {
-    for (const turn of drafts) void client.turn(projectId, turn, action, 'canvas').then(() => { state.reload() })
+  const decide = (action: 'accept' | 'discard'): void => {
+    if (draft === null) return
+    const done = action === 'accept'
+      ? client.acceptDraft(projectId, { session: draft.session }, 'canvas')
+      : client.discardDraft(projectId, { session: draft.session }, 'canvas', draft.counts)
+    void done.then(() => { state.reload() }, (error: unknown) => { console.warn(`ui-shell: ${action} draft failed`, error) })
   }
   const showPanels = (): void => {
     // Until the main session belongs to this project, the panels would open for the entry chat; the session's own
@@ -375,17 +382,17 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
         </div>
       </header>
       {/* The canvas draws its own draft bar; the cuts view gets this strip under the top bar. */}
-      {drafts.length > 0 && view !== 'canvas' && (
+      {draft !== null && view !== 'canvas' && (
         <div className={css.draft}>
-          <span>{t('agent 草稿待确认', 'Agent draft to review')}</span>
+          <span>{t('草稿待确认', 'Draft to review')}</span>
           <button type="button" className={`${css.draftButton} ${css.draftAccept}`} onClick={() => { decide('accept') }}>{t('接受', 'Accept')}</button>
-          <button type="button" className={css.draftButton} onClick={() => { decide('reject') }}>{t('丢弃', 'Discard')}</button>
+          <button type="button" className={css.draftButton} onClick={() => { decide('discard') }}>{t('丢弃', 'Discard')}</button>
         </div>
       )}
       <div className={css.viewArea}>
         {view === 'canvas'
-          ? <CanvasView projectId={projectId} branch="main" client={client} />
-          : <CutsView projectId={projectId} branch="main" client={client} />}
+          ? <CanvasView projectId={projectId} branch="main" client={client} session={session} />
+          : <CutsView projectId={projectId} branch="main" client={client} session={session} />}
       </div>
     </div>
   )

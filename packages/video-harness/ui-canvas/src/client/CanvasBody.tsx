@@ -30,7 +30,7 @@ const root: CSSProperties = { display: 'flex', flexDirection: 'column', height: 
  */
 export function barLabels(t: CanvasBodyProps['t']): BranchBarLabels {
   return {
-    project: t('bar.project'), branch: t('bar.branch'), accept: t('bar.accept'), reject: t('bar.reject'), undo: t('bar.undo'),
+    project: t('bar.project'), branch: t('bar.branch'), accept: t('bar.accept'), discard: t('bar.discard'), undo: t('bar.undo'),
     newBranch: t('bar.newBranch'), newBranchPrompt: t('bar.newBranchPrompt'), newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
     draftTitle: t('bar.draft'), noProject: t('bar.noProject'),
   }
@@ -49,7 +49,9 @@ export function CanvasBody({ client, t }: CanvasBodyProps): ReactNode {
   else if (view.project === null) content = <p style={{ padding: 8 }}>{t('loading')}</p>
   else {
     content = (
-      <div style={{ flex: 1, minHeight: 0 }}><CanvasView projectId={view.project} branch={view.head} client={client} t={t} /></div>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <CanvasView projectId={view.project} branch={view.head} client={client} session={view.session} t={t} />
+      </div>
     )
   }
   return (

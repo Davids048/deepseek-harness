@@ -19,12 +19,12 @@ const ENTRY_PROJECT = 'E2E 入口项目'
 
 /**
  * The scripted agent. `只回复<X>` answers `收到<X>`; `入口请求` creates the project {@link ENTRY_PROJECT} with
- * `vh_project_create` and then answers.
+ * `dv_proj_create` and then answers.
  */
 const RULES: ScriptedRule[] = [
   { match: /只回复\S+/, steps: [view => ({ text: `收到${/只回复(\S+)/.exec(view.userText)?.[1] ?? ''}` })] },
-  { match: '另起项目', steps: [{ calls: [{ name: 'vh_project_create', args: { reason: '另起', title: 'NAV 另起' } }] }], endText: '已另起项目。' },
-  { match: '入口请求', steps: [{ calls: [{ name: 'vh_project_create', args: { reason: '新作品', title: ENTRY_PROJECT } }] }], endText: '项目已建好。' },
+  { match: '另起项目', steps: [{ calls: [{ name: 'dv_proj_create', args: { title: 'NAV 另起' } }] }], endText: '已另起项目。' },
+  { match: '入口请求', steps: [{ calls: [{ name: 'dv_proj_create', args: { title: ENTRY_PROJECT } }] }], endText: '项目已建好。' },
 ]
 
 /** One project as `/api/vh/workspaces` lists it. */

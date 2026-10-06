@@ -1,6 +1,6 @@
 /**
  * A folded state the view tests share: one character, one approved plan whose shots were generated and sequenced, a
- * running retake on a draft branch, a failed trim, and an exploration branch. Also a scripted `fetch` that answers the
+ * running retake on the open draft of chat session `s5`, a failed trim, and an exploration branch. Also a scripted `fetch` that answers the
  * `/api/vh` routes from such a state and records every write.
  */
 import type { InvokeBody } from '../src/client/api.ts'
@@ -13,7 +13,7 @@ import type { WireAsset, WireOp, WireProject, WireState, WireToolSpec } from '..
  */
 export function op(partial: Partial<WireOp> & { id: string }): WireOp {
   return {
-    parents: [], turn: 't1', branch: 'main', actor: 'user', surface: 'chat', intent: '', kind: 'tool',
+    parents: [], turn: 't1', session: null, branch: 'main', actor: 'user', surface: 'chat', intent: '', kind: 'operation',
     inputs: [], params: {}, outputs: [], status: 'done', deterministic: true, created_at: '2026-10-05T00:00:00Z',
     ...partial,
   }
@@ -43,9 +43,14 @@ export function fixtureState(): WireState {
   return {
     project: { projectId: 'p1', title: 'Demo', createdAt: '2026-10-05T00:00:00Z' },
     head: 'main',
-    heads: { main: 's1', 'style-b': 'e1', 'draft/t5': 'g3', 'draft/t6': 's1' },
+    heads: { main: 's1', 'explore/style-b': 'e1', 'draft/s5': 'g3' },
+    branches: [
+      { name: 'main', head: 's1', base: null, forked_at: null, session: null, counts: null },
+      { name: 'draft/s5', head: 'g3', base: 'main', forked_at: 'x1', session: 's5', counts: { agent_changes: 1, human_edits: 0 } },
+      { name: 'explore/style-b', head: 'e1', base: null, forked_at: null, session: null, counts: null },
+    ],
     ops: [
-      op({ id: 'i1', kind: 'intent', intent: 'make a hero film' }),
+      op({ id: 'i1', kind: 'request', intent: 'make a hero film' }),
       op({ id: 'u1', tool: { name: 'asset.upload', version: '1' }, params: { name: 'ref.png' }, outputs: ['ref.png'] }),
       op({ id: 'e1', tool: { name: 'entity.character.create', version: '1' }, params: { entity: 'hero', name: 'Hero', refs: ['ref.png'] } }),
       op({ id: 'p1', turn: 't2', actor: 'agent', tool: { name: 'plan.create', version: '1' }, params: { shots: [{ prompt: 'hero walks' }, { prompt: 'hero turns' }] } }),
@@ -55,7 +60,7 @@ export function fixtureState(): WireState {
       op({ id: 's1', turn: 't3', actor: 'agent', tool: { name: 'sequence.create', version: '1' }, params: { assets: ['shot1.mp4', 'shot2.mp4'] } }),
       op({ id: 'c1', turn: 't4', surface: 'timeline', tool: { name: 'media.concat', version: '1' }, inputs: [{ role: 'clip', ref: 'shot2.mp4', resolved: 'shot2.mp4' }], outputs: ['cut.mp4'], status: 'failed', error: 'ffmpeg exit 1' }),
       op({ id: 'x1', turn: 't4', tool: { name: 'media.probe', version: '1' }, inputs: [{ role: 'media', ref: 'c1#0', resolved: 'cut.mp4' }], outputs: ['notes.txt'] }),
-      op({ id: 'g3', turn: 't5', branch: 'draft/t5', actor: 'agent', tool: { name: 'generate.video', version: '1' }, deterministic: false, base_op: 'g1', inputs: [hero], params: { prompt: 'hero walks, wider' }, status: 'running' }),
+      op({ id: 'g3', turn: 't5', session: 's5', branch: 'draft/s5', actor: 'agent', tool: { name: 'generate.video', version: '1' }, deterministic: false, base_op: 'g1', inputs: [hero], params: { prompt: 'hero walks, wider' }, status: 'running' }),
     ],
     assets: [
       asset('ref.png', 'image/png', 'u1'),
@@ -70,15 +75,9 @@ export function fixtureState(): WireState {
     sequence: { items: [{ slot: 1, assetId: 'shot1.mp4', inSec: null, outSec: null }, { slot: 2, assetId: 'shot2.mp4', inSec: 1, outSec: 4 }] },
     stale: { g2: { because: 'g1 superseded' } },
     superseded: { c1: 'c2' },
-    turns: {
-      t1: { ops: ['i1', 'u1', 'e1'], actor: 'user', surface: 'chat', intent: 'make a hero film', accepted: true, rejected: false },
-      t5: { ops: ['g3'], actor: 'agent', surface: 'chat', intent: 'retake shot 1', accepted: false, rejected: false },
-      t6: { ops: [], actor: 'agent', surface: 'chat', intent: 'nothing', accepted: true, rejected: false },
-    },
     takes: { g1: ['g1', 'g3'] },
     plans: [{ op: 'p1', approved: true, approvedBy: 'a1' }],
     producers: { 'ref.png': 'u1', 'shot1.mp4': 'g1', 'shot1-last.png': 'g1', 'shot2.mp4': 'g2', 'shot2-last.png': 'g2', 'cut.mp4': 'c1', 'notes.txt': 'x1' },
-    openTurns: ['t5'],
   }
 }
 
@@ -87,9 +86,9 @@ export const TOOLS: WireToolSpec[] = [
   {
     name: 'generate.video', version: '1', summary: 'One shot.', inputs: { reference: { type: 'image', description: 'refs', many: true, entity: true } },
     params: { prompt: { type: 'string', required: true, description: 'What happens.' }, seed: { type: 'integer', description: 'Seed.' }, aspect: { type: 'string', enum: ['16:9', '9:16'] }, loop: { type: 'boolean' }, extra: { type: 'object' } },
-    outputs: [{ role: 'video', type: 'video' }, { role: 'last_frame', type: 'image' }], deterministic: false, cost: 'gpu', confirm: 'cost',
+    outputs: [{ role: 'video', type: 'video' }, { role: 'last_frame', type: 'image' }], deterministic: false, cost: 'gpu', confirm: 'agent_ask_first',
   },
-  { name: 'plan.create', version: '1', summary: 'A plan.', inputs: {}, params: { shots: { type: 'array', items: { type: 'object' } } }, outputs: [], deterministic: true, cost: 'free', confirm: 'always' },
+  { name: 'plan.create', version: '1', summary: 'A plan.', inputs: {}, params: { shots: { type: 'array', items: { type: 'object' } } }, outputs: [], deterministic: true, cost: 'free', confirm: 'never' },
   { name: 'sequence.create', version: '1', summary: 'Start the timeline.', inputs: {}, params: {}, outputs: [], deterministic: true, cost: 'free', confirm: 'never' },
 ]
 
@@ -129,7 +128,7 @@ export function scriptedFetch(routes: ScriptedRoutes = {}): { fetch: typeof fetc
         const invoke = body as InvokeBody
         return Promise.resolve(json(op({ id: `new-${String(writes.length)}`, tool: { name: invoke.tool, version: '1' }, params: invoke.params ?? {}, outputs: ['new.mp4'] })))
       }
-      return Promise.resolve(json({ heads: { main: 'x' }, turn: 't9', op: op({ id: 'b1' }) }))
+      return Promise.resolve(json({ heads: { main: 'x' }, record: op({ id: 'b1' }) }))
     }
     switch (url.pathname) {
       case '/api/vh/projects': return Promise.resolve(json(routes.projects ?? [PROJECT]))

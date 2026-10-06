@@ -2,7 +2,7 @@
 # chat page) or dsh-headless (one task per process). Every row reads its configuration from the environment that
 # scripts/video-harness/launch.sh prepares:
 #   VH_BACKEND_URL   FastVideo streaming_v2 server (default http://127.0.0.1:8029)
-#   VH_STATE_ROOT    where assets, operation logs, and session bindings live (default ~/.local/state/video-harness)
+#   VH_STATE_ROOT    where assets, project records, and session bindings live (default ~/.local/state/video-harness)
 #   VH_FFMPEG / VH_FFPROBE  media binaries
 #   VH_PUBLIC_URL    origin that serves /vh/assets to remote viewers, for links in chat cards
 #   VH_AGENT_PROVIDER / VH_AGENT_MODEL / VH_AGENT_REASONING  the agent's model route
@@ -31,19 +31,13 @@
           process.env.VH_STATE_ROOT || process.getBuiltinModule('node:path').join(
           process.getBuiltinModule('node:os').homedir(), '.local/state/video-harness'), 'assets')
 
-    - id: vh-oplog
-      name: '@video-harness/oplog'
+    - id: dv-project
+      name: '@dv/project'
       config:
         root: !!js >-
           process.getBuiltinModule('node:path').join(
           process.env.VH_STATE_ROOT || process.getBuiltinModule('node:path').join(
           process.getBuiltinModule('node:os').homedir(), '.local/state/video-harness'), 'projects')
-
-    - id: vh-runtime
-      name: '@video-harness/runtime'
-      config:
-        ffmpegPath: !!js process.env.VH_FFMPEG || '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
-        builtinTools: false
 
     - id: vh-tools
       name: '@video-harness/tools'
@@ -189,7 +183,7 @@
     reasoningEffort: !!js process.env.VH_AGENT_REASONING || 'low'
 
 # DreamVerse references project items through @video-harness/ui-composer's `@` source; DSH's file and session `@`
-# source would list the project's oplog files and the sessions of every project.
+# source would list the project's record files and the sessions of every project.
 - id: ui-reference
   disabled: true
 

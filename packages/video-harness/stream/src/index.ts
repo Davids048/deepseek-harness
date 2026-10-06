@@ -13,8 +13,8 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import z from '@deepseek-ai/schemastery'
-import type { OpId, OpLogEvent, ProjectId } from '@video-harness/oplog'
-import type {} from '@video-harness/oplog'
+import type { ProjectEvent, ProjectId, RecordId } from '@dv/project'
+import type {} from '@dv/project'
 import { SegmentBroadcaster, type SegmentInit, type SegmentStream, type StreamFrame } from './broadcast.ts'
 import { acceptWebSocket, refuseUpgrade, type ServerSocket } from './socket.ts'
 
@@ -75,12 +75,12 @@ export default class VhStream extends Service {
   /**
    * Start broadcasting one shot; see {@link SegmentBroadcaster.openSegment}.
    * @param projectId - the project.
-   * @param opId - the generating record, which becomes the browser's `stream_id`.
+   * @param record - the generating record, which becomes the browser's `stream_id`.
    * @param init - MIME type and slot.
    * @returns the writer's end.
    */
-  openSegment(projectId: ProjectId, opId: OpId, init: SegmentInit): SegmentStream {
-    return this.broadcaster.openSegment(projectId, opId, init)
+  openSegment(projectId: ProjectId, record: RecordId, init: SegmentInit): SegmentStream {
+    return this.broadcaster.openSegment(projectId, record, init)
   }
 
   /**
@@ -152,13 +152,14 @@ export default class VhStream extends Service {
       if (frame.kind === 'binary') server.sendBinary(frame.data)
       else server.sendText(JSON.stringify(frame.data))
     })]
-    const log = this.ctx.get('vhOpLog')
-    if (log !== undefined) {
+    const project = this.ctx.get('dvProject')
+    if (project !== undefined) {
       try {
-        stops.push(log.subscribe(projectId, (event: OpLogEvent) => {
-          const message = event.kind === 'head'
-            ? { type: 'head', branch: event.branch, to: event.to }
-            : { type: 'op', change: event.kind, op: event.op }
+        stops.push(project.subscribe(projectId, (event: ProjectEvent) => {
+          // A removed draft branch has no head, so its `head` message carries `to: null`.
+          const message = event.kind === 'branch'
+            ? { type: 'head', branch: event.name, to: event.branch?.head ?? null }
+            : { type: 'op', change: event.kind === 'record' ? 'append' : 'patch', op: event.record }
           server.sendText(JSON.stringify(message))
         }))
       } catch (error) {

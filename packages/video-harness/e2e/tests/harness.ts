@@ -194,7 +194,7 @@ export async function bootHarness(
 ): Promise<BootedHarness> {
   const scratch = mkdtempSync(join(tmpdir(), 'vh-e2e-'))
   const backend = await startFakeBackend(join(scratch, 'backend'), { playable: options.playableClips === true })
-  const model = await startMockLlmServer({ port: 0, sequence: ['tool_call_success'], repeatLast: true, toolName: 'vh_project_state', toolArguments: '{"reason":"smoke"}' })
+  const model = await startMockLlmServer({ port: 0, sequence: ['tool_call_success'], repeatLast: true, toolName: 'dv_proj_state', toolArguments: '{}' })
   // The isolated harness home mirrors scripts/video-harness/setup-profile.sh: a manifest naming the three bundles,
   // an empty profile patch, and a link to this checkout's bundle package.
   const home = join(scratch, 'dsh-home')

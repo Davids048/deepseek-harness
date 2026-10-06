@@ -4,7 +4,7 @@
  *
  * @module @video-harness/ui-kit/api
  */
-import type { WireLogEvent, WireOp, WireProject, WireState, WireToolSpec } from './types.ts'
+import type { WireBranch, WireDraftCounts, WireOp, WireProject, WireProjectEvent, WireState, WireToolSpec } from './types.ts'
 
 /** One `/vh/events` stream shared by every subscriber of a project in this page. */
 interface SharedEventSource {
@@ -67,6 +67,9 @@ function releaseEventSource(project: string, shared: SharedEventSource): void {
   countStreams()
 }
 
+/** The SSE event names of `/vh/events`: the kinds of a project change. */
+const EVENT_KINDS: ReadonlyArray<WireProjectEvent['kind']> = ['record', 'update', 'branch']
+
 /** What a view sends to run a tool. */
 export interface InvokeBody {
   project: string
@@ -75,14 +78,24 @@ export interface InvokeBody {
   params?: Record<string, unknown>
   intent?: string
   surface: 'canvas' | 'timeline'
-  branch?: string
+  /** The chat session the view sits beside; the record goes to that session's working branch (its open draft). */
+  session?: string
   base_op?: string
   supersedes?: string[]
 }
 
+/** Which draft an accept or discard addresses: the draft of a chat session, or a draft branch by name. */
+export type DraftTarget = { session: string } | { branch: string }
+
 /** A route answered with an error status. */
 export class VhApiError extends Error {
-  constructor(readonly status: number, message: string) {
+  /**
+   * @param status - the HTTP status.
+   * @param message - the server's explanation.
+   * @param code - the Project error code, such as `draft_changed`, when the server sent one.
+   * @param body - the whole error body, for fields such as a changed draft's `counts`.
+   */
+  constructor(readonly status: number, message: string, readonly code: string | null = null, readonly body: Record<string, unknown> = {}) {
     super(message)
     this.name = 'VhApiError'
   }
@@ -101,10 +114,9 @@ export function assetUrl(id: string): string {
 async function decode<T>(response: Response): Promise<T> {
   const body: unknown = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const reason = typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string'
-      ? (body as { error: string }).error
-      : `HTTP ${String(response.status)}`
-    throw new VhApiError(response.status, reason)
+    const fields = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
+    const reason = typeof fields['error'] === 'string' ? fields['error'] : `HTTP ${String(response.status)}`
+    throw new VhApiError(response.status, reason, typeof fields['code'] === 'string' ? fields['code'] : null, fields)
   }
   return body as T
 }
@@ -134,9 +146,9 @@ export class VhClient {
 
   /**
    * @param project - the project.
-   * @param head - a branch name or record ID.
+   * @param head - a branch name.
    * @param signal - cancels the request.
-   * @returns the folded state.
+   * @returns the state of the branch.
    */
   state(project: string, head: string, signal?: AbortSignal): Promise<WireState> {
     return this.get('/api/vh/state', { project, head }, signal)
@@ -148,8 +160,8 @@ export class VhClient {
   }
 
   /**
-   * Run a tool as a user turn.
-   * @param body - the tool, inputs, params, and where the gesture came from.
+   * Run a tool as the human.
+   * @param body - the tool, inputs, params, where the gesture came from, and the chat session the view sits beside.
    * @returns the record.
    */
   invoke(body: InvokeBody): Promise<WireOp> {
@@ -157,35 +169,70 @@ export class VhClient {
   }
 
   /**
-   * Accept or reject an agent draft.
+   * Accept a draft into the branch it was forked from.
    * @param project - the project.
-   * @param turn - the draft's turn.
-   * @param action - accept or reject.
+   * @param target - the chat session whose draft it is, or the draft branch.
    * @param surface - where the decision was made.
-   * @returns the branch heads afterwards.
+   * @returns the accept record and the branch heads afterwards.
    */
-  turn(project: string, turn: string, action: 'accept' | 'reject', surface: 'canvas' | 'timeline'): Promise<Record<string, string>> {
-    return this.post('/api/vh/turn', { project, turn, action, surface })
+  acceptDraft(project: string, target: DraftTarget, surface: 'canvas' | 'timeline'): Promise<{ record: WireOp; heads: Record<string, string> }> {
+    return this.post('/api/vh/drafts/accept', { project, ...target, surface })
   }
 
   /**
-   * Move `main` back one turn.
+   * Discard a draft, including the human's edits on it. Without `counts` this is a dry read that returns the counts
+   * to confirm; with the counts the human confirmed, the draft is discarded, or the call fails with code
+   * `draft_changed` when the draft changed meanwhile.
    * @param project - the project.
-   * @returns the undone turn and the heads afterwards.
+   * @param target - the chat session whose draft it is, or the draft branch.
+   * @param surface - where the decision was made.
+   * @param counts - the counts the human confirmed; omitted for the dry read.
+   * @returns the draft's name and its counts.
    */
-  undo(project: string): Promise<{ turn: string; heads: Record<string, string> }> {
-    return this.post('/api/vh/undo', { project })
+  discardDraft(project: string, target: DraftTarget, surface: 'canvas' | 'timeline', counts?: WireDraftCounts): Promise<{ draft: string; counts: WireDraftCounts }> {
+    return this.post('/api/vh/drafts/discard', { project, ...target, surface, ...counts === undefined ? {} : { counts } })
   }
 
   /**
-   * Start an exploration branch.
+   * Move `main` back by one accepted change.
    * @param project - the project.
-   * @param name - the branch name.
+   * @param session - the chat session the view sits beside, or null.
+   * @returns the undo record and the heads afterwards.
+   */
+  undo(project: string, session: string | null = null): Promise<{ record: WireOp; heads: Record<string, string> }> {
+    return this.post('/api/vh/undo', { project, ...session === null ? {} : { session } })
+  }
+
+  /**
+   * Re-apply the change the latest undo removed.
+   * @param project - the project.
+   * @param session - the chat session the view sits beside, or null.
+   * @returns the redo record and the heads afterwards.
+   */
+  redo(project: string, session: string | null = null): Promise<{ record: WireOp; heads: Record<string, string> }> {
+    return this.post('/api/vh/redo', { project, ...session === null ? {} : { session } })
+  }
+
+  /**
+   * Start an exploration branch `explore/<name>`.
+   * @param project - the project.
+   * @param name - the name after `explore/`.
    * @param at - a record ID or branch name.
-   * @returns the branch record and the heads afterwards.
+   * @returns the branch and the heads afterwards.
    */
-  branch(project: string, name: string, at: string): Promise<{ op: WireOp; heads: Record<string, string> }> {
+  branch(project: string, name: string, at: string): Promise<{ branch: WireBranch; heads: Record<string, string> }> {
     return this.post('/api/vh/branch', { project, name, at })
+  }
+
+  /**
+   * Switch the working branch of a chat session to `main` or an exploration branch.
+   * @param project - the project.
+   * @param branch - the branch name.
+   * @param session - the chat session.
+   * @returns the branch and the heads afterwards.
+   */
+  switchBranch(project: string, branch: string, session: string): Promise<{ branch: WireBranch; heads: Record<string, string> }> {
+    return this.post('/api/vh/branch/switch', { project, branch, session })
   }
 
   /**
@@ -202,36 +249,34 @@ export class VhClient {
   }
 
   /**
-   * Follow a project's log. Uses the page's shared `EventSource` of the project when the browser has it, else polls
+   * Follow a project's changes. Uses the page's shared `EventSource` of the project when the browser has it, else polls
    * `onChange` every `pollMs`.
    * @param project - the project.
    * @param onChange - called on every change, with the event when the stream delivered one.
    * @param pollMs - the polling interval of the fallback.
    * @returns a function that stops following.
    */
-  subscribe(project: string, onChange: (event: WireLogEvent | null) => void, pollMs = 3000): () => void {
+  subscribe(project: string, onChange: (event: WireProjectEvent | null) => void, pollMs = 3000): () => void {
     if (typeof EventSource === 'function') {
       const handler = (message: MessageEvent<string>): void => {
         try {
-          onChange(JSON.parse(message.data) as WireLogEvent)
+          onChange(JSON.parse(message.data) as WireProjectEvent)
         } catch {
-          // A frame the view cannot parse still means the log changed.
+          // A frame the view cannot parse still means the project changed.
           onChange(null)
         }
       }
       const shared = acquireEventSource(project)
-      shared.source.addEventListener('op', handler as EventListener)
-      shared.source.addEventListener('head', handler as EventListener)
+      for (const kind of EVENT_KINDS) shared.source.addEventListener(kind, handler as EventListener)
       // A proxy that buffers event streams (a Cloudflare quick tunnel does) delivers nothing, not even `ready`; poll
-      // until the stream proves live so views still follow the log.
+      // until the stream proves live so views still follow the project.
       const fallback = setInterval(() => { if (!shared.live) onChange(null) }, pollMs)
       let stopped = false
       return () => {
         if (stopped) return
         stopped = true
         clearInterval(fallback)
-        shared.source.removeEventListener('op', handler as EventListener)
-        shared.source.removeEventListener('head', handler as EventListener)
+        for (const kind of EVENT_KINDS) shared.source.removeEventListener(kind, handler as EventListener)
         releaseEventSource(project, shared)
       }
     }

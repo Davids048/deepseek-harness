@@ -19,33 +19,35 @@ import type { VhTimelineKey } from './locales.ts'
 /** The data transfer type an asset carries when it is dragged onto the track; the value is the asset ID. */
 export const ASSET_DRAG_TYPE = 'application/x-vh-asset'
 
-/** The editor's inputs: the project and head it writes to, the folded state, and the write runner. */
+/** The editor's inputs: the project and head it shows, the chat session it writes for, the state, and the write runner. */
 export interface CutsEditorProps {
   client: VhClient
   t: Translate<VhTimelineKey>
   project: string
   head: string
+  /** The chat session the editor sits beside; its edits go to that session's working branch (its open draft). */
+  session?: string | null
   state: WireState
-  /** The `main` state while an agent draft is shown, to tell the draft's clips apart. */
+  /** The `main` state while a draft is shown, to tell the draft's clips apart. */
   baseState?: WireState | null
-  /** Whether the head is an agent draft, where user writes are refused. */
+  /** Whether the editor shows a draft without writing to it. */
   readOnly: boolean
   /** Run one write and refetch the state; resolves to whether the write succeeded. */
   run: (work: () => Promise<unknown>) => Promise<boolean>
 }
 
 /** The fields of an invoke request a gesture fills in. */
-export type Gesture = Omit<InvokeBody, 'project' | 'surface' | 'branch'>
+export type Gesture = Omit<InvokeBody, 'project' | 'surface' | 'session'>
 
 /**
- * The invoke request of one gesture on a head.
+ * The invoke request of one gesture.
  * @param project - the project.
- * @param head - the shown head; any head other than `main` is written to as a branch.
+ * @param session - the chat session the editor sits beside, whose working branch the record goes to; null for `main`.
  * @param gesture - the tool, inputs, params, and intent.
  * @returns the request body.
  */
-export function request(project: string, head: string, gesture: Gesture): InvokeBody {
-  return { project, surface: 'timeline', ...head === 'main' ? {} : { branch: head }, ...gesture }
+export function request(project: string, session: string | null, gesture: Gesture): InvokeBody {
+  return { project, surface: 'timeline', ...session === null ? {} : { session }, ...gesture }
 }
 
 /** An edge or body drag on a clip, in progress. */
@@ -90,27 +92,13 @@ function buttonStyle(disabled: boolean, extra: CSSProperties = {}): CSSPropertie
   return { ...button, ...extra, ...disabled ? { opacity: 0.4, cursor: 'default' } : {} }
 }
 
-/** Where `main` was before one undo (`to`) and where the undo left it (`after`). */
+/** Where one undo left `main` (`after`); redo is offered while `main` is still there. */
 interface RedoEntry {
-  to: string
   after: string
 }
 
 /** Redo entries per project, newest last; kept outside the component so a canvas ↔ cuts switch keeps them. */
 const redoStacks = new Map<string, RedoEntry[]>()
-
-/**
- * Move `main` forward to the head it had before an undo.
- * @param project - the project.
- * @param to - the `main` head before the undo.
- */
-async function postRedo(project: string, to: string): Promise<void> {
-  const response = await fetch('/api/vh/redo', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project, to }) })
-  if (response.ok) return
-  const body: unknown = await response.json().catch(() => ({}))
-  const reason = typeof body === 'object' && body !== null && typeof (body as { error?: unknown }).error === 'string' ? (body as { error: string }).error : `HTTP ${String(response.status)}`
-  throw new Error(reason)
-}
 
 /**
  * The clip the user selected: its episode, its slot when selected, and its asset, so neither an edit elsewhere nor an
@@ -175,7 +163,9 @@ function tickStep(px: number): number {
  * @param props - the client, copy, project, head, state, and write runner.
  * @returns the element.
  */
-export function CutsEditor({ client, t, project, head, state, baseState = null, readOnly, run }: CutsEditorProps): ReactNode {
+export function CutsEditor(
+  { client, t, project, head, session = null, state, baseState = null, readOnly, run }: CutsEditorProps,
+): ReactNode {
   const videos = useMemo(() => videosOf(state), [state])
   // The selected episode is shared on `window`, so the shell can keep it in the URL and restore it.
   const activeId = useCurrentEpisode(project)
@@ -256,8 +246,10 @@ export function CutsEditor({ client, t, project, head, state, baseState = null, 
     return title || t('tabs.defaultTitle', { n: index + 1 })
   }
   const videoTitle = video === null ? '' : titleOf(videos.indexOf(video))
-  const invoke = (tool: string, params: Record<string, unknown>, intent: string): Promise<boolean> =>
-    run(() => client.invoke(request(project, head, { tool, params: video === null ? params : { sequence: video.id, ...params }, intent })))
+  const invoke = (tool: string, params: Record<string, unknown>, intent: string): Promise<boolean> => {
+    const scoped = video === null ? params : { sequence: video.id, ...params }
+    return run(() => client.invoke(request(project, session, { tool, params: scoped, intent })))
+  }
 
   // New episodes store the language-neutral default title `第 N 集`; `titleOf` shows it in the interface language.
   const createVideo = (): void => {
@@ -266,7 +258,7 @@ export function CutsEditor({ client, t, project, head, state, baseState = null, 
     const title = `第 ${String(n)} 集`
     pendingEpisode.current = id
     setActiveId(id)
-    void run(() => client.invoke(request(project, head, { tool: 'sequence.create', params: { sequence: id, title, assets: [] }, intent: t('intent.create', { title: t('tabs.defaultTitle', { n }) }) })))
+    void run(() => client.invoke(request(project, session, { tool: 'sequence.create', params: { sequence: id, title, assets: [] }, intent: t('intent.create', { title: t('tabs.defaultTitle', { n }) }) })))
       .then((ok) => {
         if (ok) return
         pendingEpisode.current = null
@@ -284,13 +276,13 @@ export function CutsEditor({ client, t, project, head, state, baseState = null, 
     const index = videos.findIndex(entry => entry.id === renaming.id)
     const title = renaming.title.trim()
     if (index === -1 || title === '' || title === titleOf(index)) return
-    void run(() => client.invoke(request(project, head, { tool: 'sequence.rename', params: { sequence: renaming.id, title }, intent: t('intent.rename', { title }) })))
+    void run(() => client.invoke(request(project, session, { tool: 'sequence.rename', params: { sequence: renaming.id, title }, intent: t('intent.rename', { title }) })))
   }
   const deleteVideo = (id: string): void => {
     setMenu(null)
     const title = titleOf(videos.findIndex(entry => entry.id === id))
     if (readOnly || !window.confirm(t('tabs.deleteConfirm', { title }))) return
-    void run(() => client.invoke(request(project, head, { tool: 'sequence.delete', params: { sequence: id }, intent: t('intent.delete', { title }) })))
+    void run(() => client.invoke(request(project, session, { tool: 'sequence.delete', params: { sequence: id }, intent: t('intent.delete', { title }) })))
   }
   // `/api/vh/undo` moves `main` back one turn in any video; it is offered only when that turn's record edits this video.
   const latest = state.ops.find(op => op.id === state.heads['main'])
@@ -308,18 +300,18 @@ export function CutsEditor({ client, t, project, head, state, baseState = null, 
     : null
   const undo = (): void => {
     void run(async () => {
-      const result = await client.undo(project)
+      const result = await client.undo(project, session)
       const after = result.heads['main']
       if (mainHead === null || after === undefined) return
       const stack = redoStack.length > 0 && redoStack[redoStack.length - 1]?.after === mainHead ? redoStack : []
-      redoStacks.set(project, [...stack, { to: mainHead, after }])
+      redoStacks.set(project, [...stack, { after }])
       setRedoVersion(version => version + 1)
     })
   }
   const redo = (): void => {
     if (redoEntry === null) return
     void run(async () => {
-      await postRedo(project, redoEntry.to)
+      await client.redo(project, session)
       redoStacks.set(project, redoStack.slice(0, -1))
       setRedoVersion(version => version + 1)
     })
@@ -346,12 +338,12 @@ export function CutsEditor({ client, t, project, head, state, baseState = null, 
       const refs: string[] = []
       for (const clip of clips) {
         if (clip.rawIn === null && clip.rawOut === null) { refs.push(clip.assetId); continue }
-        const cut = await client.invoke(request(project, head, {
+        const cut = await client.invoke(request(project, session, {
           tool: 'clip.trim', inputs: [{ role: 'clip', ref: clip.assetId }], params: { startSec: clip.inSec, endSec: clip.outSec }, intent: t('intent.trim', { slot: clip.slot }),
         }))
         refs.push(cut.outputs[0] ?? clip.assetId)
       }
-      const joined = await client.invoke(request(project, head, {
+      const joined = await client.invoke(request(project, session, {
         tool: 'media.concat', inputs: refs.map(ref => ({ role: 'clip', ref })), intent: t('intent.export', { title: videoTitle }),
       }))
       setExported(joined.outputs[0] ?? null)
@@ -382,7 +374,9 @@ export function CutsEditor({ client, t, project, head, state, baseState = null, 
     if (!moved || readOnly) return
     const inSec = current.kind === 'trimStart' ? round(Math.max(0, Math.min(clip.inSec + deltaSec, clip.outSec - 0.1))) : clip.rawIn
     const outSec = current.kind === 'trimEnd' ? round(Math.max(clip.inSec + 0.1, Math.min(clip.outSec + deltaSec, clip.assetSeconds))) : clip.rawOut
-    void invoke('sequence.set_range', { slot: clip.slot, inSec, outSec }, t('intent.setRange', { slot: clip.slot }))
+    // An unset end of the range is left out: the operation reads a missing in or out point as the asset's own end.
+    const range = { ...inSec === null ? {} : { inSec }, ...outSec === null ? {} : { outSec } }
+    void invoke('sequence.set_range', { slot: clip.slot, ...range }, t('intent.setRange', { slot: clip.slot }))
   }
 
   const clipHandlers = (clip: CutClip, kind: ClipDrag['kind']) => ({

@@ -237,8 +237,6 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/bundle/dreamverse': { kind: 'indirect', reason: 'The bundle mounts and configures DreamVerse packages, which own every model request.' },
   'packages/bundle/dreamverse-multiverse': { kind: 'indirect', reason: 'The bundle mounts the multiverse packages and selects the branch-proposal model; the packages own every model request.' },
   'packages/video-harness/assets': { kind: 'none', reason: 'The store keeps media bytes by content hash; tools decide what reaches a model.' },
-  'packages/video-harness/oplog': { kind: 'none', reason: 'The log keeps operation records and branch heads that no model request reads directly.' },
-  'packages/video-harness/runtime': { kind: 'indirect', reason: 'The runtime records tool calls and folds state; the tools it invokes own every model request.' },
   'packages/video-harness/media': { kind: 'none', reason: 'The service runs media commands and stores files; a tool decides what the model learns about the result.' },
   'packages/bundle/video-harness': { kind: 'indirect', reason: 'The bundle composes the harness plugins; the tools, the agent section, and the skills they mount own every model request.' },
   'packages/video-harness/views': { kind: 'indirect', reason: 'The routes record view gestures as user records; the agent layer decides what the model learns about them.' },

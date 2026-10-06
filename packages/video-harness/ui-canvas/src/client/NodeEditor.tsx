@@ -20,8 +20,8 @@ export interface NodeEditorProps {
   state: WireState
   client: VhClient
   project: string
-  /** The branch writes go to; `main` writes omit the branch. */
-  branch: string
+  /** The chat session the canvas sits beside; writes go to its working branch (its open draft, else `main`). */
+  session: string | null
   /** True while the viewed head is a draft: generation buttons are disabled. */
   readOnly: boolean
   t: CanvasTranslate
@@ -165,7 +165,7 @@ function Preview({ node }: { node: CanvasNode }): ReactNode {
  * @returns the element.
  */
 function ClipForm(
-  { node, state, client, project, branch, readOnly, t, onClose, run, title }: NodeEditorProps & { title: string },
+  { node, state, client, project, session, readOnly, t, onClose, run, title }: NodeEditorProps & { title: string },
 ): ReactNode {
   const op = node.op
   const [prompt, setPrompt] = useState(() => typeof op?.params['prompt'] === 'string' ? op.params['prompt'] : '')
@@ -190,7 +190,7 @@ function ClipForm(
     const tool = op.tool.name
     void run(() => client.invoke({
       project, tool, inputs, params, surface: 'canvas', intent: t('intent.regenerate', { title }), base_op: op.id,
-      ...branch === 'main' ? {} : { branch },
+      ...session === null ? {} : { session },
     })).then(onClose)
   }
   return (
@@ -242,16 +242,16 @@ function ClipForm(
  * @param props - editor props.
  * @returns the element.
  */
-function EntityForm({ node, state, client, project, branch, readOnly, t, run }: NodeEditorProps): ReactNode {
+function EntityForm({ node, state, client, project, session, readOnly, t, run }: NodeEditorProps): ReactNode {
   const name = node.entity ?? ''
   const latest = state.entities[name]?.at(-1)
   const images = state.assets.filter(asset => asset.mime.startsWith('image/'))
-  const branchField = branch === 'main' ? {} : { branch }
+  const sessionField = session === null ? {} : { session }
   const replace = (assetId: string): void => {
     if (latest === undefined) return
     void run(() => client.invoke({
       project, tool: `entity.${latest.kind}.update`, params: { entity: name, refs: [assetId] }, surface: 'canvas',
-      intent: t('intent.replaceRef', { name: latest.name || name }), ...branchField,
+      intent: t('intent.replaceRef', { name: latest.name || name }), ...sessionField,
     }))
   }
   const upload = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -259,7 +259,7 @@ function EntityForm({ node, state, client, project, branch, readOnly, t, run }: 
     if (file === undefined) return
     void run(async () => {
       const base64 = await base64Of(file)
-      const record = await client.invoke({ project, tool: 'asset.upload', params: { base64, mime: file.type || 'image/png', name: file.name }, surface: 'canvas', intent: t('intent.upload', { name: file.name }), ...branchField })
+      const record = await client.invoke({ project, tool: 'asset.upload', params: { base64, mime: file.type || 'image/png', name: file.name }, surface: 'canvas', intent: t('intent.upload', { name: file.name }), ...sessionField })
       const assetId = record.outputs[0]
       if (assetId !== undefined) replace(assetId)
     })

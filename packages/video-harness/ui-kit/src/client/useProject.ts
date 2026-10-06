@@ -1,6 +1,6 @@
 /**
- * React hooks that keep a view's copy of a project in step with the host: the project list, the folded state of the
- * selected head, and the tool declarations. The state is refetched after every log event.
+ * React hooks that keep a view's copy of a project in step with the host: the project list, the state of the selected
+ * branch, and the tool declarations. The state is refetched after every project change.
  *
  * @module @video-harness/ui-kit/useProject
  */
@@ -68,10 +68,10 @@ export function useTools(client: VhClient): Loading<WireToolSpec[]> {
 }
 
 /**
- * The folded state of a head, refetched on every log change while the component is mounted.
+ * The state of a branch, refetched on every project change while the component is mounted.
  * @param client - the API client.
  * @param project - the project, or null before one is chosen.
- * @param head - the branch or record to fold.
+ * @param head - the branch to read.
  * @returns the state.
  */
 export function useProjectState(client: VhClient, project: string | null, head: string): Loading<WireState> {

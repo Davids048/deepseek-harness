@@ -13,8 +13,17 @@ const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk
 const RED_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGM4IScHAAK2AQU0pnWqAAAAAElFTkSuQmCC'
 const GREEN_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGOQOyEHAAIMAQUtuDZBAAAAAElFTkSuQmCC'
 
-interface OpWire { id: string; tool?: { name: string }; status: string; outputs: string[] }
-interface StateWire { ops: OpWire[]; sequence: { items: unknown[] } | null }
+interface OpWire {
+  id: string
+  tool?: { name: string }
+  status: string
+  outputs: string[]
+  actor: string
+  branch: string
+  turn: string | null
+}
+interface BranchWire { name: string; counts: { agent_changes: number; human_edits: number } | null }
+interface StateWire { ops: OpWire[]; sequence: { items: unknown[] } | null; branches: BranchWire[] }
 
 /**
  * The scripted agent. `只回复<X>` answers `收到<X>`; `慢慢想` streams for six seconds; `加人物` registers a character;
@@ -26,11 +35,11 @@ interface StateWire { ops: OpWire[]; sequence: { items: unknown[] } | null }
 const RULES: ScriptedRule[] = [
   { match: /只回复\S+/, steps: [view => ({ text: `收到${/只回复(\S+)/.exec(view.userText)?.[1] ?? ''}` })] },
   { match: '慢慢想', steps: [{ text: '想好了', delayMs: 6000 }] },
-  { match: '新建项目', steps: [{ calls: [{ name: 'vh_project_create', args: { title: '入口创建的项目' } }] }], endText: '项目建好了，收到十六' },
+  { match: '新建项目', steps: [{ calls: [{ name: 'dv_proj_create', args: { title: '入口创建的项目' } }] }], endText: '项目建好了，收到十六' },
   {
     match: '讲一个故事',
     steps: [
-      { calls: [{ name: 'vh_project_create', args: { title: '故事项目' } }] },
+      { calls: [{ name: 'dv_proj_create', args: { title: '故事项目' } }] },
       { calls: [{ name: 'ask_user_question', args: { questions: [{ id: 'length', header: '长度', question: '视频要多长？', options: [{ label: '15 秒', description: '三个镜头' }, { label: '30 秒', description: '六个镜头' }] }] } }] },
     ],
     endText: '好的，请发一张参考图。',
@@ -51,7 +60,7 @@ const RULES: ScriptedRule[] = [
     ],
     endText: '生成好了。',
   },
-  { match: '看项目', steps: [{ calls: [{ name: 'vh_project_state', args: { reason: '读项目' } }] }], endText: '项目已读。' },
+  { match: '看项目', steps: [{ calls: [{ name: 'dv_proj_state', args: {} }] }], endText: '项目已读。' },
   {
     match: '加人物',
     steps: [
@@ -69,7 +78,7 @@ const RULES: ScriptedRule[] = [
         shots: [{ prompt: '产品特写', duration_sec: 1 }, { prompt: '产品使用场景', duration_sec: 2 }],
       } }] }),
       view => ({ calls: [{ name: 'vh_plan_approve', args: { reason: '用户同意', plan: opIdOf(view.toolResults[1]), user_approved: true } }] }),
-      { calls: [{ name: 'vh_wait', args: {} }] },
+      { calls: [{ name: 'dv_proj_wait', args: {} }] },
     ],
     endText: '两个镜头已生成。草稿待确认',
   },
@@ -240,7 +249,7 @@ describe('chat with the agent', () => {
     expect(replies.indexOf('收到二')).toBeLessThan(replies.indexOf('收到三'))
     // The agent works inside the open project and introduces itself as a video agent.
     const prompt = promptOf(requestFor('只回复一') as ChatRequest)
-    expect(prompt).toContain('never call vh_project_create')
+    expect(prompt).toContain('never call dv_proj_create')
     expect(prompt).not.toContain('coding agent')
     expect(prompt).not.toContain('powered by DeepSeek Harness')
     // Creators get the video tools, not the developer tool set.
@@ -261,18 +270,36 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('a generation the user asked for by name lands at turn end, recorded as accepted by the system, not the user', async () => {
+  it('the agent\'s changes of two turns stay on one draft, nothing reaches main until the user accepts it', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
+    await send(page, '加人物')
+    await waitChat(page, '人物小橘已登记', 30_000)
     await send(page, '点名生成一段')
     await waitChat(page, '生成好了', 60_000)
-    const state = await waitFor(async () => {
-      const value = await harness.api.get(`/api/vh/state?project=${projectId}&head=main`) as { ops: Array<OpWire & { kind?: string; actor?: string; params?: Record<string, unknown> }> }
-      return value.ops.some(op => op.tool?.name === 'generate.video') ? value : null
-    }, 'the generation on main', 30_000)
-    const accepts = state.ops.filter(op => op.kind === 'approve' && op.params?.['approval_of'] === undefined)
-    expect(accepts.length).toBeGreaterThan(0)
-    expect(accepts.every(op => op.actor !== 'user')).toBe(true)
+    const mainState = async (): Promise<StateWire> => await harness.api.get(`/api/vh/state?project=${projectId}&head=main`) as StateWire
+    // Nothing is accepted by itself: at turn end `main` still holds none of the agent's records.
+    await page.waitForTimeout(2000)
+    expect((await mainState()).ops.filter(op => op.actor === 'agent')).toEqual([])
+    // One draft, owned by the chat session, holds the records of both turns.
+    const drafts = (await mainState()).branches.filter(branch => branch.counts !== null)
+    expect(drafts).toHaveLength(1)
+    const draftName = drafts[0]?.name ?? ''
+    const draft = await harness.api.get(`/api/vh/state?project=${projectId}&head=${encodeURIComponent(draftName)}`) as StateWire
+    const agentRecords = draft.ops.filter(op => op.actor === 'agent' && op.branch === draftName)
+    expect(agentRecords.map(op => op.tool?.name)).toEqual(['asset.upload', 'entity.character.create', 'asset.upload', 'generate.video'])
+    expect(new Set(agentRecords.map(op => op.turn)).size).toBe(2)
+    expect(drafts[0]?.counts).toEqual({ agent_changes: 4, human_edits: 0 })
+    // The user accepts the draft from the canvas bar; then `main` holds every record, and the accept is the user's.
+    const workspace = page.locator('[data-vh-workspace]')
+    const accept = workspace.getByRole('button', { name: '接受', exact: true })
+    expect(await accept.count()).toBe(1)
+    await accept.click({ timeout: 15_000 })
+    await waitFor(async () => await accept.count() === 0, 'the draft bar to close', 10_000)
+    const accepted = await mainState()
+    expect(accepted.ops.filter(op => op.actor === 'agent').map(op => op.tool?.name)).toEqual(agentRecords.map(op => op.tool?.name))
+    expect(accepted.ops.at(-1)).toMatchObject({ tool: { name: 'proj.draft_accept' }, actor: 'user' })
+    expect(accepted.branches.filter(branch => branch.counts !== null)).toEqual([])
     expect(errors).toEqual([])
   })
 
@@ -349,7 +376,7 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('accepting the agent draft on the canvas clears the draft bar, and the agent is told no draft is open', async () => {
+  it('accepting the chat session draft on the canvas clears the draft bar, and the agent is told no draft is open', async () => {
     const { page, errors } = await openPage()
     await newProject(page)
     await send(page, '做两个镜头的广告')
@@ -368,7 +395,7 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('discarding the agent draft from the cuts top bar empties the cuts and the canvas drafts', async () => {
+  it('discarding the chat session draft from the cuts top bar empties the cuts and the canvas drafts', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await send(page, '做两个镜头的广告')
@@ -531,13 +558,17 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('a second chat session in the same project sees what the first session made', async () => {
+  it('a second chat session in the same project sees what the user accepted from the first session', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await send(page, '加人物')
     await waitChat(page, '人物小橘已登记')
     const first = locationOf(page).session
     await page.locator('[data-vh-workspace] [data-node-kind="entity"]').first().waitFor({ timeout: 15_000 })
+    // The character is on the first session's draft until the user accepts it; then it is on `main` for every session.
+    const accept = page.locator('[data-vh-workspace]').getByRole('button', { name: '接受', exact: true })
+    await accept.click({ timeout: 15_000 })
+    await waitFor(async () => await accept.count() === 0, 'the draft bar to close', 10_000)
     // The project row's ＋ starts a second chat session in the same project.
     await page.locator('[data-vh-navigator] [data-active]').filter({ hasText: '＋' }).first().locator('button', { hasText: '＋' }).click()
     await waitFor(() => Promise.resolve(locationOf(page).session !== first && locationOf(page).session !== null), 'a second session', 15_000)

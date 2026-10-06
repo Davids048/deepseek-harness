@@ -20,16 +20,17 @@ Resolve "第 N 段" to timeline slot N in the project block first: the slot's as
 | 删掉第 N 段 | `vh_sequence_remove` | `slot` = N. Later slots move up; say the new numbering. |
 | 在第 N 段后面加一段 | `vh_generate_video` → `vh_sequence_insert` | generate: `prompt`, `inputs.reference`, `continue_from` = producing record of slot N when chained, `user_requested: true`. insert: `at` = N + 1, `asset` = output #0. |
 | 回到第 N 段上一版 | `vh_sequence_replace` | `slot` = N, `asset` = the earlier take's asset (from "Takes" in the project block). No generation. |
-| 开一个分支试 X | `vh_branch_create` → work there → `vh_branch_use main` | create: `name` (short, user's word), `at` = a record id from the project block or `main`. Say that `main` is untouched. |
-| 撤销 / 回到上一步 | `vh_undo` (latest accepted turn only) | none. For an earlier step, offer `vh_branch_create` at the record before it instead. |
+| 开一个分支试 X | `dv_proj_branch_create` → work there → `dv_proj_branch_switch` to `main` | create: `name` (short, user's word; the branch is `explore/<name>`), `at` = a record id from the project block or `main`. switch: `name` = `main`. Say that `main` is untouched. |
+| 撤销 / 回到上一步 | `dv_proj_undo` (one accepted draft or one direct change); `dv_proj_redo` brings it back | none. For an earlier step, offer `dv_proj_branch_create` at the record before it instead. |
 | 看一下第 N 段的最后一帧 / 第 t 秒 | `vh_media_extract_frame` → `vh_perception_describe` when a judgment is needed | frame: `inputs.clip` = slot N asset, `at` = `last`, `first`, or a number of seconds (never a numeric string). describe: `inputs.image` = the frame asset, `question`. |
 | 合成 / 导出成片 | `vh_media_concat` | `inputs.clip` = the slot assets in timeline order; then give the link. |
-| 不要了 / 算了 | `vh_turn_reject` | none; say what was discarded. |
+| 不要了 / 算了 (the whole draft) | `dv_proj_draft_discard` | none; say what was discarded. |
+| 就这样 / 保存 / 确认草稿 | `dv_proj_draft_accept` | none; say what was accepted. |
 
 ## Rules that apply to every row
 
 - A retake without `inputs.reference` fails with "ref2va requires 1 to 8 reference images"; copy the base record's references every time.
-- `replaces` marks consumers of the old output stale; the runtime replays deterministic ones (frames, joins) on the new output by itself. Do not redo them by hand.
-- After any generation, `vh_wait` then `vh_project_state`, and report the last frame and link.
-- If the earlier turn's draft is still open, `vh_turn_accept` (user built on it) or `vh_turn_reject` (user dropped it) comes before any row above.
+- `replaces` marks the records that used the old output stale (frames, joins). Nothing reruns by itself: list them and redo only what the user agrees to. When the user keeps a stale result as it is, call `dv_proj_stale_accept` with its record.
+- After any generation, `dv_proj_wait` then `dv_proj_state`, and report the last frame and link.
+- The draft belongs to this conversation and stays open across turns: work in it directly, and call `dv_proj_draft_accept` or `dv_proj_draft_discard` only when the user asks.
 - When "第 N 段" or "这个" has two candidates and no reported selection, ask.

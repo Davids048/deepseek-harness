@@ -1,15 +1,16 @@
 {
-  "name": "@video-harness/oplog",
+  "name": "@dv/project",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Append-only operation log of the video harness: per-project JSONL records, branch heads, and subscriptions.",
+  "description": "Project component of DreamVerse: the record store, branches and drafts, undo and redo, the operation runner and scheduler, the reducer registry, history, and subscriptions.",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
     "@video-harness/assets": "workspace:*"
   },
   "peerDependencies": {

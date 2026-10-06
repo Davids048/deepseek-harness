@@ -90,7 +90,7 @@ export function decodeFrame(input: Buffer): ClientFrame | null {
 export class ServerSocket {
   private pending = Buffer.alloc(0)
   private fragments: Buffer[] = []
-  private fragmentOpcode = OPCODE.text
+  private fragmentOpcode: number = OPCODE.text
   private closed = false
 
   /**

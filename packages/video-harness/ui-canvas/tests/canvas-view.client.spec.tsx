@@ -6,7 +6,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { VhClient } from '@video-harness/ui-kit/api.ts'
 import { VH_COMPOSE_EVENT } from '@video-harness/ui-kit/compose.ts'
 import type { VhComposeDetail } from '@video-harness/ui-kit/compose.ts'
-import { fixtureState, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
+import { fixtureState, op, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
 import { CanvasView } from '../src/client/CanvasView.tsx'
 import type { CanvasViewProps } from '../src/client/CanvasView.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -15,7 +15,13 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
 
 /** Mount the canvas with scripted views routes and a scripted layout route on the global fetch. */
 function mount(withTranslate = true) {
-  const scripted = scriptedFetch({ state: head => head === 'main' ? { ...fixtureState(), ops: fixtureState().ops.filter(op => op.id !== 'g3') } : fixtureState() })
+  // `main` lacks the retake g3; the draft of chat session s5 adds it after the request that asked for it.
+  const draftRequest = op({ id: 'r5', kind: 'request', branch: 'draft/s5', session: 's5', turn: 't5', intent: 'retake shot 1' })
+  const scripted = scriptedFetch({
+    state: head => head === 'main'
+      ? { ...fixtureState(), ops: fixtureState().ops.filter(record => record.id !== 'g3') }
+      : { ...fixtureState(), ops: [...fixtureState().ops, draftRequest] },
+  })
   const layoutWrites: unknown[] = []
   vi.stubGlobal('fetch', (input: string, init?: RequestInit) => {
     if (input.startsWith('/api/vh/layout')) {
@@ -26,7 +32,7 @@ function mount(withTranslate = true) {
   })
   const client = new VhClient(scripted.fetch)
   const t = makeTranslate(zh) as CanvasViewProps['t']
-  const view = render(<CanvasView projectId="p1" client={client} {...withTranslate ? { t } : {}} />)
+  const view = render(<CanvasView projectId="p1" client={client} session="s5" {...withTranslate ? { t } : {}} />)
   const node = (id: string): HTMLElement => {
     const element = view.container.querySelector(`[data-node-id="${id}"]`)
     if (!(element instanceof HTMLElement)) throw new Error(`no node ${id}`)
@@ -43,7 +49,7 @@ describe('CanvasView', () => {
     expect(node('g3').getAttribute('data-node-draft')).toBe('true')
     expect(node('g2').getAttribute('data-node-stale')).toBe('true')
     expect(view.getByText(zh['badge.trim'])).toBeTruthy()
-    expect(view.getByText('agent 草稿：retake shot 1')).toBeTruthy()
+    expect(view.getByText('草稿：retake shot 1')).toBeTruthy()
     fireEvent.pointerDown(node('g2'), { button: 0, clientX: 0, clientY: 0, pointerId: 1 })
     fireEvent.pointerMove(view.getByTestId('vh-canvas-view'), { clientX: 50, clientY: 30, pointerId: 1 })
     fireEvent.pointerUp(view.getByTestId('vh-canvas-view'), { pointerId: 1 })

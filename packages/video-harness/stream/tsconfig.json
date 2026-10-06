@@ -18,10 +18,10 @@
       "path": "../../host/webserver"
     },
     {
-      "path": "../../util/brand"
+      "path": "../../dv/project"
     },
     {
-      "path": "../oplog"
+      "path": "../../util/brand"
     }
   ]
 }

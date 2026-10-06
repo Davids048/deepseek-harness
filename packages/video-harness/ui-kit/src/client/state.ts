@@ -1,36 +1,40 @@
 /**
- * Readings of a folded state that both views need: open drafts, branch names, and asset lookups.
+ * Readings of a branch state that every view needs: open drafts, branch names, and asset lookups.
  *
  * @module @video-harness/ui-kit/state
  */
-import type { WireAsset, WireState } from './types.ts'
+import type { WireAsset, WireDraftCounts, WireState } from './types.ts'
 
-/** An agent draft the user has neither accepted nor rejected. */
+/** A chat session's open draft: its branch spans the session's agent turns until the human accepts or discards it. */
 export interface OpenDraft {
-  turn: string
+  /** `draft/<session>`. */
   branch: string
-  intent: string
-  /** Records the draft added beyond `main`. */
-  ops: number
+  session: string
+  counts: WireDraftCounts
 }
 
 /**
- * The draft branches whose turn the server reports as open; an accepted, rejected, or stopped draft keeps its branch
- * head but is left out.
- * @param state - a folded state of any head.
- * @returns the drafts, oldest first.
+ * Every open draft of the project, one per chat session that has one.
+ * @param state - a branch state.
+ * @returns the drafts, in branch-name order.
  */
 export function openDrafts(state: WireState): OpenDraft[] {
-  const open = new Set(state.openTurns)
   const drafts: OpenDraft[] = []
-  for (const branch of Object.keys(state.heads)) {
-    if (!branch.startsWith('draft/')) continue
-    const turn = branch.slice('draft/'.length)
-    if (!open.has(turn)) continue
-    const summary = state.turns[turn]
-    drafts.push({ turn, branch, intent: summary?.intent ?? '', ops: summary?.ops.length ?? 0 })
+  for (const branch of state.branches) {
+    if (branch.session === null || branch.counts === null) continue
+    drafts.push({ branch: branch.name, session: branch.session, counts: branch.counts })
   }
   return drafts
+}
+
+/**
+ * The open draft of one chat session: the draft that its accept and discard act on.
+ * @param state - a branch state.
+ * @param session - the chat session, or null outside any chat session.
+ * @returns the draft, or null when the session has none open.
+ */
+export function sessionDraft(state: WireState, session: string | null): OpenDraft | null {
+  return session === null ? null : openDrafts(state).find(draft => draft.session === session) ?? null
 }
 
 /**

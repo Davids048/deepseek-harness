@@ -3,14 +3,14 @@ import type { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
-import type { OpId, ProjectId } from '@video-harness/oplog'
+import type { AssetId, ProjectId, RecordId } from '@dv/project'
 import { generateVideoTool } from '@video-harness/tools'
 import { afterEach, describe, expect, it } from 'vitest'
 import VhStream, { SegmentBroadcaster, type StreamFrame } from '../src/index.ts'
 import { startTools, type ToolsFixture } from '../../tools/tests/support.ts'
 
 const PROJECT = brandString<ProjectId>('p1')
-const OP = brandString<OpId>('op-1')
+const OP = brandString<RecordId>('op-1')
 
 /** A stand-in for the DSH web server: keeps routes and serves upgrades on a local port. */
 class FakeWebServer {
@@ -124,25 +124,32 @@ describe('/vh/ws', () => {
 
 describe('generate.video with a live sink', () => {
   it('broadcasts the shot while the backend streams it', async () => {
-    const fixture: ToolsFixture = await startTools({ dsh: false, perception: false })
+    const fixture: ToolsFixture = await startTools({ dsh: false, perception: false, generation: 'none' })
     cleanups.push(() => fixture.dispose())
     const broadcaster = new SegmentBroadcaster(1024 * 1024)
-    fixture.project.registerTool(generateVideoTool(fixture.generation, () => broadcaster))
-    const projectId = fixture.project.createProject({ title: 'live' })
+    fixture.project.registerOperation(generateVideoTool(fixture.generation, fixture.assets, () => broadcaster))
+    const user = { actor: 'user' as const, surface: 'chat' as const, session: null, turn: null, tool_call: null }
+    const projectId = (await fixture.project.createProject('live', { ...user, intent: 'create' })).id
     const frames: StreamFrame[] = []
     broadcaster.subscribe(projectId, (frame) => { frames.push(frame) })
-    const turn = fixture.project.beginTurn(projectId, { actor: 'user', surface: 'chat', intent: 'start' }).turn
-    const upload = await fixture.project.invoke(projectId, { tool: 'asset.upload', inputs: [], params: { path: fixture.writeFile('ref.png', 'PNG'), mime: 'image/png' }, actor: 'user', surface: 'chat', intent: 'upload', turn })
-    await fixture.project.invoke(projectId, { tool: 'entity.character.create', inputs: [], params: { entity: 'c1', name: 'Lead', refs: upload.outputs }, actor: 'user', surface: 'chat', intent: 'character', turn })
-    const shot = await fixture.project.invoke(projectId, {
-      tool: 'generate.video', inputs: [{ role: 'reference', ref: 'c1@1' }], params: { prompt: 'Picture 1 waves', duration_sec: 1, shot: 3 },
-      actor: 'agent', surface: 'chat', intent: 'shot', turn,
+    const upload = await fixture.project.run({
+      ...user, project: projectId, operation: 'asset.upload', inputs: [], params: { path: fixture.writeFile('ref.png', 'PNG'), mime: 'image/png' },
+      intent: 'upload',
     })
+    await fixture.project.run({
+      ...user, project: projectId, operation: 'entity.character.create', inputs: [], params: { entity: 'c1', name: 'Lead', refs: upload.outputs }, // names:allow
+      intent: 'character',
+    })
+    const { record: shot } = await fixture.project.run({
+      ...user, project: projectId, operation: 'generate.video', inputs: [{ role: 'reference', ref: { character: 'c1', version: 1 } }], // names:allow
+      params: { prompt: 'Picture 1 waves', duration_sec: 1, shot: 3 }, intent: 'shot',
+    })
+    if (shot === null) throw new Error('generate.video wrote no record') // names:allow
     expect(shot.status).toBe('done')
     const kinds = frames.map(frame => frame.kind === 'json' ? frame.data['type'] : 'chunk')
     expect(kinds).toEqual(['media_init', 'chunk', 'chunk', 'media_segment_complete'])
     expect(frames[0]).toEqual({ kind: 'json', data: { type: 'media_init', segment_idx: 3, mime: 'video/mp4; codecs="avc1.64001f"', stream_id: shot.id } })
     const streamed = frames.filter(frame => frame.kind === 'binary').reduce((total, frame) => total + frame.data.byteLength, 0)
-    expect(streamed).toBe(fixture.assets.get(shot.outputs[0] as never).sizeBytes)
+    expect(streamed).toBe(fixture.assets.get(shot.outputs[0] as AssetId).sizeBytes)
   })
 })

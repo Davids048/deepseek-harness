@@ -1,5 +1,6 @@
 /**
- * The bar both views share: project picker, branch switcher, the open agent drafts with accept and reject, and undo.
+ * The bar both views share: project picker, branch switcher, the open drafts of the project's chat sessions with
+ * accept and discard, and undo.
  * Copy arrives through `labels`, already localized by the owning plugin.
  *
  * @module @video-harness/ui-kit/BranchBar
@@ -13,7 +14,7 @@ export interface BranchBarLabels {
   project: string
   branch: string
   accept: string
-  reject: string
+  discard: string
   undo: string
   newBranch: string
   newBranchPrompt: string
@@ -32,8 +33,10 @@ export interface BranchBarProps {
   labels: BranchBarLabels
   onProject: (project: string) => void
   onHead: (head: string) => void
-  onAccept: (turn: string) => void
-  onReject: (turn: string) => void
+  /** Accept the draft with this branch name. */
+  onAccept: (branch: string) => void
+  /** Discard the draft with this branch name. */
+  onDiscard: (branch: string) => void
   onUndo: () => void
   onBranch: (name: string, at: string) => void
   onCreate: (title: string) => void
@@ -73,10 +76,10 @@ export function BranchBar(props: BranchBarProps): ReactNode {
       <button type="button" style={control} disabled={props.project === null} onClick={() => { const name = ask(labels.newBranchPrompt); if (name !== null && name.trim().length > 0) props.onBranch(name.trim(), props.head) }}>{labels.newBranch}</button>
       <button type="button" style={control} onClick={props.onUndo} disabled={props.project === null}>{labels.undo}</button>
       {drafts.map(draft => (
-        <span key={draft.turn} style={{ display: 'inline-flex', gap: 4, alignItems: 'center', padding: '2px 6px', border: '1px dashed var(--vh-accent, #b4432a)', borderRadius: 4 }} title={draft.intent}>
+        <span key={draft.branch} style={{ display: 'inline-flex', gap: 4, alignItems: 'center', padding: '2px 6px', border: '1px dashed var(--vh-accent, #b4432a)', borderRadius: 4 }} title={draft.branch}>
           <span>{labels.draftTitle}</span>
-          <button type="button" style={control} onClick={() => { props.onAccept(draft.turn) }}>{labels.accept}</button>
-          <button type="button" style={control} onClick={() => { props.onReject(draft.turn) }}>{labels.reject}</button>
+          <button type="button" style={control} onClick={() => { props.onAccept(draft.branch) }}>{labels.accept}</button>
+          <button type="button" style={control} onClick={() => { props.onDiscard(draft.branch) }}>{labels.discard}</button>
         </span>
       ))}
     </div>

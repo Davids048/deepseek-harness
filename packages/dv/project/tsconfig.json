@@ -15,13 +15,13 @@
       "path": "../../../vendor/schemastery"
     },
     {
+      "path": "../../core/tools"
+    },
+    {
       "path": "../../util/brand"
     },
     {
-      "path": "../assets"
-    },
-    {
-      "path": "../oplog"
+      "path": "../../video-harness/assets"
     }
   ]
 }
