@@ -23,14 +23,20 @@ function scheduledBy(record: ProjectRecord): string[] {
   return Array.isArray(scheduled) ? scheduled.filter((id): id is string => typeof id === 'string') : []
 }
 
+/** Undo and redo records move the working branch between steps, so they are not rows. */
+const MOVES = new Set(['proj.undo', 'proj.redo'])
+/** Records that are not steps: the moves between steps, an accept, and branch changes. Undo steps over them. */
+const NOT_A_STEP = new Set([...MOVES, 'proj.draft_accept', 'proj.branch_switch', 'proj.branch_create'])
+
 /**
- * Turn history entries into panel rows: one row per operation record, newest first. Request records are not rows. The
- * records a loaded plan approval scheduled fold under the approval's row instead of standing alone.
+ * Turn history entries into panel rows: one row per operation record, newest first. Request records and the undo and
+ * redo records are not rows. The records a loaded plan approval scheduled fold under the approval's row instead of
+ * standing alone.
  * @param entries - history entries, newest first.
  * @returns the rows, newest first.
  */
 export function actionRows(entries: readonly HistoryEntry[]): ActionRow[] {
-  const operations = entries.filter(entry => entry.record.kind === 'operation')
+  const operations = entries.filter(entry => entry.record.kind === 'operation' && !MOVES.has(entry.record.operation ?? ''))
   const loaded = new Map(operations.map(entry => [entry.record.id, entry]))
   const folded = new Map<string, string>()
   for (const { record } of operations) {
@@ -310,4 +316,39 @@ export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, stri
     return { event: 'dv:timeline-focus', detail: { timelineId, clipId } }
   }
   return { event: 'dv:canvas-focus', detail: { recordId: record.id } }
+}
+
+/** Where a record stands among the steps of the working branch: the current step, a step before it, or a step redo brings back. */
+export type StepPlace = 'current' | 'before' | 'after'
+
+/** The steps of the working branch: its current step, the steps before it, and the steps after it that redo brings back. */
+export interface WorkingSteps {
+  current: string | null
+  before: ReadonlySet<string>
+  after: ReadonlySet<string>
+}
+
+/**
+ * The steps of the working branch. Every operation record on the branch's effective chain is a step except undo, redo,
+ * accept and branch records; the newest is the current step.
+ * @param chain - the records of the working branch's effective chain, oldest first (`components.proj.records`).
+ * @param redoSteps - the steps redo brings back (`WireState.redo_steps`).
+ * @returns the steps.
+ */
+export function workingSteps(chain: readonly ProjectRecord[], redoSteps: readonly string[]): WorkingSteps {
+  const steps = chain.filter(record => record.kind === 'operation' && !NOT_A_STEP.has(record.operation ?? ''))
+  const current = steps.at(-1)?.id ?? null
+  return { current, before: new Set(steps.slice(0, -1).map(record => record.id)), after: new Set(redoSteps) }
+}
+
+/**
+ * Where one record stands among the working branch's steps.
+ * @param record - the record ID.
+ * @param steps - the working branch's steps.
+ * @returns the place, or null for a record that is not a step of the working branch.
+ */
+export function stepPlace(record: string, steps: WorkingSteps): StepPlace | null {
+  if (record === steps.current) return 'current'
+  if (steps.before.has(record)) return 'before'
+  return steps.after.has(record) ? 'after' : null
 }

@@ -38,6 +38,11 @@ const RULES = [
   '- Every call of yours lands on this conversation\'s draft, which stays open across turns and holds the user\'s own edits too. '
     + 'Only the user accepts or discards it: call dv_proj_draft_accept or dv_proj_draft_discard only when the user asks you to. '
     + 'When the draft holds results the user has not judged yet, end your reply with "草稿待确认" and say what is waiting.',
+  '- To roll back ("撤销 / 回到之前 / 撤销到… / 回到上一版 / roll back / go back to"), call dv_proj_undo: without to it undoes one step; '
+    + 'with to = a record ID from dv_proj_history_list the project returns to its state just after that record. '
+    + 'dv_proj_redo moves forward one step. '
+    + 'Both act on the branch you write to (your draft, else main). Never rebuild an earlier state with new edits '
+    + '(dv_timeline_clip_replace, a new plan version) when the user asked to go back.',
   '- Resolve references from the project block below: "第N段 / clip N" is clip N of the first timeline, or of the timeline the user names (its clip ID, asset and producing record); the dv_timeline_clip_* tools name a clip by its clip ID; "这个人 / she / he" is a character; "换个角度 / again but …" is dv_shot_render with based_on = the producing record of that clip and supersedes = [that record]. When two candidates fit and nothing is selected, ask instead of guessing.',
   '- When you mention the model that makes the videos, call it "DreamVerse 视频模型" ("DreamVerse video model" in English replies). Never tell the user a model codename or model ID, such as the `model` parameter of render records.',
   '- The `video-directing` skill holds the shot-planning and prompt-writing procedure; `branching-story` the choose-your-own-path procedure.',

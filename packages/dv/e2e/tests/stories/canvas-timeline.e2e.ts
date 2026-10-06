@@ -455,6 +455,52 @@ describe('canvas stories', () => {
     expect(page.errors).toEqual([])
   })
 
+  it('the canvas shows only the current plan version and its takes; a jump back shows that step\'s version again', async () => {
+    const project = await seedProject('canvas-current', 3)
+    const v1 = (await stateOf(project.id)).components.plan.plans['p1']?.[0]
+    if (v1 === undefined) throw new Error('the seeded plan is not p1')
+    const base = { plan: 'p1', title: v1.title, continuity: v1.continuity, references: v1.references }
+    const added = [...v1.shots, { prompt: 'canvas-current shot 4', duration_sec: 1 }]
+    // v2 adds shot 4 and is approved; v3 changes shot 2 and is never approved; v4 returns to the three v1 shots.
+    await runOperation(project.id, 'plan.update', { ...base, shots: added })
+    await runOperation(project.id, 'plan.approve', { plan: 'p1' })
+    const v2State = await waitFor(async () => {
+      const current = await stateOf(project.id)
+      const clips = current.components.timeline.timelines[0]?.clips ?? []
+      return clips.length === 4 && clips.every(clip => clip.asset !== null) ? current : null
+    }, 'shot 4 of plan p1 v2 renders onto timeline t1', 120_000)
+    const v2Layout = v2State.components.proj.records.findLast(record => record.operation === 'timeline.update')
+    const shot4 = v2State.components.proj.records.find(record => record.operation === 'shot.render' && record.params['shot'] === 4)
+    if (v2Layout === undefined || shot4 === undefined) throw new Error('the v2 approval wrote no timeline update or shot 4 render')
+    await runOperation(project.id, 'plan.update', { ...base, shots: added.map((shot, index) => index === 1 ? { ...shot, prompt: 'canvas-current shot 2, closer' } : shot) })
+    await runOperation(project.id, 'plan.update', { ...base, shots: v1.shots })
+    await runOperation(project.id, 'plan.approve', { plan: 'p1' })
+    await waitFor(async () => {
+      const clips = (await stateOf(project.id)).components.timeline.timelines[0]?.clips ?? []
+      return clips.length === 3 ? clips : null
+    }, 'the v4 approval lays the three v1 takes on timeline t1')
+    const page = await openPage()
+    await gotoProject(page, project.id)
+    const plans = page.locator('[data-node-kind="plan"]')
+    const takes = page.locator('[data-node-kind="take"]')
+    await expect.poll(() => plans.textContent()).toContain('v4')
+    // v4 reuses the v1 takes: three takes, no take of the removed shot 4.
+    await expect.poll(() => takes.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-node-id')))).toEqual(project.shots)
+    expect(await takes.evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')))).toEqual(['镜头 1', '镜头 2', '镜头 3'])
+    await plans.click()
+    const editor = page.locator('[data-testid="dv-canvas-node-editor"]')
+    await editor.getByRole('button', { name: 'v3' }).click()
+    await expect.poll(() => editor.getByText('已被 v4 取代').count()).toBe(1)
+    expect(await editor.getByText('待批准').count()).toBe(0)
+    await page.keyboard.press('Escape')
+    // A jump back to the v2 approval's timeline update shows plan v2 and its four takes again.
+    await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas', to: v2Layout.id })
+    await expect.poll(() => plans.textContent(), { timeout: 15_000 }).toContain('v2')
+    await expect.poll(() => takes.count()).toBe(4)
+    expect(await page.locator(`[data-node-id="${shot4.id}"]`).count()).toBe(1)
+    expect(page.errors).toEqual([])
+  })
+
   it('让智能体改 prefills the chat with a reference to the node and closes the editor', async () => {
     const project = await seedProject('canvas-ask', 2)
     const page = await openPage()

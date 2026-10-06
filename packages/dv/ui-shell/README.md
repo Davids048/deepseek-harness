@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to turn the DSH web app into the DreamVerse application. With no project open, the center shows the entry page: the chat composer and recent projects. With a project open, it shows the canvas or the timeline editor under a 画布 | 时间线 / Canvas | Timeline toggle. The left sidebar shows the navigator: 新建项目 / Create project, 首页 / Home, and the project → chat session tree. The right panel gets the 对话 / Chat and 轨迹 / Trajectory tabs. The DSH main session follows the open project; the URL hash keeps the location.
+Use this package to turn the DSH web app into the DreamVerse application. With no project open, the center shows the entry page: the chat composer and recent projects. With a project open, it shows the canvas or the timeline editor under a 画布 | 时间线 / Canvas | Timeline toggle. The left sidebar shows the navigator: 新建项目 / Create project, 首页 / Home, and the project → chat session tree. The right panel gets the 对话 / Chat and 轨迹 / Trajectory tabs. The DSH main session follows the open project; the URL hash keeps the location. While a project is open, Ctrl+Z steps the main chat session's working branch back one step and Shift+Ctrl+Z steps it forward (Cmd on macOS); in a text field or the chat composer the keys keep their text-editing meaning.
 
 ## Table of Contents
 
@@ -70,6 +70,7 @@ The workspace sends the chat session to the canvas and the timeline editor only 
 | [`src/client/Center.tsx`](src/client/Center.tsx) | The center: URL restore, the entry page, recent projects, the workspace top bar, the views, and the window event listeners |
 | [`src/client/Navigator.tsx`](src/client/Navigator.tsx) | The left navigator and the brand name |
 | [`src/client/tabs.tsx`](src/client/tabs.tsx) | The 对话 and 轨迹 tab types and bodies |
+| [`src/client/undo-keys.ts`](src/client/undo-keys.ts) | The Ctrl+Z / Shift+Ctrl+Z window listener that calls `/api/dv/undo` and `/api/dv/redo` |
 | [`src/client/chrome.tsx`](src/client/chrome.tsx) | Hidden and reworded DSH chrome, the right-panel guide, and tab titles that follow the interface language |
 | [`src/client/InlineRename.tsx`](src/client/InlineRename.tsx) | The inline title field and the ⋯ row menu |
 | [`src/client/views.ts`](src/client/views.ts) | The canvas and timeline views, imported from their packages' sources into this bundle |

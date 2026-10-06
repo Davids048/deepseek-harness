@@ -456,6 +456,11 @@ export interface ProjectState {
   head: RecordId
   /** One slice per registered reducer. */
   components: ComponentStates
+  /**
+   * The steps that `proj.redo` brings back on the branch, oldest first; empty when nothing can be redone. Set by
+   * `dvProject.getState`; states computed for other purposes (accept replay, an operation's input state) leave it empty.
+   */
+  redo_steps: RecordId[]
 }
 
 /** What a history query selects. Every filter is optional; filters combine with AND. */

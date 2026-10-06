@@ -38,6 +38,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | `api.ts` | `DvClient` (`listProjects`, `getState`, `listOperations`, `runOperation`, `importAsset`, `acceptDraft`, `discardDraft`, `undo`, `redo`, `createBranch`, `switchBranch`, `acceptStale`, `listHistory`, `select`, layout, workspace, and composer calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`, `paramsOf(fields)`, `FieldParseError`: one control per schema property, typed coercion |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`, `timelineName(timeline, numbered)`, `formatSeconds` |
+| `references.ts` | `shotReferences(version, shot)`, `referenceImages(state, references)`, `pictureParts(prompt)`: the reference images a shot sends to the video model in the order its prompt names them `Picture 1`, `Picture 2`, …, and the prompt split at those tokens |
 | `state.ts` | `openDrafts`, `sessionDraft`, `branchNames`, `assetIndex`, `videoAssets` |
 | `useProject.ts` | `useProjects`, `useOperations`, `useProjectState`: loaders that refetch on every project event |
 | `useView.ts` | `useViewSession(client, surface, session?)`: project and branch selection, the branch state, the operations, the last failure, the branch-bar callbacks, and `discardDialog` for the body to render; `sessionFromLocation` reads the chat session from the page's `?session=` so the view opens on that session's project |
@@ -66,6 +67,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | [`src/client/api.ts`](src/client/api.ts) | The client and the shared event streams |
 | [`src/client/form.ts`](src/client/form.ts) | The form model |
 | [`src/client/timeline.ts`](src/client/timeline.ts) | Timeline helpers |
+| [`src/client/references.ts`](src/client/references.ts) | Shot reference images and `Picture N` tokens |
 | [`src/client/useProject.ts`](src/client/useProject.ts), [`src/client/useView.ts`](src/client/useView.ts) | The hooks |
 | [`src/client/BranchBar.tsx`](src/client/BranchBar.tsx) | The shared bar |
 | [`src/client/WorkingBranchBar.tsx`](src/client/WorkingBranchBar.tsx), [`src/client/DiscardDraftDialog.tsx`](src/client/DiscardDraftDialog.tsx) | The working-branch bar and the discard confirmation |

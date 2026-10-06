@@ -10,6 +10,7 @@ import type { ChangeEvent, CSSProperties, ReactNode } from 'react'
 import { assetUrl } from '@dv/ui-kit/api.ts'
 import type { DvClient } from '@dv/ui-kit/api.ts'
 import { dispatchCompose } from '@dv/ui-kit/compose.ts'
+import { pictureParts, referenceImages, shotReferences } from '@dv/ui-kit/references.ts'
 import type { WireState } from '@dv/ui-kit/types.ts'
 import { bibleItems, bibleVersions, referenceText } from './graph.ts'
 import type { CanvasNode } from './graph.ts'
@@ -39,6 +40,9 @@ const panel: CSSProperties = {
   border: '1px solid var(--dsw-alias-border-l3)', boxShadow: '0 18px 48px rgba(0, 0, 0, 0.18)', zIndex: 10, fontSize: 14,
 }
 const label: CSSProperties = { display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--dsw-alias-label-tertiary)', margin: '12px 0 4px' }
+/** A reference image beside a plan shot, and one that stands in a shot prompt for its Picture N token. */
+const shotThumb: CSSProperties = { width: 48, height: 27, objectFit: 'cover', borderRadius: 4, background: 'var(--dsw-alias-interactive-bg-hover)' }
+const promptThumb: CSSProperties = { height: '1.4em', width: 'auto', verticalAlign: 'middle', borderRadius: 3, margin: '0 2px' }
 const field: CSSProperties = {
   width: '100%', boxSizing: 'border-box', background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)',
   border: '1px solid var(--dsw-alias-border-l3)', borderRadius: 8, padding: '6px 8px', font: 'inherit',
@@ -309,7 +313,8 @@ function BibleForm({ node, state, client, project, session, readOnly, t, run }: 
 }
 
 /**
- * A plan: a switch between its versions (latest first selected), and the approval status and shots of the chosen version.
+ * A plan: a switch between its versions (latest first selected), and the status and shots of the chosen version. The status
+ * is approved, awaiting approval (the latest version only), or replaced by the next version.
  * @param props - editor props.
  * @returns the element.
  */
@@ -318,6 +323,11 @@ function PlanList({ node, state, t }: NodeEditorProps): ReactNode {
   const [chosen, setChosen] = useState<number | null>(null)
   const plan = versions.find(version => version.version === chosen) ?? versions.at(-1)
   const approved = plan !== undefined && plan.approved_by !== null
+  // A version that a later version replaced before anyone approved it never waits for approval again.
+  const replaced = plan !== undefined && !approved && plan !== versions.at(-1)
+  let status = t('editor.planPending')
+  if (approved) status = t('editor.planApproved')
+  else if (replaced) status = t('editor.planReplaced', { version: plan.version + 1 })
   return (
     <div>
       <div role="group" aria-label={t('editor.planVersions')} style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
@@ -333,15 +343,31 @@ function PlanList({ node, state, t }: NodeEditorProps): ReactNode {
           )
         })}
       </div>
-      <p style={{ margin: 0, color: approved ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-state-warn-primary)' }}>{approved ? t('editor.planApproved') : t('editor.planPending')}</p>
+      <p style={{ margin: 0, color: approved ? 'var(--dsw-alias-state-success-primary)' : replaced ? 'var(--dsw-alias-label-tertiary)' : 'var(--dsw-alias-state-warn-primary)' }}>{status}</p>
       <span style={label}>{t('editor.shots')}</span>
       <ol style={{ margin: 0, paddingLeft: 20 }}>
-        {(plan?.shots ?? []).map((shot, index) => (
-          <li key={index} style={{ marginBottom: 6 }}>
-            {shot.prompt}
-            {shot.duration_sec === undefined ? null : <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{` · ${String(shot.duration_sec)}s`}</span>}
-          </li>
-        ))}
+        {(plan?.shots ?? []).map((shot, index) => {
+          // The images the shot renders from, in the order its prompt names them Picture 1, Picture 2, ….
+          const images = referenceImages(state, shotReferences(plan ?? {}, shot))
+          return (
+            <li key={index} style={{ marginBottom: 6 }} data-shot={index + 1}>
+              {images.length === 0
+                ? null
+                : (
+                  <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                    {images.map((asset, position) => <img key={position} src={assetUrl(asset)} alt="" style={shotThumb} draggable={false} />)}
+                  </div>
+                )}
+              {pictureParts(shot.prompt).map((part, position) => {
+                const asset = 'picture' in part ? images[part.picture - 1] : undefined
+                return asset === undefined
+                  ? <span key={position}>{part.text}</span>
+                  : <img key={position} src={assetUrl(asset)} alt={part.text} title={part.text} style={promptThumb} draggable={false} />
+              })}
+              {shot.duration_sec === undefined ? null : <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{` · ${String(shot.duration_sec)}s`}</span>}
+            </li>
+          )
+        })}
       </ol>
     </div>
   )

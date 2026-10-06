@@ -88,6 +88,7 @@ export function fixtureState(): WireState {
       { name: 'draft/s5', head: 'g3', base: 'main', forked_at: 'x1', session: 's5', counts: { agent_changes: 1, human_edits: 0 } },
       { name: 'explore/style-b', head: 'e1', base: null, forked_at: null, session: null, counts: null },
     ],
+    redo_steps: [],
     components: {
       proj: {
         records,

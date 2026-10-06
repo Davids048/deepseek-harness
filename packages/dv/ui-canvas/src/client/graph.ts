@@ -1,9 +1,13 @@
 /**
- * Canvas nodes and edges derived from a branch state. A node is an item a creator works with: a character, a location
- * or a style, an imported asset, a plan with all of its versions, or a rendered take. Deterministic edits (still grabs,
- * timeline records) do not become nodes; a timeline trim shows as a badge on the take it shortened.
+ * Canvas nodes and edges derived from a branch state. The canvas shows the current state of the working branch only: a
+ * node is an item a creator works with now: a character, a location or a style at its current version, an imported asset,
+ * a plan at its latest version, the current take of each shot of that version, a take that is not part of a plan, and a
+ * take whose outputs are in use. Deterministic edits (still grabs, timeline records) do not become nodes; a timeline trim
+ * shows as a badge on the take it shortened.
  */
-import type { Character, Location, PlanState, ProjectRecord, RecordInputRef, StoryBibleState, Style, WireState } from '@dv/ui-kit/types.ts'
+import type {
+  Character, Clip, Location, PlanState, PlanVersion, ProjectRecord, RecordInput, RecordInputRef, StoryBibleState, Style, WireState,
+} from '@dv/ui-kit/types.ts'
 
 /** What a node represents; the canvas colors nodes by it. */
 export type CanvasNodeKind = 'bible' | 'asset' | 'plan' | 'take'
@@ -85,6 +89,108 @@ function isRender(record: ProjectRecord): boolean {
 }
 
 /**
+ * The timeline record that the approval of a plan version wrote: its `clip` inputs name the take of each shot in shot
+ * order, and a shot the approval left unchanged names the earlier take it reused.
+ * @param version - the plan version.
+ * @param records - the records of the state by ID.
+ * @returns the record, or undefined when the version is not approved.
+ */
+function approvalLayout(version: PlanVersion, records: ReadonlyMap<string, ProjectRecord>): ProjectRecord | undefined {
+  const scheduled = version.approved_by === null ? undefined : records.get(version.approved_by)?.report?.['scheduled']
+  if (!Array.isArray(scheduled)) return undefined
+  return scheduled.map(id => typeof id === 'string' ? records.get(id) : undefined)
+    .find(record => record?.operation?.startsWith('timeline.') === true)
+}
+
+/**
+ * The `shot.render` records the canvas draws, which make up the current state of the branch:
+ * - for each shot of each plan's latest version, its current take together with the retakes of the same original take.
+ *   The current take is the take the shot's clip on the plan's timeline plays (the clip at the shot's position, when it
+ *   plays a take of that shot), else the newest done take of that shot and version or the earlier take the version's
+ *   approval reused, else the newest take still rendering;
+ * - every take that is not part of a plan, with its retakes;
+ * - every take whose outputs are in use: played by a timeline clip, named as a reference by a current story bible or plan
+ *   version, or read as an input by a drawn take.
+ * Takes of shots a later plan version removed, and takes of earlier versions that nothing uses, are left out.
+ * @param state - a branch state.
+ * @returns the record IDs.
+ */
+function shownTakes(state: WireState): Set<string> {
+  const proj = state.components.proj
+  const records = new Map(proj.records.map(record => [record.id, record]))
+  const renders = proj.records.filter(isRender)
+  const rootOf = (id: string): string => {
+    let current = id
+    for (let depth = 0; depth < 64; depth++) {
+      const base = records.get(current)?.based_on
+      if (base === null || base === undefined || !records.has(base)) break
+      current = base
+    }
+    return current
+  }
+  const producerOf = (input: RecordInput): string | undefined =>
+    'record' in input.ref ? input.ref.record : input.resolved_asset === null ? undefined : proj.created_by[input.resolved_asset]
+  // The render or import behind a record, walking up deterministic edits such as a still grab or a timeline export.
+  const sourceOf = (recordId: string | undefined, depth = 0): ProjectRecord | undefined => {
+    const record = recordId === undefined ? undefined : records.get(recordId)
+    if (record === undefined || depth > 16 || isRender(record) || record.operation === 'asset.import') return record
+    const input = record.inputs.find(entry => producerOf(entry) !== undefined)
+    return input === undefined ? undefined : sourceOf(producerOf(input), depth + 1)
+  }
+  const clipRecord = (clip: Clip): string | undefined =>
+    clip.source?.record ?? (clip.asset === null ? undefined : proj.created_by[clip.asset])
+  const used: string[] = []
+  const use = (recordId: string | undefined): void => {
+    const source = sourceOf(recordId)
+    if (source !== undefined && isRender(source)) used.push(source.id)
+  }
+  for (const timeline of state.components.timeline.timelines) {
+    for (const clip of timeline.clips) use(clipRecord(clip))
+  }
+  for (const { versions } of bibleItems(state)) for (const reference of versions.at(-1)?.references ?? []) use(proj.created_by[reference])
+  const shown = new Set<string>()
+  const addFamily = (root: string): void => { for (const render of renders) if (rootOf(render.id) === root) shown.add(render.id) }
+  for (const [planId, versions] of Object.entries(state.components.plan.plans)) {
+    const latest = versions.at(-1)
+    if (latest === undefined) continue
+    const references = [...latest.references ?? [], ...latest.shots.flatMap(shot => shot.references ?? [])]
+    for (const reference of references) use(proj.created_by[reference])
+    const layout = approvalLayout(latest, records)
+    const pointed = layout?.inputs.filter(input => input.role === 'clip').map(input => 'record' in input.ref ? input.ref.record : undefined) ?? []
+    const timelineId = layout?.params['timeline'] ?? 't1'
+    const clips = layout === undefined ? [] : state.components.timeline.timelines.find(timeline => timeline.id === timelineId)?.clips ?? []
+    latest.shots.forEach((_shot, index) => {
+      const shot = index + 1
+      const own = renders.filter(render => render.params['plan'] === planId && render.params['plan_version'] === latest.version
+        && render.params['shot'] === shot).map(render => render.id)
+      const roots = new Set([...own, pointed[index]].flatMap(id => id === undefined || !records.has(id) ? [] : [rootOf(id)]))
+      const candidates = renders.filter(render => roots.has(rootOf(render.id)))
+      const clip = clips[index]
+      const played = clip === undefined ? undefined : sourceOf(clipRecord(clip))
+      const playsShot = played !== undefined && isRender(played)
+        && (roots.has(rootOf(played.id)) || (played.params['plan'] === planId && played.params['shot'] === shot))
+      const current = playsShot ? played : candidates.findLast(render => render.status === 'done') ?? candidates.at(-1)
+      if (current !== undefined) addFamily(rootOf(current.id))
+    })
+  }
+  for (const render of renders) if (typeof records.get(rootOf(render.id))?.params['plan'] !== 'string') shown.add(render.id)
+  // Takes in use, and the takes a drawn take read its inputs from.
+  const queue = [...shown, ...used]
+  const visited = new Set<string>()
+  for (let id = queue.pop(); id !== undefined; id = queue.pop()) {
+    const record = records.get(id)
+    if (visited.has(id) || record === undefined) continue
+    visited.add(id)
+    shown.add(id)
+    for (const input of record.inputs) {
+      const source = sourceOf(producerOf(input))
+      if (source !== undefined && isRender(source)) queue.push(source.id)
+    }
+  }
+  return shown
+}
+
+/**
  * Every character, location and style of a state with its latest version.
  * @param state - a branch state.
  * @returns one entry per story bible item, characters first.
@@ -150,8 +256,9 @@ export function withImportNames(state: WireState): WireState {
 }
 
 /**
- * Merge an open draft's state into the base state: records, assets, and story bible and plan versions the base lacks. A record
- * the draft holds carries the draft's stale mark, because the draft is the working branch where "keep anyway" clears it.
+ * The state of the working branch when a chat session has an open draft: the draft's own state, plus the records that
+ * reached the base branch after the draft forked (another session's work), with their story bible and plan versions.
+ * A record the base holds from before the fork and the draft lacks was undone on the draft, so it stays out.
  * @param base - the state of the viewed branch.
  * @param draft - the state of an open draft branch, or null.
  * @returns the merged state; `base` itself when there is no draft.
@@ -160,33 +267,45 @@ export function overlayDraft(base: WireState, draft: WireState | null): WireStat
   if (draft === null) return base
   const proj = base.components.proj
   const draftProj = draft.components.proj
-  const known = new Set(proj.records.map(record => record.id))
   const inDraft = new Set(draftProj.records.map(record => record.id))
-  const assets = new Set(base.assets.map(asset => asset.id))
-  const bible: StoryBibleState = { ...base.components.bible }
+  const forkedAt = draft.branches.find(entry => entry.name === draft.branch)?.forked_at ?? null
+  const forkTime = [...draftProj.records, ...proj.records].find(record => record.id === forkedAt)?.created_at ?? null
+  // Records the base branch appended after the fork; the draft never saw them.
+  const later = proj.records.filter(record => !inDraft.has(record.id) && forkTime !== null && record.created_at > forkTime)
+  const laterIds = new Set(later.map(record => record.id))
+  const fromLater = <T>(entries: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(entries).filter(([id]) => laterIds.has(id)))
+  const bible: StoryBibleState = { ...draft.components.bible }
   for (const key of Object.values(BIBLE_SLICES)) {
     const merged = { ...bible[key] }
-    for (const [id, versions] of Object.entries(draft.components.bible[key])) {
-      if ((merged[id]?.length ?? 0) < versions.length) merged[id] = versions
+    for (const [id, versions] of Object.entries(base.components.bible[key])) {
+      const written = versions.at(-1)?.created_by
+      if (written !== undefined && laterIds.has(written) && (merged[id]?.length ?? 0) < versions.length) merged[id] = versions
     }
     bible[key] = merged
   }
-  const plans: PlanState['plans'] = { ...base.components.plan.plans }
-  for (const [id, versions] of Object.entries(draft.components.plan.plans)) {
-    if ((plans[id]?.length ?? 0) < versions.length) plans[id] = versions
+  const plans: PlanState['plans'] = { ...draft.components.plan.plans }
+  for (const [id, versions] of Object.entries(base.components.plan.plans)) {
+    const written = versions.at(-1)?.created_by
+    if (written !== undefined && laterIds.has(written) && (plans[id]?.length ?? 0) < versions.length) plans[id] = versions
   }
+  const assets = new Set(draft.assets.map(asset => asset.id))
   return {
     ...base,
-    assets: [...base.assets, ...draft.assets.filter(asset => !assets.has(asset.id))],
+    assets: [...draft.assets, ...base.assets.filter(asset => !assets.has(asset.id))],
     components: {
-      ...base.components,
+      ...draft.components,
       bible,
       plan: { plans },
       proj: {
-        ...proj,
-        records: [...proj.records, ...draftProj.records.filter(record => !known.has(record.id))],
-        stale: { ...Object.fromEntries(Object.entries(proj.stale).filter(([id]) => !inDraft.has(id))), ...draftProj.stale },
-        created_by: { ...draftProj.created_by, ...proj.created_by },
+        ...draftProj,
+        records: [...draftProj.records, ...later],
+        stale: { ...fromLater(proj.stale), ...draftProj.stale },
+        superseded: { ...fromLater(proj.superseded), ...draftProj.superseded },
+        created_by: {
+          ...Object.fromEntries(Object.entries(proj.created_by).filter(([, producer]) => laterIds.has(producer))),
+          ...draftProj.created_by,
+        },
       },
     },
   }
@@ -214,6 +333,7 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
   })
   const nodes: CanvasNode[] = []
   const byRecord = new Set<string>()
+  const takes = shownTakes(state)
   // A reference image of a character, location or style belongs to that node, so its import is not drawn twice.
   const bibleOfAsset = new Map<string, string>()
   for (const { kind, id: bibleId, versions } of bibleItems(state)) {
@@ -247,7 +367,7 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
         video: isVideo(imported) ? imported : null, durationSec: assets.get(imported)?.duration_sec ?? null,
         record, flags: flagsOf(record), badges: [], take: null, x: 0, y: 0,
       })
-    } else if (isRender(record)) {
+    } else if (isRender(record) && takes.has(record.id)) {
       const video = record.outputs.find(id => isVideo(id)) ?? null
       const shot = typeof record.params['shot'] === 'number' ? record.params['shot'] : null
       nodes.push({
@@ -269,6 +389,9 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
     const producer = proj.created_by[assetId]
     if (producer === undefined || depth > 16) return null
     if (byRecord.has(producer)) return producer
+    const produced = records.get(producer)
+    // A take or an import the canvas leaves out has no node to stand for its assets.
+    if (produced !== undefined && (isRender(produced) || produced.operation === 'asset.import')) return null
     const source = records.get(producer)?.inputs.find(input => input.resolved_asset !== null)?.resolved_asset
     return source === undefined || source === null ? null : nodeOfAsset(source, depth + 1)
   }

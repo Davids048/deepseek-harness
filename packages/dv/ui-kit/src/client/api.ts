@@ -237,18 +237,19 @@ export class DvClient {
   }
 
   /**
-   * Move `main` back by one accepted change.
+   * Move the working branch of the session (its draft, else `main`) back by one step, or jump it to a step.
    * @param project - the project.
    * @param surface - where the gesture came from.
    * @param session - the chat session the view sits beside, or null.
-   * @returns the undo record and the heads afterwards.
+   * @param to - a record on the branch's effective chain or one of its redo steps; omit for one step back.
+   * @returns the undo (or redo, for a jump forward) record and the heads afterwards.
    */
-  undo(project: string, surface: ViewSurface, session: string | null = null): Promise<WireRecordResult> {
-    return this.post('/api/dv/undo', { project, surface, ...session === null ? {} : { session } })
+  undo(project: string, surface: ViewSurface, session: string | null = null, to?: string): Promise<WireRecordResult> {
+    return this.post('/api/dv/undo', { project, surface, ...session === null ? {} : { session }, ...to === undefined ? {} : { to } })
   }
 
   /**
-   * Re-apply the change the latest undo removed.
+   * Move the working branch of the session forward by one step that an undo removed.
    * @param project - the project.
    * @param surface - where the gesture came from.
    * @param session - the chat session the view sits beside, or null.

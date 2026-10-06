@@ -96,14 +96,6 @@ function buttonStyle(disabled: boolean, extra: CSSProperties = {}): CSSPropertie
   return { ...button, ...extra, ...disabled ? { opacity: 0.4, cursor: 'default' } : {} }
 }
 
-/** Where one undo left `main` (`after`); redo is offered while `main` is still there. */
-interface RedoEntry {
-  after: string
-}
-
-/** Redo entries per project, newest last; kept outside the component so a canvas ↔ timeline switch keeps them. */
-const redoStacks = new Map<string, RedoEntry[]>()
-
 // A `dv:timeline-focus` request usually arrives while the editor is unmounted (the shell shows the timeline view in
 // response), so the module keeps the latest requested clip until an editor showing that timeline consumes it.
 let pendingClipFocus: DvWorkspaceEventMap['dv:timeline-focus'] | null = null
@@ -206,7 +198,6 @@ export function TimelineEditor(
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
-  const [, setRedoVersion] = useState(0)
   const [dropNotice, setDropNotice] = useState(false)
   const [drag, setDrag] = useState<ClipDrag | null>(null)
   const [picking, setPicking] = useState(false)
@@ -314,41 +305,11 @@ export function TimelineEditor(
     if (readOnly || !window.confirm(t('tabs.deleteConfirm', { name }))) return
     void run(() => client.runOperation(request(project, session, { operation: 'timeline.delete', params: { timeline: id }, intent: t('intent.delete', { name }) })))
   }
-  // `/api/dv/undo` moves `main` back one turn in any timeline; it is offered only when that turn's record edits this
-  // timeline.
-  const latest = state.components.proj.records.find(record => record.id === state.heads['main'])
-  const latestTimeline = latest?.operation?.startsWith('timeline.') === true
-    ? typeof latest.params['timeline'] === 'string' && latest.params['timeline'] !== ''
-      ? latest.params['timeline']
-      : timelines.find(entry => entry.clips.some(clip => clip.id === latest.params['clip']))?.id ?? timelines[0]?.id ?? null
-    : null
-  // A turn on a timeline that no longer exists (a deleted timeline) can be undone from any timeline.
-  const undoElsewhere = latestTimeline !== null && latestTimeline !== timelineId && timelines.some(entry => entry.id === latestTimeline)
-  const undoElsewhereName = undoElsewhere ? nameOf(timelines.findIndex(entry => entry.id === latestTimeline)) : ''
-  // Redo is offered while `main` is still where the last undo left it.
-  const mainHead = state.heads['main'] ?? null
-  const redoStack = redoStacks.get(project) ?? []
-  const redoEntry = redoStack.length > 0 && redoStack[redoStack.length - 1]?.after === mainHead
-    ? redoStack[redoStack.length - 1] ?? null
-    : null
-  const undo = (): void => {
-    void run(async () => {
-      const result = await client.undo(project, 'timeline', session)
-      const after = result.heads['main']
-      if (mainHead === null || after === undefined) return
-      const stack = redoStack.length > 0 && redoStack[redoStack.length - 1]?.after === mainHead ? redoStack : []
-      redoStacks.set(project, [...stack, { after }])
-      setRedoVersion(version => version + 1)
-    })
-  }
-  const redo = (): void => {
-    if (redoEntry === null) return
-    void run(async () => {
-      await client.redo(project, 'timeline', session)
-      redoStacks.set(project, redoStack.slice(0, -1))
-      setRedoVersion(version => version + 1)
-    })
-  }
+  // Undo and redo step the chat session's working branch, the branch this editor shows, through its history, whichever
+  // view made the step; redo is offered while the branch has steps to bring back.
+  const canRedo = state.redo_steps.length > 0
+  const undo = (): void => { void run(() => client.undo(project, 'timeline', session)) }
+  const redo = (): void => { void run(() => client.redo(project, 'timeline', session)) }
   const remove = (position: number): void => {
     const clip = clips.find(placed => placed.position === position)
     if (clip === undefined) return
@@ -558,13 +519,8 @@ export function TimelineEditor(
 
   const toolbar = (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '6px 8px', borderTop: `1px solid ${palette.line}`, borderBottom: `1px solid ${palette.line}`, flexWrap: 'wrap' }}>
-      <button
-        type="button" style={buttonStyle(branch !== 'main' || undoElsewhere)} disabled={branch !== 'main' || undoElsewhere} title={undoElsewhere ? t('tool.undoElsewhere', { name: undoElsewhereName }) : undefined}
-        onClick={undo}
-      >
-        {t('tool.undo')}
-      </button>
-      <button type="button" style={buttonStyle(branch !== 'main' || redoEntry === null)} disabled={branch !== 'main' || redoEntry === null} onClick={redo}>{t('tool.redo')}</button>
+      <button type="button" style={buttonStyle(readOnly)} disabled={readOnly} onClick={undo}>{t('tool.undo')}</button>
+      <button type="button" style={buttonStyle(readOnly || !canRedo)} disabled={readOnly || !canRedo} onClick={redo}>{t('tool.redo')}</button>
       <button type="button" style={buttonStyle(readOnly || playheadClip?.status !== 'ready')} disabled={readOnly || playheadClip?.status !== 'ready'} onClick={splitAtPlayhead}>{t('tool.split')}</button>
       {staleRecord !== null
         ? <button type="button" style={buttonStyle(readOnly, { color: palette.playhead })} disabled={readOnly} onClick={keepStale}>{t('tool.keepAnyway')}</button>

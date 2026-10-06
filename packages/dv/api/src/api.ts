@@ -419,19 +419,21 @@ export class ApiHandlers {
   }
 
   /**
-   * Move `main` back by one accepted change.
-   * @param raw - `{project, session?, surface}`.
-   * @returns the `proj.undo` record and the heads afterwards.
+   * Move the session's working branch back by one step, or jump it to the record `to` (a record on its effective
+   * chain, or one of its redo steps).
+   * @param raw - `{project, session?, surface, to?}`.
+   * @returns the `proj.undo` record (`proj.redo` for a jump forward) and the heads afterwards.
    */
   async undo(raw: unknown): Promise<{ record: ProjectRecord; heads: Record<string, RecordId> }> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
-    const record = await refused(() => this.services.project.undo(projectId, humanOrigin(body, 'undo')))
+    const to = body['to'] === undefined ? undefined : brandString<RecordId>(stringOf(body['to'], 'to'))
+    const record = await refused(() => this.services.project.undo(projectId, humanOrigin(body, 'undo'), to))
     return { record, heads: this.heads(projectId) }
   }
 
   /**
-   * Re-apply the change the latest undo removed, while nothing else changed `main` after it.
+   * Move the session's working branch forward by one redo step, while nothing else was written on it after the undo.
    * @param raw - `{project, session?, surface}`.
    * @returns the `proj.redo` record and the heads afterwards.
    */

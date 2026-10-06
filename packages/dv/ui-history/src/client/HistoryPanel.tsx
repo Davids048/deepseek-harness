@@ -4,8 +4,10 @@
  * (你, 智能体, 自动), how long ago, its status, one thumbnail, the record's mark (草稿, 已接受, 已撤销, 已丢弃, 已重放, or
  * an exploration branch), and for an agent action the human's words of its turn. The renders a plan approval scheduled
  * fold under the approval's row. One bar holds the filters (actor, branch, operation kind, timeline) and the actions on
- * the chat session's working branch (accept, discard, undo, redo), which are the panel's only writes. Selecting a row
- * plays its output under the row and focuses the record on the canvas or its clip on the timeline.
+ * the chat session's working branch (accept, discard, undo, redo). The working branch's current step carries 当前; every
+ * step before it offers 回到这一步, which jumps the branch back to just after that step; the steps redo brings back are
+ * greyed. Selecting a row plays its output under the row and focuses the record on the canvas or its clip on the
+ * timeline.
  *
  * @module @dv/ui-history/HistoryPanel
  */
@@ -27,8 +29,8 @@ import {
   DV_HISTORY_FOCUS_EVENT, DV_TRAJECTORY_FOCUS_EVENT, dispatchWorkspaceEvent, type DvWorkspaceEventMap,
 } from '@dv/ui-kit/workspace-events.ts'
 import {
-  actionLabel, actionRows, branchQuery, centerFocus, clipTimelines, markBadge, markStyle, relativeTime, thumbnailOf, timelineRecords,
-  type ActionRow, type Thumbnail,
+  actionLabel, actionRows, branchQuery, centerFocus, clipTimelines, markBadge, markStyle, relativeTime, stepPlace, thumbnailOf,
+  timelineRecords, workingSteps, type ActionRow, type Thumbnail, type WorkingSteps,
 } from './rows.ts'
 
 /** Props of {@link HistoryPanel}. */
@@ -221,6 +223,8 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
 
   const records = working.value?.components.proj.records
   const owner = useMemo(() => clipTimelines(records ?? []), [records])
+  const redoSteps = working.value?.redo_steps
+  const steps = useMemo(() => workingSteps(records ?? [], redoSteps ?? []), [records, redoSteps])
   const timelines = working.value?.components.timeline.timelines ?? []
   const timelineSet = useMemo(() => {
     const timeline = timelines.find(item => item.id === filters.timeline)
@@ -284,6 +288,13 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
       return next
     })
   }
+  // 回到这一步: move the working branch back to just after the record.
+  const jump = (record: string): void => {
+    setNotice(null)
+    client.undo(projectId, 'history', session, record).catch((failure: unknown) => {
+      setNotice(failure instanceof Error ? failure.message : String(failure))
+    })
+  }
   const rowRef = (record: string) => (element: HTMLElement | null): void => {
     if (element === null) rowRefs.current.delete(record)
     else rowRefs.current.set(record, element)
@@ -298,7 +309,9 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     // its creation row stays listed below the notice.
     const changes = loaded.entries.filter(entry => entry.record.kind === 'operation' && entry.record.operation !== 'proj.create')
     const empty = filtered ? rows.length === 0 : changes.length === 0
-    const shared = { assets: loaded.assets, records: recordsById, requests: loaded.requests, now, selected, onChoose: choose, rowRef }
+    const shared = {
+      assets: loaded.assets, records: recordsById, requests: loaded.requests, now, selected, onChoose: choose, rowRef, steps, onJump: jump,
+    }
     body = (
       <>
         {empty
@@ -323,7 +336,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     <div data-testid="dv-history-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: '8px 8px 0', gap: 6 }}>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <FilterBar filters={filters} onChange={setFilters} state={main.value} timelines={timelines} t={t} />
-        <Actions client={client} projectId={projectId} session={session} draftOpen={draft !== null} />
+        <Actions client={client} projectId={projectId} session={session} draftOpen={draft !== null} canRedo={steps.after.size > 0} />
       </div>
       {notice === null ? null : <p style={{ color: muted, fontSize: 12, margin: 0 }}>{notice}</p>}
       <div role="listbox" style={{ flex: 1, minHeight: 0, overflowY: 'auto', borderTop: `1px solid ${line}` }}>
@@ -341,12 +354,13 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
 }
 
 /**
- * The actions on the chat session's working branch: accept and discard while its draft is open, undo and redo. They sit
- * at the end of the filter bar.
- * @param props - the client, the project, the chat session, and whether the session has an open draft.
+ * The actions on the chat session's working branch: accept and discard while its draft is open, undo, and redo while a
+ * step can be redone. They sit at the end of the filter bar.
+ * @param props - the client, the project, the chat session, whether the session has an open draft, and whether redo
+ *   has a step to bring back.
  * @returns the buttons.
  */
-function Actions(props: { client: DvClient; projectId: string; session: string | null; draftOpen: boolean }): ReactNode {
+function Actions(props: { client: DvClient; projectId: string; session: string | null; draftOpen: boolean; canRedo: boolean }): ReactNode {
   const { client, projectId, session } = props
   const t = useText()
   const [failure, setFailure] = useState<string | null>(null)
@@ -365,8 +379,16 @@ function Actions(props: { client: DvClient; projectId: string; session: string |
           </>
         )
         : null}
-      <button type="button" style={button} onClick={() => { run(() => client.undo(projectId, 'history', session)) }}>{t('撤销', 'Undo')}</button>
-      <button type="button" style={button} onClick={() => { run(() => client.redo(projectId, 'history', session)) }}>{t('重做', 'Redo')}</button>
+      <button type="button" data-testid="dv-history-undo" style={button} onClick={() => { run(() => client.undo(projectId, 'history', session)) }}>
+        {t('撤销', 'Undo')}
+      </button>
+      <button
+        type="button" data-testid="dv-history-redo" disabled={!props.canRedo}
+        style={{ ...button, ...props.canRedo ? {} : { opacity: 0.4, cursor: 'default' } }}
+        onClick={() => { run(() => client.redo(projectId, 'history', session)) }}
+      >
+        {t('重做', 'Redo')}
+      </button>
       {failure === null ? null : <span style={{ color: danger, fontSize: 12 }}>{failure}</span>}
       {discard.dialog}
     </div>
@@ -453,6 +475,10 @@ interface RowContext {
   selected: string | null
   onChoose: (entry: HistoryEntry) => void
   rowRef: (record: string) => (element: HTMLElement | null) => void
+  /** The steps of the working branch. */
+  steps: WorkingSteps
+  /** 回到这一步 on a step before the current one. */
+  onJump: (record: string) => void
 }
 
 /**
@@ -499,7 +525,9 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
   const { record } = entry
   const t = useText()
   const badge = markBadge(entry)
-  const style = markStyle(entry.mark)
+  const step = stepPlace(record.id, props.steps)
+  // A step redo brings back is greyed; an undone record that redo can no longer bring back is also struck.
+  const style = step === 'after' ? 'dimmed' : markStyle(entry.mark)
   const selected = props.selected === record.id
   const status = t(...STATUSES[record.status])
   const thumbnail = thumbnailOf(record, assets, props.records, (props.folded ?? []).map(child => child.record))
@@ -510,7 +538,7 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
     <div
       ref={props.rowRef(record.id)} role="option" tabIndex={0} aria-selected={selected} title={record.intent}
       data-testid="dv-history-row" data-record={record.id} data-mark={entry.mark} data-status={record.status} data-actor={record.actor}
-      data-surface={record.surface}
+      data-surface={record.surface} data-step={step ?? undefined}
       onClick={() => { props.onChoose(entry) }}
       onKeyDown={(event) => { if (event.key === 'Enter') props.onChoose(entry) }}
       style={{
@@ -547,7 +575,24 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
             {badge === null
               ? null
               : <span style={{ border: `1px solid ${accent}`, color: accent, borderRadius: 3, padding: '0 4px', lineHeight: '14px' }}>{'branch' in badge ? badge.branch : t(badge.zh, badge.en)}</span>}
+            {step === 'current'
+              ? (
+                <span data-testid="dv-history-current" style={{ background: accent, color: '#fff', borderRadius: 3, padding: '0 4px', lineHeight: '14px' }}>
+                  {t('当前', 'Current')}
+                </span>
+              )
+              : null}
             {words === '' ? null : <span title={words} style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>“{words}”</span>}
+            {step === 'before'
+              ? (
+                <button
+                  type="button" data-testid="dv-history-jump" style={{ ...link, marginLeft: 'auto', flex: 'none' }}
+                  onClick={(event) => { event.stopPropagation(); props.onJump(record.id) }}
+                >
+                  {t('回到这一步', 'Go back to this step')}
+                </button>
+              )
+              : null}
           </div>
         </div>
       </div>

@@ -26,7 +26,7 @@ Use this package to give the web application a canvas over a DreamVerse project 
 
 Mount the plugin in a profile that stacks `dsh-web-app` (which provides the right Sidebar, the locale service, and the client module loader) and `@dv/api` (which serves the routes the canvas calls). Build the browser bundle first: `pnpm run build` writes `lib/client.js`.
 
-The canvas draws characters, locations, and styles as `bible` nodes, imported images and videos as `asset` nodes, plans as `plan` nodes, and every `shot.render` record as a `take` node. The working-branch bar on top names the branch the canvas's edits go to and accepts or discards the draft.
+The canvas shows the current state of the working branch only, with no history view: characters, locations, and styles at their current version as `bible` nodes, imported images and videos as `asset` nodes, each plan at its latest version as a `plan` node, and `shot.render` records as `take` nodes. The takes drawn are the current take of each shot of each plan's latest version (the take the shot's clip on the plan's timeline plays, else the newest done take of that shot and version or the earlier take the approval reused) with its retakes, every take that is not part of a plan, and every take whose outputs are in use (played by a timeline clip, a reference of a current story bible or plan version, or an input of a drawn take). Takes of removed shots and unused takes of earlier plan versions are left out, so an undo or a jump to an earlier step changes what the canvas shows. The working-branch bar on top names the branch the canvas's edits go to and accepts or discards the draft.
 
 ```yaml
 - id: dv-ui-canvas
@@ -48,6 +48,8 @@ The Host half registers nothing. The browser half registers the `dv-canvas` tab 
 
 While a `draft/*` branch is shown the editor's write buttons are disabled; accept or discard the draft, or switch to another branch, to write. A `dv:canvas-focus` window event with `{recordId}` centers and opens that record's node. When the record has no node of its own, the event opens the story bible node of the version it wrote, else the node of its first output.
 
+The editor of a plan node switches between the plan's versions. A version shows "Approved" once approved, "Awaiting approval" while it is the latest unapproved version, and "Replaced by v{n}" when a later version replaced it before approval. Each shot shows the reference images it renders from, in the order the video model numbers them, and its prompt shows each `Picture N` token as the N-th of those images (`@dv/ui-kit/references.ts`).
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -56,7 +58,7 @@ While a `draft/*` branch is shown the editor's write buttons are disabled; accep
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`CanvasView` reads the branch state with `useProjectState` from `@dv/ui-kit/useProject.ts`, and the state of the beside session's open draft when there is one. `overlayDraft` merges the draft's records, assets, and story bible versions into the base state, and `buildCanvasGraph` turns the merged state into nodes, edges, and a default column layout: story bible items and assets first, plans next, takes by first-frame depth, retakes beside their source take. A bible node's ID is `bible:<id>`; every other node's ID is its record ID. Stored positions from `/api/dv/layout` override the default layout; a failed layout read or write is ignored. Requests carry inputs as reference text (`<asset>`, `<record>#<output>`, `<id>@<version>`), which `referenceText` writes from a record's stored input references. The state refetches on every `/dv/events` frame.
+`CanvasView` reads the branch state with `useProjectState` from `@dv/ui-kit/useProject.ts`, and the state of the beside session's open draft when there is one. `overlayDraft` takes the draft's state as the working branch and adds only the records the base branch received after the draft forked, so a record undone on the draft does not come back; then `buildCanvasGraph` turns the merged state into nodes, edges, and a default column layout: story bible items and assets first, plans next, takes by first-frame depth, retakes beside their source take. A bible node's ID is `bible:<id>`; every other node's ID is its record ID. Stored positions from `/api/dv/layout` override the default layout; a failed layout read or write is ignored. Requests carry inputs as reference text (`<asset>`, `<record>#<output>`, `<id>@<version>`), which `referenceText` writes from a record's stored input references. The state refetches on every `/dv/events` frame.
 
 | File | Content |
 | --- | --- |

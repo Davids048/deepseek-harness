@@ -68,7 +68,7 @@ const RULES: ScriptedRule[] = [
       { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'product.png' } }] },
       view => ({ calls: [{ name: 'dv_plan_create', args: {
         reason: '规划', title: '产品广告', continuity: 'independent', references: [assetIdOf(view.toolResults[0], 'asset')],
-        shots: [{ prompt: '产品特写', duration_sec: 1 }, { prompt: '产品使用场景', duration_sec: 2 }],
+        shots: [{ prompt: 'Picture 1 产品特写', duration_sec: 1 }, { prompt: 'Picture 1 产品使用场景', duration_sec: 2 }],
       } }] }),
       // The story's project is new, so its first plan is p1.
       { calls: [{ name: 'dv_plan_approve', args: { reason: '用户同意', plan: 'p1', user_approved: true } }] },
@@ -446,7 +446,7 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('in 渲染前先问 mode a plan approval waits for one card that lists every shot before anything renders', async () => {
+  it('in 渲染前先问 mode a plan approval card lists every shot and its reference images before anything renders', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await chat(page).getByRole('button', { name: '渲染前先问', exact: true }).click()
@@ -455,6 +455,14 @@ describe('chat with the agent', () => {
     await card.waitFor({ state: 'attached', timeout: 30_000 })
     expect(await card.textContent()).toContain('产品特写')
     expect(await card.textContent()).toContain('产品使用场景')
+    // Each shot shows its reference image as a thumbnail, and its prompt shows the image in place of the bare Picture 1.
+    const shots = card.locator('[data-testid="dv-composer-approval-shot"]')
+    expect(await shots.count()).toBe(2)
+    for (const shot of await shots.all()) {
+      expect(await shot.locator('[data-testid="dv-composer-references"] img').count()).toBe(1)
+      expect(await shot.locator('img[data-testid="dv-composer-picture"]').getAttribute('alt')).toBe('Picture 1')
+    }
+    expect(await card.textContent()).not.toContain('Picture 1')
     expect(await onScreen(card)).toBe(true)
     // The card names the product model, and the waiting step is named for creators, never by its wire tool name.
     expect(await card.textContent()).toContain('DreamVerse 视频模型')

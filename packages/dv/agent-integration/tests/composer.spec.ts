@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { CharacterId, RecordOrigin, RunRequest, SessionId } from '@dv/project'
+import type { AssetId, CharacterId, RecordOrigin, RunRequest, SessionId } from '@dv/project'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DvAgentIntegration, { COMPOSER_ROUTES } from '../src/index.ts'
 import { expansionMessage } from '../src/composer.ts'
@@ -56,6 +56,7 @@ describe('approval channel', () => {
     expect(card).toMatchObject({ operation: 'shot.render', tool_call: 'call-first', session: 's1', prompt: 'Picture 1 waves' })
     expect(card).toMatchObject({ duration_sec: 1, gpu_seconds: 4 })
     expect(card?.references[0]).toMatchObject({ role: 'reference', ref: 'c1@1', asset: picture.outputs[0] })
+    expect(card?.shots).toEqual([])
     const waiting = fixture.project.listHistory({ project: info.id, operation: 'shot.render' })[0]?.record
     expect(waiting?.status).toBe('pending')
     expect(composer.answer('s1', 'all', true)).toBe(1)
@@ -74,6 +75,11 @@ describe('approval channel', () => {
       operation: 'plan.approve', prompt: '1. one (1 s)\n2. two (2 s)', duration_sec: 3, gpu_seconds: 12,
     })
     expect(composer.approvals('s1')[0]?.references[0]).toMatchObject({ ref: 'c1@1', asset: picture.outputs[0] })
+    // Each shot lists the images the model receives, in Picture order.
+    expect(composer.approvals('s1')[0]?.shots).toMatchObject([
+      { shot: 1, prompt: 'one', duration_sec: 1, references: [{ role: 'reference', ref: 'c1@1', asset: picture.outputs[0] }] },
+      { shot: 2, prompt: 'two', duration_sec: 2, references: [{ role: 'reference', ref: 'c1@1', asset: picture.outputs[0] }] },
+    ])
     composer.answer('s1', 'all', false)
     expect((await approval).record?.status).toBe('cancelled')
 
@@ -81,6 +87,46 @@ describe('approval channel', () => {
     composer.updateComposerMode('s1', { confirm: 'direct' })
     const direct = await agent('direct', 'shot.render', { prompt: 'Picture 1 sits', duration_sec: 1 }, reference)
     expect(direct.record?.status).toBe('done')
+  })
+
+  it('lists every image of a character version, in the order the model receives them, on render and plan cards', async () => {
+    const { fixture, composer } = await start()
+    const session = brandString<SessionId>('s1')
+    composer.updateComposerMode('s1', { confirm: 'ask' })
+    const user: RecordOrigin = { actor: 'user', surface: 'canvas', session: null, turn: null, tool_call: null, intent: 'set up' }
+    const info = await fixture.project.createProject('pictures', user)
+    const image = async (name: string): Promise<AssetId> => {
+      const imported = await fixture.project.run({
+        ...user, project: info.id, operation: 'asset.import', inputs: [], params: { path: fixture.writeFile(name), mime: 'image/png' },
+      })
+      const asset = imported.outputs[0]
+      if (asset === undefined) throw new Error(`asset.import of ${name} returned no asset`)
+      return asset
+    }
+    const [front, side, room] = [await image('front.png'), await image('side.png'), await image('room.png')]
+    await fixture.project.run({
+      ...user, project: info.id, operation: 'bible.character_create', params: { character: 'c1', name: 'Lead' },
+      inputs: [front, side].map(asset => ({ role: 'reference', ref: { asset } })),
+    })
+    const agent = (intent: string, operation: string, params: Record<string, unknown>, inputs: RunRequest['inputs'] = []) =>
+      fixture.project.run({ actor: 'agent', surface: 'chat', session, turn: null, tool_call: `call-${intent}`, intent, project: info.id, operation, params, inputs })
+    const pictures = [{ ref: 'c1@1', asset: front }, { ref: 'c1@1', asset: side }, { ref: room, asset: room }]
+
+    const render = agent('render', 'shot.render', { prompt: 'Picture 1 enters Picture 3', duration_sec: 1 }, [
+      { role: 'reference', ref: { character: brandString<CharacterId>('c1'), version: 1 } },
+      { role: 'reference', ref: { asset: room } },
+    ])
+    await vi.waitFor(() => { expect(composer.approvals('s1')).toHaveLength(1) })
+    expect(composer.approvals('s1')[0]?.references).toMatchObject(pictures)
+    composer.answer('s1', 'all', false)
+    await render
+
+    const plan = await agent('propose', 'plan.create', { shots: [{ prompt: 'Picture 3 at dusk', duration_sec: 1, references: ['c1@1', room] }] })
+    const approval = agent('go', 'plan.approve', { plan: plan.record?.report?.['plan'] })
+    await vi.waitFor(() => { expect(composer.approvals('s1')).toHaveLength(1) })
+    expect(composer.approvals('s1')[0]?.shots[0]?.references).toMatchObject(pictures)
+    composer.answer('s1', 'all', false)
+    await approval
   })
 
   it('serves the composer modes and approval cards, answers a missing session with invalid_params, and stores the modes', async () => {

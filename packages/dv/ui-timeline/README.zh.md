@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在叠了 `dsh-web-app` 和 `@dv/api` 的 profile 里挂载插件，先用 `pnpm run build` 构建浏览器 bundle。
 
-编辑器还有一条工具栏和一把标尺，每个片段带生产它的记录的最后一帧。拖动片段即移动，拖动片段边缘即裁剪，工具栏在播放头处拆分片段，Delete 键移除选中的片段。
+编辑器还有一条工具栏和一把标尺，每个片段带生产它的记录的最后一帧。拖动片段即移动，拖动片段边缘即裁剪，工具栏在播放头处拆分片段，其 撤销 和 重做 把当前分支后退或前进一步（不论这一步是哪个视图做的），Delete 键移除选中的片段。
 
 ```yaml
 - id: dv-ui-timeline
@@ -100,4 +100,3 @@ DOM 带测试 ID `dv-timeline-body`、`dv-timeline-editor`、`dv-timeline-viewer
 <a id="known-limitations-and-deferred-work"></a>
 
 - **只有一条视频轨道** — A1 轨道只镜像片段；音频和叠加层没有自己的泳道。
-- **跨时间线撤销** — 撤销把 `main` 退回一个轮次；只有该轮次改的是当前显示的时间线时，编辑器才提供撤销。

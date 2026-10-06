@@ -1,6 +1,7 @@
 /**
- * Tests of the history module: undo and redo written as `proj.undo` and `proj.redo` records, undo of an accepted
- * draft as one change unit, the history list with its filters, and the marks of each record.
+ * Tests of the history module: undo, redo and jumps written as `proj.undo` and `proj.redo` records on the working
+ * branch (`main` or a draft), one step per record, redo steps, renders that finish after their approval was undone,
+ * the history list with its filters, and the marks of each record.
  * Writes go through `drafts.branchForWrite` under the project lock, as the runner does.
  */
 import { describe, expect, it } from 'vitest'
@@ -71,6 +72,39 @@ async function expectCode(fn: () => unknown, code: string): Promise<void> {
   expect((error as ProjectError).code).toBe(code)
 }
 
+/**
+ * Undo or jump on the working branch of the origin's session, under the lock, as the service does.
+ * @param m - the modules.
+ * @param project - the project.
+ * @param origin - who undoes; `session` selects the working branch.
+ * @param to - the record to return to, or undefined for one step back.
+ * @returns the written record.
+ */
+function undoOn(m: ProjectModules, project: ProjectId, origin: RecordOrigin, to?: RecordId): Promise<ProjectRecord> {
+  return m.store.lock(project, () => m.history.undo(project, m.drafts.workingBranch(project, origin.session).name, origin, to))
+}
+
+/**
+ * Redo one step on the working branch of the origin's session, under the lock.
+ * @param m - the modules.
+ * @param project - the project.
+ * @param origin - who redoes; `session` selects the working branch.
+ * @returns the `proj.redo` record.
+ */
+function redoOn(m: ProjectModules, project: ProjectId, origin: RecordOrigin): Promise<ProjectRecord> {
+  return m.store.lock(project, () => m.history.redo(project, m.drafts.workingBranch(project, origin.session).name, origin))
+}
+
+/**
+ * @param m - the modules.
+ * @param project - the project.
+ * @param branch - a branch name.
+ * @returns the test reducer's values on the branch.
+ */
+function valuesOn(m: ProjectModules, project: ProjectId, branch: string): number[] {
+  return m.reducers.getState(project, branch).components.history_test?.values ?? []
+}
+
 /** A human edit outside any chat session; it always lands on `main`. */
 const DIRECT = userOrigin({ session: null })
 
@@ -80,48 +114,160 @@ describe('history', () => {
     const project = await createTestProject(m)
     const first = await write(m, project, DIRECT, 1)
     const second = await write(m, project, DIRECT, 2)
-    const undo = await m.store.lock(project, () => m.history.undo(project, DIRECT))
+    const undo = await undoOn(m, project, DIRECT)
     expect(undo).toMatchObject({
       operation: 'proj.undo', component: 'proj', branch: MAIN_BRANCH, parents: [second.id], params: { to: first.id }, status: 'done',
     })
     expect(m.store.getBranch(project, MAIN_BRANCH)?.head).toBe(undo.id)
     expect(mainValues(m, project)).toEqual(m.reducers.stateAt(project, MAIN_BRANCH, first.id).components.history_test?.values)
     expect(mainValues(m, project)).toEqual([1])
-    const redo = await m.store.lock(project, () => m.history.redo(project, DIRECT))
+    const redo = await redoOn(m, project, DIRECT)
     expect(redo).toMatchObject({ operation: 'proj.redo', parents: [undo.id], params: { to: second.id } })
     expect(mainValues(m, project)).toEqual([1, 2])
     const ids = readLines(m.root, project).map(line => line.id)
     expect(ids.slice(1)).toEqual([first.id, second.id, undo.id, redo.id])
   })
 
-  it('undoes an accepted draft as one change', async () => {
+  it('undoes the records of an accepted draft one step at a time', async () => {
     const m = startWithValues()
     const project = await createTestProject(m)
     const edit = await write(m, project, DIRECT, 1)
-    await write(m, project, agentOrigin('turn-1'), 2)
+    const agentFirst = await write(m, project, agentOrigin('turn-1'), 2)
     await write(m, project, agentOrigin('turn-2'), 3)
-    const accept = await m.store.lock(project, () => m.drafts.accept(project, userOrigin()))
+    await m.store.lock(project, () => m.drafts.accept(project, userOrigin()))
     expect(mainValues(m, project)).toEqual([1, 2, 3])
-    const undo = await m.store.lock(project, () => m.history.undo(project, userOrigin()))
-    expect(accept.params.base).toBe(edit.id)
-    expect(undo.params.to).toBe(edit.id)
+    expect((await undoOn(m, project, userOrigin())).params.to).toBe(agentFirst.id)
+    expect(mainValues(m, project)).toEqual([1, 2])
+    expect((await undoOn(m, project, userOrigin())).params.to).toBe(edit.id)
     expect(mainValues(m, project)).toEqual([1])
-    // A second undo walks further back, past the human edit.
     const create = readLines(m.root, project)[0]!.id
-    expect((await m.store.lock(project, () => m.history.undo(project, userOrigin()))).params.to).toBe(create)
+    expect((await undoOn(m, project, userOrigin())).params.to).toBe(create)
     expect(mainValues(m, project)).toEqual([])
+    await expectCode(() => undoOn(m, project, userOrigin()), 'nothing_to_undo')
+  })
+
+  it('jumps back to any step, redoes one step at a time, and jumps forward to a redo step', async () => {
+    const m = startWithValues()
+    const project = await createTestProject(m)
+    const records = []
+    for (const value of [1, 2, 3, 4]) records.push(await write(m, project, DIRECT, value))
+    const [first, second, third, fourth] = records.map(record => record.id)
+    const jump = await undoOn(m, project, DIRECT, first)
+    expect(jump).toMatchObject({ operation: 'proj.undo', params: { to: first } })
+    expect(mainValues(m, project)).toEqual([1])
+    expect(m.history.redoSteps(project, MAIN_BRANCH)).toEqual([second, third, fourth])
+    expect((await redoOn(m, project, DIRECT)).params.to).toBe(second)
+    expect(mainValues(m, project)).toEqual([1, 2])
+    expect(m.history.redoSteps(project, MAIN_BRANCH)).toEqual([third, fourth])
+    const forward = await undoOn(m, project, DIRECT, fourth)
+    expect(forward).toMatchObject({ operation: 'proj.redo', params: { to: fourth } })
+    expect(mainValues(m, project)).toEqual([1, 2, 3, 4])
+    expect(m.history.redoSteps(project, MAIN_BRANCH)).toEqual([])
+    await expectCode(() => undoOn(m, project, DIRECT, fourth), 'nothing_to_undo')
+    await expectCode(() => undoOn(m, project, DIRECT, 'missing' as RecordId), 'unknown_record')
+  })
+
+  it('drops the redo steps on any other write after an undo', async () => {
+    const m = startWithValues()
+    const project = await createTestProject(m)
+    const first = await write(m, project, DIRECT, 1)
+    const second = await write(m, project, DIRECT, 2)
+    await undoOn(m, project, DIRECT, first.id)
+    expect(m.history.redoSteps(project, MAIN_BRANCH)).toEqual([second.id])
+    await write(m, project, DIRECT, 5)
+    expect(m.history.redoSteps(project, MAIN_BRANCH)).toEqual([])
+    await expectCode(() => redoOn(m, project, DIRECT), 'nothing_to_redo')
+    await expectCode(() => undoOn(m, project, DIRECT, second.id), 'invalid_params')
+    expect(mainValues(m, project)).toEqual([1, 5])
+    expect(m.history.list({ project, records: [second.id] })[0]?.mark).toBe('undone')
+  })
+
+  it('undoes and redoes inside a draft, and accepts the draft as undone', async () => {
+    const m = startWithValues()
+    const project = await createTestProject(m)
+    const edit = await write(m, project, DIRECT, 1)
+    const kept = await write(m, project, agentOrigin('turn-1'), 2)
+    const undone = await write(m, project, agentOrigin('turn-1'), 3)
+    const draft = draftBranch(SESSION)
+    const undo = await undoOn(m, project, agentOrigin('turn-2'))
+    expect(undo).toMatchObject({ branch: draft, params: { to: kept.id } })
+    expect(m.store.getBranch(project, MAIN_BRANCH)?.head).toBe(edit.id)
+    expect(valuesOn(m, project, draft)).toEqual([1, 2])
+    expect(m.drafts.workingBranch(project, SESSION).counts).toEqual({ agent_changes: 1, human_edits: 0 })
+    expect(m.history.redoSteps(project, draft)).toEqual([undone.id])
+    const mark = (id: RecordId): string | undefined => m.history.list({ project, records: [id] })[0]?.mark
+    expect([mark(kept.id), mark(undone.id), mark(undo.id)]).toEqual(['draft', 'undone', 'draft'])
+    await redoOn(m, project, agentOrigin('turn-2'))
+    expect(valuesOn(m, project, draft)).toEqual([1, 2, 3])
+    await undoOn(m, project, agentOrigin('turn-3'), kept.id)
+    // Main moved, so accept replays only the draft's steps on the effective chain.
+    await write(m, project, DIRECT, 9)
+    const accept = await m.store.lock(project, () => m.drafts.accept(project, userOrigin()))
+    expect((accept.params.replayed as RecordId[][]).map(pair => pair[0])).toEqual([kept.id])
+    expect(mainValues(m, project)).toEqual([1, 9, 2])
+    // One undo on main removes one replayed step.
+    await undoOn(m, project, DIRECT)
+    expect(mainValues(m, project)).toEqual([1, 9])
+  })
+
+  it('refuses to replay a draft that jumped back to a step before it opened', async () => {
+    const m = startWithValues()
+    const project = await createTestProject(m)
+    const create = m.history.list({ project, operation: 'proj.create' })[0]!.record.id
+    await write(m, project, DIRECT, 1)
+    await write(m, project, agentOrigin('turn-1'), 2)
+    await undoOn(m, project, agentOrigin('turn-2'), create)
+    expect(valuesOn(m, project, draftBranch(SESSION))).toEqual([])
+    await write(m, project, DIRECT, 3)
+    await expectCode(() => m.store.lock(project, () => m.drafts.accept(project, userOrigin())), 'draft_conflict')
+  })
+
+  it('finishes a render whose approval a jump undid into an undone record, and reuses its take later', async () => {
+    const m = startWithValues()
+    const project = await createTestProject(m)
+    let renders = 0
+    let release: () => void = () => undefined
+    const held = new Promise<void>((done) => { release = done })
+    m.runner.registerOperation({
+      name: 'shot.render', version: '1', component: 'shot', params: { shot: { type: 'integer' } }, confirm: 'never', inputs: {},
+      outputs: [], description: 'A test render.', summarize: () => 'render', deterministic: true, resource: 'none',
+      execute: async (context) => {
+        renders += 1
+        await held
+        return { outputs: [context.importAsset(Buffer.from('take'), { mime: 'video/mp4', name: 'take.mp4' })] }
+      },
+    })
+    const before = await write(m, project, DIRECT, 1)
+    const approval = await write(m, project, DIRECT, 2)
+    const run = { project, operation: 'shot.render', params: { shot: 1 }, inputs: [], ...DIRECT }
+    const rendering = m.runner.run(run)
+    await expect.poll(() => m.store.listRecords(project).find(record => record.operation === 'shot.render')?.status).toBe('running')
+    const render = m.store.listRecords(project).find(record => record.operation === 'shot.render')!
+    await undoOn(m, project, DIRECT, before.id)
+    expect(m.history.redoSteps(project, MAIN_BRANCH)).toEqual([approval.id, render.id])
+    release()
+    const finished = await rendering
+    expect(finished.record).toMatchObject({ id: render.id, status: 'done' })
+    expect(finished.outputs).toHaveLength(1)
+    expect(m.history.list({ project, records: [render.id] })[0]?.mark).toBe('undone')
+    expect(m.reducers.getState(project, MAIN_BRANCH).components.proj.records.map(record => record.id)).not.toContain(render.id)
+    // A later identical render reuses the take of the undone record.
+    const again = await m.runner.run(run)
+    expect(renders).toBe(1)
+    expect(again.record).toMatchObject({ status: 'done', cost: { reused: true } })
+    expect(again.outputs).toEqual(finished.outputs)
   })
 
   it('refuses undo with nothing to undo and redo with nothing to redo', async () => {
     const m = startWithValues()
     const project = await createTestProject(m)
-    await expectCode(() => m.history.undo(project, DIRECT), 'nothing_to_undo')
-    await expectCode(() => m.history.redo(project, DIRECT), 'nothing_to_redo')
+    await expectCode(() => undoOn(m, project, DIRECT), 'nothing_to_undo')
+    await expectCode(() => redoOn(m, project, DIRECT), 'nothing_to_redo')
     await write(m, project, DIRECT, 1)
-    await m.store.lock(project, () => m.history.undo(project, DIRECT))
-    await expectCode(() => m.history.undo(project, DIRECT), 'nothing_to_undo')
+    await undoOn(m, project, DIRECT)
+    await expectCode(() => undoOn(m, project, DIRECT), 'nothing_to_undo')
     await write(m, project, DIRECT, 2)
-    await expectCode(() => m.history.redo(project, DIRECT), 'nothing_to_redo')
+    await expectCode(() => redoOn(m, project, DIRECT), 'nothing_to_redo')
     expect(mainValues(m, project)).toEqual([2])
   })
 
@@ -152,7 +298,7 @@ describe('history', () => {
     const project = await createTestProject(m)
     const kept = await write(m, project, DIRECT, 1)
     const undone = await write(m, project, DIRECT, 2)
-    const undo = await m.store.lock(project, () => m.history.undo(project, DIRECT))
+    const undo = await undoOn(m, project, DIRECT)
     const original = await write(m, project, agentOrigin('turn-1'), 3)
     const otherOrigin = agentOrigin('turn-2', { session: OTHER_SESSION })
     const dropped = await write(m, project, otherOrigin, 4)
@@ -184,7 +330,7 @@ describe('history', () => {
     const project = await createTestProject(m)
     const kept = await write(m, project, DIRECT, 1)
     const undone = await write(m, project, DIRECT, 2)
-    const undo = await m.store.lock(project, () => m.history.undo(project, DIRECT))
+    const undo = await undoOn(m, project, DIRECT)
     const agentFirst = await write(m, project, agentOrigin('turn-1'), 3)
     const agentSecond = await write(m, project, agentOrigin('turn-2'), 4)
     const create = readLines(m.root, project)[0]!.id

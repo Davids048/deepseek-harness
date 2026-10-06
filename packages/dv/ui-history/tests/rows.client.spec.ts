@@ -1,13 +1,13 @@
 /**
  * The History panel's pure readings: action rows and approval folds, labels with subjects, thumbnails, relative times,
- * mark badges, the branch filter query, timeline record sets, focus.
+ * mark badges, the branch filter query, timeline record sets, focus, and the working branch's steps.
  */
 import { describe, expect, it } from 'vitest'
 import type { HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
 import {
-  actionLabel, actionRows, branchQuery, centerFocus, clipTimelines, markBadge, markStyle, operationLabel, relativeTime, thumbnailOf,
-  timelineRecords,
+  actionLabel, actionRows, branchQuery, centerFocus, clipTimelines, markBadge, markStyle, operationLabel, relativeTime, stepPlace,
+  thumbnailOf, timelineRecords, workingSteps,
 } from '../src/client/rows.ts'
 
 /** An entry of a record with a mark. */
@@ -26,6 +26,11 @@ describe('actionRows', () => {
     expect(rows.map(row => [row.entry.record.id, row.children.map(child => child.record.id)])).toEqual([
       ['ap', ['g1', 'g2', 'tl']], ['h1', []],
     ])
+  })
+
+  it('lists no row for undo and redo records', () => {
+    const rows = actionRows([entry({ id: 'u', operation: 'proj.undo' }), entry({ id: 'r', operation: 'proj.redo' }), entry({ id: 'h1', operation: 'timeline.clip_move' })])
+    expect(rows.map(row => row.entry.record.id)).toEqual(['h1'])
   })
 
   it('keeps scheduled records as rows of their own while their approval is not loaded', () => {
@@ -131,5 +136,20 @@ describe('timelines and focus', () => {
     expect(centerFocus({ record: render, mark: 'main' }, owner)).toEqual({ event: 'dv:canvas-focus', detail: { recordId: 'g1' } })
     expect(centerFocus({ record: render, mark: 'undone' }, owner)).toBeNull()
     expect(centerFocus(entry({ id: 'u', operation: 'proj.undo' }), owner)).toBeNull()
+  })
+})
+
+describe('workingSteps', () => {
+  it('makes the newest step of the chain current, the older steps before it, and the redo steps after it', () => {
+    const chain = [
+      record({ id: 'c', operation: 'proj.create' }), record({ id: 'r', kind: 'request', operation: null }),
+      record({ id: 'a', operation: 'timeline.create' }), record({ id: 'b', operation: 'timeline.rename' }),
+      record({ id: 'u', operation: 'proj.undo' }), record({ id: 'w', operation: 'proj.branch_switch' }),
+    ]
+    const steps = workingSteps(chain, ['d', 'e'])
+    expect(steps.current).toBe('b')
+    expect(['c', 'r', 'a', 'b', 'u', 'w', 'd', 'x'].map(id => stepPlace(id, steps)))
+      .toEqual(['before', null, 'before', 'current', null, null, 'after', null])
+    expect(workingSteps([], []).current).toBeNull()
   })
 })

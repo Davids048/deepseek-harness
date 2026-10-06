@@ -1,8 +1,8 @@
 // User stories of the History panel (历史), walked in Chromium against the shipped profile with a fake video backend that
 // renders playable VP9 videos and a scripted agent model. Projects are seeded through the `/api/dv` routes; agent turns
 // go through the chat. Every story checks the action rows the creator sees: their order, labels, who, thumbnails, marks,
-// the renders folded under a plan approval, filters, the focus a selected row gives the canvas or the timeline, and live
-// updates.
+// the renders folded under a plan approval, filters, the focus a selected row gives the canvas or the timeline, live
+// updates, and the steps of the working branch: 回到这一步, Ctrl+Z and Shift+Ctrl+Z, and the greyed steps redo brings back.
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Branch, DraftCounts, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
@@ -213,6 +213,27 @@ async function discardDraft(project: string, session: string): Promise<void> {
   await harness.api.post('/api/dv/drafts/discard', { project, session, surface: 'canvas', counts: read.counts })
 }
 
+/** @returns the names of the timeline tabs the timeline editor shows. */
+async function timelineTabs(page: Page): Promise<string[]> {
+  return await page.locator('[data-testid="dv-timeline-editor"] [role="tab"]').evaluateAll(tabs => tabs.map(tab => tab.textContent ?? ''))
+}
+
+/**
+ * Rename timeline t1 three times on `main`, as three user steps.
+ * @param project - the project.
+ * @returns the three rename records, oldest first.
+ */
+async function threeRenames(project: string): Promise<ProjectRecord[]> {
+  const renames: ProjectRecord[] = []
+  for (const name of ['first', 'second', 'third']) renames.push(await runOperation(project, 'timeline.rename', { timeline: 't1', name }))
+  return renames
+}
+
+/** @returns the `data-step` of one record's row, or null when the row is not a step of the working branch. */
+async function stepOf(page: Page, record: ProjectRecord | undefined): Promise<string | null> {
+  return await rowOf(page, record?.id ?? '').getAttribute('data-step')
+}
+
 beforeAll(async () => {
   model = await startScriptedModel()
   harness = await bootHarness({ modelBaseUrl: model.baseURL, playableVideos: true })
@@ -288,9 +309,9 @@ describe('History panel', () => {
     await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas' })
     await expect.poll(() => rowOf(page, project.timeline.id).getAttribute('data-mark')).toBe('undone')
     expect(await rowOf(page, project.timeline.id).innerText()).toContain('已撤销')
-    // The undo is a record of its own, and the record it took back stays listed.
+    // The undo record is not a row, and the record it took back stays listed.
     expect(await shownRecords(page)).toEqual(expect.arrayContaining(before))
-    expect(await rows(page).count()).toBe(before.length + 1)
+    expect(await rows(page).count()).toBe(before.length)
     await harness.api.post('/api/dv/redo', { project: project.id, surface: 'canvas' })
     const draft = await openAgentDraft(page, project.id, 'history-marks-request')
     const agentRows = historyPanel(page).locator('[data-testid="dv-history-row"][data-actor="agent"]')
@@ -443,6 +464,84 @@ describe('History panel', () => {
     await expect.poll(() => selected.count(), { timeout: 15_000 }).toBe(1)
     expect(await selected.getAttribute('data-kind')).toBe('tool')
     expect(await selected.innerText()).toMatch(/dv_timeline_rename|重命名时间线/)
+    expect(page.errors).toEqual([])
+  })
+
+  it('回到这一步 jumps back to the first of three edits: the timeline shows that state and the later rows are greyed', async () => {
+    const project = await seedProject('history-jump')
+    const [first, second, third] = await threeRenames(project.id)
+    const page = await openPage()
+    await gotoProject(page, project.id)
+    await openHistory(page)
+    await expect.poll(() => stepOf(page, third)).toBe('current')
+    expect(await rowOf(page, third?.id ?? '').locator('[data-testid="dv-history-current"]').innerText()).toBe('当前')
+    expect(await stepOf(page, first)).toBe('before')
+    expect(await historyPanel(page).locator('[data-testid="dv-history-redo"]').isDisabled()).toBe(true)
+    await rowOf(page, first?.id ?? '').locator('[data-testid="dv-history-jump"]').click()
+    await expect.poll(() => stepOf(page, first)).toBe('current')
+    // The rows' marks come from the history list, which refetches shortly after the state changed.
+    for (const later of [second, third]) {
+      expect(await stepOf(page, later)).toBe('after')
+      await expect.poll(() => rowOf(page, later?.id ?? '').getAttribute('data-mark')).toBe('undone')
+      expect(await rowOf(page, later?.id ?? '').innerText()).toContain('已撤销')
+    }
+    expect(await historyPanel(page).locator('[data-testid="dv-history-redo"]').isDisabled()).toBe(false)
+    const state = await stateOf(project.id)
+    expect(state.components.timeline.timelines[0]?.name).toBe('first')
+    expect(state.redo_steps).toEqual([second?.id, third?.id])
+    await viewToggle(page, '时间线').click()
+    await page.locator('[data-testid="dv-timeline-editor"]').waitFor({ timeout: 15_000 })
+    await expect.poll(() => timelineTabs(page)).toEqual(['first'])
+    expect(page.errors).toEqual([])
+  })
+
+  it('Ctrl+Z and Shift+Ctrl+Z step the working branch back and forward outside text fields', async () => {
+    const project = await seedProject('history-keys')
+    const [first, second, third] = await threeRenames(project.id)
+    const page = await openPage()
+    await gotoProject(page, project.id)
+    await openHistory(page)
+    await expect.poll(() => stepOf(page, third)).toBe('current')
+    // The keys reach the page only while no text field has the focus.
+    await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur() })
+    await page.keyboard.press('Control+Z')
+    await expect.poll(() => stepOf(page, second)).toBe('current')
+    await page.keyboard.press('Control+Z')
+    await expect.poll(() => stepOf(page, first)).toBe('current')
+    expect([await stepOf(page, second), await stepOf(page, third)]).toEqual(['after', 'after'])
+    await page.keyboard.press('Control+Shift+Z')
+    await expect.poll(() => stepOf(page, second)).toBe('current')
+    expect((await stateOf(project.id)).components.timeline.timelines[0]?.name).toBe('second')
+    // In the chat composer Ctrl+Z edits the text and leaves the project alone.
+    await page.locator('[role="tab"]', { hasText: /^对话$/ }).filter({ visible: true }).first().click()
+    const composer = page.locator('[data-dv-chat] [contenteditable="true"]:visible').first()
+    await composer.click()
+    await page.keyboard.type('history-keys')
+    await page.keyboard.press('Control+Z')
+    await page.waitForTimeout(500)
+    expect((await stateOf(project.id)).components.timeline.timelines[0]?.name).toBe('second')
+    expect(page.errors).toEqual([])
+  })
+
+  it('a new edit after a jump drops the greyed rows from the redo line', async () => {
+    const project = await seedProject('history-drop')
+    const [first, second, third] = await threeRenames(project.id)
+    const page = await openPage()
+    await gotoProject(page, project.id)
+    await openHistory(page)
+    await expect.poll(() => stepOf(page, third)).toBe('current')
+    await rowOf(page, first?.id ?? '').locator('[data-testid="dv-history-jump"]').click()
+    await expect.poll(() => stepOf(page, third)).toBe('after')
+    const fourth = await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: 'fourth' })
+    await expect.poll(() => stepOf(page, fourth)).toBe('current')
+    expect(await stepOf(page, first)).toBe('before')
+    // The dropped steps stay listed as undone records, struck through, and redo has nothing to bring back.
+    for (const dropped of [second, third]) {
+      expect(await stepOf(page, dropped)).toBeNull()
+      await expect.poll(() => rowOf(page, dropped?.id ?? '').getAttribute('data-mark')).toBe('undone')
+    }
+    expect(await historyPanel(page).locator('[data-testid="dv-history-redo"]').isDisabled()).toBe(true)
+    expect((await stateOf(project.id)).redo_steps).toEqual([])
     expect(page.errors).toEqual([])
   })
 

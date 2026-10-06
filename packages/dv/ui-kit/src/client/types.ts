@@ -244,6 +244,8 @@ export interface WireState {
   /** Every branch of the project; an open draft has `counts`. */
   branches: Branch[]
   components: ComponentStates
+  /** The steps that redo brings back on the branch, oldest first; empty when nothing can be redone. */
+  redo_steps: string[]
   assets: Asset[]
 }
 
@@ -433,6 +435,16 @@ export interface ApprovalReference {
   url: string | null
 }
 
+/** One shot that a plan approval renders. */
+export interface ApprovalShot {
+  /** The shot's 1-based position in the plan. */
+  shot: number
+  prompt: string
+  duration_sec: number
+  /** The images the video model receives for the shot, in `Picture 1`, `Picture 2`, … order. */
+  references: ApprovalReference[]
+}
+
 /** One render waiting for the user's approval. */
 export interface ApprovalCard {
   id: string
@@ -444,6 +456,9 @@ export interface ApprovalCard {
   prompt: string
   duration_sec: number | null
   gpu_seconds: number
+  /** The images of the call in `Picture 1`, `Picture 2`, … order; for a plan approval, every shot's images without repeats. */
   references: ApprovalReference[]
+  /** The shots a plan approval renders, in plan order; empty for a render card. */
+  shots: ApprovalShot[]
   created_at: string
 }

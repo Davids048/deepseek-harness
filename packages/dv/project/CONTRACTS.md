@@ -165,14 +165,15 @@ Invariants: reducers are pure; `getState` on the same records always gives equal
 
 ## 7. History (`history.ts`)
 
-Owner: agent D. The module comment defines the effective chain and change units; the JSDoc of `undo`, `redo` and `list` defines their behavior.
+Owner: agent D. The module comment defines the effective chain, steps and the redo line; the JSDoc of `undo`, `redo`, `redoSteps` and `list` defines their behavior.
 
 - `effectiveChain(store, project, head)`: iterative (no recursion depth limit): walk back from `head`; at a `proj.undo` or `proj.redo` record U, keep U and continue from `U.params.to` instead of `U.parents[0]`. Return the kept records oldest first.
-- `undo`: the target X is the effective-chain record just before the last change unit's first record. For a `proj.draft_accept` unit, X is `params.base`. The `proj.undo` record is appended on `main` with `parents: [main head]` and `params.to = X`.
-- `redo`: see JSDoc; `params.to` is the parent of the undo being redone, so the state returns to what it was just before that undo.
+- `undo(project, branch, origin, to?)`: acts on the caller's working branch (the service passes `drafts.workingBranch(project, origin.session).name`). Without `to`, the target X is the effective-chain record just before the branch's last step; every step is one record, including each record of an accepted draft. With `to`, X is `to` when it is on the effective chain, or its redo target when it is a redo step (written as `proj.redo`). The record is appended on the branch with `parents: [branch head]` and `params.to = X`.
+- `redo(project, branch, origin)`: one step forward on the redo line; `params.to` is the record just before the redo step after the next one, or the end of the redo line.
+- `redoSteps(project, branch)`: the steps after the head's `params.to` on the redo line; `dvProject.getState` puts them in `ProjectState.redo_steps`.
 - `list(query)`: filters combine with AND; `before` keeps records written before that record (file order); `tool_call` keeps the records one tool call wrote; `marks` keeps the entries whose mark is listed; `limit` applies after every filter, `marks` included. Marks follow the JSDoc order: `main`, `draft`, `discarded`, `replayed`, `undone`, `branch`.
 
-Invariants: undo and redo never move a pointer other than `main` and never rewrite a record; undo after undo walks further back; any change on `main` after an undo removes the possibility to redo it.
+Invariants: undo and redo move only the working branch's pointer and never rewrite a record; undo after undo walks further back; any other record on the branch after an undo removes its redo steps; a record left off the effective chain keeps running and finishes into an undone record.
 
 ## 8. Drafts and branches (`drafts.ts`)
 
@@ -290,7 +291,12 @@ Each test file builds modules with `startModules()` and projects with `createTes
 **`tests/history.spec.ts` (D)**
 
 - `writes undo and redo as records` (R): two human edits on `main`; `undo` appends `proj.undo` with `params.to` = the first edit; state equals the state at the first edit; `redo` appends `proj.redo` with `params.to` = the second edit; state equals the state after both edits; the file contains every record.
-- `undoes an accepted draft as one change`: accept a draft of two records; one `undo` returns `main` to `params.base` of the accept.
+- `undoes the records of an accepted draft one step at a time`: accept a draft of two records; each `undo` removes one record.
+- `jumps back to any step, redoes one step at a time, and jumps forward to a redo step`: `to` = the first of four edits; `redo_steps` lists the other three; `redo` brings back one; `to` = the last writes `proj.redo`.
+- `drops the redo steps on any other write after an undo`: a write after a jump empties `redo_steps`; `to` = a dropped record is `invalid_params`.
+- `undoes and redoes inside a draft, and accepts the draft as undone`: undo and redo write on the draft; counts and marks leave the undone record out; replay copies only the effective steps.
+- `refuses to replay a draft that jumped back to a step before it opened`: `draft_conflict` after `main` moved.
+- `finishes a render whose approval a jump undid into an undone record, and reuses its take later`: the running render ends `done`, marked `undone`; an identical render later reuses its outputs.
 - `refuses undo with nothing to undo and redo with nothing to redo`: `nothing_to_undo` on a new project; `nothing_to_redo` after a fresh edit that followed an undo.
 - `lists history newest first with filters` (R): records from two actors and two branches; default order is reverse write order; `actor`, `branch`, `operation`, `session`, `before` and `limit` each narrow the list as specified.
 - `marks main, draft, undone, discarded and replayed records`: one scenario that produces each mark and asserts it.

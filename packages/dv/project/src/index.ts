@@ -266,25 +266,28 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Move `main` back by one accepted change: one accepted draft, or one other change on `main`. Writes a `proj.undo`
-   * record on `main` whose `params.to` names the record whose state `main` returns to.
+   * Move the working branch of `origin.session` back by one step, or jump it to a step: writes a `proj.undo` record on
+   * that branch whose `params.to` names the record whose state the branch returns to (a jump forward to a redo step
+   * writes `proj.redo`). Rules in the history module.
    * @param project - the project.
-   * @param origin - who undoes, from where.
-   * @returns the `proj.undo` record. Throws `nothing_to_undo`.
+   * @param origin - who undoes, from where; `session` selects the working branch.
+   * @param to - a record on the branch's effective chain or one of its redo steps; undefined for one step back.
+   * @returns the written record. Throws `nothing_to_undo`, `unknown_record`, or `invalid_params`.
    */
-  undo(project: ProjectId, origin: RecordOrigin): Promise<ProjectRecord> {
-    return this.store.lock(project, () => this.history.undo(project, origin))
+  undo(project: ProjectId, origin: RecordOrigin, to?: RecordId): Promise<ProjectRecord> {
+    return this.store.lock(project, () =>
+      this.history.undo(project, this.drafts.workingBranch(project, origin.session).name, origin, to))
   }
 
   /**
-   * Re-apply the change the latest undo removed, while no other change followed it on `main`. Writes a `proj.redo`
-   * record on `main` with `params.to`.
+   * Move the working branch of `origin.session` forward by one redo step: writes a `proj.redo` record with
+   * `params.to` on that branch. Any other write on the branch after an undo drops its redo steps.
    * @param project - the project.
-   * @param origin - who redoes, from where.
+   * @param origin - who redoes, from where; `session` selects the working branch.
    * @returns the `proj.redo` record. Throws `nothing_to_redo`.
    */
   redo(project: ProjectId, origin: RecordOrigin): Promise<ProjectRecord> {
-    return this.store.lock(project, () => this.history.redo(project, origin))
+    return this.store.lock(project, () => this.history.redo(project, this.drafts.workingBranch(project, origin.session).name, origin))
   }
 
   /**
@@ -325,13 +328,13 @@ export default class DvProject extends Service {
   }
 
   /**
-   * The state of a branch at its head: one slice per registered reducer.
+   * The state of a branch at its head: one slice per registered reducer, and the branch's redo steps.
    * @param project - the project.
    * @param branch - a branch name; defaults to `main`. Use `workingBranch(project, session).name` for a session.
    * @returns the state. Throws `unknown_project` or `unknown_branch`.
    */
   getState(project: ProjectId, branch: string = MAIN_BRANCH): ProjectState {
-    return this.reducers.getState(project, branch)
+    return { ...this.reducers.getState(project, branch), redo_steps: this.history.redoSteps(project, branch) }
   }
 
   /**

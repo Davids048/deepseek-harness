@@ -86,7 +86,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-十二个工具：`dv_proj_create`、`dv_proj_open`、`dv_proj_state`、`dv_proj_history_list`、`dv_proj_draft_accept`、`dv_proj_draft_discard`、`dv_proj_undo`、`dv_proj_redo`、`dv_proj_stale_accept`、`dv_proj_branch_create`、`dv_proj_branch_switch` 和 `dv_proj_wait`。`dv_proj_history_list` 按从新到旧返回记录及其标记（默认 20 条）；其他工具以缩进 JSON 返回一条分支的项目摘要：`record`（只在写记录的工具之后出现：该调用写下的最新记录）、`project_id`、`head`、`branch`、`draft`（计数或 null）、`branches`、`records`（数量），然后按组件键顺序是各组件的 `agentSummary` 字段（设定库 `characters`、`locations`、`styles`；分镜 `plans`；时间线 `timelines`），最后是 `stale` 和 `recent`（最多十二条操作记录，带摘要和输出 URL）。
+十二个工具：`dv_proj_create`、`dv_proj_open`、`dv_proj_state`、`dv_proj_history_list`、`dv_proj_draft_accept`、`dv_proj_draft_discard`、`dv_proj_undo`、`dv_proj_redo`、`dv_proj_stale_accept`、`dv_proj_branch_create`、`dv_proj_branch_switch` 和 `dv_proj_wait`。`dv_proj_history_list` 按从新到旧返回记录及其标记（默认 20 条）；其他工具以缩进 JSON 返回一条分支的项目摘要：`record`（只在写记录的工具之后出现：该调用写下的最新记录）、`project_id`、`head`、`branch`、`draft`（计数或 null）、`branches`、`records`（数量），然后按组件键顺序是各组件的 `agentSummary` 字段（设定库 `characters`、`locations`、`styles`；分镜 `plans`；时间线 `timelines`），最后是 `stale` 和 `recent`（最多十二条操作记录，带摘要和输出 URL）。`dv_proj_undo` 和 `dv_proj_redo` 作用于智能体写入的分支（它的草稿，否则是 `main`）：`dv_proj_undo` 不带 `to` 时撤销一步，带 `to`（`dv_proj_history_list` 里的记录 ID）时让项目回到该记录之后的状态；`dv_proj_redo` 前进一步。
 
 #### Token 影响
 

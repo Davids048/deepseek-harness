@@ -20,6 +20,7 @@
  * @module @dv/project/drafts
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { effectiveChain } from './history.ts'
 import type { ReducerRegistry } from './reducers.ts'
 import type { RecordLineInput, RecordStore, StoredBranch } from './record-store.ts'
 import { DraftConflictError, draftBranch, MAIN_BRANCH, ProjectError } from './shared.ts'
@@ -87,7 +88,7 @@ export class Drafts {
   }
 
   /**
-   * Count a draft's records: the operation records on its raw chain after `forked_at`, excluding `proj.*` records.
+   * Count a draft's records: the operation records of `draftRecords` (undone ones left out), excluding `proj.*` records.
    * `agent_changes` counts actor `agent` and `system`; `human_edits` counts actor `user`.
    * @param project - the project.
    * @param branch - a draft branch.
@@ -118,12 +119,14 @@ export class Drafts {
    * Accept the session's draft into its `base` branch. The caller holds the project lock.
    *
    * 1. No open draft for `origin.session` → `no_open_draft`. A record on the draft is `pending` or `running` →
-   *    `draft_busy`.
+   *    `draft_busy`; a record undone inside the draft may still run (it finishes into an undone record).
    * 2. Fast-forward, when the base head still equals `forked_at`: append `proj.draft_accept` on the draft with
    *    `params {draft, base: forked_at, replayed: []}`, point the base branch at it, remove the draft branch.
-   * 3. Replay, when the base moved: let D be the draft's records after `forked_at`, oldest first, and S the state of
-   *    the base branch. For each record r of D, in order: r conflicts when it supersedes a record that S already marks
-   *    superseded, or when `reducers.conflict(S, r)` returns a reason; on the first conflict throw
+   * 3. Replay, when the base moved: a draft whose effective chain no longer holds `forked_at` (it jumped back to a
+   *    step before the fork) throws `DraftConflictError`. Otherwise let D be the draft's records (see `draftRecords`)
+   *    without its `proj.undo` and `proj.redo` records, oldest first, and S the state of the base branch. For each
+   *    record r of D, in order: r conflicts when it supersedes a record that S already marks superseded, or when
+   *    `reducers.conflict(S, r)` returns a reason; on the first conflict throw
    *    `DraftConflictError` and write nothing. Otherwise `S = reducers.apply(S, r)`. When every record passed:
    *    move the draft pointer to the base head (`forked_at` too); append a copy of each r on the draft (the record line
    *    of r with status `pending`, followed by one update line carrying r's status, `started_at`, `finished_at`,
@@ -144,12 +147,18 @@ export class Drafts {
       }))
       return this.closeInto(project, draft, base, accepted)
     }
-    this.checkReplay(project, draft, base, records)
+    // Replay copies the draft's steps; its undo and redo records are already folded into its effective chain.
+    const steps = records.filter(record => record.operation !== 'proj.undo' && record.operation !== 'proj.redo')
+    // A draft that jumped back to a step before its fork has no steps to replay on a moved base.
+    if (!effectiveChain(this.store, project, draft.head).some(record => record.id === draft.forked_at)) {
+      throw new DraftConflictError(draft.name, draft.head, `The draft returns to a step before it opened, and ${base.name} changed since.`)
+    }
+    this.checkReplay(project, draft, base, steps)
     // Every record applies on the moved base: re-fork the draft at the base head and copy the records after it.
     this.store.setBranch(project, { ...draft, head: base.head, forked_at: base.head })
     let head = base.head
     const replayed: Array<[RecordId, RecordId]> = []
-    for (const record of records) {
+    for (const record of steps) {
       const copy = this.appendCopy(project, draft.name, head, record)
       replayed.push([record.id, copy.id])
       head = copy.id
@@ -271,16 +280,15 @@ export class Drafts {
   }
 
   /**
-   * The records on a draft's raw chain after its `forked_at`, oldest first. The draft's chain has no undo or redo
-   * records, so its raw chain and its effective chain are the same.
+   * The records of a draft: the records on its effective chain that are not on the effective chain of its `forked_at`,
+   * oldest first. Records undone inside the draft are left out; `proj.undo` and `proj.redo` records are included.
    * @param project - the project.
    * @param draft - a draft branch.
    * @returns the records.
    */
   private draftRecords(project: ProjectId, draft: StoredBranch): ProjectRecord[] {
-    const chain = this.store.ancestors(project, draft.head)
-    const fork = chain.findIndex(record => record.id === draft.forked_at)
-    return chain.slice(fork + 1)
+    const before = new Set(draft.forked_at === null ? [] : effectiveChain(this.store, project, draft.forked_at).map(record => record.id))
+    return effectiveChain(this.store, project, draft.head).filter(record => !before.has(record.id))
   }
 
   /**

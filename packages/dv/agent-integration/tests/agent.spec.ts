@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
@@ -111,6 +112,7 @@ async function boundProject(fixture: AgentFixture): Promise<string> {
 function plainState(components: Partial<{ [K in keyof ProjectState['components']]: Partial<ProjectState['components'][K]> }> = {}): ProjectState {
   return {
     project: { id: brandString<ProjectId>('p'), title: 'p', created_at: '' }, branch: 'main', head: brandString<RecordId>('h'),
+    redo_steps: [],
     components: {
       proj: { records: [], stale: {}, superseded: {}, created_by: {}, ...components.proj },
       timeline: { timelines: [], ...components.timeline },
@@ -127,6 +129,23 @@ function branchOf(name: string, counts: Branch['counts'] = null): Branch {
 }
 
 describe('resolver block', () => {
+  it('tells the agent to roll back with dv_proj_undo and a history record, never with forward edits', () => {
+    const rules = renderResolverBlock({ projectId: null, state: null, branch: null, url: id => id })
+    expect(rules).toContain('- To roll back ("撤销 / 回到之前 / 撤销到… / 回到上一版 / roll back / go back to"), call dv_proj_undo: '
+      + 'without to it undoes one step; with to = a record ID from dv_proj_history_list the project returns to its state just after '
+      + 'that record. dv_proj_redo moves forward one step. Both act on the branch you write to (your draft, else main). '
+      + 'Never rebuild an earlier state with new edits (dv_timeline_clip_replace, a new plan version) when the user asked to go back.')
+    // The skills say the same, and no longer offer a branch in place of an undo to an earlier step.
+    const skill = (name: string): string => readFileSync(join(import.meta.dirname, '..', 'skills', name, 'SKILL.md'), 'utf8')
+    expect(skill('timeline-editing')).toContain('| `dv_proj_history_list` → `dv_proj_undo` | list: find the record of the step to return to. '
+      + 'undo: `to` = that record ID; the project returns to its state just after it.')
+    expect(skill('video-directing')).toContain('pass `to` = that record ID, and the project returns to its state just after that record.')
+    for (const name of ['timeline-editing', 'video-directing']) {
+      expect(skill(name)).not.toContain('one accepted draft')
+      expect(skill(name)).not.toContain('offer `dv_proj_branch_create` at the record before')
+    }
+  })
+
   it('renders the rules alone without a project and the working branch state with one', async () => {
     const fixture = await start()
     expect(fixture.agent.promptBlock(undefined)).toContain('No project is bound')

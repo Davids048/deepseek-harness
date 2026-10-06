@@ -296,6 +296,14 @@ describe('dvApi', () => {
     expect(redone.record).toMatchObject({ operation: 'proj.redo' })
     expect(fixture.handlers.getState(projectId).components.proj.records.map(record => record.id)).toContain(second.id)
     await expect(fixture.handlers.redo({ project: projectId })).rejects.toMatchObject({ status: 409, code: 'nothing_to_redo' })
+    // A jump back to a record leaves the later steps as redo steps; a jump forward to one of them writes `proj.redo`.
+    const jump = await fixture.handlers.undo({ project: projectId, surface: 'history', to: first.id })
+    expect(jump.record).toMatchObject({ operation: 'proj.undo', params: { to: first.id }, surface: 'history' })
+    expect(fixture.handlers.getState(projectId).redo_steps).toEqual([second.id])
+    expect((await fixture.handlers.undo({ project: projectId, to: second.id })).record).toMatchObject({ operation: 'proj.redo', params: { to: second.id } })
+    expect(fixture.handlers.getState(projectId).redo_steps).toEqual([])
+    await expect(fixture.handlers.undo({ project: projectId, to: 7 })).rejects.toMatchObject({ status: 400, code: 'invalid_params' })
+    await expect(fixture.handlers.undo({ project: projectId, to: 'missing' })).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
 
     const branch = await fixture.handlers.createBranch({ project: projectId, name: 'style-b', at: 'main' })
     expect(branch.branch.name).toBe('explore/style-b')

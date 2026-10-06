@@ -47,14 +47,14 @@ The Fetch routes list, create, rename and delete projects, read the state of a b
 | `/api/dv/projects` | POST | `{title, surface}` | The project started from a view: `ProjectInfo` `{id, title, created_at}` |
 | `/api/dv/projects/rename` | POST | `{project, title}` | `{title}`, made unique with ` 2`, ` 3`, … |
 | `/api/dv/projects/delete` | POST | `{project}` | `{ok, workspace_id}`; the project moves into the Project store's trash and its canvas layout file is deleted |
-| `/api/dv/state` | GET | `project`, optional `branch` (default `main`) | `WireState`: `{project, branch, head, heads, branches, components, assets}`, with every component slice as Project computed it and the asset pool entry of every mentioned asset |
+| `/api/dv/state` | GET | `project`, optional `branch` (default `main`) | `WireState`: `{project, branch, head, heads, branches, components, redo_steps, assets}`, with every component slice as Project computed it, the steps that redo brings back on the branch, and the asset pool entry of every mentioned asset |
 | `/api/dv/operations` | GET | — | `WireOperation[]`: every registered operation that is not `readOnly`, without its executor |
 | `/api/dv/operation` | POST | `OperationRequest` `{project, operation, inputs?, params?, intent?, surface, session?, based_on?, supersedes?}`; `inputs` = `[{role, ref}]` with reference text | The `ProjectRecord`, finished or `pending` |
 | `/api/dv/assets/import` | POST | raw file body; query `project`, `name`, `mime`, `surface` (`canvas \| asset_pool`, anything else answers `400` `invalid_params`), `session?` | `{asset, record}`: the `AssetId` and the `asset.import` record |
 | `/api/dv/drafts/accept` | POST | `{project, session \| branch, surface}` | `{record, heads}` with the `proj.draft_accept` record |
 | `/api/dv/drafts/discard` | POST | `{project, session \| branch, surface, counts?}` | Without `counts`: `{draft, counts}`; with the confirmed counts: `{draft, counts, heads}` |
-| `/api/dv/undo` | POST | `{project, session?, surface}` | `{record, heads}` with the `proj.undo` record |
-| `/api/dv/redo` | POST | `{project, session?, surface}` | `{record, heads}` with the `proj.redo` record |
+| `/api/dv/undo` | POST | `{project, session?, surface, to?}`: one step back on the session's working branch, or back to the record `to` (a jump forward to a redo step writes `proj.redo`) | `{record, heads}` with the `proj.undo` record |
+| `/api/dv/redo` | POST | `{project, session?, surface}`: one step forward on the session's working branch | `{record, heads}` with the `proj.redo` record |
 | `/api/dv/branches/create` | POST | `{project, name, at, session?, surface}` | `{branch, heads}` for the branch `explore/<name>` |
 | `/api/dv/branches/switch` | POST | `{project, branch, session, surface}` | `{branch, heads}` for the branch the session works on |
 | `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}` with the `proj.stale_accept` record |

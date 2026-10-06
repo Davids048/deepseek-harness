@@ -26,7 +26,7 @@ Use this package to give the web application a timeline editor beside the chat. 
 
 Mount the plugin in a profile that stacks `dsh-web-app` and `@dv/api`, and build the browser bundle first with `pnpm run build`.
 
-The editor also has a toolbar and a ruler, and each clip carries its producer's last frame. Dragging a clip moves it, dragging its edges trims it, the toolbar splits the clip under the playhead, and Delete removes the selected clip.
+The editor also has a toolbar and a ruler, and each clip carries its producer's last frame. Dragging a clip moves it, dragging its edges trims it, the toolbar splits the clip under the playhead, its 撤销 / Undo and 重做 / Redo step the working branch back and forward one step (whichever view made the step), and Delete removes the selected clip.
 
 ```yaml
 - id: dv-ui-timeline
@@ -100,4 +100,3 @@ None; the timeline sends nothing to a model.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **One video track** — the A1 track only mirrors the clips; audio and overlays have no lane of their own.
-- **Undo across timelines** — undo moves `main` back one turn; the editor offers it only while that turn edited the shown timeline.

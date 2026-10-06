@@ -27,6 +27,8 @@ export interface WireState {
   branches: Branch[]
   /** One slice per registered reducer, as Project computed them. */
   components: ComponentStates
+  /** The steps that redo brings back on the branch, oldest first (`ProjectState.redo_steps`). */
+  redo_steps: RecordId[]
   /** The asset pool entry of every asset a record created, imported, or still references. */
   assets: Asset[]
 }
@@ -107,6 +109,7 @@ export function toWireState(state: ProjectState, branches: Branch[], asset: (id:
     heads: Object.fromEntries(branches.map(branch => [branch.name, branch.head])),
     branches,
     components: state.components,
+    redo_steps: state.redo_steps,
     assets,
   }
 }

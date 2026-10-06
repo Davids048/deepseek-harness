@@ -47,14 +47,14 @@ kind: "package-reference"
 | `/api/dv/projects` | POST | `{title, surface}` | 从视图新建的项目：`ProjectInfo` `{id, title, created_at}` |
 | `/api/dv/projects/rename` | POST | `{project, title}` | `{title}`，重名时追加 ` 2`、` 3`…… 使其唯一 |
 | `/api/dv/projects/delete` | POST | `{project}` | `{ok, workspace_id}`；项目移进 Project 存储的回收目录，它的画布布局文件被删除 |
-| `/api/dv/state` | GET | `project`，可选 `branch`（默认 `main`） | `WireState`：`{project, branch, head, heads, branches, components, assets}`，每个组件状态切片与 Project 算出的一致，外加每个被提到的素材在素材库里的条目 |
+| `/api/dv/state` | GET | `project`，可选 `branch`（默认 `main`） | `WireState`：`{project, branch, head, heads, branches, components, redo_steps, assets}`，每个组件状态切片与 Project 算出的一致，外加该分支上重做能恢复的步骤，以及每个被提到的素材在素材库里的条目 |
 | `/api/dv/operations` | GET | — | `WireOperation[]`：每个不是 `readOnly` 的已注册操作，不含执行器 |
 | `/api/dv/operation` | POST | `OperationRequest` `{project, operation, inputs?, params?, intent?, surface, session?, based_on?, supersedes?}`；`inputs` = `[{role, ref}]`，`ref` 是引用文本 | `ProjectRecord`，已完成或 `pending` |
 | `/api/dv/assets/import` | POST | 原始文件作为请求体；查询参数 `project`、`name`、`mime`、`surface`（`canvas \| asset_pool`，其他值回 `400` `invalid_params`）、`session?` | `{asset, record}`：`AssetId` 和 `asset.import` 记录 |
 | `/api/dv/drafts/accept` | POST | `{project, session \| branch, surface}` | `{record, heads}`，带 `proj.draft_accept` 记录 |
 | `/api/dv/drafts/discard` | POST | `{project, session \| branch, surface, counts?}` | 不带 `counts`：`{draft, counts}`；带已确认的计数：`{draft, counts, heads}` |
-| `/api/dv/undo` | POST | `{project, session?, surface}` | `{record, heads}`，带 `proj.undo` 记录 |
-| `/api/dv/redo` | POST | `{project, session?, surface}` | `{record, heads}`，带 `proj.redo` 记录 |
+| `/api/dv/undo` | POST | `{project, session?, surface, to?}`：在对话的当前分支上后退一步，或回到记录 `to`（向前跳到可重做的步骤时写 `proj.redo`） | `{record, heads}`，带 `proj.undo` 记录 |
+| `/api/dv/redo` | POST | `{project, session?, surface}`：在对话的当前分支上前进一步 | `{record, heads}`，带 `proj.redo` 记录 |
 | `/api/dv/branches/create` | POST | `{project, name, at, session?, surface}` | 分支 `explore/<name>` 的 `{branch, heads}` |
 | `/api/dv/branches/switch` | POST | `{project, branch, session, surface}` | 对话所在分支的 `{branch, heads}` |
 | `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}`，带 `proj.stale_accept` 记录 |

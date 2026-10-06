@@ -38,6 +38,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | `api.ts` | `DvClient`（`listProjects`、`getState`、`listOperations`、`runOperation`、`importAsset`、`acceptDraft`、`discardDraft`、`undo`、`redo`、`createBranch`、`switchBranch`、`acceptStale`、`listHistory`、`select`，布局、工作区和输入框调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`、`paramsOf(fields)`、`FieldParseError`：每个 schema 属性一个控件，带类型转换 |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`、`timelineName(timeline, numbered)`、`formatSeconds` |
+| `references.ts` | `shotReferences(version, shot)`、`referenceImages(state, references)`、`pictureParts(prompt)`：一个镜头发给视频模型的参考图，按提示词里 `Picture 1`、`Picture 2`…… 的编号顺序排列，以及在这些标记处切开的提示词 |
 | `state.ts` | `openDrafts`、`sessionDraft`、`branchNames`、`assetIndex`、`videoAssets` |
 | `useProject.ts` | `useProjects`、`useOperations`、`useProjectState`：每次项目事件都重新拉取的加载器 |
 | `useView.ts` | `useViewSession(client, surface, session?)`：项目与分支选择、分支状态、操作、最近一次失败、分支栏回调，以及由主体渲染的 `discardDialog`；`sessionFromLocation` 从页面地址的 `?session=` 读对话，让视图打开该对话的项目 |
@@ -66,6 +67,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | [`src/client/api.ts`](src/client/api.ts) | 客户端和共享的事件流 |
 | [`src/client/form.ts`](src/client/form.ts) | 表单模型 |
 | [`src/client/timeline.ts`](src/client/timeline.ts) | 时间线辅助函数 |
+| [`src/client/references.ts`](src/client/references.ts) | 镜头参考图和 `Picture N` 标记 |
 | [`src/client/useProject.ts`](src/client/useProject.ts)、[`src/client/useView.ts`](src/client/useView.ts) | hook |
 | [`src/client/BranchBar.tsx`](src/client/BranchBar.tsx) | 共用的栏 |
 | [`src/client/WorkingBranchBar.tsx`](src/client/WorkingBranchBar.tsx)、[`src/client/DiscardDraftDialog.tsx`](src/client/DiscardDraftDialog.tsx) | 当前分支栏和丢弃确认 |

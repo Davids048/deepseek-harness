@@ -26,7 +26,7 @@ Use this package to give the web application a History panel beside the chat. `H
 
 Mount the plugin in a profile that stacks `dsh-web-app` (which provides the right Sidebar and the client module loader) and `@dv/api` (which serves the routes the panel calls). Build the browser bundle first: `pnpm run build` writes `lib/client.js`.
 
-Each row shows the tool label with its subject (修改分镜计划 p1 → v2, 渲染镜头 7, 新建角色「name」), who did it (你 / You, 智能体 / Agent, 自动 / Automatic), how long ago, the status, and one thumbnail (an image, a take's still for a video, else a video frame; other files have none). An agent row also shows its turn's request words on its second line. The renders and the timeline record that a plan approval scheduled (`report.scheduled`) fold under the approval's row behind the toggle 渲染 n 个镜头 / Render n shots. The marks are 草稿 / Draft on an open draft, 已接受 / Accepted after the draft was accepted, 已撤销 / Undone, 已丢弃 / Discarded, 已重放 / Replayed, or the exploration branch name; undone and discarded rows stay listed, dimmed and struck. One bar holds the filters and the header actions.
+Each row shows the tool label with its subject (修改分镜计划 p1 → v2, 渲染镜头 7, 新建角色「name」), who did it (你 / You, 智能体 / Agent, 自动 / Automatic), how long ago, the status, and one thumbnail (an image, a take's still for a video, else a video frame; other files have none). An agent row also shows its turn's request words on its second line. The renders and the timeline record that a plan approval scheduled (`report.scheduled`) fold under the approval's row behind the toggle 渲染 n 个镜头 / Render n shots. The marks are 草稿 / Draft on an open draft, 已接受 / Accepted after the draft was accepted, 已撤销 / Undone, 已丢弃 / Discarded, 已重放 / Replayed, or the exploration branch name; undone and discarded rows stay listed, dimmed and struck. The undo and redo records themselves are not rows. On the working branch, the current step carries 当前 / Current, every step before it offers 回到这一步 / Go back to this step (`/api/dv/undo` with `to` = that record, so the branch returns to just after it), and the steps redo can bring back (`WireState.redo_steps`) are dimmed without the strike; a write after an undo empties that set, and those rows are then struck. One bar holds the filters and the header actions.
 
 ```yaml
 - id: dv-ui-history
@@ -41,7 +41,7 @@ The Host half registers nothing. The browser half registers the `dv-history` tab
 | Select a render, story bible, plan, or asset row | `dv:canvas-focus` `{recordId}`; the shell shows the canvas and the canvas opens the record's node |
 | Select a Timeline row or a timeline export | `dv:timeline-focus` `{timelineId, clipId}`; the shell shows the timeline and the editor selects the clip |
 | "Show in trajectory" in a selected agent row | `dv:trajectory-focus` `{session, toolCall}`; the shell opens 轨迹 on that chat session |
-| Accept the draft, Discard, Undo, Redo in the header | `POST /api/dv/drafts/accept`, `/api/dv/drafts/discard` (through the confirmation dialog), `/api/dv/undo`, `/api/dv/redo` with `surface: 'history'` |
+| Accept the draft, Discard, Undo, Redo in the header; 回到这一步 on a row | `POST /api/dv/drafts/accept`, `/api/dv/drafts/discard` (through the confirmation dialog), `/api/dv/undo` (with `to` for a row), `/api/dv/redo` with `surface: 'history'` |
 
 A `dv:history-focus` event `{session, toolCall}` clears the filters, finds the record that tool call wrote, loads pages until its row is loaded, and selects it. Only records marked `main` or `draft` move the center; `proj.*` records are only selected.
 

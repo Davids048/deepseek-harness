@@ -21,7 +21,7 @@ import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import { createUserMessage, type ContextFormed, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { answer, ApiRequestError } from '@dv/api'
 import {
-  formatInputRef, type AssetId, type PendingApproval, type ProjectId, type ProjectRecord, type RecordId, type SessionId,
+  formatInputRef, type AssetId, type PendingApproval, type ProjectId, type ProjectRecord, type ProjectState, type RecordId, type SessionId,
 } from '@dv/project'
 import type {} from '@dv/asset-pool'
 import type { PlanVersion } from '@dv/shot-plan'
@@ -62,6 +62,16 @@ export interface ApprovalReference {
   url: string | null
 }
 
+/** One shot that a plan approval renders, as its card shows it. */
+export interface ApprovalShot {
+  /** The shot's 1-based position in the plan. */
+  shot: number
+  prompt: string
+  duration_sec: number
+  /** The images the video model receives for the shot, in `Picture 1`, `Picture 2`, … order. */
+  references: ApprovalReference[]
+}
+
 /** One agent call waiting for the user, as the approvals route returns it. */
 export interface ApprovalCard {
   id: string
@@ -74,7 +84,10 @@ export interface ApprovalCard {
   prompt: string
   duration_sec: number | null
   gpu_seconds: number
+  /** The images of the call in `Picture 1`, `Picture 2`, … order; for a plan approval, every shot's images without repeats. */
   references: ApprovalReference[]
+  /** The shots a plan approval renders, in plan order; empty for a `shot.render` card. */
+  shots: ApprovalShot[]
   /** ISO-8601 UTC of the request. */
   created_at: string
 }
@@ -145,7 +158,11 @@ export class ApprovalCards {
     const { record, signal } = approval
     const plan = record.operation === 'plan.approve' ? this.planCard(approval.project, record) : null
     const params = plan?.params ?? record.params
-    const inputs: CardInput[] = plan?.inputs ?? record.inputs.map(input => ({
+    // The model receives the reference images first, in input order, then the `first_frame` still.
+    const ordered = [
+      ...record.inputs.filter(input => input.role === 'reference'), ...record.inputs.filter(input => input.role !== 'reference'),
+    ]
+    const inputs: CardInput[] = plan?.inputs ?? ordered.map(input => ({
       role: input.role, ref: formatInputRef(input.ref), asset: input.resolved_asset ?? ('asset' in input.ref ? input.ref.asset : null),
     }))
     return new Promise((resolve) => {
@@ -163,6 +180,7 @@ export class ApprovalCards {
         prompt: typeof params['prompt'] === 'string' ? params['prompt'] : '',
         duration_sec: typeof duration === 'number' ? duration : null,
         gpu_seconds: plan?.estimate ?? approval.gpu_seconds, references: this.referencesOf(approval.project, inputs),
+        shots: plan?.shots ?? [],
         created_at: new Date().toISOString(), resolve: settle,
       })
       if (signal.aborted) settle(false)
@@ -199,8 +217,9 @@ export class ApprovalCards {
 
   /**
    * What a plan approval's card shows: one line per new or changed shot of the approved version as the prompt, numbered
-   * by its shot position (shots that keep their takes are left out), their total duration and references, and the
-   * estimate of rendering them.
+   * by its shot position (shots that keep their takes are left out), their total duration and references, each shot with
+   * the reference images the model receives in `Picture N` order, and the estimate of rendering them. A chained shot's
+   * `first_frame` still is left out, because the take it comes from may not exist yet.
    * @param projectId - the project.
    * @param record - the pending `plan.approve` record.
    * @returns the card fields, or null when the Shot plan component is not mounted or the record names no known plan
@@ -208,15 +227,16 @@ export class ApprovalCards {
    */
   private planCard(
     projectId: ProjectId, record: ProjectRecord,
-  ): { params: Record<string, unknown>; inputs: CardInput[]; estimate: number } | null {
+  ): { params: Record<string, unknown>; inputs: CardInput[]; shots: ApprovalShot[]; estimate: number } | null {
     const shotPlan = this.ctx.get('dvShotPlan')
     if (shotPlan === undefined) return null
     const plan = String(record.params['plan'])
     const requested = typeof record.params['version'] === 'number' ? record.params['version'] : undefined
     let document: PlanVersion
     let render: number[]
+    let state: ProjectState
     try {
-      const state = this.ctx.dvProject.getState(projectId, record.branch)
+      state = this.ctx.dvProject.getState(projectId, record.branch)
       document = shotPlan.getPlan(state, plan, requested)
       render = shotPlan.shotsToRender(state, plan, requested)
     } catch {
@@ -229,15 +249,44 @@ export class ApprovalCards {
     })
     const seconds = shots.map(entry => entry.shot.duration_sec ?? PLAN_SHOT_SECONDS)
     const total = seconds.reduce((sum, value) => sum + value, 0)
-    const references = [...new Set(shots.flatMap(entry => entry.shot.references ?? document.references ?? []))]
+    let images: ApprovalReference[][]
+    try {
+      images = shots.map(entry => this.shotImages(projectId, state, entry.shot.references ?? document.references ?? []))
+    } catch {
+      // An unknown version leaves the shots without images; the call fails when it runs.
+      images = shots.map(() => [])
+    }
     const renderSpec = this.ctx.dvProject.listOperations().find(spec => spec.name === 'shot.render')
     return {
       params: {
         prompt: shots.map((entry, index) => `${entry.position}. ${entry.shot.prompt} (${seconds[index]} s)`).join('\n'), duration_sec: total,
       },
-      inputs: references.map(ref => ({ role: 'reference', ref, asset: null })),
+      // The card's own references: every shot's images, each once.
+      inputs: [...new Map(images.flat().map(image => [`${image.ref}:${String(image.asset)}`, image])).values()],
+      shots: shots.map((entry, index) => ({
+        shot: entry.position, prompt: entry.shot.prompt, duration_sec: seconds[index] ?? PLAN_SHOT_SECONDS,
+        references: images[index] ?? [],
+      })),
       estimate: renderSpec?.estimate?.({ duration_sec: total }).gpu_seconds ?? 0,
     }
+  }
+
+  /**
+   * The reference images one plan shot renders from, in the order `shot.render` sends them: each reference in turn,
+   * a character, location or style version expanded to every one of its reference images.
+   * @param projectId - the project.
+   * @param state - the state of the approving branch.
+   * @param references - the shot's reference texts (`c1@1`, `<record>#<n>`, or an asset ID).
+   * @returns the images with their URLs.
+   * @throws Error when a reference names an unknown character, location or style version.
+   */
+  private shotImages(projectId: ProjectId, state: ProjectState, references: readonly string[]): ApprovalReference[] {
+    if (references.length === 0) return []
+    const project = this.ctx.dvProject
+    return project.parseInputs('shot.render', { reference: references }, state).flatMap(({ role, ref }) => {
+      const assets = 'asset' in ref || 'record' in ref ? [this.assetOf(projectId, formatInputRef(ref))] : project.assetsOf(state, ref) ?? []
+      return assets.map(asset => ({ role, ref: formatInputRef(ref), asset, url: asset === null ? null : this.ctx.dvAssetPool.url(asset) }))
+    })
   }
 
   /** The assets a pending call's inputs stand for, with their URLs. */

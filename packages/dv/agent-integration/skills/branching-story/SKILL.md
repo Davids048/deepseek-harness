@@ -24,4 +24,4 @@ A branching story is a tree of 5-second shots. Every node continues from its par
 - Unchosen branches stay in the project. The user can resume one later by naming it; continue from that record.
 - Do not render more than the two next branches ahead of the user's choice. With a fast backend you may start rendering both children of the chosen node while the user is still looking, but never a third level.
 - Keep one timeline for the chosen path only; branches that were not chosen are not on the timeline.
-- When the user changes an earlier choice, that is a new branch from that node (`dv_proj_branch_create` at its record), not an undo.
+- When the user changes an earlier choice, that is a new branch from that node (`dv_proj_branch_create` at its record), not an undo. When the user asks to go back without choosing differently, use `dv_proj_undo` with `to`.

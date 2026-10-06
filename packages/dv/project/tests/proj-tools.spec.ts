@@ -209,6 +209,13 @@ describe('dv_proj_* tools', () => {
     expect(json(await fixture.call('dv_proj_draft_discard', {}))).toMatchObject({ branch: 'main', draft: null, records: 3 })
     expect(json(await fixture.call('dv_proj_undo', {}))).toMatchObject({ branch: 'main', records: 2 })
     expect(json(await fixture.call('dv_proj_redo', {}))).toMatchObject({ branch: 'main', records: 4 })
+    // `to` goes back to a record from the history; the project returns to its state just after it.
+    const create = fixture.project.listHistory({ project: projectId, operation: 'proj.create' })[0]!.record.id
+    expect(json(await fixture.call('dv_proj_undo', { to: create }))).toMatchObject({ branch: 'main', records: 2 })
+    expect(fixture.project.listHistory({ project: projectId, operation: 'proj.undo' })[0]?.record).toMatchObject({
+      params: { to: create }, intent: `go back to ${create}`,
+    })
+    expect(json(await fixture.call('dv_proj_redo', {}))).toMatchObject({ branch: 'main' })
     // A consumer of a superseded output is stale until the agent accepts it.
     const consumer = value(await fixture.call('dv_asset_grab_still', { reason: 'from the first', prompt: 'three', inputs: { reference: `${first.record}#0` } }))
     value(await fixture.call('dv_asset_grab_still', { reason: 'retake', prompt: 'one again', supersedes: [first.record] }))

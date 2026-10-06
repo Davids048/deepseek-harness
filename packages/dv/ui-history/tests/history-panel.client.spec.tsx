@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { DvClient } from '@dv/ui-kit/api.ts'
-import type { HistoryEntry, HistoryQuery, WireHistory } from '@dv/ui-kit/types.ts'
+import type { HistoryEntry, HistoryQuery, WireHistory, WireState } from '@dv/ui-kit/types.ts'
 import { DV_CANVAS_FOCUS_EVENT, DV_HISTORY_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT } from '@dv/ui-kit/workspace-events.ts'
 import { asset, fixtureState, record, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
 import { HistoryPanel } from '../src/client/HistoryPanel.tsx'
@@ -26,15 +26,17 @@ const ENTRIES: HistoryEntry[] = [
 /**
  * Mount the panel over scripted routes; `/api/dv/history` answers from {@link ENTRIES} filtered by actor.
  * @param entries - the history the route serves.
+ * @param adjust - changes to the fixture state that `/api/dv/state` serves for every branch.
  * @returns the rendered panel and the recorded writes.
  */
-function mount(entries: HistoryEntry[] = ENTRIES) {
+function mount(entries: HistoryEntry[] = ENTRIES, adjust: (state: WireState) => void = () => {}) {
   const queries: HistoryQuery[] = []
   const scripted = scriptedFetch({
     // Timeline `t1` of the fixture holds clips cl1 and cl2, assigned by its create record.
     state: () => {
       const state = fixtureState()
       state.components.proj.records = state.components.proj.records.map(item => item.id === 's1' ? { ...item, report: { clips: ['cl1', 'cl2'] } } : item)
+      adjust(state)
       return state
     },
     post: (path, body) => {
@@ -130,17 +132,45 @@ describe('HistoryPanel', () => {
     expect(focused).toEqual([{ recordId: 'g1' }, { timelineId: 't1', clipId: 'cl1' }])
   })
 
-  it('undoes and redoes with surface history', async () => {
-    const { view, writes } = mount()
-    await waitFor(() => { view.getByText('Undo') })
-    fireEvent.click(view.getByText('Undo'))
-    fireEvent.click(view.getByText('Redo'))
+  it('undoes, and redoes while the working branch has steps to bring back, with surface history', async () => {
+    const { view, writes } = mount(ENTRIES, (state) => { state.redo_steps = ['p1'] })
+    await waitFor(() => { expect(view.getByTestId('dv-history-redo').hasAttribute('disabled')).toBe(false) })
+    fireEvent.click(view.getByTestId('dv-history-undo'))
+    fireEvent.click(view.getByTestId('dv-history-redo'))
     await waitFor(() => {
       expect(writes.filter(write => write.path !== '/api/dv/history')).toEqual([
         { path: '/api/dv/undo', body: { project: 'p1', surface: 'history', session: 's5' } },
         { path: '/api/dv/redo', body: { project: 'p1', surface: 'history', session: 's5' } },
       ])
     })
+  })
+
+  it('marks the current step, offers 回到这一步 on the steps before it, and greys the steps redo brings back', async () => {
+    const current: HistoryEntry = { record: record({ id: 'g3', branch: 'draft/s5', session: 's5', operation: 'shot.render' }), mark: 'draft' }
+    const { writes, row } = mount([current, ...ENTRIES], (state) => {
+      state.components.proj.records = state.components.proj.records.filter(item => item.id !== 'p1')
+      state.redo_steps = ['p1']
+    })
+    await waitFor(() => { row('p1') })
+    expect(row('g3').getAttribute('data-step')).toBe('current')
+    expect(row('g3').querySelector('[data-testid="dv-history-current"]')?.textContent).toBe('Current')
+    expect(row('g3').querySelector('[data-testid="dv-history-jump"]')).toBeNull()
+    expect(row('p1').getAttribute('data-step')).toBe('after')
+    expect(row('p1').style.opacity).toBe('0.55')
+    expect(row('p1').querySelector('[data-testid="dv-history-jump"]')).toBeNull()
+    // A record off the working branch is no step of it.
+    expect(row('m1').hasAttribute('data-step')).toBe(false)
+    expect(row('g1').getAttribute('data-step')).toBe('before')
+    const jump = row('g1').querySelector('[data-testid="dv-history-jump"]')
+    expect(jump?.textContent).toBe('Go back to this step')
+    fireEvent.click(jump as HTMLElement)
+    await waitFor(() => {
+      expect(writes.filter(write => write.path !== '/api/dv/history')).toEqual([
+        { path: '/api/dv/undo', body: { project: 'p1', surface: 'history', session: 's5', to: 'g1' } },
+      ])
+    })
+    // The jump does not select the row.
+    expect(row('g1').getAttribute('aria-selected')).toBe('false')
   })
 
   it('says what to do when the project has no records, and when the filters match none', async () => {

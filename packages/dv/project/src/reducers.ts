@@ -225,7 +225,7 @@ export class ReducerRegistry {
         slices.set(key, this.reduceSlice(reducer, slices.get(key) ?? reducer.initial(), record, slices))
       }
     }
-    return { project: info, branch, head: last.id, components: componentStates(slices) }
+    return { project: info, branch, head: last.id, components: componentStates(slices), redo_steps: [] }
   }
 
   /**

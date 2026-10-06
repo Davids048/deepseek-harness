@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包把 DSH web 应用变成 DreamVerse 应用。没有打开项目时，中间区域显示首页：对话输入框和最近项目。打开项目后，它在 画布 | 时间线 切换下显示画布或时间线编辑器。左侧栏显示导航：新建项目、首页，以及 项目 → 对话 树。右侧面板多出 对话 和 轨迹 标签。DSH 主会话跟随打开的项目；URL hash 保存位置。
+使用本包把 DSH web 应用变成 DreamVerse 应用。没有打开项目时，中间区域显示首页：对话输入框和最近项目。打开项目后，它在 画布 | 时间线 切换下显示画布或时间线编辑器。左侧栏显示导航：新建项目、首页，以及 项目 → 对话 树。右侧面板多出 对话 和 轨迹 标签。DSH 主会话跟随打开的项目；URL hash 保存位置。打开项目时，Ctrl+Z 把主对话的当前分支后退一步，Shift+Ctrl+Z 前进一步（macOS 上用 Cmd）；在文本框或对话输入框里，这些按键保持编辑文字的含义。
 
 ## 目录
 
@@ -70,6 +70,7 @@ Host 半边不注册任何东西。浏览器半边以优先级 -1 注册中间�
 | [`src/client/Center.tsx`](src/client/Center.tsx) | 中间区域：URL 恢复、首页、最近项目、工作区顶栏、视图，以及窗口事件监听 |
 | [`src/client/Navigator.tsx`](src/client/Navigator.tsx) | 左侧导航和品牌名 |
 | [`src/client/tabs.tsx`](src/client/tabs.tsx) | 对话 和 轨迹 的标签类型与主体 |
+| [`src/client/undo-keys.ts`](src/client/undo-keys.ts) | 调用 `/api/dv/undo` 和 `/api/dv/redo` 的 Ctrl+Z / Shift+Ctrl+Z 窗口监听 |
 | [`src/client/chrome.tsx`](src/client/chrome.tsx) | 隐藏和改写的 DSH 界面、右侧面板指南页，以及随界面语言变化的标签标题 |
 | [`src/client/InlineRename.tsx`](src/client/InlineRename.tsx) | 行内标题输入框和 ⋯ 行菜单 |
 | [`src/client/views.ts`](src/client/views.ts) | 画布和时间线视图，从各自包的源码引入本 bundle |

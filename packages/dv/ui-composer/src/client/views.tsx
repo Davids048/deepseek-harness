@@ -7,7 +7,8 @@
 import { useEffect, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { assetUrl } from '@dv/ui-kit/api.ts'
 import { useText } from '@dv/ui-kit/locale.ts'
-import type { ApprovalCard, ComposerMode } from '@dv/ui-kit/types.ts'
+import { pictureParts } from '@dv/ui-kit/references.ts'
+import type { ApprovalCard, ApprovalReference, ComposerMode } from '@dv/ui-kit/types.ts'
 import { DV_HISTORY_FOCUS_EVENT, dispatchWorkspaceEvent } from '@dv/ui-kit/workspace-events.ts'
 import { approvalStore, composerClient } from './api.ts'
 
@@ -19,6 +20,39 @@ const button = (active: boolean): CSSProperties => ({
 const card: CSSProperties = { border: '1px solid var(--dsh-border, #3a3a3a)', borderRadius: 10, padding: 10, margin: '6px 0', fontSize: 13 }
 const primary: CSSProperties = { padding: '4px 12px', borderRadius: 6, border: 'none', cursor: 'pointer', background: 'var(--dsh-accent, #6d5efc)', color: '#fff' }
 const secondary: CSSProperties = { padding: '4px 12px', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: 'inherit', border: '1px solid var(--dsh-border, #3a3a3a)' }
+
+const inlinePicture: CSSProperties = {
+  height: '1.6em', width: '1.6em', objectFit: 'cover', borderRadius: 4, verticalAlign: 'middle', margin: '0 2px',
+}
+const thumbnail: CSSProperties = { width: 40, height: 40, objectFit: 'cover', borderRadius: 6 }
+
+/**
+ * A shot prompt whose `Picture N` tokens show the N-th image the video model receives as a small inline thumbnail; the
+ * image's alt text keeps the token's words. A token without a known image stays text.
+ * @param props - the prompt and the shot's images in `Picture 1`, `Picture 2`, … order.
+ * @returns the prompt.
+ */
+export function PicturePrompt(props: { prompt: string; images: readonly ApprovalReference[] }) {
+  return <>{pictureParts(props.prompt).map((part, index) => {
+    const url = 'picture' in part ? props.images[part.picture - 1]?.url ?? null : null
+    return url === null ? <span key={index}>{part.text}</span>
+      : <img key={index} data-testid="dv-composer-picture" src={url} alt={part.text} title={part.text} style={inlinePicture} />
+  })}</>
+}
+
+/**
+ * The small thumbnails of the images a shot renders from, in the order the video model receives them.
+ * @param props - the images.
+ * @returns the row, or nothing without images.
+ */
+export function ReferenceThumbnails(props: { images: readonly ApprovalReference[] }) {
+  if (props.images.length === 0) return null
+  return <div data-testid="dv-composer-references" style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+    {props.images.map((image, index) => image.url === null
+      ? <span key={index} style={{ fontSize: 11, opacity: 0.7 }}>{image.ref}</span>
+      : <img key={index} src={image.url} alt={image.ref} title={image.ref} style={thumbnail} />)}
+  </div>
+}
 
 /** One two-option toggle; each option carries a tooltip that says what it changes. */
 function Toggle<V extends string>(props: { value: V; options: Array<[V, string, string]>; onChange: (value: V) => void }) {
@@ -139,7 +173,8 @@ function outputsOf(block: object): Array<{ role: string; url: string; mime: stri
 
 /**
  * The card of one `shot.render` call: its prompt, status, and the rendered video. While the call waits for the
- * user, the status points to the approval card above the composer, which holds the 批准 / 跳过 buttons.
+ * user, the status points to the approval card above the composer, which holds the 批准 / 跳过 buttons, and the card
+ * shows the call's reference images from that approval card, inline for each `Picture N` and as thumbnails.
  * @param props - the call.
  * @returns the card.
  */
@@ -158,7 +193,10 @@ export function RenderCard(props: RenderCardProps) {
     : props.phase === 'result' ? (failed ? t('未渲染', 'Not rendered') : t('已渲染', 'Rendered')) : t('渲染中…', 'Rendering…')
   return <div style={card} data-tool="dv_shot_render">
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong>{t('渲染镜头', 'Render shot')}</strong><span style={{ opacity: 0.7 }}>{status}</span></div>
-    {prompt !== '' && <div style={{ marginTop: 4, opacity: 0.85 }}>{prompt}</div>}
+    {prompt !== '' && <div style={{ marginTop: 4, opacity: 0.85 }}>
+      <PicturePrompt prompt={prompt} images={pending?.references ?? []} />
+    </div>}
+    {pending !== undefined && <ReferenceThumbnails images={pending.references} />}
     {video !== undefined && <video src={video.url} controls muted style={{ marginTop: 8, width: '100%', borderRadius: 8 }} />}
     {props.phase === 'result' && <div style={{ marginTop: 6 }}><HistoryLink sessionId={props.sessionId} callId={props.callId} /></div>}
   </div>
@@ -199,12 +237,17 @@ function ApprovalCardView(props: { approval: ApprovalCard }) {
   const tool = `dv_${approval.operation.replace('.', '_')}`
   return <div style={{ ...card, borderColor: 'var(--dsh-accent, #6d5efc)' }} data-tool={tool} data-state="awaiting-approval">
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><strong>{title}</strong><span style={{ opacity: 0.7 }}>{t('DreamVerse 视频模型', 'DreamVerse video model')}</span></div>
-    <div style={{ marginTop: 6, whiteSpace: 'pre-line' }}>{approval.prompt || approval.summary}</div>
-    {approval.references.length > 0 && <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-      {approval.references.map(reference => reference.url === null
-        ? <span key={`${reference.role}:${reference.ref}`} style={{ fontSize: 11, opacity: 0.7 }}>{reference.ref}</span>
-        : <img key={`${reference.role}:${reference.ref}`} src={reference.url} alt={reference.ref} title={`${reference.role}: ${reference.ref}`} style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6 }} />)}
-    </div>}
+    {approval.shots.length > 0
+      ? approval.shots.map(shot => <div key={shot.shot} data-testid="dv-composer-approval-shot" style={{ marginTop: 6 }}>
+        <div>{shot.shot}. <PicturePrompt prompt={shot.prompt} images={shot.references} /> ({shot.duration_sec} {t('秒', 's')})</div>
+        <ReferenceThumbnails images={shot.references} />
+      </div>)
+      : <>
+        <div style={{ marginTop: 6, whiteSpace: 'pre-line' }}>
+          {approval.prompt === '' ? approval.summary : <PicturePrompt prompt={approval.prompt} images={approval.references} />}
+        </div>
+        <ReferenceThumbnails images={approval.references} />
+      </>}
     <div style={{ display: 'flex', gap: 12, marginTop: 8, opacity: 0.8, fontSize: 12 }}>
       <span>{t('时长', 'Duration')} {approval.duration_sec === null ? t('默认', 'default') : `${String(approval.duration_sec)} ${t('秒', 's')}`}</span>
       <span>{t('预计 GPU', 'Est. GPU')} {Math.round(approval.gpu_seconds)} {t('秒', 's')}</span>

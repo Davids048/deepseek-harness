@@ -1,15 +1,21 @@
 /**
- * History: undo and redo as records, the effective chain that undo and redo records define, and the history list.
+ * History: undo, redo and jumps as records on a working branch, the effective chain that those records define, and the
+ * history list.
  *
  * Effective chain. The raw chain of a record is its `parents[0]` ancestry. The effective chain differs at `proj.undo`
  * and `proj.redo` records: such a record U with `params.to = X` continues the effective chain of X, so
  * `effectiveChain(U) = effectiveChain(X) + [U]`, and the records between X and U drop out. Every other record R gives
  * `effectiveChain(R) = effectiveChain(parents[0] of R) + [R]`. State is always computed from the effective chain.
  *
- * Change units on `main`. Undo moves `main` back by one accepted change. Walking the effective chain of `main`
- * backwards and skipping `proj.undo`, `proj.redo` and `proj.branch_switch` records, the last change is either
- * (a) a `proj.draft_accept` record A, whose unit is every record after `A.params.base` up to A, or (b) any other
- * record R, whose unit is R alone. `proj.create` is never a change unit.
+ * Steps. Undo and redo act on one branch, the caller's working branch (an open draft, an exploration branch, or
+ * `main`). Every `operation` record is one step, except `proj.create`, `proj.undo`, `proj.redo`, `proj.draft_accept`,
+ * `proj.draft_discard`, `proj.branch_create` and `proj.branch_switch`. An accepted draft's records stay separate steps
+ * on `main`: a fast-forward accept keeps them on the effective chain of `main`, and a replay accept copies each one.
+ *
+ * Redo line. The jump run of a branch is the trailing run of `proj.undo` and `proj.redo` records on the raw chain of its
+ * head. With H the record just before that run, the redo line is `effectiveChain(H)`, and the redo steps are the steps
+ * of the redo line after the head's `params.to`. Any other record appended to the branch ends the jump run, so a write
+ * after an undo drops the redo steps.
  *
  * Calls: reads and appends through the record store. The service calls `undo` and `redo` while it holds the project
  * lock; reducers and drafts call `effectiveChain`.
@@ -21,8 +27,18 @@ import type { RecordStore } from './record-store.ts'
 import { MAIN_BRANCH, ProjectError } from './shared.ts'
 import type { HistoryEntry, HistoryQuery, ProjectId, ProjectRecord, RecordId, RecordOrigin } from './types.ts'
 
-/** Records that do not count as a change unit when undo walks `main` backwards. */
-const NOT_A_CHANGE = new Set(['proj.undo', 'proj.redo', 'proj.branch_switch'])
+/** `proj.*` operations whose records are not steps (see the module comment). */
+const NOT_A_STEP = new Set([
+  'proj.create', 'proj.undo', 'proj.redo', 'proj.draft_accept', 'proj.draft_discard', 'proj.branch_create', 'proj.branch_switch',
+])
+
+/**
+ * @param record - a record.
+ * @returns whether undo and redo count the record as one step.
+ */
+function isStep(record: ProjectRecord): boolean {
+  return record.kind === 'operation' && !NOT_A_STEP.has(record.operation ?? '')
+}
 
 /**
  * The record that an undo or redo record continues from.
@@ -91,6 +107,16 @@ export function effectiveChain(store: RecordStore, project: ProjectId, head: Rec
   return walkEffective(id => store.getRecord(project, id), head)
 }
 
+/** The redo line of a branch: where its jump run started and where its head stands on it. */
+interface RedoLine {
+  /** The record just before the jump run (H in the module comment). */
+  end: RecordId
+  /** `effectiveChain(end)`, oldest first. */
+  line: ProjectRecord[]
+  /** The index in `line` of the head's `params.to`. */
+  at: number
+}
+
 /** Undo, redo and the history list of every project. */
 export class History {
   /**
@@ -99,70 +125,80 @@ export class History {
   constructor(private readonly store: RecordStore) {}
 
   /**
-   * Move `main` back by one change unit: append a `proj.undo` record on `main` with `params.to` = the effective-chain
-   * record just before the unit's first record. The caller holds the project lock. Throws `nothing_to_undo` when the
-   * effective chain of `main` holds no change unit.
+   * Move a branch back, or jump it to a step. Without `to`, the target is the effective-chain record just before the
+   * branch's last step. With `to`, the target is that record when it is on the branch's effective chain (the state
+   * returns to just after it), or the redo target of that record when it is one of the branch's redo steps (a jump
+   * forward, written as `proj.redo`). Appends a `proj.undo` (or `proj.redo`) record on the branch with
+   * `parents: [head]` and `params.to` = the target. The caller holds the project lock.
    * @param project - the project.
+   * @param branch - the working branch of the caller.
    * @param origin - who undoes, from where.
-   * @returns the `proj.undo` record.
+   * @param to - a record to return to, or undefined for one step back.
+   * @returns the appended record. Throws `unknown_branch`, `unknown_record`, `nothing_to_undo` (no step to undo, or
+   * `to` is the current position), or `invalid_params` (`to` is neither on the effective chain nor a redo step).
    */
-  undo(project: ProjectId, origin: RecordOrigin): ProjectRecord {
-    const main = this.store.getBranch(project, MAIN_BRANCH)
-    const chain = main === undefined ? [] : effectiveChain(this.store, project, main.head)
-    // The last change unit ends at the newest record that is not an undo, redo or branch switch.
-    let last = chain.length - 1
-    while (last >= 0 && NOT_A_CHANGE.has(chain[last]?.operation ?? '')) last--
-    const change = chain[last]
-    if (main === undefined || change === undefined || change.operation === 'proj.create' || last === 0) {
-      throw new ProjectError('nothing_to_undo', `Project ${project} has no change on main to undo.`)
+  undo(project: ProjectId, branch: string, origin: RecordOrigin, to?: RecordId): ProjectRecord {
+    const head = this.requireHead(project, branch)
+    const chain = effectiveChain(this.store, project, head)
+    if (to === undefined) {
+      const last = chain.findLastIndex(isStep)
+      const target = last > 0 ? chain[last - 1] : undefined
+      if (target === undefined) throw new ProjectError('nothing_to_undo', `Branch ${branch} of project ${project} has no step to undo.`)
+      return this.appendJump(project, branch, head, 'proj.undo', target.id, origin)
     }
-    const base = change.operation === 'proj.draft_accept' ? change.params.base : undefined
-    const to = typeof base === 'string' ? brandString<RecordId>(base) : chain[last - 1]?.id
-    if (to === undefined) throw new ProjectError('nothing_to_undo', `Project ${project} has no change on main to undo.`)
-    return this.appendJump(project, main.head, 'proj.undo', to, origin)
+    const record = this.store.getRecord(project, to)
+    const current = jumpTarget(this.store.getRecord(project, head)) ?? head
+    if (record.id === current || record.id === head) {
+      throw new ProjectError('nothing_to_undo', `Branch ${branch} of project ${project} already stands at record ${to}.`)
+    }
+    if (chain.some(entry => entry.id === record.id)) return this.appendJump(project, branch, head, 'proj.undo', record.id, origin)
+    const redo = this.redoLine(project, head)
+    const index = redo === null ? -1 : redo.line.findIndex((entry, at) => at > redo.at && entry.id === record.id)
+    if (redo === null || index < 0 || !isStep(redo.line[index] ?? record)) {
+      throw new ProjectError('invalid_params', `Record ${to} is neither a step of branch ${branch} nor one that redo brings back.`)
+    }
+    return this.appendJump(project, branch, head, 'proj.redo', this.redoTarget(redo, index), origin)
   }
 
   /**
-   * Re-apply the most recently undone change. Take the trailing run of `proj.undo` and `proj.redo` records on the raw
-   * chain of `main` (ending at its head), in order; push each undo and pop on each redo. When an undo U remains on the
-   * stack, append a `proj.redo` record on `main` with `params.to = U.parents[0]`; otherwise throw `nothing_to_redo`.
-   * Any other record on `main` after an undo therefore ends the possibility to redo it. The caller holds the lock.
+   * Move a branch forward by one redo step: append a `proj.redo` record on the branch whose `params.to` is the record
+   * just before the redo step that follows the next one, or the end of the redo line when the next step is the last.
+   * The caller holds the project lock.
    * @param project - the project.
+   * @param branch - the working branch of the caller.
    * @param origin - who redoes, from where.
-   * @returns the `proj.redo` record.
+   * @returns the `proj.redo` record. Throws `unknown_branch` or `nothing_to_redo`.
    */
-  redo(project: ProjectId, origin: RecordOrigin): ProjectRecord {
-    const main = this.store.getBranch(project, MAIN_BRANCH)
-    // Collect the trailing run of undo and redo records, newest first.
-    const run: ProjectRecord[] = []
-    let current: RecordId | undefined = main?.head
-    while (current !== undefined) {
-      const record = this.store.getRecord(project, current)
-      if (record.operation !== 'proj.undo' && record.operation !== 'proj.redo') break
-      run.push(record)
-      current = record.parents[0]
+  redo(project: ProjectId, branch: string, origin: RecordOrigin): ProjectRecord {
+    const head = this.requireHead(project, branch)
+    const redo = this.redoLine(project, head)
+    const next = redo === null ? -1 : redo.line.findIndex((entry, at) => at > redo.at && isStep(entry))
+    if (redo === null || next < 0) {
+      throw new ProjectError('nothing_to_redo', `Branch ${branch} of project ${project} has no undone step to redo.`)
     }
-    const undone: ProjectRecord[] = []
-    for (const record of run.reverse()) {
-      if (record.operation === 'proj.undo') undone.push(record)
-      else undone.pop()
-    }
-    const target = undone.at(-1)?.parents[0]
-    if (main === undefined || target === undefined) {
-      throw new ProjectError('nothing_to_redo', `Project ${project} has no undone change on main to redo.`)
-    }
-    return this.appendJump(project, main.head, 'proj.redo', target, origin)
+    return this.appendJump(project, branch, head, 'proj.redo', this.redoTarget(redo, next), origin)
+  }
+
+  /**
+   * The steps that redo brings back on a branch, oldest first (`ProjectState.redo_steps`).
+   * @param project - the project.
+   * @param branch - a branch name.
+   * @returns the record IDs; empty when the branch's head is not a jump or nothing after its target is a step.
+   */
+  redoSteps(project: ProjectId, branch: string): RecordId[] {
+    const redo = this.redoLine(project, this.requireHead(project, branch))
+    return redo === null ? [] : redo.line.slice(redo.at + 1).filter(isStep).map(record => record.id)
   }
 
   /**
    * List records with their marks, newest first (reverse write order), after the query's filters. Marks: `main` for
-   * records on the effective chain of `main`; `draft` for records on the raw chain of an open draft after its
-   * `forked_at`; `discarded` for records on the raw chain of a `proj.draft_discard` record after its `params.base`,
-   * including that record; `replayed` for records listed in a `proj.draft_accept` record's `params.replayed` as
-   * originals; `undone` for records on the raw chain of `main` that are not on its effective chain; `branch` for every
-   * other record. The first matching mark in that order wins. Draft names are reused per session, so a specific draft
-   * is identified by its fork record (`forked_at`, `params.base`), never by the branch name alone. The `marks` filter
-   * applies after the record filters and before `limit`. Takes no lock.
+   * records on the effective chain of `main`; `draft` for records on the effective chain of an open draft that are not
+   * on the effective chain of its `forked_at`; `discarded` for records on the raw chain of a `proj.draft_discard` record
+   * after its `params.base`, including that record; `replayed` for records listed in a `proj.draft_accept` record's
+   * `params.replayed` as originals; `undone` for records on the raw chain of a branch after its `forked_at` that are not
+   * on its effective chain; `branch` for every other record. The first matching mark in that order wins. Draft names
+   * are reused per session, so a specific draft is identified by its fork record (`forked_at`, `params.base`), never
+   * by the branch name alone. The `marks` filter applies after the record filters and before `limit`. Takes no lock.
    * @param query - the project and the filters.
    * @returns the entries.
    */
@@ -208,11 +244,20 @@ export class History {
     }
     const branches = this.store.listBranches(project)
     const mainHead = branches.find(branch => branch.name === MAIN_BRANCH)?.head
-    const onMain = new Set(mainHead === undefined ? [] : walkEffective(lookup, mainHead).map(record => record.id))
-    const onMainRaw = new Set(mainHead === undefined ? [] : rawChainSince(byId, mainHead, null))
-    // Open drafts are the branches owned by a chat session.
-    const onDraft = new Set(branches.filter(branch => branch.session !== null)
-      .flatMap(branch => rawChainSince(byId, branch.head, branch.forked_at)))
+    const effectiveIds = (head: RecordId | null): Set<RecordId> =>
+      new Set(head === null ? [] : walkEffective(lookup, head).map(record => record.id))
+    const onMain = effectiveIds(mainHead ?? null)
+    const onDraft = new Set<RecordId>()
+    const undone = new Set<RecordId>()
+    for (const branch of branches) {
+      // A branch's undone records are on its raw chain after its fork and off its effective chain.
+      const effective = effectiveIds(branch.head)
+      for (const id of rawChainSince(byId, branch.head, branch.forked_at)) if (!effective.has(id)) undone.add(id)
+      // Open drafts are the branches owned by a chat session; their records are the effective ones after the fork.
+      if (branch.session === null) continue
+      const before = effectiveIds(branch.forked_at)
+      for (const id of effective) if (!before.has(id)) onDraft.add(id)
+    }
     const discarded = new Set<RecordId>()
     const replayed = new Set<RecordId>()
     for (const record of records) {
@@ -232,25 +277,69 @@ export class History {
       if (onDraft.has(id)) return 'draft'
       if (discarded.has(id)) return 'discarded'
       if (replayed.has(id)) return 'replayed'
-      if (onMainRaw.has(id)) return 'undone'
+      if (undone.has(id)) return 'undone'
       return 'branch'
     }
   }
 
   /**
-   * Append a `proj.undo` or `proj.redo` record on `main`.
+   * The redo line of a branch head (see the module comment).
    * @param project - the project.
-   * @param head - the head of `main`, the new record's parent.
+   * @param head - the head of the branch.
+   * @returns the line, or null when the head is not a `proj.undo` or `proj.redo` record.
+   */
+  private redoLine(project: ProjectId, head: RecordId): RedoLine | null {
+    const target = jumpTarget(this.store.getRecord(project, head))
+    if (target === null) return null
+    // Walk the raw chain back over the jump run to the record before it.
+    let end: RecordId | undefined = head
+    while (end !== undefined && jumpTarget(this.store.getRecord(project, end)) !== null) {
+      end = this.store.getRecord(project, end).parents[0]
+    }
+    if (end === undefined) return null
+    const line = effectiveChain(this.store, project, end)
+    const at = line.findIndex(record => record.id === target)
+    return at < 0 ? null : { end, line, at }
+  }
+
+  /**
+   * The `params.to` of a redo that brings back the step at `index` of the redo line: the record just before the next
+   * step after it, or the end of the line when no step follows.
+   * @param redo - the redo line.
+   * @param index - the index of a step in `redo.line`.
+   * @returns the record ID.
+   */
+  private redoTarget(redo: RedoLine, index: number): RecordId {
+    const following = redo.line.findIndex((entry, at) => at > index && isStep(entry))
+    return following < 0 ? redo.end : (redo.line[following - 1]?.id ?? redo.end)
+  }
+
+  /**
+   * @param project - the project.
+   * @param branch - a branch name.
+   * @returns the branch's head; throws `unknown_branch`.
+   */
+  private requireHead(project: ProjectId, branch: string): RecordId {
+    const stored = this.store.getBranch(project, branch)
+    if (stored === undefined) throw new ProjectError('unknown_branch', `Project ${project} has no branch ${branch}.`)
+    return stored.head
+  }
+
+  /**
+   * Append a `proj.undo` or `proj.redo` record on a branch.
+   * @param project - the project.
+   * @param branch - the branch.
+   * @param head - the head of the branch, the record's parent.
    * @param operation - `proj.undo` or `proj.redo`.
-   * @param to - the record whose state `main` returns to.
+   * @param to - the record whose state the branch returns to.
    * @param origin - who acts, from where.
    * @returns the appended record.
    */
   private appendJump(
-    project: ProjectId, head: RecordId, operation: 'proj.undo' | 'proj.redo', to: RecordId, origin: RecordOrigin,
+    project: ProjectId, branch: string, head: RecordId, operation: 'proj.undo' | 'proj.redo', to: RecordId, origin: RecordOrigin,
   ): ProjectRecord {
     return this.store.append(project, {
-      parents: [head], branch: MAIN_BRANCH, kind: 'operation', component: 'proj', operation, operation_version: '1',
+      parents: [head], branch, kind: 'operation', component: 'proj', operation, operation_version: '1',
       ...originFields(origin), params: { to }, inputs: [], outputs: [], based_on: null, supersedes: [], deterministic: true,
       status: 'done',
     })

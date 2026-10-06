@@ -22,7 +22,7 @@ const shot: ProjectRecord = {
 const lead = { id: brandString<CharacterId>('c1'), version: 1, name: 'Lead', description: '', references: [img], created_by: shot.id }
 const sources: ExpansionSources = {
   getState: (): ProjectState => ({
-    project: { id: project, title: 'p', created_at: '' }, branch: 'main', head: shot.id,
+    project: { id: project, title: 'p', created_at: '' }, branch: 'main', head: shot.id, redo_steps: [],
     components: {
       proj: { records: [shot], stale: {}, superseded: {}, created_by: { [vid]: shot.id } },
       timeline: {

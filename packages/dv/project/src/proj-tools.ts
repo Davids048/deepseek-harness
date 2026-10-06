@@ -234,19 +234,25 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
     }),
     defineTool({
       name: 'dv_proj_undo',
-      description: 'Move main back by one accepted change: one accepted draft or one direct change. '
-        + 'The records stay in the history; dv_proj_redo brings the change back.',
-      parameters: projectParam,
+      description: 'Go back in the project history on the branch you write to (your draft, else main). Without to, undo '
+        + 'one step. With to, go back to a step from dv_proj_history_list: the project returns to its state just after '
+        + 'that record. When the user asks to roll back, return to an earlier version or undo several changes, use this tool '
+        + 'with to; never rebuild the old state with new edits. The records stay in the history; dv_proj_redo moves forward again.',
+      parameters: {
+        ...projectParam,
+        to: { type: 'string', description: 'A record ID from dv_proj_history_list to go back to; omit to undo one step.' },
+      },
       output: writeOutput,
       execute: async (args, exec) => {
         const projectId = projectOf(exec, args.project_id)
-        await project.undo(projectId, originOf(project, exec, 'undo'))
+        const to = args.to === undefined ? undefined : brandString<RecordId>(args.to)
+        await project.undo(projectId, originOf(project, exec, args.to === undefined ? 'undo' : `go back to ${args.to}`), to)
         return written(exec, projectId)
       },
     }),
     defineTool({
       name: 'dv_proj_redo',
-      description: 'Bring back the change the latest undo removed, while nothing else changed main since.',
+      description: 'Move forward one step that an undo removed, while nothing else was written on your branch since.',
       parameters: projectParam,
       output: writeOutput,
       execute: async (args, exec) => {
