@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Chat composer additions of DreamVerse: the @ source for project clips, characters, locations, styles, and assets; the ask-first and quality/speed controls; render approval cards and the pending-approval bar; and the dv:compose prefill.",
+  "description": "Chat composer additions of DreamVerse: the @ source and the Reference row for project clips, characters, locations, styles, and assets; the render tool cards; tool rows with creator-facing names and a Show in history link; and the dv:compose prefill.",
   "exports": {
     ".": "./src/index.ts",
     "./client": {

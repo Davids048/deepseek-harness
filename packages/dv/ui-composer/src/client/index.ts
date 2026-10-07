@@ -2,12 +2,11 @@
  * Browser half of the DreamVerse composer additions:
  * - an `@` source listing the bound project's clips, characters, and assets;
  * - a 引用 row in the composer's ＋ menu that opens that `@` list at the end of the draft;
- * - the 渲染前先问 / 直接渲染 and 质量 / 速度 toggles in `conversation.input.left`;
- * - the `dv_shot_render` tool card, which shows the prompt, status, and rendered video;
+ * - an invisible `conversation.input.left` entry that makes each session's composer a `dv:compose` target;
+ * - the `dv_shot_render_ref2va` and `dv_shot_render_t2va` tool cards, which show the prompt, status, and rendered video;
  * - creator-facing names for the other `dv_*` tools in their chat rows and in the running group title;
  * - 在历史中查看 on every settled row whose tool is not read-only, including failed calls, which dispatches
  *   `dv:history-focus`;
- * - the approval cards (批准 / 跳过, and 全部批准 when several wait) in `conversation.input.dock`;
  * - an empty `conversation.input.permission` entry that hides DSH's file-permission chip;
  * - the `dv:compose` prefill from the canvas and asset pool views, which also brings the 对话 tab to the front.
  *
@@ -21,7 +20,7 @@ import { IconLinkOutlineRegular, type IconProps } from '@deepseek-ai/dsh-client-
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import { createElement, useCallback, type ComponentType } from 'react'
+import { createElement, useEffect, type ComponentType } from 'react'
 import { DV_COMPOSE_EVENT, type DvComposeDetail } from '@dv/ui-kit/compose.ts'
 import { getCurrentProject } from '@dv/ui-kit/current-project.ts'
 import { pickText } from '@dv/ui-kit/locale.ts'
@@ -29,7 +28,7 @@ import { deliverCompose, mountComposer } from './compose.ts'
 import { MENTION_SOURCE, projectMentionSource } from './mention.ts'
 import { DV_TOOL_LABELS } from '@dv/ui-kit/tool-labels.ts'
 import { addToolNames } from './tool-labels.ts'
-import { ModeControls, PendingBar, RenderCard, ToolLabelRow } from './views.tsx'
+import { RenderCard, ToolLabelRow } from './views.tsx'
 
 export { projectItems, referenceText, MENTION_SOURCE } from './mention.ts'
 export { uriOf } from './compose.ts'
@@ -37,8 +36,8 @@ export { uriOf } from './compose.ts'
 /** The branded session ID the session-scoped DSH UI slots receive. */
 type SessionId = ToolCallViewProps['sessionId']
 
-/** The agent tool of `shot.render`. */
-const RENDER_TOOL = 'dv_shot_render'
+/** The agent tools of the Shot render operations `shot.render_ref2va` and `shot.render_t2va`. */
+const RENDER_TOOLS: ReadonlySet<string> = new Set(['dv_shot_render_ref2va', 'dv_shot_render_t2va'])
 
 /** Required services: the trigger registry, the sessions, the slots, and the right sidebar that holds 对话. */
 export const inject = ['inputTriggers', 'sessions', 'slots', 'sidebarRight']
@@ -98,21 +97,28 @@ export function apply(ctx: ClientContext): void {
     }), 'dv-composer: ＋ menu reference row')
   })
 
-  function Controls(props: { sessionId: SessionId }) {
+  // Each mounted session composer takes `dv:compose` prefills while it is mounted; the entry renders nothing.
+  function ComposeTarget(props: { sessionId: SessionId }) {
     const { sessionId } = props
-    const onMount = useCallback(() => mountComposer(() => inputOf(sessionId)), [sessionId])
-    return createElement(ModeControls, { sessionId, onMount })
+    useEffect(() => mountComposer(() => inputOf(sessionId)), [sessionId])
+    return null
   }
-  ctx.slots.inject('conversation.input.left', () => ctx.slots.register({ name: 'conversation.input.left', id: 'dv-composer-modes', order: 50 }, Controls))
-  ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({ name: 'conversation.input.dock', id: 'dv-composer-approvals', order: 5 }, PendingBar))
+  ctx.slots.inject('conversation.input.left', () => ctx.slots.register(
+    { name: 'conversation.input.left', id: 'dv-composer-compose', order: 50 }, ComposeTarget,
+  ))
   // DreamVerse sessions always edit inside their project's Workspace, so DSH's file-permission chip (工作区内修改) is
   // hidden: an empty entry at a lower priority shadows the permission picker.
   ctx.slots.inject('conversation.input.permission', () => ctx.slots.register({ name: 'conversation.input.permission', priority: -1 }, () => null))
 
   function RenderRow(props: ToolCallViewProps) {
-    return createElement(RenderCard, { sessionId: props.sessionId, callId: props.callId, phase: props.phase, block: props.block })
+    const label = DV_TOOL_LABELS[props.toolName] ?? [props.toolName, props.toolName]
+    return createElement(RenderCard, {
+      toolName: props.toolName, label, sessionId: props.sessionId, callId: props.callId, phase: props.phase, block: props.block,
+    })
   }
-  ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: RENDER_TOOL }, RenderRow))
+  for (const name of RENDER_TOOLS) {
+    ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: name }, RenderRow))
+  }
 
   // Every other labelled tool shows its creator-facing name in its chat row and in the running group title.
   function LabelRow(props: ToolCallViewProps) {
@@ -122,7 +128,8 @@ export function apply(ctx: ClientContext): void {
     })
   }
   for (const name of Object.keys(DV_TOOL_LABELS)) {
-    if (name !== RENDER_TOOL) ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: name }, LabelRow))
+    if (RENDER_TOOLS.has(name)) continue
+    ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({ name: 'tool.call.toolview', key: name }, LabelRow))
   }
   ctx.effect(() => {
     const locale: unknown = ctx.get('locale')

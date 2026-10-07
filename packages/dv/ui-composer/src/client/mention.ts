@@ -2,7 +2,7 @@
  * The `@` source that lists the project items of the project the shell has open: clips by timeline name and position
  * (`时间线 1 · 片段 2`, or `Timeline 1 · Clip 2` in English, for an unnamed timeline), characters, locations, styles,
  * and assets. A pick inserts a reference chip whose text is `@[<label>](dv:<kind>/<id>)`; the host plugin
- * `@dv/agent-integration` expands that address into record and asset IDs for the model.
+ * `@dv/chat-references` expands that address into record and asset IDs for the model.
  *
  * @module @dv/ui-composer/mention
  */
