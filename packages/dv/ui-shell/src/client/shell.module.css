@@ -324,6 +324,13 @@
   height: 180px;
 }
 
+/* The blank band holds only the composer, whose ＋ menu opens upward above the band; the conversation body and its
+   scroller must not clip it. */
+.center[data-blank] .entryChat :global([class*='_embeddedBody']),
+.center[data-blank] .entryChat :global([class*='_scrollBody']) {
+  overflow: visible;
+}
+
 .panelsButton {
   flex: none;
   margin-left: 8px;
