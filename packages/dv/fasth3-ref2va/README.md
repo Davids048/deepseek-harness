@@ -50,7 +50,7 @@ The streaming_v2 client of `@dreamverse/generation-client` does the HTTP work: `
 | File | Content |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | `FastH3Ref2vaRenderer`, `Config`, and the skill registration |
-| [`skills/fasth3-ref2va-prompting.md`](skills/fasth3-ref2va-prompting.md) | The skill body: model limits, how the prompt names the images, and prompt rules |
+| [`skills/fasth3-ref2va-prompting.md`](skills/fasth3-ref2va-prompting.md) | The skill body: the DreamVerse connection section, then the official MiniMax-H3 full-reference prompt guide copied unchanged |
 | [`tests/fasth3-ref2va.spec.ts`](tests/fasth3-ref2va.spec.ts) | A Loader composition with the skill registry against a fake streaming_v2 server; an opt-in test renders against the server named by `DV_BACKEND_URL` |
 
 -----
@@ -72,7 +72,7 @@ The streaming_v2 client of `@dreamverse/generation-client` does the HTTP work: `
 
 #### What the model sees
 
-While the skill registry is mounted, the skill catalog that `dsh-tool-skill` renders lists the catalog entry below. When the agent calls the `skill` tool with `fasth3-ref2va-prompting`, the tool result carries `skills/fasth3-ref2va-prompting.md`: every shot needs at least one reference image, at most 8 reference images plus the first frame, `duration_sec` from 5 to 15, the images named `Picture 1 … Picture N` with the first frame after the reference images, and prompt rules for the subject, action, camera, place and light, sound, and shots that continue the previous one.
+While the skill registry is mounted, the skill catalog that `dsh-tool-skill` renders lists the catalog entry below. When the agent calls the `skill` tool with `fasth3-ref2va-prompting`, the tool result carries `skills/fasth3-ref2va-prompting.md`: a DreamVerse connection section (one DreamVerse shot is one target video; the six rewrite sections form the `prompt`; only `<Picture N>` and `<Subject N>` references; picture numbering with the first frame after the reference images; at least one and at most 8 reference images; `duration_sec` from 5 to 15), followed by the official MiniMax-H3 full-reference prompt guide `VIDEO_PROMPT_WRITING_GUIDE_ref_en.md` copied unchanged.
 
 ##### Catalog entry
 
@@ -82,7 +82,7 @@ While the skill registry is mounted, the skill catalog that `dsh-tool-skill` ren
 
 #### Token effect
 
-About 40 tokens in the catalog while the provider and the skill registry are mounted, and about 500 tokens each time the agent loads the skill.
+About 40 tokens in the catalog while the provider and the skill registry are mounted, and about 6,000 tokens each time the agent loads the skill.
 
 #### KV Cache effect
 

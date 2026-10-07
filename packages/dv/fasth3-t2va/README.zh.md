@@ -51,7 +51,7 @@ HTTP 工作由 `@dreamverse/generation-client` 的 streaming_v2 客户端完成�
 | 文件 | 内容 |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | `FastH3T2vaRenderer`、`Config` 和 skill 注册 |
-| [`skills/fasth3-t2va-prompting.md`](skills/fasth3-t2va-prompting.md) | skill 正文：模型限制、三个提示词字段，以及关于描述、镜头运动、说话人与对白和画面文字的规则 |
+| [`skills/fasth3-t2va-prompting.md`](skills/fasth3-t2va-prompting.md) | skill 正文：DreamVerse 对接说明，后接原样复制的 MiniMax-H3 官方提示词指南（T2VA / I2VA / FL2VA / L2VA） |
 | [`tests/fasth3-t2va.spec.ts`](tests/fasth3-t2va.spec.ts) | 一个包含 skill 注册表的 Loader 组合，连接假的 streaming_v2 服务器；一个需显式启用的测试对 `DV_T2VA_BACKEND_URL` 指定的服务器真实渲染 |
 
 -----
@@ -73,7 +73,7 @@ HTTP 工作由 `@dreamverse/generation-client` 的 streaming_v2 客户端完成�
 
 #### 模型看到什么
 
-skill 注册表挂载期间，`dsh-tool-skill` 渲染的 skill 目录列出下面的目录条目。智能体用 `fasth3-t2va-prompting` 调用 `skill` 工具时，工具结果带有 `skills/fasth3-t2va-prompting.md`：镜头没有参考图和首帧，`duration_sec` 为 5 到 15，提示词用英文写成三个字段 `integrated_multimodal_description`、`overall_soundscape` 和 `non_diegetic_music`，并附有关于一个渲染镜头内多个摄影镜头（`[Shot 2] At 00:03.500, …`）、镜头运动、说话人 ID（如 `(S1)`）、`<d>` 内的对白和画面文字的规则。
+skill 注册表挂载期间，`dsh-tool-skill` 渲染的 skill 目录列出下面的目录条目。智能体用 `fasth3-t2va-prompting` 调用 `skill` 工具时，工具结果带有 `skills/fasth3-t2va-prompting.md`：一段 DreamVerse 对接说明（使用指南的 T2VA 模式，所以提示词直接从三个字段 `integrated_multimodal_description`、`overall_soundscape` 和 `non_diegetic_music` 开始；一个 DreamVerse 镜头就是一个目标视频；一切都用文字描述；`duration_sec` 为 5 到 15），后接原样复制的 MiniMax-H3 官方提示词指南 `VIDEO_PROMPT_WRITING_GUIDE_base_en.md`。
 
 ##### 目录条目
 
@@ -83,7 +83,7 @@ skill 注册表挂载期间，`dsh-tool-skill` 渲染的 skill 目录列出下�
 
 #### Token 影响
 
-provider 和 skill 注册表挂载期间，目录中约 40 个 token；智能体每次加载该 skill 约 1,200 个 token。
+provider 和 skill 注册表挂载期间，目录中约 40 个 token；智能体每次加载该 skill 约 4,200 个 token。
 
 #### KV Cache 影响
 

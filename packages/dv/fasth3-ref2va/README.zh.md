@@ -50,7 +50,7 @@ HTTP 工作由 `@dreamverse/generation-client` 的 streaming_v2 客户端完成�
 | 文件 | 内容 |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | `FastH3Ref2vaRenderer`、`Config` 和 skill 注册 |
-| [`skills/fasth3-ref2va-prompting.md`](skills/fasth3-ref2va-prompting.md) | skill 正文：模型限制、提示词如何指称图片，以及提示词规则 |
+| [`skills/fasth3-ref2va-prompting.md`](skills/fasth3-ref2va-prompting.md) | skill 正文：DreamVerse 对接说明，后接原样复制的 MiniMax-H3 官方全参考提示词指南 |
 | [`tests/fasth3-ref2va.spec.ts`](tests/fasth3-ref2va.spec.ts) | 一个包含 skill 注册表的 Loader 组合，连接假的 streaming_v2 服务器；一个需显式启用的测试对 `DV_BACKEND_URL` 指定的服务器真实渲染 |
 
 -----
@@ -72,7 +72,7 @@ HTTP 工作由 `@dreamverse/generation-client` 的 streaming_v2 客户端完成�
 
 #### 模型看到什么
 
-skill 注册表挂载期间，`dsh-tool-skill` 渲染的 skill 目录列出下面的目录条目。智能体用 `fasth3-ref2va-prompting` 调用 `skill` 工具时，工具结果带有 `skills/fasth3-ref2va-prompting.md`：每个镜头至少需要一张参考图，最多 8 张参考图外加首帧，`duration_sec` 为 5 到 15，图片称为 `Picture 1 … Picture N` 且首帧排在参考图之后，以及关于主体、动作、镜头运动、场景与光线、声音和接上一镜头的镜头的提示词规则。
+skill 注册表挂载期间，`dsh-tool-skill` 渲染的 skill 目录列出下面的目录条目。智能体用 `fasth3-ref2va-prompting` 调用 `skill` 工具时，工具结果带有 `skills/fasth3-ref2va-prompting.md`：一段 DreamVerse 对接说明（一个 DreamVerse 镜头就是一个目标视频；六个改写部分组成 `prompt`；只用 `<Picture N>` 和 `<Subject N>` 引用；图片编号且首帧排在参考图之后；至少一张、最多 8 张参考图；`duration_sec` 为 5 到 15），后接原样复制的 MiniMax-H3 官方全参考提示词指南 `VIDEO_PROMPT_WRITING_GUIDE_ref_en.md`。
 
 ##### 目录条目
 
@@ -82,7 +82,7 @@ skill 注册表挂载期间，`dsh-tool-skill` 渲染的 skill 目录列出下�
 
 #### Token 影响
 
-provider 和 skill 注册表挂载期间，目录中约 40 个 token；智能体每次加载该 skill 约 500 个 token。
+provider 和 skill 注册表挂载期间，目录中约 40 个 token；智能体每次加载该 skill 约 6,000 个 token。
 
 #### KV Cache 影响
 

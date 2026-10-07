@@ -79,5 +79,5 @@ The `timeline-editing` skill maps each editing request to its tool calls. The ru
 ## 9. Do not
 
 - Do not render before the user agreed to the plan, and do not render stale shots again before the user chose.
-- Do not describe faces or invent appearance details.
+- Do not invent appearance details.
 - Do not create a second plan to extend or change a story; update its plan.

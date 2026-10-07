@@ -51,7 +51,7 @@ The streaming_v2 client of `@dreamverse/generation-client` does the HTTP work: `
 | File | Content |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | `FastH3T2vaRenderer`, `Config`, and the skill registration |
-| [`skills/fasth3-t2va-prompting.md`](skills/fasth3-t2va-prompting.md) | The skill body: model limits, the three prompt fields, and the rules for the description, camera motion, speakers and dialogue, and on-screen text |
+| [`skills/fasth3-t2va-prompting.md`](skills/fasth3-t2va-prompting.md) | The skill body: the DreamVerse connection section, then the official MiniMax-H3 prompt guide (T2VA / I2VA / FL2VA / L2VA) copied unchanged |
 | [`tests/fasth3-t2va.spec.ts`](tests/fasth3-t2va.spec.ts) | A Loader composition with the skill registry against a fake streaming_v2 server; an opt-in test renders against the server named by `DV_T2VA_BACKEND_URL` |
 
 -----
@@ -73,7 +73,7 @@ The streaming_v2 client of `@dreamverse/generation-client` does the HTTP work: `
 
 #### What the model sees
 
-While the skill registry is mounted, the skill catalog that `dsh-tool-skill` renders lists the catalog entry below. When the agent calls the `skill` tool with `fasth3-t2va-prompting`, the tool result carries `skills/fasth3-t2va-prompting.md`: the shot has no reference image and no first frame, `duration_sec` runs from 5 to 15, and the prompt is written in English as three fields, `integrated_multimodal_description`, `overall_soundscape` and `non_diegetic_music`, with rules for camera shots inside one rendered shot (`[Shot 2] At 00:03.500, …`), camera motion, speaker IDs such as `(S1)`, dialogue inside `<d>`, and on-screen text.
+While the skill registry is mounted, the skill catalog that `dsh-tool-skill` renders lists the catalog entry below. When the agent calls the `skill` tool with `fasth3-t2va-prompting`, the tool result carries `skills/fasth3-t2va-prompting.md`: a DreamVerse connection section (use the guide's T2VA mode, so the prompt begins directly with the three fields `integrated_multimodal_description`, `overall_soundscape` and `non_diegetic_music`; one DreamVerse shot is one target video; describe everything in words; `duration_sec` from 5 to 15), followed by the official MiniMax-H3 prompt guide `VIDEO_PROMPT_WRITING_GUIDE_base_en.md` copied unchanged.
 
 ##### Catalog entry
 
@@ -83,7 +83,7 @@ While the skill registry is mounted, the skill catalog that `dsh-tool-skill` ren
 
 #### Token effect
 
-About 40 tokens in the catalog while the provider and the skill registry are mounted, and about 1,200 tokens each time the agent loads the skill.
+About 40 tokens in the catalog while the provider and the skill registry are mounted, and about 4,200 tokens each time the agent loads the skill.
 
 #### KV Cache effect
 

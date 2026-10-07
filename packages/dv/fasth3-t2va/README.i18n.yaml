@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/dv/fasth3-t2va/README.md
-README.md: 163004f668abd3a2ee5003cb67850b63bc817e0b
-README.zh.md: 0e21b0c92faac6dcd868768f48b4c90ca10fbcd0
+README.md: 62f6ae34fdc5303f3c545b4998794066ac78be42
+README.zh.md: 64706c15600db244fe27f42576e89317a2e28537
