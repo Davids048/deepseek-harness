@@ -69,7 +69,7 @@ export function nextTimelineId(timelines: Timeline[]): string {
  * render record it waits for.
  * @param state - the branch state, for asset durations, thumbnails, and stale marks.
  * @param timeline - the timeline, or null when the project has none.
- * @param branch - the shown branch: `main`, an exploration branch, or a `draft/<session>` branch.
+ * @param branch - the shown branch: `main` or a `draft/<session>` branch.
  * @param baseClips - the clips of the same timeline on `main`, when a draft is shown.
  * @returns the clips and the total length in seconds.
  */

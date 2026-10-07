@@ -83,9 +83,9 @@ const COLUMN = 360
 /** Row pitch; it leaves room for a card whose text has grown at the lowest zoom and that carries a badge row. */
 export const ROW = 380
 
-/** A `shot.render` record, whose outputs are the takes the creator judges. */
+/** A `shot.render_ref2va` or `shot.render_t2va` record, whose outputs are the takes the creator judges. */
 function isRender(record: ProjectRecord): boolean {
-  return record.operation === 'shot.render'
+  return record.operation === 'shot.render_ref2va' || record.operation === 'shot.render_t2va'
 }
 
 /**
@@ -103,7 +103,7 @@ function approvalLayout(version: PlanVersion, records: ReadonlyMap<string, Proje
 }
 
 /**
- * The `shot.render` records the canvas draws, which make up the current state of the branch:
+ * The render records the canvas draws, which make up the current state of the branch:
  * - for each shot of each plan's latest version, its current take together with the retakes of the same original take.
  *   The current take is the take the shot's clip on the plan's timeline plays (the clip at the shot's position, when it
  *   plays a take of that shot), else the newest done take of that shot and version or the earlier take the version's

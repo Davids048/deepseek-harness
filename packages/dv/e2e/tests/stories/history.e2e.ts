@@ -71,7 +71,7 @@ async function seedProject(prefix: string): Promise<Seeded> {
   const renders: ProjectRecord[] = []
   for (const prompt of [`${prefix} shot 1`, `${prefix} shot 2`]) {
     const reference = [{ role: 'reference', ref: imported.outputs[0] ?? '' }]
-    const render = await runOperation(id, 'shot.render', { prompt, duration_sec: 1 }, reference)
+    const render = await runOperation(id, 'shot.render_ref2va', { prompt, duration_sec: 1 }, reference)
     expect(render.status).toBe('done')
     renders.push(render)
   }
@@ -175,17 +175,18 @@ async function branchesOf(project: string): Promise<Branch[]> {
 }
 
 /**
- * Ask the scripted agent to rename timeline t1 in the chat, which opens the chat session's draft with one agent record.
+ * Ask the scripted agent to rename timeline t1 in the chat, which opens the chat session's draft with one agent record
+ * whose intent is `改名：<word>`.
  * @param page - a page showing the project.
  * @param project - the project.
- * @param word - the chat message, unique to the story; the turn's request text.
+ * @param word - the chat message, unique to the story.
  * @returns the open draft.
  */
 async function openAgentDraft(page: Page, project: string, word: string): Promise<Branch & { session: string }> {
   model.rules.push({
     match: word, endText: '改好了',
     steps: [{ calls: [{
-      name: 'dv_timeline_rename', args: { reason: 'rename', project_id: project, timeline: 't1', name: `${word} 改名` },
+      name: 'dv_timeline_rename', args: { reason: `改名：${word}`, project_id: project, timeline: 't1', name: `${word} 改名` },
     }] }],
   })
   // The composer lives in the 对话 tab; the story returns to 历史 once the draft is open.
@@ -258,14 +259,14 @@ describe('History panel', () => {
     const page = await openPage()
     await gotoProject(page, project.id)
     await openHistory(page)
-    const operations = (await stateOf(project.id)).components.proj.records.filter(record => record.kind === 'operation')
-    await expect.poll(() => shownRecords(page)).toEqual(operations.map(record => record.id).reverse())
+    const records = (await stateOf(project.id)).components.proj.records
+    await expect.poll(() => shownRecords(page)).toEqual(records.map(record => record.id).reverse())
     const render = rowOf(page, project.renders[1]?.id ?? '')
     expect(await render.getAttribute('data-actor')).toBe('user')
     expect(await render.getAttribute('data-status')).toBe('done')
     expect(await render.getAttribute('data-mark')).toBe('main')
     const text = await render.innerText()
-    for (const word of ['你', '渲染镜头']) expect(text).toContain(word)
+    for (const word of ['你', '参考图生成镜头']) expect(text).toContain(word)
     // One thumbnail per row: the take's still, which the browser loads.
     const thumb = render.locator('[data-testid="dv-history-thumb"]')
     expect(await thumb.count()).toBe(1)
@@ -276,7 +277,7 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
-  it('an agent row shows its turn\'s request words; a human edit on the draft shows 草稿, then 已接受 after accept', async () => {
+  it('an agent row shows the intent the agent gave for its call; a human edit on the draft shows 草稿, then 已接受 after accept', async () => {
     const project = await seedProject('history-turn')
     const page = await openPage()
     await gotoProject(page, project.id)
@@ -284,7 +285,8 @@ describe('History panel', () => {
     const draft = await openAgentDraft(page, project.id, 'history-turn-request')
     const agentRow = historyPanel(page).locator('[data-testid="dv-history-row"][data-actor="agent"]')
     await expect.poll(() => agentRow.count(), { timeout: 30_000 }).toBe(1)
-    await expect.poll(() => agentRow.innerText()).toContain('history-turn-request')
+    // The quoted words are the agent record's own intent, which the scripted call sets apart from the typed message.
+    await expect.poll(() => agentRow.innerText()).toContain('改名：history-turn-request')
     expect(await agentRow.innerText()).toContain('智能体')
     expect(await agentRow.getAttribute('data-surface')).toBe('chat')
     expect(await agentRow.getAttribute('data-mark')).toBe('draft')
@@ -303,8 +305,8 @@ describe('History panel', () => {
     const page = await openPage()
     await gotoProject(page, project.id)
     await openHistory(page)
-    const operations = (await stateOf(project.id)).components.proj.records.filter(record => record.kind === 'operation')
-    await expect.poll(() => rows(page).count()).toBe(operations.length)
+    const records = (await stateOf(project.id)).components.proj.records
+    await expect.poll(() => rows(page).count()).toBe(records.length)
     const before = await shownRecords(page)
     await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas' })
     await expect.poll(() => rowOf(page, project.timeline.id).getAttribute('data-mark')).toBe('undone')
@@ -325,7 +327,7 @@ describe('History panel', () => {
   it('a plan approval folds the renders it scheduled under its row; the toggle shows them', async () => {
     const id = await createProject('history-fold')
     const imported = await runOperation(id, 'asset.import', { base64: PNG_BASE64, mime: 'image/png', name: 'ref.png' })
-    const shots = [{ prompt: 'history-fold shot 1', duration_sec: 1 }, { prompt: 'history-fold shot 2', duration_sec: 1 }]
+    const shots = [1, 2].map(shot => ({ prompt: `history-fold shot ${String(shot)}`, duration_sec: 1, mode: 'ref2va' }))
     const plan = await runOperation(id, 'plan.create', { title: '折叠', references: [imported.outputs[0] ?? ''], shots })
     expect(plan.report?.['plan']).toBe('p1')
     const approval = await runOperation(id, 'plan.approve', { plan: 'p1' })
@@ -343,11 +345,11 @@ describe('History panel', () => {
     await expect.poll(() => fold.innerText(), { timeout: 30_000 }).toMatch(/^▸ 渲染 2 个镜头$/)
     await fold.click()
     await expect.poll(() => fold.getAttribute('aria-expanded')).toBe('true')
-    // The folded rows follow the approval's scheduled order: 渲染镜头 1, 渲染镜头 2, then 新建时间线.
+    // The folded rows follow the approval's scheduled order: 参考图生成镜头 1, 参考图生成镜头 2, then 新建时间线.
     expect(await shownRecords(page)).toEqual([approval.id, ...scheduled, plan.id, imported.id, expect.any(String)])
     expect(await rowOf(page, scheduled[2] ?? '').innerText()).toContain('新建时间线')
     const firstShot = rowOf(page, scheduled[0] ?? '')
-    expect(await firstShot.innerText()).toContain('渲染镜头 1')
+    expect(await firstShot.innerText()).toContain('参考图生成镜头 1')
     expect(await firstShot.getAttribute('data-actor')).toBe('system')
     expect(await firstShot.innerText()).toContain('自动')
     // The approval's thumbnail is its first render's still.
@@ -442,7 +444,7 @@ describe('History panel', () => {
     await expect.poll(() => rowOf(page, imported.id).getAttribute('data-status'), { timeout: 15_000 }).toBe('done')
     expect(await historyPanel(page).locator('[data-testid="dv-history-empty"]').count()).toBe(0)
     const reference = [{ role: 'reference', ref: imported.outputs[0] ?? '' }]
-    const render = await runOperation(id, 'shot.render', { prompt: 'history-live shot', duration_sec: 1 }, reference)
+    const render = await runOperation(id, 'shot.render_ref2va', { prompt: 'history-live shot', duration_sec: 1 }, reference)
     await expect.poll(() => rowOf(page, render.id).getAttribute('data-status'), { timeout: 30_000 }).toBe('done')
     await expect.poll(() => rowOf(page, render.id).locator('[data-testid="dv-history-thumb"]').count()).toBe(1)
     expect(page.errors).toEqual([])

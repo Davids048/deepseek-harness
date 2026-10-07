@@ -250,6 +250,9 @@ export async function bootHarness(
       DSH_HOME: home,
       DV_STATE_ROOT: stateRoot,
       DV_BACKEND_URL: backend.url,
+      // An empty t2va backend URL leaves the dv-fasth3-t2va row disabled, so the agent's only render tool is
+      // dv_shot_render_ref2va whatever the calling shell exports.
+      DV_T2VA_BACKEND_URL: '',
       DV_FFMPEG: FFMPEG,
       DV_PUBLIC_URL: '',
       DV_DEEPSEEK_BASE_URL: options.modelBaseUrl ?? `${model.baseURL}/v1`,

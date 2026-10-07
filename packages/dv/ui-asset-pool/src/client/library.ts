@@ -19,7 +19,7 @@ export interface AssetLibrary {
   characters: Asset[]
   /** Imported files and the reference images of locations and styles, without characters. */
   references: Asset[]
-  /** Takes: the videos of `shot.render` records, newest first. */
+  /** Takes: the videos of `shot.render_ref2va` and `shot.render_t2va` records, newest first. */
   rendered: Asset[]
   /** The videos of `deliver.timeline_export` records, newest first. */
   exports: Asset[]
@@ -114,7 +114,7 @@ export function assetLibrary(main: WireState, drafts: readonly DraftState[] = []
     if (record.status !== 'done' || record.operation === null) continue
     if (record.operation === 'asset.import') { importedIds.push(...record.outputs); continue }
     const videos = record.outputs.filter(id => byId.get(id)?.mime.startsWith('video/') === true)
-    if (record.operation === 'shot.render') renderedIds.push(...videos)
+    if (record.operation === 'shot.render_ref2va' || record.operation === 'shot.render_t2va') renderedIds.push(...videos)
     else if (record.operation === 'deliver.timeline_export') exportIds.push(...videos)
   }
   return {

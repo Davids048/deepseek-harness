@@ -52,9 +52,6 @@ describe('useViewSession', () => {
     expect(writes[0]?.body).toEqual({ project: 'p1', branch: 'draft/s5', surface: 'canvas' })
     // Discard first reads the counts its confirmation dialog shows.
     expect(writes[1]?.body).toEqual({ project: 'p1', branch: 'draft/s5', surface: 'canvas' })
-    act(() => { result.current.bar.onBranchCreate('alt', 'main') })
-    await waitFor(() => { expect(result.current.branch).toBe('explore/alt') })
-    expect(writes[3]?.body).toEqual({ project: 'p1', name: 'alt', at: 'main', surface: 'canvas' })
     act(() => { result.current.bar.onBranchSelect('draft/s5') })
     expect(result.current.readOnly).toBe(true)
     act(() => { result.current.bar.onProject('p2') })
@@ -62,22 +59,24 @@ describe('useViewSession', () => {
     expect(result.current.branch).toBe('main')
   })
 
-  it('switches the chat session\'s working branch when the bar shows main or an exploration branch', async () => {
+  it('shows another branch without writing, and undoes on the chat session\'s working branch', async () => {
     const { fetch, writes } = scriptedFetch()
     const client = new DvClient(fetch)
     const { result } = renderHook(() => useViewSession(client, 'canvas', 's5'))
     await waitFor(() => { expect(result.current.state.value).not.toBeNull() })
     expect(result.current.session).toBe('s5')
-    act(() => { result.current.bar.onBranchSelect('explore/style-b') })
     act(() => { result.current.bar.onBranchSelect('draft/s5') })
+    act(() => { result.current.bar.onBranchSelect('main') })
     act(() => { result.current.bar.onUndo() })
-    await waitFor(() => { expect(writes).toHaveLength(2) })
-    expect(writes[0]).toEqual({ path: '/api/dv/branches/switch', body: { project: 'p1', branch: 'explore/style-b', surface: 'canvas', session: 's5' } })
-    expect(writes[1]).toEqual({ path: '/api/dv/undo', body: { project: 'p1', surface: 'canvas', session: 's5' } })
+    await waitFor(() => { expect(writes).toHaveLength(1) })
+    expect(writes[0]).toEqual({ path: '/api/dv/undo', body: { project: 'p1', surface: 'canvas', session: 's5' } })
   })
 
   it('keeps the failure message of a write and clears it on the next success', async () => {
-    const { fetch } = scriptedFetch({ post: path => path === '/api/dv/undo' || path === '/api/dv/branches/create' || path === '/api/dv/projects' ? { status: 409, body: { error: 'nothing to undo' } } : { status: 200, body: { heads: {} } } })
+    const refused = (path: string): boolean => path === '/api/dv/undo' || path === '/api/dv/projects'
+    const { fetch } = scriptedFetch({
+      post: path => refused(path) ? { status: 409, body: { error: 'nothing to undo' } } : { status: 200, body: { heads: {} } },
+    })
     const client = new DvClient(fetch)
     const { result } = renderHook(() => useViewSession(client, 'timeline'))
     await waitFor(() => { expect(result.current.project).toBe('p1') })
@@ -93,13 +92,10 @@ describe('useViewSession', () => {
     const plain = vi.fn<() => Promise<unknown>>().mockRejectedValue('plain')
     await act(async () => { await result.current.run(plain) })
     expect(result.current.notice).toBe('plain')
-    act(() => { result.current.bar.onBranchCreate('alt', 'main') })
-    await waitFor(() => { expect(result.current.notice).toBe('nothing to undo') })
-    expect(result.current.branch).toBe('main')
-    act(() => { result.current.bar.onBranchSelect('explore/style-b') })
+    act(() => { result.current.bar.onBranchSelect('draft/s5') })
     act(() => { result.current.bar.onCreate('refused') })
     await waitFor(() => { expect(result.current.notice).toBe('nothing to undo') })
-    expect(result.current.branch).toBe('explore/style-b')
+    expect(result.current.branch).toBe('draft/s5')
     expect(result.current.project).toBe('p1')
   })
 
@@ -113,7 +109,6 @@ describe('useViewSession', () => {
       result.current.bar.onAccept('t')
       result.current.bar.onDiscard('t')
       result.current.bar.onUndo()
-      result.current.bar.onBranchCreate('x', 'main')
     })
     expect(writes).toHaveLength(0)
   })

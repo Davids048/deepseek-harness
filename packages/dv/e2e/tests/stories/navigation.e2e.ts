@@ -549,7 +549,7 @@ describe('navigation, projects, sessions, and panels', () => {
     await newProject(page)
     const chatText = (await chat(page).innerText()).replace(/\s+/g, '')
     // Beyond the composer controls, the blank chat carries a hint in the interface language.
-    expect(chatText.replace(/发消息|调用指令|文件或对话|工作区内修改|渲染前先问|直接渲染|质量|速度/g, '').length).toBeGreaterThan(4)
+    expect(chatText.replace(/发消息|调用指令|文件或对话|工作区内修改/g, '').length).toBeGreaterThan(4)
     await selectTab(page, '轨迹')
     const trajectory = page.locator('[data-dv-trajectory]:visible')
     await trajectory.waitFor({ timeout: 10_000 })

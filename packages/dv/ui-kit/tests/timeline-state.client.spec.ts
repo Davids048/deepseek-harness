@@ -30,7 +30,7 @@ describe('state readings', () => {
     state.branches.push({ name: 'draft/s7', head: 'x', base: 'main', forked_at: 's1', session: 's7', counts: { agent_changes: 0, human_edits: 2 } })
     state.heads['draft/s7'] = 'x'
     expect(openDrafts(state).map(draft => draft.session)).toEqual(['s5', 's7'])
-    expect(branchNames(state)).toEqual(['main', 'explore/style-b', 'draft/s5', 'draft/s7'])
+    expect(branchNames(state)).toEqual(['main', 'draft/s5', 'draft/s7'])
     expect(assetIndex(state).get('export.mp4')?.mime).toBe('video/mp4')
     expect(videoAssets(state).map(video => video.id)).toEqual(['shot1.mp4', 'shot2.mp4', 'export.mp4'])
   })

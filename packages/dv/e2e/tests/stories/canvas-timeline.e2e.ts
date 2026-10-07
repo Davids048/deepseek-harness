@@ -14,6 +14,9 @@ const OTHER_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFklEQV
 /** A 1×1 opaque PNG. */
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
 
+/** The Shot render operation of every seeded shot: the e2e profile mounts only the `ref2va` render mode. */
+const RENDER_OPERATION = 'shot.render_ref2va'
+
 /** A seeded project: its ID, the rendered take assets in shot order (the clips of timeline t1), and the shot records. */
 interface Seeded { id: string; clipAssets: string[]; shots: string[] }
 
@@ -70,13 +73,15 @@ async function seedProject(title: string, shots = 3, timelines: number[] = []): 
   const imported = await runOperation(id, 'asset.import', { base64: PNG_BASE64, mime: 'image/png', name: 'ref.png' })
   await runOperation(id, 'bible.character_create', { character: 'c1', name: 'Dancer' }, [{ role: 'reference', ref: imported.outputs[0] ?? '' }])
   const plan = await runOperation(id, 'plan.create', {
-    title, continuity: 'independent', references: ['c1@1'],
-    shots: Array.from({ length: shots }, (_, index) => ({ prompt: `${title} shot ${String(index + 1)}`, duration_sec: 1 + (index % 2) })),
+    title, references: ['c1@1'],
+    shots: Array.from({ length: shots }, (_, index) => ({
+      prompt: `${title} shot ${String(index + 1)}`, duration_sec: 1 + (index % 2), mode: 'ref2va',
+    })),
   })
   await runOperation(id, 'plan.approve', { plan: plan.report?.['plan'] })
   const state = await waitFor(async () => {
     const current = await stateOf(id)
-    const done = current.components.proj.records.filter(record => record.operation === 'shot.render' && record.status === 'done')
+    const done = current.components.proj.records.filter(record => record.operation === RENDER_OPERATION && record.status === 'done')
     const clips = current.components.timeline.timelines[0]?.clips ?? []
     return done.length === shots && clips.length === shots && clips.every(clip => clip.asset !== null) ? current : null
   }, `${String(shots)} rendered shots of ${title}`, 120_000)
@@ -84,7 +89,7 @@ async function seedProject(title: string, shots = 3, timelines: number[] = []): 
   for (const [index, count] of timelines.entries()) {
     await runOperation(id, 'timeline.create', { timeline: `t${String(index + 2)}`, assets: clipAssets.slice(0, count) })
   }
-  const shotRecords = state.components.proj.records.filter(record => record.operation === 'shot.render').map(record => record.id)
+  const shotRecords = state.components.proj.records.filter(record => record.operation === RENDER_OPERATION).map(record => record.id)
   return { id, clipAssets, shots: shotRecords }
 }
 
@@ -312,6 +317,8 @@ describe('canvas stories', () => {
     const editor = page.locator('[data-testid="dv-canvas-node-editor"]')
     await page.locator('[data-node-kind="take"]').first().click()
     await expect.poll(() => editor.count()).toBe(1)
+    // The take editor names the render mode of the take's record.
+    expect(await editor.locator('[data-testid="dv-canvas-render-mode"]').textContent()).toBe('参考图生成')
     await editor.getByRole('button', { name: '关闭' }).click()
     await expect.poll(() => editor.count()).toBe(0)
     await page.locator('[data-node-kind="take"]').first().click()
@@ -347,8 +354,10 @@ describe('canvas stories', () => {
     if (v1 === undefined) throw new Error('the seeded plan is not p1')
     // An unapproved v2 with 40 shots makes the plan editor taller than the canvas.
     await runOperation(project.id, 'plan.update', {
-      plan: 'p1', title: v1.title, continuity: v1.continuity, references: v1.references,
-      shots: Array.from({ length: 40 }, (_, index) => ({ prompt: `canvas-editor-wheel shot ${String(index + 1)}`, duration_sec: 1 })),
+      plan: 'p1', title: v1.title, references: v1.references,
+      shots: Array.from({ length: 40 }, (_, index) => ({
+        prompt: `canvas-editor-wheel shot ${String(index + 1)}`, duration_sec: 1, mode: 'ref2va',
+      })),
     })
     const page = await openPage()
     await gotoProject(page, project.id)
@@ -430,7 +439,7 @@ describe('canvas stories', () => {
     await expect.poll(() => takes.count(), { timeout: 30_000 }).toBe(3)
     await expect.poll(() => harness.backend.requests.length, { timeout: 30_000 }).toBe(requests + 1)
     const retake = await waitFor(async () => {
-      const latest = (await stateOf(project.id)).components.proj.records.filter(record => record.operation === 'shot.render').at(-1)
+      const latest = (await stateOf(project.id)).components.proj.records.filter(record => record.operation === RENDER_OPERATION).at(-1)
       return latest?.status === 'done' ? latest : null
     }, 'the new take renders')
     expect(await page.locator(`path[data-edge="${original}>${retake?.id ?? ''}"]`).count()).toBe(1)
@@ -454,23 +463,28 @@ describe('canvas stories', () => {
     const project = await seedProject('canvas-plan-versions', 2)
     const v1 = (await stateOf(project.id)).components.plan.plans['p1']?.[0]
     if (v1 === undefined) throw new Error('the seeded plan is not p1')
+    // Shot 3 continues shot 2, so its render starts from the last still of shot 2's take.
     await runOperation(project.id, 'plan.update', {
-      plan: 'p1', title: v1.title, continuity: v1.continuity, references: v1.references,
-      shots: [...v1.shots, { prompt: 'canvas-plan-versions shot 3', duration_sec: 1 }],
+      plan: 'p1', title: v1.title, references: v1.references,
+      shots: [...v1.shots, { prompt: 'canvas-plan-versions shot 3', duration_sec: 1, mode: 'ref2va', continue_previous: true }],
     })
     await runOperation(project.id, 'plan.approve', { plan: 'p1' })
     const state = await waitFor(async () => {
       const current = await stateOf(project.id)
-      const done = current.components.proj.records.filter(record => record.operation === 'shot.render' && record.status === 'done')
+      const done = current.components.proj.records.filter(record => record.operation === RENDER_OPERATION && record.status === 'done')
       return done.length === 3 && (current.components.timeline.timelines[0]?.clips.length ?? 0) === 3 ? current : null
     }, 'shot 3 of plan p1 v2 renders onto timeline t1', 120_000)
     // The approval of v2 renders only the added shot and puts all three takes on the plan's one timeline.
     expect(state.components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1'])
     expect(state.components.timeline.timelines[0]?.clips.map(clip => clip.asset).slice(0, 2)).toEqual(project.clipAssets)
-    const renders = state.components.proj.records.filter(record => record.operation === 'shot.render')
+    const renders = state.components.proj.records.filter(record => record.operation === RENDER_OPERATION)
     expect(renders.map(record => [record.params['plan'], record.params['plan_version'], record.params['shot']])).toEqual([
       ['p1', 1, 1], ['p1', 1, 2], ['p1', 2, 3],
     ])
+    const firstFrames = (render: ProjectRecord | undefined): unknown[] =>
+      (render?.inputs ?? []).filter(input => input.role === 'first_frame').map(input => input.ref)
+    expect(firstFrames(renders[2])).toEqual([{ record: renders[1]?.id, output: 1 }])
+    expect(firstFrames(renders[1])).toEqual([])
     const page = await openPage()
     await gotoProject(page, project.id)
     const plans = page.locator('[data-node-kind="plan"]')
@@ -488,6 +502,8 @@ describe('canvas stories', () => {
     expect(await versions.allTextContents()).toEqual(['v1', 'v2'])
     expect(await editor.getByRole('button', { name: 'v2' }).getAttribute('aria-pressed')).toBe('true')
     await expect.poll(() => editor.locator('ol > li').count()).toBe(3)
+    // Each shot names its render mode; the continuing shot says so.
+    expect(await editor.locator('[data-testid="dv-canvas-shot-mode"]').allTextContents()).toEqual(['参考图生成', '参考图生成', '参考图生成 · 接上一镜头'])
     await editor.getByRole('button', { name: 'v1' }).click()
     await expect.poll(() => editor.locator('ol > li').count()).toBe(2)
     expect(page.errors).toEqual([])
@@ -497,8 +513,8 @@ describe('canvas stories', () => {
     const project = await seedProject('canvas-current', 3)
     const v1 = (await stateOf(project.id)).components.plan.plans['p1']?.[0]
     if (v1 === undefined) throw new Error('the seeded plan is not p1')
-    const base = { plan: 'p1', title: v1.title, continuity: v1.continuity, references: v1.references }
-    const added = [...v1.shots, { prompt: 'canvas-current shot 4', duration_sec: 1 }]
+    const base = { plan: 'p1', title: v1.title, references: v1.references }
+    const added = [...v1.shots, { prompt: 'canvas-current shot 4', duration_sec: 1, mode: 'ref2va' }]
     // v2 adds shot 4 and is approved; v3 changes shot 2 and is never approved; v4 returns to the three v1 shots.
     await runOperation(project.id, 'plan.update', { ...base, shots: added })
     await runOperation(project.id, 'plan.approve', { plan: 'p1' })
@@ -508,7 +524,7 @@ describe('canvas stories', () => {
       return clips.length === 4 && clips.every(clip => clip.asset !== null) ? current : null
     }, 'shot 4 of plan p1 v2 renders onto timeline t1', 120_000)
     const v2Layout = v2State.components.proj.records.findLast(record => record.operation === 'timeline.update')
-    const shot4 = v2State.components.proj.records.find(record => record.operation === 'shot.render' && record.params['shot'] === 4)
+    const shot4 = v2State.components.proj.records.find(record => record.operation === RENDER_OPERATION && record.params['shot'] === 4)
     if (v2Layout === undefined || shot4 === undefined) throw new Error('the v2 approval wrote no timeline update or shot 4 render')
     await runOperation(project.id, 'plan.update', { ...base, shots: added.map((shot, index) => index === 1 ? { ...shot, prompt: 'canvas-current shot 2, closer' } : shot) })
     await runOperation(project.id, 'plan.update', { ...base, shots: v1.shots })
@@ -643,7 +659,13 @@ describe('canvas stories', () => {
 
   it('a draft draws dashed nodes with an accept bar; accepting makes them solid', async () => {
     const project = await seedProject('canvas-draft', 2)
-    model.rules.push({ match: 'draft-shot-please', steps: [{ calls: [{ name: 'dv_shot_render', args: { reason: 'draft shot', project_id: project.id, prompt: 'canvas-draft extra shot', duration_sec: 1, inputs: { reference: ['c1@1'] } } }] }], endText: '草稿待确认' })
+    model.rules.push({
+      match: 'draft-shot-please',
+      steps: [{ calls: [{ name: 'dv_shot_render_ref2va', args: {
+        reason: 'draft shot', project_id: project.id, prompt: 'canvas-draft extra shot', duration_sec: 1, inputs: { reference: ['c1@1'] },
+      } }] }],
+      endText: '草稿待确认',
+    })
     const page = await openPage()
     await gotoProject(page, project.id)
     const composer = page.locator('[data-dv-chat] [contenteditable="true"]').first()
@@ -1031,8 +1053,8 @@ describe('timeline stories', () => {
     const imported = await runOperation(project, 'asset.import', { base64: PNG_BASE64, mime: 'image/png', name: 'ref.png' })
     await runOperation(project, 'bible.character_create', { character: 'c1', name: 'Dancer' }, [{ role: 'reference', ref: imported.outputs[0] ?? '' }])
     const plan = await runOperation(project, 'plan.create', {
-      title: 'timeline-pending', continuity: 'independent', references: ['c1@1'],
-      shots: [1, 2, 3].map(shot => ({ prompt: `timeline-pending shot ${String(shot)}`, duration_sec: shot === 2 ? 2 : 1 })),
+      title: 'timeline-pending', references: ['c1@1'],
+      shots: [1, 2, 3].map(shot => ({ prompt: `timeline-pending shot ${String(shot)}`, duration_sec: shot === 2 ? 2 : 1, mode: 'ref2va' })),
     })
     harness.backend.hold()
     try {

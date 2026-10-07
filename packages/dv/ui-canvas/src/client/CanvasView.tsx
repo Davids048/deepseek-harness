@@ -112,8 +112,9 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
       ...forkIndex === -1 ? [] : baseRecords.slice(forkIndex + 1).map(record => record.id),
     ])
     const state = withImportNames(overlayDraft(base.value, overlay))
-    // The draft bar names the human's latest request that the draft answers.
-    const draftIntent = state.components.proj.records.filter(record => draftRecords.has(record.id) && record.kind === 'request').at(-1)?.intent ?? ''
+    // The draft bar names the intent of the draft's latest record that states one.
+    const draftIntent = state.components.proj.records
+      .filter(record => draftRecords.has(record.id) && record.intent !== '').at(-1)?.intent ?? ''
     return { state, draftIntent, ...buildCanvasGraph(state, draftRecords) }
   }, [base.value, branch, readOnly, draft, draftState.value])
 
@@ -335,7 +336,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     gesture.current = null
     if (current === null) return
     if (current.kind === 'node' && !current.moved) {
-      select(current.id)
+      setSelected(current.id)
       return
     }
     // A click on empty canvas closes the floating editor.
@@ -345,12 +346,6 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     }
     if (current.kind === 'node') moved.current.add(current.id)
     scheduleSave()
-  }
-  const select = (id: string): void => {
-    setSelected(id)
-    const node = graph?.nodes.find(candidate => candidate.id === id)
-    // A plan node selects the record of its latest version.
-    void client.select({ project: projectId, kind: node?.bibleKind ?? 'record', id: node?.bibleId ?? node?.record?.id ?? id, surface: 'canvas' })
   }
   const zoomBy = (factor: number): void => {
     autoFit.current = false

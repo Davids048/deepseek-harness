@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The branch bar: project and branch selection, open drafts, undo, and new branches. */
+/** The branch bar: project and branch selection, open drafts, undo, and new projects. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, within } from '@testing-library/react'
 import { BranchBar } from '../src/client/BranchBar.tsx'
@@ -9,15 +9,15 @@ import { fixtureState, PROJECT } from './fixture.client.tsx'
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 const labels: BranchBarLabels = {
-  project: 'project', branch: 'branch', accept: 'accept', discard: 'discard', undo: 'undo', newBranch: 'new branch',
-  newBranchPrompt: 'name?', newProject: 'new project', newProjectPrompt: 'title?', draftTitle: 'draft', noProject: 'none',
+  project: 'project', branch: 'branch', accept: 'accept', discard: 'discard', undo: 'undo', newProject: 'new project',
+  newProjectPrompt: 'title?', draftTitle: 'draft', noProject: 'none',
 }
 
 function mount(overrides: Partial<BranchBarProps> = {}) {
   const props: BranchBarProps = {
     projects: [PROJECT, { ...PROJECT, id: 'p2', title: 'Other' }], project: 'p1', state: fixtureState(), branch: 'main', labels,
     onProject: vi.fn(), onBranchSelect: vi.fn(), onAccept: vi.fn(), onDiscard: vi.fn(), onUndo: vi.fn(),
-    onBranchCreate: vi.fn(), onCreate: vi.fn(),
+    onCreate: vi.fn(),
     ...overrides,
   }
   const view = render(<BranchBar {...props} />)
@@ -32,9 +32,9 @@ describe('BranchBar', () => {
     fireEvent.change(project, { target: { value: 'p2' } })
     expect(props.onProject).toHaveBeenCalledWith('p2')
     const branch = bar.getByLabelText('branch')
-    expect([...branch.querySelectorAll('option')].map(option => option.value)).toEqual(['main', 'explore/style-b', 'draft/s5'])
-    fireEvent.change(branch, { target: { value: 'explore/style-b' } })
-    expect(props.onBranchSelect).toHaveBeenCalledWith('explore/style-b')
+    expect([...branch.querySelectorAll('option')].map(option => option.value)).toEqual(['main', 'draft/s5'])
+    fireEvent.change(branch, { target: { value: 'draft/s5' } })
+    expect(props.onBranchSelect).toHaveBeenCalledWith('draft/s5')
     fireEvent.click(bar.getByText('undo'))
     expect(props.onUndo).toHaveBeenCalledOnce()
   })
@@ -48,19 +48,6 @@ describe('BranchBar', () => {
     expect(props.onDiscard).toHaveBeenCalledWith('draft/s5')
   })
 
-  it('asks for a branch name and ignores an empty or cancelled answer', () => {
-    const answers = ['  ', null, ' alt ']
-    const ask = vi.fn(() => answers.shift() ?? null)
-    const { props, bar } = mount({ ask })
-    const button = bar.getByText('new branch')
-    fireEvent.click(button)
-    fireEvent.click(button)
-    expect(props.onBranchCreate).not.toHaveBeenCalled()
-    fireEvent.click(button)
-    expect(props.onBranchCreate).toHaveBeenCalledWith('alt', 'main')
-    expect(ask).toHaveBeenCalledWith('name?')
-  })
-
   it('uses window.prompt by default and shows the placeholder before a project is chosen', () => {
     const prompt = vi.spyOn(window, 'prompt').mockReturnValue('from-prompt')
     const { props, bar } = mount({ project: null, state: null })
@@ -68,16 +55,10 @@ describe('BranchBar', () => {
     expect(bar.getByText('none')).toBeTruthy()
     expect([...bar.getByLabelText('branch').querySelectorAll('option')].map(option => option.value)).toEqual(['main'])
     expect(bar.getByText('undo')).toHaveProperty('disabled', true)
-    expect(bar.getByText('new branch')).toHaveProperty('disabled', true)
     fireEvent.click(bar.getByText('new project'))
     expect(prompt).toHaveBeenCalledWith('title?')
     expect(props.onCreate).toHaveBeenCalledWith('from-prompt')
     prompt.mockRestore()
-    cleanup()
-    const { props: withProject, bar: ready } = mount()
-    vi.spyOn(window, 'prompt').mockReturnValue('from-prompt')
-    fireEvent.click(ready.getByText('new branch'))
-    expect(withProject.onBranchCreate).toHaveBeenCalledWith('from-prompt', 'main')
   })
 
   it('asks for a project title and ignores an empty or cancelled answer', () => {

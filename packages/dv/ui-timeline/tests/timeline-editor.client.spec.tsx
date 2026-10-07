@@ -64,11 +64,11 @@ describe('TimelineView', () => {
   })
 
   it('writes remove, split, move, trim, create, and insert as timeline records of the shown timeline', async () => {
-    const { view, clip, requests, writes, track } = mount()
+    const { view, clip, requests, track } = mount()
     await track()
     fireEvent.pointerDown(clip(2), { clientX: 0 })
     fireEvent.pointerUp(clip(2), { clientX: 0 })
-    await waitFor(() => { expect(writes.some(write => write.path === '/api/dv/selection')).toBe(true) })
+    await waitFor(() => { expect(clip(2).getAttribute('aria-pressed')).toBe('true') })
     fireEvent.keyDown(view.getByTestId('dv-timeline-editor'), { key: 'Delete' })
     await waitFor(() => { expect(requests()).toHaveLength(1) })
     expect(requests()[0]).toMatchObject({ project: 'p1', surface: 'timeline', operation: 'timeline.clip_remove', params: { clip: 'cl2' } })
@@ -204,8 +204,8 @@ describe('TimelineView', () => {
   it('places a placeholder clip at its render length, marks it rendering or failed, and holds export until it is ready', async () => {
     const state = twoTimelines()
     state.components.proj.records.push(
-      record({ id: 'r8', operation: 'shot.render', status: 'running', params: { duration_sec: 2 } }),
-      record({ id: 'r9', operation: 'shot.render', status: 'failed', params: {} }),
+      record({ id: 'r8', operation: 'shot.render_ref2va', status: 'running', params: { duration_sec: 2 } }),
+      record({ id: 'r9', operation: 'shot.render_ref2va', status: 'failed', params: {} }),
     )
     const timeline = state.components.timeline.timelines[0]
     timeline?.clips.push(

@@ -43,7 +43,7 @@ The Host half registers nothing. The browser half registers the `dv-asset-pool` 
 
 Thumbnails and the preview load the asset files from `GET /dv/assets/<AssetId>`.
 
-The sections list, newest first: 角色 / Characters, the reference images of each character's latest version; 参考图 / Reference images, imported files and the reference images of locations and styles; 渲染结果 / Rendered, the videos of `shot.render` records; and 导出 / Exports, the videos of `deliver.timeline_export` records. The filters 全部 / All, 导入 / Imported, and 渲染结果 / Rendered show the four sections, the `asset.import` outputs alone, or the renders alone. The preview shows the size, duration, and file size, with the actions 插入片段 / Insert clip (videos only), 让智能体使用 / Ask the agent to use it, and 关闭 / Close.
+The sections list, newest first: 角色 / Characters, the reference images of each character's latest version; 参考图 / Reference images, imported files and the reference images of locations and styles; 渲染结果 / Rendered, the videos of `shot.render_ref2va` and `shot.render_t2va` records; and 导出 / Exports, the videos of `deliver.timeline_export` records. The filters 全部 / All, 导入 / Imported, and 渲染结果 / Rendered show the four sections, the `asset.import` outputs alone, or the renders alone. The preview shows the size, duration, and file size, with the actions 插入片段 / Insert clip (videos only), 让智能体使用 / Ask the agent to use it, and 关闭 / Close.
 
 -----
 
@@ -79,7 +79,7 @@ The sections list, newest first: 角色 / Characters, the reference images of ea
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through the browser-side asset pool panel; the `asset.import` records its imports write reach the model only through the agent integration (`@dv/agent-integration`).
+Indirectly, through `@dv/project`; the `asset.import` records that the asset pool panel's imports write reach the model only through the `dv:project` prompt section and the `dv_proj_*` and operation tools of [`@dv/project`](../project/README.md).
 
 #### KV Cache effect
 

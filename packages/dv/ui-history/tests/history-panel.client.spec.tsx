@@ -14,13 +14,13 @@ const ENTRIES: HistoryEntry[] = [
   { record: record({ id: 'm1', turn: null, surface: 'timeline', operation: 'timeline.clip_move', params: { clip: 'cl1', to: 2 }, intent: 'move clip 1' }), mark: 'main' },
   {
     record: record({
-      id: 'g1', turn: 't3', actor: 'agent', session: 's5', tool_call: 'call-g1', branch: 'draft/s5', operation: 'shot.render', outputs: ['shot1.mp4'],
+      id: 'g1', turn: 't3', actor: 'agent', session: 's5', tool_call: 'call-g1', branch: 'draft/s5', operation: 'shot.render_ref2va', outputs: ['shot1.mp4'],
+      intent: 'render the hero',
       inputs: [{ role: 'reference', ref: { asset: 'ref.png' }, resolved_asset: 'ref.png' }],
     }),
     mark: 'main',
   },
   { record: record({ id: 'p1', turn: 't3', actor: 'agent', session: 's5', tool_call: 'call-p1', operation: 'plan.create' }), mark: 'undone' },
-  { record: record({ id: 'r3', turn: 't3', kind: 'request', intent: 'render the hero' }), mark: 'main' },
 ]
 
 /**
@@ -46,7 +46,7 @@ function mount(entries: HistoryEntry[] = ENTRIES, adjust: (state: WireState) => 
       const shown = entries.filter(entry => (query.actor === undefined || entry.record.actor === query.actor)
         && (query.tool_call === undefined || entry.record.tool_call === query.tool_call))
       const answer: WireHistory = {
-        entries: shown, requests: { t3: record({ id: 'r3', turn: 't3', kind: 'request', intent: 'render the hero' }) },
+        entries: shown,
         assets: [asset('shot1.mp4', 'video/mp4', 'g1', 4), asset('ref.png', 'image/png', null)],
       }
       return { status: 200, body: answer }
@@ -62,7 +62,7 @@ function mount(entries: HistoryEntry[] = ENTRIES, adjust: (state: WireState) => 
 }
 
 describe('HistoryPanel', () => {
-  it('shows one row per operation record, newest first, with who, the turn\'s request words, the marks and one thumbnail', async () => {
+  it('shows one row per operation record, newest first, with who, the agent\'s intent, the marks and one thumbnail', async () => {
     const { view, row } = mount()
     await waitFor(() => { expect(view.container.querySelectorAll('[data-testid="dv-history-row"]').length).toBe(3) })
     const ids = [...view.container.querySelectorAll('[data-testid="dv-history-row"]')].map(element => element.getAttribute('data-record'))
@@ -84,8 +84,8 @@ describe('HistoryPanel', () => {
 
   it('folds the renders a plan approval scheduled under its row until the toggle opens them', async () => {
     const approval: HistoryEntry[] = [
-      { record: record({ id: 'g2', actor: 'system', operation: 'shot.render', params: { plan: 'p1', shot: 2 }, status: 'running' }), mark: 'main' },
-      { record: record({ id: 'g1', actor: 'system', operation: 'shot.render', params: { plan: 'p1', shot: 1 }, outputs: ['shot1.mp4'] }), mark: 'main' },
+      { record: record({ id: 'g2', actor: 'system', operation: 'shot.render_ref2va', params: { plan: 'p1', shot: 2 }, status: 'running' }), mark: 'main' },
+      { record: record({ id: 'g1', actor: 'system', operation: 'shot.render_ref2va', params: { plan: 'p1', shot: 1 }, outputs: ['shot1.mp4'] }), mark: 'main' },
       { record: record({ id: 'ap', actor: 'agent', operation: 'plan.approve', params: { plan: 'p1' }, report: { plan: 'p1', version: 1, scheduled: ['g1', 'g2'] } }), mark: 'main' },
     ]
     const { view, row } = mount(approval)
@@ -96,7 +96,7 @@ describe('HistoryPanel', () => {
     expect(fold.textContent).toContain('Render 2 shots (1/2)')
     fireEvent.click(fold)
     expect(fold.getAttribute('aria-expanded')).toBe('true')
-    expect(row('g1').textContent).toContain('Render shot 1')
+    expect(row('g1').textContent).toContain('Render shot from references 1')
     expect(row('g2').textContent).toContain('Automatic')
     // Folded rows follow `report.scheduled`: shot 1, then shot 2.
     const folded = [...view.container.querySelectorAll('[data-testid="dv-history-row"]')].map(element => element.getAttribute('data-record'))
@@ -146,7 +146,7 @@ describe('HistoryPanel', () => {
   })
 
   it('marks the current step, offers 回到这一步 on the steps before it, and greys the steps redo brings back', async () => {
-    const current: HistoryEntry = { record: record({ id: 'g3', branch: 'draft/s5', session: 's5', operation: 'shot.render' }), mark: 'draft' }
+    const current: HistoryEntry = { record: record({ id: 'g3', branch: 'draft/s5', session: 's5', operation: 'shot.render_ref2va' }), mark: 'draft' }
     const { writes, row } = mount([current, ...ENTRIES], (state) => {
       state.components.proj.records = state.components.proj.records.filter(item => item.id !== 'p1')
       state.redo_steps = ['p1']

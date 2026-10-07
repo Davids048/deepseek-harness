@@ -42,7 +42,7 @@ DSH_PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome-linux/chrome \
 | [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | 画布的适配、平移、缩放和浮动编辑器；版本和分镜计划的版本；时间线标签、播放、拆分、裁剪、重排、撤销和导出；当前分支、丢弃确认和过期标记 |
 | [`tests/stories/assets.e2e.ts`](tests/stories/assets.e2e.ts) | 素材库面板：经文件选择器、拖放区和对话导入；草稿标记；预览；插入时间线和画布 |
 | [`tests/stories/history.e2e.ts`](tests/stories/history.e2e.ts) | 历史面板：行的顺序、名称、标记、批准折叠、筛选、在画布或时间线上定位，以及实时更新 |
-| [`tests/stories/chat.e2e.ts`](tests/stories/chat.e2e.ts) | 对话及其输入框：跨轮次的草稿、先问的批准卡片、附上的图片、`@` 提及，以及模型请求收到的内容 |
+| [`tests/stories/chat.e2e.ts`](tests/stories/chat.e2e.ts) | 对话及其输入框：跨轮次的草稿、在对话中确认、附上的图片、`@` 提及，以及模型请求收到的内容 |
 | [`tests/stories/navigation.e2e.ts`](tests/stories/navigation.e2e.ts) | 项目、对话、面板、重新加载、项目链接、浏览器历史和语言切换 |
 
 -----

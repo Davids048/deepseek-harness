@@ -5,8 +5,8 @@
  * @module @dv/ui-kit/api
  */
 import type {
-  ApprovalCard, Branch, CanvasLayout, ComposerMode, DraftCounts, DraftTarget, HistoryQuery, OperationRequest, ProjectEvent,
-  ProjectInfo, ProjectRecord, ViewSelection, WireHistory, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
+  CanvasLayout, DraftCounts, DraftTarget, HistoryQuery, OperationRequest, ProjectEvent,
+  ProjectInfo, ProjectRecord, WireHistory, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
   WireWorkspaces,
 } from './types.ts'
 
@@ -111,7 +111,7 @@ async function decode<T>(response: Response): Promise<T> {
   return body as T
 }
 
-/** Every `/api/dv` call of the browser: project state, operations, drafts, branches, layout, workspaces, composer. */
+/** Every `/api/dv` call of the browser: project state, operations, history, drafts, undo and redo, layout, workspaces. */
 export class DvClient {
   constructor(private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init)) {}
 
@@ -164,12 +164,11 @@ export class DvClient {
   }
 
   /**
-   * List a project's records with their marks, newest first, with the request record of each turn they belong to and
-   * the assets they name.
+   * List a project's records with their marks, newest first, and the assets they name.
    * The query travels as a JSON body because a `records` set can be long; the route writes no record.
    * @param query - the project and the filters.
    * @param signal - cancels the request.
-   * @returns the entries, the turns' request records, and the assets.
+   * @returns the entries and the assets.
    */
   async listHistory(query: HistoryQuery, signal?: AbortSignal): Promise<WireHistory> {
     const response = await this.fetchImpl('/api/dv/history', {
@@ -260,35 +259,6 @@ export class DvClient {
   }
 
   /**
-   * Create an exploration branch `explore/<name>`.
-   * @param project - the project.
-   * @param name - the name after `explore/`.
-   * @param at - a record ID or branch name.
-   * @param surface - where the gesture came from.
-   * @param session - the chat session the view sits beside, or null.
-   * @returns the branch and the heads afterwards.
-   */
-  createBranch(
-    project: string, name: string, at: string, surface: ViewSurface, session: string | null = null,
-  ): Promise<{ branch: Branch; heads: Record<string, string> }> {
-    return this.post('/api/dv/branches/create', { project, name, at, surface, ...session === null ? {} : { session } })
-  }
-
-  /**
-   * Switch the working branch of a chat session to `main` or an exploration branch.
-   * @param project - the project.
-   * @param branch - the branch name.
-   * @param surface - where the gesture came from.
-   * @param session - the chat session.
-   * @returns the branch and the heads afterwards.
-   */
-  switchBranch(
-    project: string, branch: string, surface: ViewSurface, session: string,
-  ): Promise<{ branch: Branch; heads: Record<string, string> }> {
-    return this.post('/api/dv/branches/switch', { project, branch, surface, session })
-  }
-
-  /**
    * Keep a stale record as it is: runs `proj.stale_accept`.
    * @param project - the project.
    * @param record - the stale record.
@@ -298,19 +268,6 @@ export class DvClient {
    */
   acceptStale(project: string, record: string, surface: ViewSurface, session: string | null = null): Promise<WireRecordResult> {
     return this.post('/api/dv/stale/accept', { project, record, surface, ...session === null ? {} : { session } })
-  }
-
-  /**
-   * Tell the host what the view selected.
-   * @param selection - the selection.
-   * @returns nothing; failures are ignored because a selection is advisory.
-   */
-  async select(selection: Omit<ViewSelection, 'at'>): Promise<void> {
-    try {
-      await this.post('/api/dv/selection', selection)
-    } catch {
-      // A lost selection costs the agent one less hint; the view keeps working.
-    }
   }
 
   /**
@@ -363,43 +320,6 @@ export class DvClient {
    */
   listSessions(project: string): Promise<WireSession[]> {
     return this.get('/api/dv/workspaces/sessions', { project })
-  }
-
-  /**
-   * @param session - a chat session.
-   * @returns its composer choices.
-   */
-  getComposerMode(session: string): Promise<ComposerMode> {
-    return this.get('/api/dv/composer/mode', { session })
-  }
-
-  /**
-   * Change a chat session's composer choices.
-   * @param session - a chat session.
-   * @param patch - the choices to change.
-   * @returns the choices afterwards.
-   */
-  updateComposerMode(session: string, patch: Partial<ComposerMode>): Promise<ComposerMode> {
-    return this.post('/api/dv/composer/mode', { session, ...patch })
-  }
-
-  /**
-   * @param session - a chat session.
-   * @returns the renders of the session that wait for the user's approval.
-   */
-  listApprovals(session: string): Promise<ApprovalCard[]> {
-    return this.get('/api/dv/composer/approvals', { session })
-  }
-
-  /**
-   * Approve or skip one waiting render, or every waiting render of a session.
-   * @param session - a chat session.
-   * @param target - an approval ID, or `all`.
-   * @param action - approve or skip.
-   * @returns how many approvals were answered.
-   */
-  answerApprovals(session: string, target: string, action: 'approve' | 'skip'): Promise<{ answered: number }> {
-    return this.post('/api/dv/composer/approvals', target === 'all' ? { session, all: true, action } : { session, id: target, action })
   }
 
   /**

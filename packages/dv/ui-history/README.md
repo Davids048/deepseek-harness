@@ -26,7 +26,7 @@ Use this package to give the web application a History panel beside the chat. `H
 
 Mount the plugin in a profile that stacks `dsh-web-app` (which provides the right Sidebar and the client module loader) and `@dv/api` (which serves the routes the panel calls). Build the browser bundle first: `pnpm run build` writes `lib/client.js`.
 
-Each row shows the tool label with its subject (修改分镜计划 p1 → v2, 渲染镜头 7, 新建角色「name」), who did it (你 / You, 智能体 / Agent, 自动 / Automatic), how long ago, the status, and one thumbnail (an image, a take's still for a video, else a video frame; other files have none). An agent row also shows its turn's request words on its second line. The renders and the timeline record that a plan approval scheduled (`report.scheduled`) fold under the approval's row behind the toggle 渲染 n 个镜头 / Render n shots. The marks are 草稿 / Draft on an open draft, 已接受 / Accepted after the draft was accepted, 已撤销 / Undone, 已丢弃 / Discarded, 已重放 / Replayed, or the exploration branch name; undone and discarded rows stay listed, dimmed and struck. The undo and redo records themselves are not rows. On the working branch, the current step carries 当前 / Current, every step before it offers 回到这一步 / Go back to this step (`/api/dv/undo` with `to` = that record, so the branch returns to just after it), and the steps redo can bring back (`WireState.redo_steps`) are dimmed without the strike; a write after an undo empties that set, and those rows are then struck. One bar holds the filters and the header actions.
+Each row shows the tool label with its subject (修改分镜计划 p1 → v2, 参考图生成镜头 7 / Render shot from references 7, 新建角色「name」), who did it (你 / You, 智能体 / Agent, 自动 / Automatic), how long ago, the status, and one thumbnail (an image, a take's still for a video, else a video frame; other files have none). An agent row also shows on its second line the record's own `intent`, the reason the agent gave for the call. The renders and the timeline record that a plan approval scheduled (`report.scheduled`) fold under the approval's row behind the toggle 渲染 n 个镜头 / Render n shots. The marks are 草稿 / Draft on an open draft, 已接受 / Accepted after the draft was accepted, 已撤销 / Undone, 已丢弃 / Discarded, 已重放 / Replayed; undone and discarded rows stay listed, dimmed and struck. The undo and redo records themselves are not rows. On the working branch, the current step carries 当前 / Current, every step before it offers 回到这一步 / Go back to this step (`/api/dv/undo` with `to` = that record, so the branch returns to just after it), and the steps redo can bring back (`WireState.redo_steps`) are dimmed without the strike; a write after an undo empties that set, and those rows are then struck. One bar holds the filters and the header actions.
 
 ```yaml
 - id: dv-ui-history
@@ -53,7 +53,7 @@ A `dv:history-focus` event `{session, toolCall}` clears the filters, finds the r
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`HistoryPanel` reads the state of `main` with `useProjectState` for the branches and the chat session's open draft, and the state of the session's working branch for its timelines and records. The branch filter `main` asks for marks `main` and `undone`, a draft for its `draft` records, an exploration branch for the records appended to it. The timeline filter sends the record set that `timelineRecords` computes from the working branch: Timeline records and exports of the timeline or of its clips (a clip belongs to the timeline of the record whose `report.clips` assigned it), and the records that created the assets of its clips. The `requests` field of the answer gives each agent row its request words even when the request record is on another page. On `/dv/events`, an `update` event replaces the record in the loaded rows, and any other event refetches the loaded window, debounced by 200 ms.
+`HistoryPanel` reads the state of `main` with `useProjectState` for the branches and the chat session's open draft, and the state of the session's working branch for its timelines and records. The branch filter `main` asks for marks `main` and `undone`, and a draft for its `draft` records. The timeline filter sends the record set that `timelineRecords` computes from the working branch: Timeline records and exports of the timeline or of its clips (a clip belongs to the timeline of the record whose `report.clips` assigned it), and the records that created the assets of its clips. On `/dv/events`, an `update` event replaces the record in the loaded rows, and any other event refetches the loaded window, debounced by 200 ms.
 
 | File | Content |
 | --- | --- |
@@ -78,7 +78,7 @@ A `dv:history-focus` event `{session, toolCall}` clears the filters, finds the r
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through the browser-side History panel; the records its accept, discard, undo, and redo write reach the model only through the agent integration (`@dv/agent-integration`).
+Indirectly, through `@dv/project`; the records the History panel's accept, discard, undo, and redo write reach the model only through the `dv:project` prompt section and the `dv_proj_*` and operation tools of [`@dv/project`](../project/README.md).
 
 #### KV Cache effect
 
@@ -88,5 +88,5 @@ None; the panel sends nothing to a model.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Timeline filter covers the working branch** — the record set of a timeline comes from the chat session's working branch, so records of discarded drafts and other branches do not match it.
+- **Timeline filter covers the working branch** — the record set of a timeline comes from the chat session's working branch, so records of discarded drafts and other drafts do not match it.
 - **Window refetch** — every `record` or `branch` event refetches the loaded window (up to 200 entries); a long history scrolled far back reloads slowly.

@@ -26,7 +26,7 @@ Use this package to give the web application a canvas over a DreamVerse project 
 
 Mount the plugin in a profile that stacks `dsh-web-app` (which provides the right Sidebar, the locale service, and the client module loader) and `@dv/api` (which serves the routes the canvas calls). Build the browser bundle first: `pnpm run build` writes `lib/client.js`.
 
-The canvas shows the current state of the working branch only, with no history view: characters, locations, and styles at their current version as `bible` nodes, imported images and videos as `asset` nodes, each plan at its latest version as a `plan` node, and `shot.render` records as `take` nodes. The takes drawn are the current take of each shot of each plan's latest version (the take the shot's clip on the plan's timeline plays, else the newest done take of that shot and version or the earlier take the approval reused) with its retakes, every take that is not part of a plan, and every take whose outputs are in use (played by a timeline clip, a reference of a current story bible or plan version, or an input of a drawn take). Takes of removed shots and unused takes of earlier plan versions are left out, so an undo or a jump to an earlier step changes what the canvas shows. The working-branch bar on top names the branch the canvas's edits go to and accepts or discards the draft.
+The canvas shows the current state of the working branch only, with no history view: characters, locations, and styles at their current version as `bible` nodes, imported images and videos as `asset` nodes, each plan at its latest version as a `plan` node, and `shot.render_ref2va` and `shot.render_t2va` records as `take` nodes. The takes drawn are the current take of each shot of each plan's latest version (the take the shot's clip on the plan's timeline plays, else the newest done take of that shot and version or the earlier take the approval reused) with its retakes, every take that is not part of a plan, and every take whose outputs are in use (played by a timeline clip, a reference of a current story bible or plan version, or an input of a drawn take). Takes of removed shots and unused takes of earlier plan versions are left out, so an undo or a jump to an earlier step changes what the canvas shows. The working-branch bar on top names the branch the canvas's edits go to, shows the `intent` of the draft's latest record that has one, and accepts or discards the draft.
 
 ```yaml
 - id: dv-ui-canvas
@@ -37,18 +37,17 @@ The Host half registers nothing. The browser half registers the `dv-canvas` tab 
 
 | Gesture | Request |
 | --- | --- |
-| Edit a take's prompt, references, duration, or seed and press "Render new take" | `POST /api/dv/operation` with `shot.render`, the edited inputs and params, `based_on` set to the shown take, `surface: 'canvas'` |
+| Edit a take's prompt, references, duration, or seed and press "Render new take" | `POST /api/dv/operation` with the take's own operation (`shot.render_ref2va` or `shot.render_t2va`), the edited inputs and params, `based_on` set to the shown take, `surface: 'canvas'` |
 | Replace the reference image of a character, location, or style | `POST /api/dv/operation` with `bible.<kind>_update` and the image as input role `reference`; an imported file first runs `asset.import` |
 | Drop image or video files on the canvas | `POST /api/dv/assets/import`; the new node is placed under the pointer |
 | Ask the agent | the `dv:compose` window event, which prefills the chat composer with an `@` reference to the node |
 | Accept or discard the draft | `POST /api/dv/drafts/accept` or `/api/dv/drafts/discard` for the chat session's draft; discard first asks in the confirmation dialog of `@dv/ui-kit/DiscardDraftDialog.tsx` |
 | "Keep anyway" in the editor of a stale node | `POST /api/dv/stale/accept` for the node's record (`proj.stale_accept` on the working branch) |
-| Click a node | `POST /api/dv/selection` with kind `record`, `character`, `location`, or `style`, so the host can tell the agent what the user pointed at |
 | Drag a node, pan, or zoom | `POST /api/dv/layout` with the moved positions, keyed by node ID, and the viewport |
 
-While a `draft/*` branch is shown the editor's write buttons are disabled; accept or discard the draft, or switch to another branch, to write. A `dv:canvas-focus` window event with `{recordId}` centers and opens that record's node. When the record has no node of its own, the event opens the story bible node of the version it wrote, else the node of its first output.
+While a `draft/*` branch is shown the editor's write buttons are disabled; accept or discard the draft, or show another branch, to write. A `dv:canvas-focus` window event with `{recordId}` centers and opens that record's node. When the record has no node of its own, the event opens the story bible node of the version it wrote, else the node of its first output.
 
-The editor of a plan node switches between the plan's versions. A version shows "Approved" once approved, "Awaiting approval" while it is the latest unapproved version, and "Replaced by v{n}" when a later version replaced it before approval. Each shot shows the reference images it renders from, in the order the video model numbers them, and its prompt shows each `Picture N` token as the N-th of those images (`@dv/ui-kit/references.ts`).
+The editor of a take shows its render mode, "From references" (`ref2va`) or "From text" (`t2va`); a `t2va` take has no reference chips. The editor of a plan node switches between the plan's versions. A version shows "Approved" once approved, "Awaiting approval" while it is the latest unapproved version, and "Replaced by v{n}" when a later version replaced it before approval. Each shot shows its render mode, followed by "Continues the previous shot" when `continue_previous` is set. A `ref2va` shot shows the reference images it renders from, in the order the video model numbers them, and its prompt shows each `Picture N` token as the N-th of those images (`@dv/ui-kit/references.ts`); a `t2va` shot shows no reference images.
 
 -----
 
@@ -86,7 +85,7 @@ The editor of a plan node switches between the plan's versions. A version shows 
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through browser-side canvas; the records its gestures write reach the model only through the agent integration (`@dv/agent-integration`).
+Indirectly, through `@dv/project`; the records its gestures write reach the model only through the `dv:project` prompt section and the `dv_proj_*` and operation tools of [`@dv/project`](../project/README.md).
 
 #### KV Cache effect
 

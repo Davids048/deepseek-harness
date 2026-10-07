@@ -44,10 +44,9 @@ The Host half registers nothing. The browser half registers the `dv-timeline` ta
 | Drop an asset on the track, or pick one with ＋ | `timeline.clip_insert {timeline, at, asset}` |
 | ＋ New, rename, delete a tab | `timeline.create {timeline, assets: []}` (no name, so the tab shows 时间线 {n} / Timeline {n}), `timeline.rename {timeline, name}`, `timeline.delete {timeline}` |
 | Export | One `deliver.timeline_export {timeline}` call; the link opens the exported video |
-| Click a clip | `POST /api/dv/selection` with kind `clip` and the clip ID |
 | "Keep anyway" for a selected stale clip | `POST /api/dv/stale/accept` for the record that made the clip's asset (`proj.stale_accept`) |
 
-Every record carries `surface: 'timeline'`, the chat session the view sits beside (so the record lands on that session's draft), and an intent in the DSH interface language naming the gesture. The selected timeline is shared through `@dv/ui-kit/current-timeline.ts`, so the shell keeps it in the URL. `TimelineView` follows `<html lang>` through `@dv/ui-kit/locale.ts`; switching timeline tabs stops playback and resets the viewer and playhead. While a `draft/*` branch is shown the gestures are disabled. The working-branch bar of `@dv/ui-kit/WorkingBranchBar.tsx` above the tabs names the branch the edits go to and accepts or discards the open draft. A clip whose asset reports no duration is drawn as five seconds.
+Every record carries `surface: 'timeline'`, the chat session the view sits beside (so the record lands on that session's draft), and an intent in the DSH interface language naming the gesture. The selected timeline is shared through `@dv/ui-kit/current-timeline.ts`, so the shell keeps it in the URL. `TimelineView` follows `<html lang>` through `@dv/ui-kit/locale.ts`; switching timeline tabs stops playback and resets the viewer and playhead. Clicking a clip selects it and sends nothing. While a `draft/*` branch is shown the gestures are disabled. The working-branch bar of `@dv/ui-kit/WorkingBranchBar.tsx` above the tabs names the branch the edits go to, shows the `intent` of the draft's latest record that has one, and accepts or discards the open draft. A clip whose asset reports no duration is drawn as five seconds.
 
 The DOM carries test IDs `dv-timeline-body`, `dv-timeline-editor`, `dv-timeline-viewer`, `dv-timeline-viewer-empty`, `dv-timeline-time`, `dv-timeline-exported`, `dv-timeline-ruler` and `dv-timeline-playhead`; each clip carries `data-clip` (its clip ID), `data-clip-position`, `data-clip-stale` and `data-clip-draft`, and each tab carries `data-timeline`.
 
@@ -89,7 +88,7 @@ The DOM carries test IDs `dv-timeline-body`, `dv-timeline-editor`, `dv-timeline-
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through browser-side timeline; the records its gestures write reach the model only through the agent integration (`@dv/agent-integration`).
+Indirectly, through `@dv/project`; the records its gestures write reach the model only through the `dv:project` prompt section and the `dv_proj_*` and operation tools of [`@dv/project`](../project/README.md).
 
 #### KV Cache effect
 

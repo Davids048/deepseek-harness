@@ -25,18 +25,18 @@ function scheduledBy(record: ProjectRecord): string[] {
 
 /** Undo and redo records move the working branch between steps, so they are not rows. */
 const MOVES = new Set(['proj.undo', 'proj.redo'])
-/** Records that are not steps: the moves between steps, an accept, and branch changes. Undo steps over them. */
-const NOT_A_STEP = new Set([...MOVES, 'proj.draft_accept', 'proj.branch_switch', 'proj.branch_create'])
+/** Records that are not steps: the moves between steps and an accept. Undo steps over them. */
+const NOT_A_STEP = new Set([...MOVES, 'proj.draft_accept'])
 
 /**
- * Turn history entries into panel rows: one row per operation record, newest first. Request records and the undo and
- * redo records are not rows. The records a loaded plan approval scheduled fold under the approval's row instead of
+ * Turn history entries into panel rows: one row per operation record, newest first. The undo and redo records are not
+ * rows. The records a loaded plan approval scheduled fold under the approval's row instead of
  * standing alone.
  * @param entries - history entries, newest first.
  * @returns the rows, newest first.
  */
 export function actionRows(entries: readonly HistoryEntry[]): ActionRow[] {
-  const operations = entries.filter(entry => entry.record.kind === 'operation' && !MOVES.has(entry.record.operation ?? ''))
+  const operations = entries.filter(entry => !MOVES.has(entry.record.operation ?? ''))
   const loaded = new Map(operations.map(entry => [entry.record.id, entry]))
   const folded = new Map<string, string>()
   for (const { record } of operations) {
@@ -69,7 +69,7 @@ function toolNameOf(operation: string): string {
 
 /**
  * The label a row shows for its operation: the tool label of `DV_TOOL_LABELS`, else the operation name.
- * @param operation - the operation name; null on a request record.
+ * @param operation - the operation name, or null when the record names none.
  * @returns the Chinese and English label.
  */
 export function operationLabel(operation: string | null): readonly [string, string] {
@@ -111,7 +111,8 @@ export function actionLabel(record: ProjectRecord): readonly [string, string] {
       if (plan === null) return [zh, en]
       return version === null ? [`${zh} ${plan}`, `${en} ${plan}`] : [`${zh} ${plan} v${version}`, `${en} ${plan} v${version}`]
     }
-    case 'shot.render': {
+    case 'shot.render_ref2va':
+    case 'shot.render_t2va': {
       const shot = field(record.params, 'shot')
       return shot === null ? [zh, en] : [`${zh} ${shot}`, `${en} ${shot}`]
     }
@@ -182,11 +183,11 @@ export function relativeTime(iso: string, now: number): readonly [string, string
   return [date, date]
 }
 
-/** What a mark badge says: a fixed word pair, or a branch name shown as is. */
-export type MarkBadge = { zh: string; en: string } | { branch: string } | null
+/** What a mark badge says: a fixed word pair. */
+export type MarkBadge = { zh: string; en: string } | null
 
 /**
- * The badge of an entry: 已接受 for an accepted draft record, 草稿, 已撤销, 已丢弃, 已重放, or the exploration branch name.
+ * The badge of an entry: 已接受 for an accepted draft record, 草稿, 已撤销, 已丢弃, or 已重放.
  * @param entry - the history entry.
  * @returns the badge, or null for a record made on `main`.
  */
@@ -197,7 +198,6 @@ export function markBadge(entry: HistoryEntry): MarkBadge {
     case 'undone': return { zh: '已撤销', en: 'Undone' }
     case 'discarded': return { zh: '已丢弃', en: 'Discarded' }
     case 'replayed': return { zh: '已重放', en: 'Replayed' }
-    case 'branch': return { branch: entry.record.branch }
   }
 }
 
@@ -209,15 +209,14 @@ export function markStyle(mark: HistoryEntry['mark']): 'normal' | 'struck' | 'di
 
 /**
  * The query fields of the branch filter. `main` shows the main line including what undo took back; a draft shows its
- * open records; an exploration branch shows the records appended to it.
+ * open records.
  * @param branch - the selected branch name; empty for all branches.
  * @returns the query fields.
  */
 export function branchQuery(branch: string): Pick<HistoryQuery, 'branch' | 'marks'> {
   if (branch === '') return {}
   if (branch === 'main') return { marks: ['main', 'undone'] }
-  if (branch.startsWith('draft/')) return { branch, marks: ['draft'] }
-  return { branch }
+  return { branch, marks: ['draft'] }
 }
 
 /** @returns the text value of a param, or null. */
@@ -308,7 +307,7 @@ export type CenterFocus =
 export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, string>): CenterFocus {
   const { record } = entry
   if (entry.mark !== 'main' && entry.mark !== 'draft') return null
-  if (record.kind !== 'operation' || record.component === 'proj') return null
+  if (record.component === 'proj') return null
   if (record.component === 'timeline' || record.operation === 'deliver.timeline_export') {
     const timelineId = timelineOf(record, owner)
     if (timelineId === null) return null
@@ -329,14 +328,14 @@ export interface WorkingSteps {
 }
 
 /**
- * The steps of the working branch. Every operation record on the branch's effective chain is a step except undo, redo,
- * accept and branch records; the newest is the current step.
+ * The steps of the working branch. Every operation record on the branch's effective chain is a step except undo, redo
+ * and accept records; the newest is the current step.
  * @param chain - the records of the working branch's effective chain, oldest first (`components.proj.records`).
  * @param redoSteps - the steps redo brings back (`WireState.redo_steps`).
  * @returns the steps.
  */
 export function workingSteps(chain: readonly ProjectRecord[], redoSteps: readonly string[]): WorkingSteps {
-  const steps = chain.filter(record => record.kind === 'operation' && !NOT_A_STEP.has(record.operation ?? ''))
+  const steps = chain.filter(record => !NOT_A_STEP.has(record.operation ?? ''))
   const current = steps.at(-1)?.id ?? null
   return { current, before: new Set(steps.slice(0, -1).map(record => record.id)), after: new Set(redoSteps) }
 }

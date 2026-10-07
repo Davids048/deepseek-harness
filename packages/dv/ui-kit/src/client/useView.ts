@@ -1,6 +1,6 @@
 /**
  * The state one view keeps about the project it shows: which project and branch, the branch state and the operation
- * declarations, the last failure, and the branch-bar gestures (accept, discard, undo, new branch, branch switch) as API
+ * declarations, the last failure, and the branch-bar gestures (accept, discard, undo, branch to show) as API
  * calls on behalf of the chat session the view sits beside. A discard first opens the confirmation dialog of
  * `DiscardDraftDialog.tsx`.
  *
@@ -93,18 +93,10 @@ export function useViewSession(client: DvClient, surface: ViewSurface, session: 
     state: state.value,
     branch,
     onProject,
-    onBranchSelect: (next) => {
-      setBranch(next)
-      // The session's writes go to its working branch, so showing `main` or an exploration branch also switches to it.
-      if (project !== null && session !== null && !next.startsWith('draft/')) void run(() => client.switchBranch(project, next, surface, session))
-    },
+    onBranchSelect: setBranch,
     onAccept: (draft) => { if (project !== null) void run(() => client.acceptDraft(project, { branch: draft }, surface)) },
     onDiscard: (draft) => { discard.request({ branch: draft }) },
     onUndo: () => { if (project !== null) void run(() => client.undo(project, surface, session)) },
-    onBranchCreate: (name, at) => {
-      if (project === null) return
-      void run(() => client.createBranch(project, name, at, surface, session)).then((ok) => { if (ok) setBranch(`explore/${name}`) })
-    },
     onCreate: (title) => {
       void run(() => client.createProject(title, surface)).then((ok) => {
         if (!ok) return

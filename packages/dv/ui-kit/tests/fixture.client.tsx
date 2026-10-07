@@ -46,20 +46,19 @@ export const PROJECT: WireProject = { id: 'p1', title: 'Demo', created_at: '2026
 export function fixtureState(): WireState {
   const hero = { role: 'reference', ref: { character: 'hero', version: 1 }, resolved_asset: 'ref.png' }
   const records = [
-    record({ id: 'i1', kind: 'request', intent: 'make a hero film' }),
     record({ id: 'u1', operation: 'asset.import', params: { name: 'ref.png' }, outputs: ['ref.png'] }),
     record({ id: 'e1', operation: 'bible.character_create', params: { character: 'hero', name: 'Hero' } }),
     record({
-      id: 'p1', turn: 't2', actor: 'agent', operation: 'plan.create', params: { shots: [{ prompt: 'hero walks' }, { prompt: 'hero turns' }] },
+      id: 'p1', turn: 't2', actor: 'agent', operation: 'plan.create', params: { shots: [{ prompt: 'hero walks', mode: 'ref2va' }, { prompt: 'hero turns', mode: 'ref2va' }] },
       report: { plan: 'p1', version: 1 },
     }),
     record({ id: 'a1', turn: 't3', operation: 'plan.approve', params: { plan: 'p1' } }),
     record({
-      id: 'g1', turn: 't3', actor: 'agent', operation: 'shot.render', deterministic: false, inputs: [hero],
+      id: 'g1', turn: 't3', actor: 'agent', operation: 'shot.render_ref2va', deterministic: false, inputs: [hero],
       params: { prompt: 'hero walks through the rain at night in the city' }, outputs: ['shot1.mp4', 'shot1-last.png'],
     }),
     record({
-      id: 'g2', turn: 't3', actor: 'agent', operation: 'shot.render', deterministic: false,
+      id: 'g2', turn: 't3', actor: 'agent', operation: 'shot.render_ref2va', deterministic: false,
       inputs: [hero, { role: 'first_frame', ref: { record: 'g1', output: 1 }, resolved_asset: 'shot1-last.png' }],
       params: { prompt: 'hero turns' }, outputs: ['shot2.mp4', 'shot2-last.png'],
     }),
@@ -74,7 +73,7 @@ export function fixtureState(): WireState {
       outputs: ['export-last.png'],
     }),
     record({
-      id: 'g3', turn: 't5', session: 's5', branch: 'draft/s5', actor: 'agent', operation: 'shot.render', deterministic: false, based_on: 'g1',
+      id: 'g3', turn: 't5', session: 's5', branch: 'draft/s5', actor: 'agent', operation: 'shot.render_ref2va', deterministic: false, based_on: 'g1',
       inputs: [hero], params: { prompt: 'hero walks, wider' }, status: 'running',
     }),
   ]
@@ -82,11 +81,10 @@ export function fixtureState(): WireState {
     project: { id: 'p1', title: 'Demo', created_at: '2026-10-05T00:00:00Z' },
     branch: 'main',
     head: 's1',
-    heads: { main: 's1', 'explore/style-b': 'e1', 'draft/s5': 'g3' },
+    heads: { main: 's1', 'draft/s5': 'g3' },
     branches: [
       { name: 'main', head: 's1', base: null, forked_at: null, session: null, counts: null },
       { name: 'draft/s5', head: 'g3', base: 'main', forked_at: 'x1', session: 's5', counts: { agent_changes: 1, human_edits: 0 } },
-      { name: 'explore/style-b', head: 'e1', base: null, forked_at: null, session: null, counts: null },
     ],
     redo_steps: [],
     components: {
@@ -104,7 +102,7 @@ export function fixtureState(): WireState {
         locations: {},
         styles: {},
       },
-      plan: { plans: { p1: [{ version: 1, shots: [{ prompt: 'hero walks' }, { prompt: 'hero turns' }], created_by: 'p1', approved_by: 'a1' }] } },
+      plan: { plans: { p1: [{ version: 1, shots: [{ prompt: 'hero walks', mode: 'ref2va' }, { prompt: 'hero turns', mode: 'ref2va', continue_previous: true }], created_by: 'p1', approved_by: 'a1' }] } },
       shot: { takes: { g1: ['g1', 'g3'] }, roots: { g3: 'g1' } },
       timeline: {
         timelines: [{
@@ -130,12 +128,12 @@ export function fixtureState(): WireState {
 /** The operation declarations the fixture's records use. */
 export const OPERATIONS: WireOperation[] = [
   {
-    name: 'shot.render', version: '1', description: 'One shot.', inputs: { reference: { type: 'image', description: 'reference images', many: true, bible: true } },
+    name: 'shot.render_ref2va', version: '1', description: 'One shot.', inputs: { reference: { type: 'image', description: 'reference images', many: true, bible: true } },
     params: {
       prompt: { type: 'string', required: true, description: 'What happens.' }, seed: { type: 'integer', description: 'Seed.' },
       aspect: { type: 'string', enum: ['16:9', '9:16'] }, loop: { type: 'boolean' }, extra: { type: 'object' },
     },
-    outputs: [{ role: 'video', type: 'video' }, { role: 'last_still', type: 'image' }], deterministic: false, resource: 'gpu', confirm: 'agent_ask_first',
+    outputs: [{ role: 'video', type: 'video' }, { role: 'last_still', type: 'image' }], deterministic: false, resource: 'gpu', confirm: 'over_gpu_budget',
   },
   {
     name: 'plan.create', version: '1', description: 'A plan.', inputs: {}, params: { shots: { type: 'array', items: { type: 'object' } } }, outputs: [],

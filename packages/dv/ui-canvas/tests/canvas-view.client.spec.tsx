@@ -8,7 +8,7 @@ import { DV_COMPOSE_EVENT } from '@dv/ui-kit/compose.ts'
 import type { DvComposeDetail } from '@dv/ui-kit/compose.ts'
 import type { WireState } from '@dv/ui-kit/types.ts'
 import { DV_CANVAS_FOCUS_EVENT } from '@dv/ui-kit/workspace-events.ts'
-import { fixtureState, record, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
+import { fixtureState, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
 import { CanvasView } from '../src/client/CanvasView.tsx'
 import type { CanvasTranslate } from '../src/client/NodeCard.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -22,14 +22,15 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
  * @returns the rendered view, the recorded writes, and a node lookup.
  */
 function mount(withTranslate = true, edit: (state: WireState) => void = () => undefined) {
-  // `main` lacks the retake g3; the draft of chat session s5 adds it after the request that asked for it.
-  const draftRequest = record({ id: 'r5', kind: 'request', branch: 'draft/s5', session: 's5', turn: 't5', intent: 'retake shot 1' })
+  // `main` lacks the retake g3; the draft of chat session s5 adds it with the intent the agent gave for the call.
   const scripted = scriptedFetch({
     state: (branch) => {
       const state = fixtureState()
       edit(state)
       const records = state.components.proj.records
-      state.components.proj.records = branch === 'main' ? records.filter(entry => entry.id !== 'g3') : [...records, draftRequest]
+      state.components.proj.records = branch === 'main'
+        ? records.filter(entry => entry.id !== 'g3')
+        : records.map(entry => entry.id === 'g3' ? { ...entry, intent: 'retake shot 1' } : entry)
       return state
     },
   })
@@ -76,11 +77,12 @@ describe('CanvasView', () => {
     fireEvent.pointerDown(node('g1'), { button: 0, clientX: 5, clientY: 5, pointerId: 1 })
     fireEvent.pointerUp(view.getByTestId('dv-canvas-view'), { pointerId: 1 })
     const editor = await view.findByTestId('dv-canvas-node-editor')
+    expect(view.getByTestId('dv-canvas-render-mode').textContent).toBe(zh['mode.ref2va'])
     fireEvent.change(editor.querySelector('textarea') as HTMLTextAreaElement, { target: { value: 'hero runs' } })
     fireEvent.click(view.getByText(zh['editor.renderTake']))
     await waitFor(() => { expect(writes.some(write => write.path === '/api/dv/operation')).toBe(true) })
     expect(writes.find(write => write.path === '/api/dv/operation')?.body).toMatchObject({
-      project: 'p1', operation: 'shot.render', surface: 'canvas', based_on: 'g1', params: { prompt: 'hero runs' },
+      project: 'p1', operation: 'shot.render_ref2va', surface: 'canvas', based_on: 'g1', params: { prompt: 'hero runs' },
       inputs: [{ role: 'reference', ref: 'hero@1' }],
     })
     fireEvent.pointerDown(node('bible:hero'), { button: 0, clientX: 5, clientY: 5, pointerId: 1 })
@@ -92,10 +94,8 @@ describe('CanvasView', () => {
     window.removeEventListener(DV_COMPOSE_EVENT, listener)
     expect(composed).toEqual([{ text: '修改 Hero：', refs: [{ kind: 'character', id: 'hero', label: 'Hero', assetId: 'ref.png' }] }])
     expect(view.queryByTestId('dv-canvas-node-editor')).toBeNull()
-    expect(writes.filter(write => write.path === '/api/dv/selection').map(write => write.body)).toEqual([
-      { project: 'p1', kind: 'record', id: 'g1', surface: 'canvas' },
-      { project: 'p1', kind: 'character', id: 'hero', surface: 'canvas' },
-    ])
+    // Choosing a node is a view gesture: it writes nothing.
+    expect(writes.map(write => write.path)).toEqual(['/api/dv/operation'])
   })
 
   it('offers 仍然保留 on a stale node, which accepts its record on the session\'s working branch', async () => {
@@ -153,7 +153,10 @@ describe('CanvasView', () => {
     const { view, node } = mount(true, (state) => {
       const [v1] = state.components.plan.plans['p1'] ?? []
       if (v1 === undefined) throw new Error('fixture lacks plan p1')
-      const v3 = { ...v1, version: 3, approved_by: null, references: ['hero@1'], shots: [{ prompt: 'Picture 1 walks in the rain' }] }
+      const v3 = {
+        ...v1, version: 3, approved_by: null, references: ['hero@1'],
+        shots: [{ prompt: 'Picture 1 walks in the rain', mode: 'ref2va' as const }, { prompt: 'the sky clears', mode: 't2va' as const }],
+      }
       state.components.plan.plans['p1'] = [v1, { ...v1, version: 2, approved_by: null }, v3]
     })
     await waitFor(() => { node('plan:p1') })
@@ -169,7 +172,11 @@ describe('CanvasView', () => {
     const shot = editor.querySelector('li[data-shot="1"]')
     expect([...shot?.querySelectorAll('img') ?? []].map(image => [image.getAttribute('alt'), image.getAttribute('src')?.includes('ref.png')]))
       .toEqual([['', true], ['Picture 1', true]])
-    expect(shot?.textContent).toBe(' walks in the rain')
+    expect(shot?.textContent).toBe(` walks in the rain${zh['mode.ref2va']}`)
+    // A text shot shows its render mode and no reference images.
+    const textShot = editor.querySelector('li[data-shot="2"]')
+    expect(textShot?.querySelectorAll('img')).toHaveLength(0)
+    expect(textShot?.querySelector('[data-testid="dv-canvas-shot-mode"]')?.textContent).toBe(zh['mode.t2va'])
   })
 
   it('follows the DSH interface language in <html lang> when the host passes no translate', async () => {

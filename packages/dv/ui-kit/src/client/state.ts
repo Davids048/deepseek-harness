@@ -38,16 +38,13 @@ export function sessionDraft(state: WireState, session: string | null): OpenDraf
 }
 
 /**
- * The branches a user can switch to: `main`, exploration branches, then drafts.
+ * The branches a user can show: `main`, then the drafts.
  * @param state - a branch state.
  * @returns the names in that order.
  */
 export function branchNames(state: WireState): string[] {
   const names = Object.keys(state.heads)
-  const main = names.filter(name => name === 'main')
-  const explorations = names.filter(name => name !== 'main' && !name.startsWith('draft/')).sort()
-  const drafts = names.filter(name => name.startsWith('draft/'))
-  return [...main, ...explorations, ...drafts]
+  return [...names.filter(name => name === 'main'), ...names.filter(name => name.startsWith('draft/'))]
 }
 
 /**

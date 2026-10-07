@@ -1,8 +1,10 @@
 /**
- * The floating editor a canvas node opens in the middle of the canvas. A take shows a large player, its prompt,
- * reference chips, duration, and seed, and offers "渲染新版本" (a user `shot.render` record whose `based_on` is the take)
+ * The floating editor a canvas node opens in the middle of the canvas. A take shows a large player, its render mode, its
+ * prompt, reference chips (`ref2va` only), duration, and seed, and offers "渲染新版本" (a user record of the take's render
+ * operation, `shot.render_ref2va` or `shot.render_t2va`, whose `based_on` is the take)
  * and "让智能体改" (a `dv:compose` event that prefills the chat composer). A character, location or style can replace
- * its reference image; a plan switches between its versions (v1, v2, …) and lists the shots of the chosen one. A stale
+ * its reference image; a plan switches between its versions (v1, v2, …) and lists the shots of the chosen one, each with
+ * its render mode and whether it continues the previous shot. A stale
  * node offers "仍然保留", which keeps its record as it is (`proj.stale_accept`).
  */
 import { useState } from 'react'
@@ -51,6 +53,16 @@ const button: CSSProperties = { border: 'none', borderRadius: 8, padding: '8px 1
 const secondaryButton: CSSProperties = { ...button, background: 'var(--dsw-alias-interactive-bg-hover)', color: 'var(--dsw-alias-label-primary)' }
 const chip: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px 2px 2px', borderRadius: 14, background: 'var(--dsw-alias-interactive-bg-hover)', fontSize: 13 }
 const referenceImage: CSSProperties = { height: 220, borderRadius: 10, background: 'var(--dsw-alias-interactive-bg-hover)' }
+
+/**
+ * The copy of a render mode.
+ * @param mode - `ref2va` or `t2va`.
+ * @param t - the canvas translate.
+ * @returns 参考图生成 / From references or 文字生成 / From text.
+ */
+function modeLabel(mode: 'ref2va' | 't2va', t: CanvasTranslate): string {
+  return mode === 't2va' ? t('mode.t2va') : t('mode.ref2va')
+}
 
 /** One input of the edited record. */
 interface EditedInput {
@@ -203,6 +215,8 @@ function TakeForm(
     ...state.assets.filter(asset => asset.mime.startsWith('image/')).map(asset => ({ ref: asset.id, name: asset.name })),
   ].filter(candidate => !references.some(input => input.ref === candidate.ref))
   const operation = record?.operation ?? null
+  // A text render takes no reference images, so its editor has no reference chips.
+  const textOnly = operation === 'shot.render_t2va'
   const renderTake = (): void => {
     if (record === null || operation === null) return
     const params: Record<string, unknown> = { ...record.params, prompt }
@@ -218,10 +232,12 @@ function TakeForm(
   return (
     <div>
       <Preview node={node} />
+      <span style={label}>{t('editor.renderMode')}</span>
+      <span data-testid="dv-canvas-render-mode">{modeLabel(textOnly ? 't2va' : 'ref2va', t)}</span>
       <label style={label} htmlFor="dv-canvas-editor-prompt">{t('editor.prompt')}</label>
       <textarea id="dv-canvas-editor-prompt" style={{ ...field, minHeight: 72, resize: 'vertical' }} value={prompt} onChange={(event) => { setPrompt(event.target.value) }} />
-      <span style={label}>{t('editor.references')}</span>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+      {textOnly ? null : <span style={label}>{t('editor.references')}</span>}
+      {textOnly ? null : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
         {references.map((input) => {
           const image = refImage(state, input.ref)
           const name = refName(state, input.ref)
@@ -241,7 +257,7 @@ function TakeForm(
             </select>
           )
           : null}
-      </div>
+      </div>}
       <div style={{ display: 'flex', gap: 12 }}>
         <div style={{ flex: 1 }}>
           <label style={label} htmlFor="dv-canvas-editor-duration">{t('editor.duration')}</label>
@@ -365,6 +381,9 @@ function PlanList({ node, state, t }: NodeEditorProps): ReactNode {
                   : <img key={position} src={assetUrl(asset)} alt={part.text} title={part.text} style={promptThumb} draggable={false} />
               })}
               {shot.duration_sec === undefined ? null : <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{` · ${String(shot.duration_sec)}s`}</span>}
+              <div style={{ color: 'var(--dsw-alias-label-tertiary)', fontSize: 12 }} data-testid="dv-canvas-shot-mode">
+                {modeLabel(shot.mode, t)}{shot.continue_previous === true ? ` · ${t('editor.continuePrevious')}` : ''}
+              </div>
             </li>
           )
         })}

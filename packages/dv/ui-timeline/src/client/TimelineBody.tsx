@@ -28,7 +28,7 @@ export type TimelineBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & Timelin
 export function barLabels(t: TimelineBodyProps['t']): BranchBarLabels {
   return {
     project: t('bar.project'), branch: t('bar.branch'), accept: t('bar.accept'), discard: t('bar.discard'), undo: t('bar.undo'),
-    newBranch: t('bar.newBranch'), newBranchPrompt: t('bar.newBranchPrompt'), newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
+    newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
     draftTitle: t('bar.draft'), noProject: t('bar.noProject'),
   }
 }

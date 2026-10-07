@@ -18,7 +18,7 @@ const PROMPTS = ['rain', 'alley', 'door', 'stairs', 'roof', 'dawn']
 function rollbackProject(until?: string): WireState {
   const hero = { role: 'reference', ref: { character: 'hero', version: 1 }, resolved_asset: 'ref.png' }
   const render = (id: string, version: number, shot: number, basedOn: string | null = null): ProjectRecord => record({
-    id, operation: 'shot.render', deterministic: false, inputs: [hero], based_on: basedOn, outputs: [`${id}.mp4`, `${id}.png`],
+    id, operation: 'shot.render_ref2va', deterministic: false, inputs: [hero], based_on: basedOn, outputs: [`${id}.mp4`, `${id}.png`],
     params: { prompt: `shot ${String(shot)} v${String(version)}`, plan: 'p1', plan_version: version, shot },
   })
   const layout = (id: string, operation: string, clips: string[]): ProjectRecord => record({
@@ -45,7 +45,7 @@ function rollbackProject(until?: string): WireState {
   const kept = until === undefined ? all : all.slice(0, all.findIndex(entry => entry.id === until) + 1)
   const ids = new Set(kept.map(entry => entry.id))
   const shots = (count: number, changed: Record<number, string> = {}): PlanVersion['shots'] =>
-    Array.from({ length: count }, (_, index) => ({ prompt: changed[index + 1] ?? PROMPTS[index] ?? 'end' }))
+    Array.from({ length: count }, (_, index) => ({ prompt: changed[index + 1] ?? PROMPTS[index] ?? 'end', mode: 'ref2va' as const }))
   const versions: PlanVersion[] = [
     { version: 1, shots: shots(6), created_by: 'q1', approved_by: 'a1' },
     { version: 2, shots: shots(7, { 3: 'door, closer' }), created_by: 'q2', approved_by: 'a2' },
@@ -56,7 +56,7 @@ function rollbackProject(until?: string): WireState {
   const clips = (kept.findLast(entry => entry.operation?.startsWith('timeline.') === true && entry.id.startsWith('l'))?.inputs ?? [])
     .map((input, index) => ({ id: `cl${String(index + 1)}`, asset: input.resolved_asset, source: null, in_sec: null, out_sec: null }))
   if (ids.has('k1') && !ids.has('l4')) clips[2] = { id: 'cl3', asset: 'r3.mp4', source: null, in_sec: null, out_sec: null }
-  const renders = kept.filter(entry => entry.operation === 'shot.render')
+  const renders = kept.filter(entry => entry.operation === 'shot.render_ref2va')
   const state = fixtureState()
   state.components.proj = {
     records: kept, stale: {}, superseded: {},
@@ -122,7 +122,7 @@ describe('buildCanvasGraph', () => {
     const g2 = records.find(record => record.id === 'g2')
     if (g2 === undefined) throw new Error('fixture lacks g2')
     const shots = Array.from({ length: 22 }, (_, index) => ({ ...g2, id: `s${String(index)}`, inputs: [], params: { prompt: 'p', shot: index + 1 }, outputs: [] }))
-    full.components.proj.records = [...records.filter(record => record.operation !== 'shot.render'), ...shots]
+    full.components.proj.records = [...records.filter(record => record.operation !== 'shot.render_ref2va'), ...shots]
     const graph = buildCanvasGraph(full)
     const takes = graph.nodes.filter(node => node.kind === 'take')
     expect(new Set(takes.map(node => `${String(node.x)},${String(node.y)}`)).size).toBe(22)

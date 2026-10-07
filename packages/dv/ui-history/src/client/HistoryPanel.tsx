@@ -1,8 +1,8 @@
 /**
  * The History panel: the edit history of a project, one row per action, newest first, read through
- * `POST /api/dv/history`. Each row shows the action with its subject (修改分镜计划 p1 → v2, 渲染镜头 7), who did it
- * (你, 智能体, 自动), how long ago, its status, one thumbnail, the record's mark (草稿, 已接受, 已撤销, 已丢弃, 已重放, or
- * an exploration branch), and for an agent action the human's words of its turn. The renders a plan approval scheduled
+ * `POST /api/dv/history`. Each row shows the action with its subject (修改分镜计划 p1 → v2, 参考图生成镜头 7), who did it
+ * (你, 智能体, 自动), how long ago, its status, one thumbnail, the record's mark (草稿, 已接受, 已撤销, 已丢弃, or 已重放),
+ * and for an agent action the intent the agent gave for the call. The renders a plan approval scheduled
  * fold under the approval's row. One bar holds the filters (actor, branch, operation kind, timeline) and the actions on
  * the chat session's working branch (accept, discard, undo, redo). The working branch's current step carries 当前; every
  * step before it offers 回到这一步, which jumps the branch back to just after that step; the steps redo brings back are
@@ -57,10 +57,9 @@ const PAGE = 50
 /** The most entries one request reloads. */
 const MAX_PAGE = 200
 
-/** The loaded window of history: entries newest first, the request records of their turns, and their assets. */
+/** The loaded window of history: entries newest first and their assets. */
 interface Loaded {
   entries: HistoryEntry[]
-  requests: Record<string, ProjectRecord>
   assets: Map<string, Asset>
   /** True while the last page was full, so 加载更多 may find more. */
   more: boolean
@@ -118,7 +117,6 @@ function mergePage(loaded: Loaded | null, page: WireHistory, limit: number): Loa
   for (const asset of page.assets) assets.set(asset.id, asset)
   return {
     entries: [...loaded?.entries ?? [], ...page.entries],
-    requests: { ...loaded?.requests, ...page.requests },
     assets,
     more: page.entries.length >= limit,
   }
@@ -149,7 +147,7 @@ function useHistory(client: DvClient, query: HistoryQuery | null): {
   }, [])
   // The first page of every query.
   useEffect(() => {
-    if (query === null) { store({ entries: [], requests: {}, assets: new Map(), more: false }, key); return }
+    if (query === null) { store({ entries: [], assets: new Map(), more: false }, key); return }
     const controller = new AbortController()
     current.current = null
     setLoaded(null)
@@ -307,10 +305,10 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   else {
     // Every project starts with its `proj.create` record, so a project without other operation records counts as empty;
     // its creation row stays listed below the notice.
-    const changes = loaded.entries.filter(entry => entry.record.kind === 'operation' && entry.record.operation !== 'proj.create')
+    const changes = loaded.entries.filter(entry => entry.record.operation !== 'proj.create')
     const empty = filtered ? rows.length === 0 : changes.length === 0
     const shared = {
-      assets: loaded.assets, records: recordsById, requests: loaded.requests, now, selected, onChoose: choose, rowRef, steps, onJump: jump,
+      assets: loaded.assets, records: recordsById, now, selected, onChoose: choose, rowRef, steps, onJump: jump,
     }
     body = (
       <>
@@ -409,7 +407,6 @@ function FilterBar(props: {
   t: PickText
 }): ReactNode {
   const { filters, onChange, state, t } = props
-  const explorations = state === null ? [] : Object.keys(state.heads).filter(name => name !== 'main' && !name.startsWith('draft/')).sort()
   const drafts = state === null ? [] : openDrafts(state)
   const styled = (value: string): CSSProperties => ({ ...select, color: value === '' ? muted : 'inherit', maxWidth: 110 })
   return (
@@ -428,7 +425,6 @@ function FilterBar(props: {
         <option value="">{t('分支', 'Branch')}</option>
         <option value="main">main</option>
         {drafts.map(draft => <option key={draft.branch} value={draft.branch}>{t(`草稿 · ${draft.session}`, `Draft · ${draft.session}`)}</option>)}
-        {explorations.map(name => <option key={name} value={name}>{name}</option>)}
       </select>
       <select
         data-testid="dv-history-filter-component" aria-label={t('操作类型', 'Operation kind')} style={styled(filters.component)}
@@ -470,7 +466,6 @@ function TrajectoryLink(props: { session: string; toolCall: string }): ReactNode
 interface RowContext {
   assets: ReadonlyMap<string, Asset>
   records: ReadonlyMap<string, ProjectRecord>
-  requests: Readonly<Record<string, ProjectRecord>>
   now: number
   selected: string | null
   onChoose: (entry: HistoryEntry) => void
@@ -483,7 +478,7 @@ interface RowContext {
 
 /**
  * One action row: the thumbnail, the action label and the time on the first line; who, the status, the mark and the
- * human's words on the second. A plan approval adds the toggle that shows the renders it scheduled, nested below it.
+ * agent's intent on the second. A plan approval adds the toggle that shows the renders it scheduled, nested below it.
  * @param props - the row, the shared row context, and the approval's expanded state and toggle.
  * @returns the row and, while expanded, its nested rows.
  */
@@ -491,7 +486,7 @@ function Row(props: RowContext & { row: ActionRow; expanded: boolean; onToggle: 
   const { row, expanded } = props
   const t = useText()
   const children = row.children
-  const renders = children.filter(child => child.record.operation === 'shot.render')
+  const renders = children.filter(child => child.record.operation === 'shot.render_ref2va' || child.record.operation === 'shot.render_t2va')
   const doneRenders = renders.filter(child => child.record.status === 'done').length
   const foldText = renders.length === 0
     ? t(...actionLabel(children[0]?.record ?? row.entry.record))
@@ -531,8 +526,9 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
   const selected = props.selected === record.id
   const status = t(...STATUSES[record.status])
   const thumbnail = thumbnailOf(record, assets, props.records, (props.folded ?? []).map(child => child.record))
-  // The human's words: the request of the agent turn; a human action's own intent stays in the tooltip.
-  const words = record.actor === 'agent' && record.turn !== null ? props.requests[record.turn]?.intent ?? '' : ''
+  // The intent the agent gave for its call; a call without one records the operation name, which the label already shows.
+  // A human action's intent repeats its label, so it stays in the tooltip.
+  const words = record.actor === 'agent' && record.intent !== record.operation ? record.intent : ''
   const size = nested ? 28 : 40
   return (
     <div
@@ -574,7 +570,11 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
             </span>
             {badge === null
               ? null
-              : <span style={{ border: `1px solid ${accent}`, color: accent, borderRadius: 3, padding: '0 4px', lineHeight: '14px' }}>{'branch' in badge ? badge.branch : t(badge.zh, badge.en)}</span>}
+              : (
+                <span style={{ border: `1px solid ${accent}`, color: accent, borderRadius: 3, padding: '0 4px', lineHeight: '14px' }}>
+                  {t(badge.zh, badge.en)}
+                </span>
+              )}
             {step === 'current'
               ? (
                 <span data-testid="dv-history-current" style={{ background: accent, color: '#fff', borderRadius: 3, padding: '0 4px', lineHeight: '14px' }}>
@@ -623,8 +623,8 @@ function Thumb(props: { thumbnail: Thumbnail | null; size: number }): ReactNode 
 
 /**
  * What a selected row adds below it: the inline player of its first video output (else its first image output), the
- * human's words in full, and the link into the trajectory for an agent action.
- * @param props - the record, the known assets, and the human's words.
+ * agent's intent in full, and the link into the trajectory for an agent action.
+ * @param props - the record, the known assets, and the agent's intent.
  * @returns the details, or null when there is nothing to add.
  */
 function Details(props: { record: ProjectRecord; assets: ReadonlyMap<string, Asset>; words: string }): ReactNode {

@@ -34,15 +34,15 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 
 | 模块 | 内容 |
 | --- | --- |
-| `types.ts` | `WireState`、`ProjectRecord`、`Branch`、`Asset`、`Timeline`、`Clip`、`WireOperation`、`WireProject`、`ProjectEvent`、`OperationRequest`、`HistoryQuery`、`HistoryEntry`、`WireHistory`、`ApprovalCard`：`@dv/api` 收发的 JSON 的结构类型 |
-| `api.ts` | `DvClient`（`listProjects`、`getState`、`listOperations`、`runOperation`、`importAsset`、`acceptDraft`、`discardDraft`、`undo`、`redo`、`createBranch`、`switchBranch`、`acceptStale`、`listHistory`、`select`，布局、工作区和输入框调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
+| `types.ts` | `WireState`、`ProjectRecord`、`Branch`、`Asset`、`Timeline`、`Clip`、`WireOperation`、`WireProject`、`ProjectEvent`、`OperationRequest`、`HistoryQuery`、`HistoryEntry`、`WireHistory`、`PlanVersion`、`Shot`（带生成方式 `mode`，即 `ref2va` 或 `t2va`，以及 `continue_previous`）：`@dv/api` 收发的 JSON 的结构类型 |
+| `api.ts` | `DvClient`（`listProjects`、`getState`、`listOperations`、`runOperation`、`importAsset`、`acceptDraft`、`discardDraft`、`undo`、`redo`、`acceptStale`、`listHistory`，项目、布局、工作区和对话调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`、`paramsOf(fields)`、`FieldParseError`：每个 schema 属性一个控件，带类型转换 |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`、`timelineName(timeline, numbered)`、`formatSeconds` |
-| `references.ts` | `shotReferences(version, shot)`、`referenceImages(state, references)`、`pictureParts(prompt)`：一个镜头发给视频模型的参考图，按提示词里 `Picture 1`、`Picture 2`…… 的编号顺序排列，以及在这些标记处切开的提示词 |
-| `state.ts` | `openDrafts`、`sessionDraft`、`branchNames`、`assetIndex`、`videoAssets` |
+| `references.ts` | `shotReferences(version, shot)`、`referenceImages(state, references)`、`pictureParts(prompt)`：一个镜头发给视频模型的参考图，按提示词里 `Picture 1`、`Picture 2`…… 的编号顺序排列，以及在这些标记处切开的提示词；`t2va` 镜头没有参考图 |
+| `state.ts` | `openDrafts`、`sessionDraft`、`branchNames`（`main`，然后是草稿）、`assetIndex`、`videoAssets` |
 | `useProject.ts` | `useProjects`、`useOperations`、`useProjectState`：每次项目事件都重新拉取的加载器 |
-| `useView.ts` | `useViewSession(client, surface, session?)`：项目与分支选择、分支状态、操作、最近一次失败、分支栏回调，以及由主体渲染的 `discardDialog`；`sessionFromLocation` 从页面地址的 `?session=` 读对话，让视图打开该对话的项目 |
-| `BranchBar.tsx` | 分支栏：项目和分支选择器、新建项目和新建分支按钮、撤销，以及每个打开草稿一枚接受/丢弃标签；文案以 `labels` 传入，由所属插件先本地化 |
+| `useView.ts` | `useViewSession(client, surface, session?)`：项目选择、视图显示的分支、分支状态、操作、最近一次失败、分支栏回调，以及由主体渲染的 `discardDialog`；`sessionFromLocation` 从页面地址的 `?session=` 读对话，让视图打开该对话的项目 |
+| `BranchBar.tsx` | 分支栏：项目和分支选择器、新建项目按钮、撤销，以及每个打开草稿一枚接受/丢弃标签；文案以 `labels` 传入，由所属插件先本地化 |
 | `WorkingBranchBar.tsx` | `WorkingBranchBar`：视图所在对话的当前分支（它打开的草稿，否则 `main`），并为草稿提供接受和丢弃；画布和时间线编辑器都显示它（测试 ID `dv-kit-working-branch`，属性 `data-branch`） |
 | `DiscardDraftDialog.tsx` | `useDiscardDraft(client, project, surface, onChange?)`：每次丢弃先读草稿的数量，在对话框里说明会丢失多少处智能体修改和你自己的修改（测试 ID `dv-kit-discard-dialog`），再带着确认过的数量丢弃；遇到 `draft_changed` 时重新显示当前数量并调用 `onChange` |
 | `compose.ts`、`workspace-events.ts` | 窗口事件 `dv:compose`、`dv:timeline-insert`、`dv:canvas-focus`、`dv:history-focus`、`dv:trajectory-focus`、`dv:timeline-focus`（`DV_*_EVENT`）和素材拖拽类型 `application/x-dv-asset` |

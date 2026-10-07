@@ -27,7 +27,7 @@ describe('assetLibrary over a synthetic state', () => {
   }
   const records = [
     done('o1', 'asset.import', 'img', { name: 'dropped.png' }, '2026-10-05T09:00:00.000Z'),
-    done('o2', 'shot.render', 'vid', {}, '2026-10-05T09:01:00.000Z'),
+    done('o2', 'shot.render_ref2va', 'vid', {}, '2026-10-05T09:01:00.000Z'),
     done('o4', 'deliver.timeline_export', 'out', { timeline: 't1' }, '2026-10-05T09:03:00.000Z'),
   ]
   const assets = [asset('img', 'image/png', 'ref.png'), asset('vid', 'video/mp4', 'clip.mp4'), asset('out', 'video/mp4', 'export.mp4')]
@@ -56,7 +56,7 @@ describe('assetLibrary over a synthetic state', () => {
 
   it('lists the assets only an open draft has and flags them as drafts', () => {
     const draft = stateOf(
-      [...records, done('o3', 'shot.render', 'draft-vid', {}, '2026-10-05T09:02:00.000Z')],
+      [...records, done('o3', 'shot.render_ref2va', 'draft-vid', {}, '2026-10-05T09:02:00.000Z')],
       [...assets, asset('draft-vid', 'video/mp4', 'draft.mp4')],
     )
     const library = assetLibrary(state, [{ branch: 'draft/s1', state: draft }])

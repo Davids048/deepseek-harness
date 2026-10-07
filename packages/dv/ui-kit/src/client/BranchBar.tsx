@@ -16,8 +16,6 @@ export interface BranchBarLabels {
   accept: string
   discard: string
   undo: string
-  newBranch: string
-  newBranchPrompt: string
   newProject: string
   newProjectPrompt: string
   draftTitle: string
@@ -40,10 +38,8 @@ export interface BranchBarProps {
   /** Discard the draft with this branch name. */
   onDiscard: (branch: string) => void
   onUndo: () => void
-  /** Create the exploration branch `explore/<name>` at a record ID or branch name. */
-  onBranchCreate: (name: string, at: string) => void
   onCreate: (title: string) => void
-  /** Ask the user for a branch or project name; defaults to `window.prompt`. */
+  /** Ask the user for a project name; defaults to `window.prompt`. */
   ask?: (message: string) => string | null
 }
 
@@ -78,7 +74,6 @@ export function BranchBar(props: BranchBarProps): ReactNode {
         </select>
       </label>
       <button type="button" style={control} onClick={() => { const title = ask(labels.newProjectPrompt); if (title !== null && title.trim().length > 0) props.onCreate(title.trim()) }}>{labels.newProject}</button>
-      <button type="button" style={control} disabled={props.project === null} onClick={() => { const name = ask(labels.newBranchPrompt); if (name !== null && name.trim().length > 0) props.onBranchCreate(name.trim(), props.branch) }}>{labels.newBranch}</button>
       <button type="button" style={control} onClick={props.onUndo} disabled={props.project === null}>{labels.undo}</button>
       {drafts.map(draft => (
         <span key={draft.branch} style={{ display: 'inline-flex', gap: 4, alignItems: 'center', padding: '2px 6px', border: '1px dashed var(--dv-accent, #b4432a)', borderRadius: 4 }} title={draft.branch}>

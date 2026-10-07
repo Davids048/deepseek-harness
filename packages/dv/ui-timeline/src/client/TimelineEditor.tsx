@@ -326,11 +326,11 @@ export function TimelineEditor(
   const keepStale = (): void => {
     if (staleRecord !== null) void run(() => client.acceptStale(project, staleRecord, 'timeline', session))
   }
-  // The bar names the human's latest request among the shown draft's own records.
+  // The bar names the intent of the latest record among the shown draft's own records that states one.
   const draftIntent = useMemo(() => {
     if (baseState === null) return ''
     const known = new Set(baseState.components.proj.records.map(record => record.id))
-    return state.components.proj.records.filter(record => !known.has(record.id) && record.kind === 'request').at(-1)?.intent ?? ''
+    return state.components.proj.records.filter(record => !known.has(record.id) && record.intent !== '').at(-1)?.intent ?? ''
   }, [state, baseState])
   // The clip under the playhead; a placeholder there blanks the viewer and cannot be split.
   const playheadClip = clips[clipIndexAt(clips, player.position)]
@@ -371,7 +371,6 @@ export function TimelineEditor(
     if (current.kind === 'move') {
       if (!moved) {
         setSelected(clip.position)
-        void client.select({ project, kind: 'clip', id: clip.clip, surface: 'timeline' })
         return
       }
       const to = dropPosition(clips, clip.startSec + clip.seconds / 2 + deltaSec, clip.position)

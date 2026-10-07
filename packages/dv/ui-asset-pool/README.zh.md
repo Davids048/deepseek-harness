@@ -43,7 +43,7 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-asset-pool` 标签�
 
 缩略图和预览从 `GET /dv/assets/<AssetId>` 加载素材文件。
 
-各组按最新在前列出：角色，每个角色最新版本的参考图；参考图，导入的文件以及场景和风格的参考图；渲染结果，`shot.render` 记录的视频；导出，`deliver.timeline_export` 记录的视频。筛选 全部、导入、渲染结果 分别显示四组、只显示 `asset.import` 的产出、只显示渲染结果。预览显示尺寸、时长和文件大小，带操作 插入片段（仅视频）、让智能体使用 和 关闭。
+各组按最新在前列出：角色，每个角色最新版本的参考图；参考图，导入的文件以及场景和风格的参考图；渲染结果，`shot.render_ref2va` 和 `shot.render_t2va` 记录的视频；导出，`deliver.timeline_export` 记录的视频。筛选 全部、导入、渲染结果 分别显示四组、只显示 `asset.import` 的产出、只显示渲染结果。预览显示尺寸、时长和文件大小，带操作 插入片段（仅视频）、让智能体使用 和 关闭。
 
 -----
 
@@ -79,7 +79,7 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-asset-pool` 标签�
 <a id="model-experience"></a>
 ## 模型体验
 
-间接地，通过浏览器侧的素材库面板；其导入写下的 `asset.import` 记录只经由智能体集成（`@dv/agent-integration`）到达模型。
+间接地，通过 `@dv/project`；素材库面板导入写下的 `asset.import` 记录只经由 [`@dv/project`](../project/README.zh.md) 的 `dv:project` 提示词段落以及 `dv_proj_*` 和操作工具到达模型。
 
 #### KV Cache 影响
 

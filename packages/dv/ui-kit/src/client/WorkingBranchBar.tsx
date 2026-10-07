@@ -22,7 +22,7 @@ export interface WorkingBranchBarProps {
   surface: ViewSurface
   /** A state of the project, for its open drafts; null while it loads. */
   state: WireState | null
-  /** The human's latest request that the open draft answers, shown beside it. */
+  /** The intent of the open draft's latest record that states one, shown beside it. */
   intent?: string
   /**
    * Run accept and report its failure the way the view reports its own writes; also called with a no-op after a

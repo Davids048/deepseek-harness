@@ -48,15 +48,15 @@ export interface RecordFailure {
   message: string
 }
 
-/** One record of a project in its current form: a request that started an agent turn, or one operation call. */
+/** One record of a project in its current form: one operation call. */
 export interface ProjectRecord {
   id: string
   parents: string[]
   branch: string
-  kind: 'request' | 'operation'
-  /** The component key that owns the operation, for example `timeline`; `proj` for request records. */
+  kind: 'operation'
+  /** The component key that owns the operation, for example `timeline`. */
   component: string
-  /** The operation name, for example `shot.render`; null on a request record. */
+  /** The operation name, for example `shot.render_ref2va`. */
   operation: string | null
   operation_version: string | null
   actor: Actor
@@ -98,13 +98,13 @@ export interface DraftCounts {
 
 /** One branch of a project. */
 export interface Branch {
-  /** `main`, `draft/<session>`, or `explore/<name>`. */
+  /** `main` or `draft/<session>`. */
   name: string
   head: string
-  /** The branch an accept merges into; null for `main` and exploration branches. */
+  /** The branch an accept merges into; null for `main`. */
   base: string | null
   forked_at: string | null
-  /** The chat session that owns the draft; null for `main` and exploration branches. */
+  /** The chat session that owns the draft; null for `main`. */
   session: string | null
   /** The draft's counts; null for branches that are not open drafts. */
   counts: DraftCounts | null
@@ -170,6 +170,10 @@ export interface Shot {
   /** Character, location or style versions (`c1@1`) or asset IDs this shot uses instead of the plan's references. */
   references?: string[]
   seed?: number
+  /** The render mode (`ref2va` from references, `t2va` from text), which picks `shot.render_ref2va` or `shot.render_t2va`. */
+  mode: 'ref2va' | 't2va'
+  /** Whether the shot starts from the last still of the previous shot's take. */
+  continue_previous?: boolean
 }
 
 /** One version of a plan: what a `plan.create` (version 1) or `plan.update` record stored. */
@@ -177,11 +181,9 @@ export interface PlanVersion {
   /** The 1-based version number; reference text `p1@2` names version 2 of plan `p1`. */
   version: number
   title?: string
-  continuity?: 'independent' | 'chained'
   references?: string[]
   aspect_ratio?: string
   resolution?: string
-  generation_mode?: string
   seed?: number
   shots: Shot[]
   /** The `plan.create` or `plan.update` record that wrote the version. */
@@ -272,7 +274,7 @@ export interface WireOperation {
   outputs: Array<{ role: string; type: string }>
   deterministic: boolean
   resource: 'none' | 'cpu' | 'gpu'
-  confirm: 'never' | 'agent_ask_first'
+  confirm: 'never' | 'always' | 'over_gpu_budget'
 }
 
 /** A project row. */
@@ -299,10 +301,9 @@ export interface HistoryEntry {
   record: ProjectRecord
   /**
    * `main` (on the effective chain of `main`), `draft` (on an open draft), `undone` (left behind by an undo),
-   * `discarded` (on a discarded draft), `replayed` (a draft record that accept copied onto `main`), or `branch` (only
-   * on an exploration branch).
+   * `discarded` (on a discarded draft), or `replayed` (a draft record that accept copied onto `main`).
    */
-  mark: 'main' | 'draft' | 'undone' | 'discarded' | 'replayed' | 'branch'
+  mark: 'main' | 'draft' | 'undone' | 'discarded' | 'replayed'
 }
 
 /** What `POST /api/dv/history` selects (the JSON body). Every filter is optional; filters combine with AND. */
@@ -334,8 +335,6 @@ export interface HistoryQuery {
 export interface WireHistory {
   /** The entries, newest first. */
   entries: HistoryEntry[]
-  /** The `request` record of every turn that has a record in `entries`, by turn. */
-  requests: Record<string, ProjectRecord>
   /** Every asset that the entries name as an output or a resolved input. */
   assets: Asset[]
 }
@@ -363,17 +362,6 @@ export interface WireRecordResult {
 
 /** Which draft an accept or discard addresses: the draft of a chat session, or a draft branch by name. */
 export type DraftTarget = { session: string } | { branch: string }
-
-/** What a view last selected, as the agent is told about it. */
-export interface ViewSelection {
-  project: string
-  kind: 'record' | 'clip' | 'asset' | 'character' | 'location' | 'style'
-  /** The `RecordId`, `ClipId`, `AssetId`, or story bible ID. */
-  id: string
-  surface: 'canvas' | 'timeline' | 'asset_pool'
-  /** ISO-8601 UTC of the selection; set by the server. */
-  at?: string
-}
 
 /** Where a canvas node sits, in canvas units. */
 export interface NodePosition {
@@ -419,46 +407,4 @@ export interface WireSession {
   /** When the session log last changed, ISO-8601 UTC. */
   updated_at: string
   bytes: number
-}
-
-/** The two composer choices of a chat session. */
-export interface ComposerMode {
-  confirm: 'ask' | 'direct'
-  speed: 'quality' | 'speed'
-}
-
-/** One reference image of a render waiting for the user. */
-export interface ApprovalReference {
-  role: string
-  ref: string
-  asset: string | null
-  url: string | null
-}
-
-/** One shot that a plan approval renders. */
-export interface ApprovalShot {
-  /** The shot's 1-based position in the plan. */
-  shot: number
-  prompt: string
-  duration_sec: number
-  /** The images the video model receives for the shot, in `Picture 1`, `Picture 2`, … order. */
-  references: ApprovalReference[]
-}
-
-/** One render waiting for the user's approval. */
-export interface ApprovalCard {
-  id: string
-  session: string
-  tool_call: string
-  /** The operation name. */
-  operation: string
-  summary: string
-  prompt: string
-  duration_sec: number | null
-  gpu_seconds: number
-  /** The images of the call in `Picture 1`, `Picture 2`, … order; for a plan approval, every shot's images without repeats. */
-  references: ApprovalReference[]
-  /** The shots a plan approval renders, in plan order; empty for a render card. */
-  shots: ApprovalShot[]
-  created_at: string
 }

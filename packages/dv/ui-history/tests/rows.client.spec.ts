@@ -14,13 +14,12 @@ import {
 const entry = (fields: Partial<ProjectRecord> & { id: string }, mark: HistoryEntry['mark'] = 'main'): HistoryEntry => ({ record: record(fields), mark })
 
 describe('actionRows', () => {
-  it('drops request records and folds the loaded records an approval scheduled under its row, in scheduled order', () => {
+  it('folds the loaded records an approval scheduled under its row, in scheduled order', () => {
     const rows = actionRows([
       entry({ id: 'tl', actor: 'system', operation: 'timeline.update' }),
-      entry({ id: 'g2', actor: 'system', operation: 'shot.render' }),
-      entry({ id: 'g1', actor: 'system', operation: 'shot.render' }),
+      entry({ id: 'g2', actor: 'system', operation: 'shot.render_ref2va' }),
+      entry({ id: 'g1', actor: 'system', operation: 'shot.render_ref2va' }),
       entry({ id: 'ap', turn: 't2', operation: 'plan.approve', report: { plan: 'p1', version: 2, scheduled: ['g1', 'g2', 'tl', 'gone'] } }),
-      entry({ id: 'r2', turn: 't2', kind: 'request' }),
       entry({ id: 'h1', operation: 'timeline.clip_move' }),
     ])
     expect(rows.map(row => [row.entry.record.id, row.children.map(child => child.record.id)])).toEqual([
@@ -34,7 +33,7 @@ describe('actionRows', () => {
   })
 
   it('keeps scheduled records as rows of their own while their approval is not loaded', () => {
-    expect(actionRows([entry({ id: 'g1', actor: 'system', operation: 'shot.render' })]).map(row => row.entry.record.id)).toEqual(['g1'])
+    expect(actionRows([entry({ id: 'g1', actor: 'system', operation: 'shot.render_ref2va' })]).map(row => row.entry.record.id)).toEqual(['g1'])
   })
 })
 
@@ -48,9 +47,9 @@ describe('labels, thumbnails and times', () => {
       .toEqual(['修改分镜计划 p1 → v2', 'Update plan p1 → v2'])
     expect(actionLabel(record({ id: 'd', operation: 'plan.approve', params: { plan: 'p1' }, report: { plan: 'p1', version: 2 } })))
       .toEqual(['批准分镜计划 p1 v2', 'Approve plan p1 v2'])
-    expect(actionLabel(record({ id: 'e', operation: 'shot.render', params: { plan: 'p1', plan_version: 2, shot: 7 } })))
-      .toEqual(['渲染镜头 7', 'Render shot 7'])
-    expect(actionLabel(record({ id: 'f', operation: 'shot.render', params: { prompt: 'x' } }))).toEqual(['渲染镜头', 'Render shot'])
+    expect(actionLabel(record({ id: 'e', operation: 'shot.render_ref2va', params: { plan: 'p1', plan_version: 2, shot: 7 } })))
+      .toEqual(['参考图生成镜头 7', 'Render shot from references 7'])
+    expect(actionLabel(record({ id: 'f', operation: 'shot.render_t2va', params: { prompt: 'x' } }))).toEqual(['文字生成镜头', 'Render shot from text'])
     expect(actionLabel(record({ id: 'tc', operation: 'timeline.create', params: { timeline: 't2' } }))).toEqual(['新建时间线', 'Create timeline'])
     expect(actionLabel(record({ id: 'tu', operation: 'timeline.update', params: { timeline: 't2' } }))).toEqual(['修改时间线', 'Update timeline'])
     expect(actionLabel(record({ id: 'g', component: 'bible', operation: 'bible.character_create', params: { character: 'c1', name: '阿明' } })))
@@ -83,14 +82,13 @@ describe('labels, thumbnails and times', () => {
 })
 
 describe('marks', () => {
-  it('badges an accepted draft record, open drafts, undone, discarded, replayed and exploration records', () => {
+  it('badges an accepted draft record, open drafts, undone, discarded and replayed records', () => {
     expect(markBadge(entry({ id: 'm' }))).toBeNull()
     expect(markBadge(entry({ id: 'a', branch: 'draft/s1' }))).toEqual({ zh: '已接受', en: 'Accepted' })
     expect(markBadge(entry({ id: 'd', branch: 'draft/s1' }, 'draft'))).toEqual({ zh: '草稿', en: 'Draft' })
     expect(markBadge(entry({ id: 'u' }, 'undone'))).toEqual({ zh: '已撤销', en: 'Undone' })
     expect(markBadge(entry({ id: 'x', branch: 'draft/s1' }, 'discarded'))).toEqual({ zh: '已丢弃', en: 'Discarded' })
     expect(markBadge(entry({ id: 'p', branch: 'draft/s1' }, 'replayed'))).toEqual({ zh: '已重放', en: 'Replayed' })
-    expect(markBadge(entry({ id: 'b', branch: 'explore/b' }, 'branch'))).toEqual({ branch: 'explore/b' })
     expect([markStyle('undone'), markStyle('discarded'), markStyle('replayed'), markStyle('draft')]).toEqual(['struck', 'struck', 'dimmed', 'normal'])
   })
 
@@ -98,7 +96,6 @@ describe('marks', () => {
     expect(branchQuery('')).toEqual({})
     expect(branchQuery('main')).toEqual({ marks: ['main', 'undone'] })
     expect(branchQuery('draft/s5')).toEqual({ branch: 'draft/s5', marks: ['draft'] })
-    expect(branchQuery('explore/b')).toEqual({ branch: 'explore/b' })
   })
 
   it('labels an operation by its tool label, and an unknown one by its name', () => {
@@ -142,14 +139,14 @@ describe('timelines and focus', () => {
 describe('workingSteps', () => {
   it('makes the newest step of the chain current, the older steps before it, and the redo steps after it', () => {
     const chain = [
-      record({ id: 'c', operation: 'proj.create' }), record({ id: 'r', kind: 'request', operation: null }),
-      record({ id: 'a', operation: 'timeline.create' }), record({ id: 'b', operation: 'timeline.rename' }),
-      record({ id: 'u', operation: 'proj.undo' }), record({ id: 'w', operation: 'proj.branch_switch' }),
+      record({ id: 'c', operation: 'proj.create' }), record({ id: 'a', operation: 'timeline.create' }),
+      record({ id: 'b', operation: 'timeline.rename' }), record({ id: 'u', operation: 'proj.undo' }),
+      record({ id: 'w', operation: 'proj.draft_accept' }),
     ]
     const steps = workingSteps(chain, ['d', 'e'])
     expect(steps.current).toBe('b')
-    expect(['c', 'r', 'a', 'b', 'u', 'w', 'd', 'x'].map(id => stepPlace(id, steps)))
-      .toEqual(['before', null, 'before', 'current', null, null, 'after', null])
+    expect(['c', 'a', 'b', 'u', 'w', 'd', 'x'].map(id => stepPlace(id, steps)))
+      .toEqual(['before', 'before', 'current', null, null, 'after', null])
     expect(workingSteps([], []).current).toBeNull()
   })
 })

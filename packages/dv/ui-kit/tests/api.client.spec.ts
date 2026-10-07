@@ -1,4 +1,4 @@
-/** The browser client: routes, bodies, error decoding, advisory selection, and log following. */
+/** The browser client: routes, bodies, error decoding, and log following. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { assetUrl, DvApiError, DvClient } from '../src/client/api.ts'
 import { fixtureState, PROJECT, scriptedFetch } from './fixture.client.tsx'
@@ -12,49 +12,37 @@ describe('DvClient', () => {
     expect(await client.listProjects()).toEqual([PROJECT])
     expect(await client.listProjects(undefined, 's1')).toEqual([PROJECT])
     expect(await client.createProject('Demo 2', 'canvas')).toMatchObject({ heads: { main: 'x' } })
-    expect((await client.getState('p1', 'explore/style-b')).project.id).toBe('p1')
-    expect((await client.listOperations()).map(operation => operation.name)).toContain('shot.render')
+    expect((await client.getState('p1', 'draft/s5')).project.id).toBe('p1')
+    expect((await client.listOperations()).map(operation => operation.name)).toContain('shot.render_ref2va')
     const record = await client.runOperation({ project: 'p1', operation: 'timeline.clip_move', params: { clip: 'cl2', to: 1 }, surface: 'timeline' })
     expect(record.operation).toBe('timeline.clip_move')
     await client.acceptDraft('p1', { session: 's5' }, 'canvas')
     await client.undo('p1', 'canvas')
-    await client.createBranch('p1', 'alt', 'main', 'timeline')
-    await client.select({ project: 'p1', kind: 'record', id: 'g1', surface: 'canvas' })
     await client.discardDraft('p1', { branch: 'draft/s5' }, 'timeline')
     await client.discardDraft('p1', { session: 's5' }, 'canvas', { agent_changes: 1, human_edits: 0 })
     await client.redo('p1', 'asset_pool', 's5')
-    await client.switchBranch('p1', 'main', 'canvas', 's5')
     await client.acceptStale('p1', 'g2', 'timeline', 's5')
     await client.renameProject('p1', 'Demo 3')
     await client.deleteProject('p1')
     await client.updateLayout('p1', { positions: { g1: { x: 1, y: 2 } } })
     await client.linkWorkspace('p1', 'w1')
     await client.bindSession('s5', 'p1')
-    await client.updateComposerMode('s5', { confirm: 'direct' })
-    await client.answerApprovals('s5', 'all', 'skip')
-    await client.answerApprovals('s5', 'ap1', 'approve')
     expect(writes.map(write => write.path)).toEqual([
-      '/api/dv/projects', '/api/dv/operation', '/api/dv/drafts/accept', '/api/dv/undo', '/api/dv/branches/create', '/api/dv/selection',
-      '/api/dv/drafts/discard', '/api/dv/drafts/discard', '/api/dv/redo', '/api/dv/branches/switch', '/api/dv/stale/accept',
+      '/api/dv/projects', '/api/dv/operation', '/api/dv/drafts/accept', '/api/dv/undo',
+      '/api/dv/drafts/discard', '/api/dv/drafts/discard', '/api/dv/redo', '/api/dv/stale/accept',
       '/api/dv/projects/rename', '/api/dv/projects/delete', '/api/dv/layout', '/api/dv/workspaces', '/api/dv/workspaces/bind',
-      '/api/dv/composer/mode', '/api/dv/composer/approvals', '/api/dv/composer/approvals',
     ])
     expect(writes[0]?.body).toEqual({ title: 'Demo 2', surface: 'canvas' })
     expect(writes[2]?.body).toEqual({ project: 'p1', session: 's5', surface: 'canvas' })
     expect(writes[3]?.body).toEqual({ project: 'p1', surface: 'canvas' })
-    expect(writes[4]?.body).toEqual({ project: 'p1', name: 'alt', at: 'main', surface: 'timeline' })
     // Without counts the discard is a dry read; with them it discards.
-    expect(writes[6]?.body).toEqual({ project: 'p1', branch: 'draft/s5', surface: 'timeline' })
-    expect(writes[7]?.body).toEqual({ project: 'p1', session: 's5', surface: 'canvas', counts: { agent_changes: 1, human_edits: 0 } })
-    expect(writes[8]?.body).toEqual({ project: 'p1', surface: 'asset_pool', session: 's5' })
-    expect(writes[9]?.body).toEqual({ project: 'p1', branch: 'main', surface: 'canvas', session: 's5' })
-    expect(writes[10]?.body).toEqual({ project: 'p1', record: 'g2', surface: 'timeline', session: 's5' })
-    expect(writes[13]?.body).toEqual({ project: 'p1', positions: { g1: { x: 1, y: 2 } } })
-    expect(writes[14]?.body).toEqual({ project: 'p1', workspace_id: 'w1' })
-    expect(writes[15]?.body).toEqual({ session: 's5', project: 'p1' })
-    expect(writes[16]?.body).toEqual({ session: 's5', confirm: 'direct' })
-    expect(writes[17]?.body).toEqual({ session: 's5', all: true, action: 'skip' })
-    expect(writes[18]?.body).toEqual({ session: 's5', id: 'ap1', action: 'approve' })
+    expect(writes[4]?.body).toEqual({ project: 'p1', branch: 'draft/s5', surface: 'timeline' })
+    expect(writes[5]?.body).toEqual({ project: 'p1', session: 's5', surface: 'canvas', counts: { agent_changes: 1, human_edits: 0 } })
+    expect(writes[6]?.body).toEqual({ project: 'p1', surface: 'asset_pool', session: 's5' })
+    expect(writes[7]?.body).toEqual({ project: 'p1', record: 'g2', surface: 'timeline', session: 's5' })
+    expect(writes[10]?.body).toEqual({ project: 'p1', positions: { g1: { x: 1, y: 2 } } })
+    expect(writes[11]?.body).toEqual({ project: 'p1', workspace_id: 'w1' })
+    expect(writes[12]?.body).toEqual({ session: 's5', project: 'p1' })
     expect(assetUrl('a/b')).toBe('/dv/assets/a%2Fb')
   })
 
@@ -67,7 +55,7 @@ describe('DvClient', () => {
 
   it('posts a history query as a JSON body and decodes the history answer and its errors', async () => {
     const calls: Array<{ path: string; init: RequestInit | undefined }> = []
-    const answer = { entries: [{ record: { id: 'g1' }, mark: 'undone' }], requests: {}, assets: [] }
+    const answer = { entries: [{ record: { id: 'g1' }, mark: 'undone' }], assets: [] }
     const fetchImpl: typeof fetch = (input, init) => {
       calls.push({ path: String(input), init })
       return Promise.resolve(new Response(JSON.stringify(answer)))
@@ -86,13 +74,12 @@ describe('DvClient', () => {
     await expect(new DvClient(unknown).listHistory({ project: 'p1', before: 'x' })).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
   })
 
-  it('turns error statuses into DvApiError and swallows selection failures', async () => {
+  it('turns error statuses into DvApiError', async () => {
     const failing: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({ error: 'Unknown project' }), { status: 404 }))
     const client = new DvClient(failing)
     await expect(client.getState('nope', 'main')).rejects.toMatchObject({ name: 'DvApiError', status: 404, message: 'Unknown project' })
     const noBody: typeof fetch = () => Promise.resolve(new Response('not json', { status: 500 }))
     await expect(new DvClient(noBody).listProjects()).rejects.toThrow(new DvApiError(500, 'HTTP 500'))
-    await expect(client.select({ project: 'nope', kind: 'clip', id: 'cl1', surface: 'timeline' })).resolves.toBeUndefined()
     // A refused Project call carries its code and the rest of the body, such as a changed draft's counts.
     const changed: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({
       error: 'The draft changed.', code: 'draft_changed', counts: { agent_changes: 2, human_edits: 0 },

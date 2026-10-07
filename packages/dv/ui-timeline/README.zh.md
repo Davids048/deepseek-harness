@@ -44,10 +44,9 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-timeline` 标签类
 | 把素材拖到轨道上，或用 ＋ 选择 | `timeline.clip_insert {timeline, at, asset}` |
 | ＋ 新建、重命名、删除标签 | `timeline.create {timeline, assets: []}`（不带名称，标签显示 时间线 {n} / Timeline {n}）、`timeline.rename {timeline, name}`、`timeline.delete {timeline}` |
 | 导出 | 一次 `deliver.timeline_export {timeline}` 调用；链接打开导出的视频 |
-| 点一个片段 | `POST /api/dv/selection`，kind 为 `clip`，带片段 ID |
 | 对选中的过期片段点"仍然保留" | 对创建该片段素材的记录调用 `POST /api/dv/stale/accept`（`proj.stale_accept`） |
 
-每条记录都带 `surface: 'timeline'`、视图旁边的对话（记录因此落在该对话的草稿上），以及一句用 DSH 界面语言说明手势的意图。所选时间线经 `@dv/ui-kit/current-timeline.ts` 共享，shell 因此把它写进 URL。`TimelineView` 通过 `@dv/ui-kit/locale.ts` 跟随 `<html lang>`；切换时间线标签会停止播放，并重置预览和播放头。显示 `draft/*` 分支时手势禁用。标签上方 `@dv/ui-kit/WorkingBranchBar.tsx` 的当前分支栏说明修改写入哪个分支，并接受或丢弃打开的草稿。素材没有时长时片段按五秒画。
+每条记录都带 `surface: 'timeline'`、视图旁边的对话（记录因此落在该对话的草稿上），以及一句用 DSH 界面语言说明手势的意图。所选时间线经 `@dv/ui-kit/current-timeline.ts` 共享，shell 因此把它写进 URL。`TimelineView` 通过 `@dv/ui-kit/locale.ts` 跟随 `<html lang>`；切换时间线标签会停止播放，并重置预览和播放头。点一个片段会选中它，不发送任何请求。显示 `draft/*` 分支时手势禁用。标签上方 `@dv/ui-kit/WorkingBranchBar.tsx` 的当前分支栏说明修改写入哪个分支，显示草稿中最近一条带 `intent` 的记录的 `intent`，并接受或丢弃打开的草稿。素材没有时长时片段按五秒画。
 
 DOM 带测试 ID `dv-timeline-body`、`dv-timeline-editor`、`dv-timeline-viewer`、`dv-timeline-viewer-empty`、`dv-timeline-time`、`dv-timeline-exported`、`dv-timeline-ruler` 和 `dv-timeline-playhead`；每个片段带 `data-clip`（片段 ID）、`data-clip-position`、`data-clip-stale` 和 `data-clip-draft`，每个标签带 `data-timeline`。
 
@@ -89,7 +88,7 @@ DOM 带测试 ID `dv-timeline-body`、`dv-timeline-editor`、`dv-timeline-viewer
 <a id="model-experience"></a>
 ## 模型体验
 
-间接地，通过浏览器侧的时间线；其手势写下的记录只经由智能体集成（`@dv/agent-integration`）到达模型。
+间接地，通过 `@dv/project`；其手势写下的记录只经由 [`@dv/project`](../project/README.zh.md) 的 `dv:project` 提示词段落以及 `dv_proj_*` 和操作工具到达模型。
 
 #### KV Cache 影响
 

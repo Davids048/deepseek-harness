@@ -2,10 +2,10 @@
  * The reference images a shot sends to the video model, in the order its prompt names them (`Picture 1`, `Picture 2`,
  * …), and the split of a prompt at those names, so a view can show each named image instead of the bare label.
  *
- * The order matches `shot.render`: the resolved `reference` inputs in input order, where a character, location or style
- * version stands for all of its reference images in the version's order. A chained shot's `first_frame` input (the
- * previous take's last still) is not a reference: the model names it after the references (`Picture N+1`), and a
- * continued shot of an initial-image mode sends only that frame.
+ * The order matches `shot.render_ref2va`: the resolved `reference` inputs in input order, where a character, location or
+ * style version stands for all of its reference images in the version's order. The `first_frame` input of a shot that
+ * continues the previous shot (the previous take's last still) is not a reference: the model names it after the
+ * references (`Picture N+1`). A `t2va` shot renders from text and has no reference images.
  *
  * @module @dv/ui-kit/references
  */
@@ -15,14 +15,14 @@ import type { PlanVersion, Shot, WireState } from './types.ts'
 export type PicturePart = { text: string } | { picture: number; text: string }
 
 /**
- * The reference texts a plan shot renders from: the shot's own references, else the plan version's, as `plan.approve`
- * passes them to `shot.render`.
+ * The reference texts a plan shot renders from, as `plan.approve` passes them to `shot.render_ref2va`: the shot's own
+ * references, else the plan version's. A `t2va` shot has none.
  * @param version - the plan version.
  * @param shot - one shot of the version.
  * @returns the reference texts (`<asset>`, `<record>#<output>`, or `<id>@<version>`).
  */
-export function shotReferences(version: Pick<PlanVersion, 'references'>, shot: Pick<Shot, 'references'>): string[] {
-  return shot.references ?? version.references ?? []
+export function shotReferences(version: Pick<PlanVersion, 'references'>, shot: Pick<Shot, 'references' | 'mode'>): string[] {
+  return shot.mode === 't2va' ? [] : shot.references ?? version.references ?? []
 }
 
 /**

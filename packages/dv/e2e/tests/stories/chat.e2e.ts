@@ -6,7 +6,9 @@ import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
 import { bootHarness, playwright, waitFor, type BootedHarness } from '../harness.ts'
-import { assetIdOf, startScriptedModel, textOf, type ChatRequest, type ScriptedModel, type ScriptedRule } from '../scripted-model.ts'
+import {
+  assetIdOf, startScriptedModel, textOf, type ChatRequest, type ScriptedModel, type ScriptedRule, type ScriptedStep, type TurnView,
+} from '../scripted-model.ts'
 
 /** A 1×1 opaque PNG. */
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
@@ -16,11 +18,28 @@ const GREEN_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGOQO
 const BLUE_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNQcLgAAAG0ATF+kRwWAAAAAElFTkSuQmCC'
 
 /**
+ * The scripted `dv_plan_create` call of a two-shot plan whose shots render from the image the turn imported first.
+ * @param view - the turn so far; its first tool result is the import.
+ * @param title - the plan title.
+ * @returns the step.
+ */
+function planCall(view: TurnView, title: string): ScriptedStep {
+  return { calls: [{ name: 'dv_plan_create', args: {
+    reason: '规划', title, references: [assetIdOf(view.toolResults[0], 'asset')],
+    shots: [
+      { prompt: 'Picture 1 产品特写', duration_sec: 1, mode: 'ref2va' },
+      { prompt: 'Picture 1 产品使用场景', duration_sec: 2, mode: 'ref2va' },
+    ],
+  } }] }
+}
+
+/**
  * The scripted agent. `只回复<X>` answers `收到<X>`; `慢慢想` streams for six seconds; `加人物` registers a character;
  * `慢慢做` imports an image and then streams for eight seconds, so a stop leaves an open draft; `新建项目` creates a
  * project as the agent does from the entry page; `做两个镜头的广告` imports a reference, plans two shots, approves, and
- * waits, leaving an open draft; `两段待批` asks for two renders at once, which wait for approval cards in 渲染前先问
- * mode.
+ * waits, leaving an open draft; `先给我看计划` imports a reference, plans two shots, calls the plan approval without the
+ * user's agreement (Project refuses it), and asks in bold; `可以渲染` approves that plan with the user's agreement and
+ * waits; `两段渲染` renders two shots at once.
  */
 const RULES: ScriptedRule[] = [
   { match: /只回复\S+/, steps: [view => ({ text: `收到${/只回复(\S+)/.exec(view.userText)?.[1] ?? ''}` })] },
@@ -46,7 +65,10 @@ const RULES: ScriptedRule[] = [
     match: '点名渲染一段',
     steps: [
       { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'named.png' } }] },
-      view => ({ calls: [{ name: 'dv_shot_render', args: { reason: '用户点名', prompt: '点名的镜头', duration_sec: 1, inputs: { reference: assetIdOf(view.toolResults[0], 'asset') }, user_requested: true } }] }),
+      view => ({ calls: [{ name: 'dv_shot_render_ref2va', args: {
+        reason: '用户点名', prompt: '点名的镜头', duration_sec: 1, user_requested: true,
+        inputs: { reference: assetIdOf(view.toolResults[0], 'asset') },
+      } }] }),
     ],
     endText: '渲染好了。',
   },
@@ -66,10 +88,7 @@ const RULES: ScriptedRule[] = [
     match: '做两个镜头的广告',
     steps: [
       { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'product.png' } }] },
-      view => ({ calls: [{ name: 'dv_plan_create', args: {
-        reason: '规划', title: '产品广告', continuity: 'independent', references: [assetIdOf(view.toolResults[0], 'asset')],
-        shots: [{ prompt: 'Picture 1 产品特写', duration_sec: 1 }, { prompt: 'Picture 1 产品使用场景', duration_sec: 2 }],
-      } }] }),
+      view => planCall(view, '产品广告'),
       // The story's project is new, so its first plan is p1.
       { calls: [{ name: 'dv_plan_approve', args: { reason: '用户同意', plan: 'p1', user_approved: true } }] },
       { calls: [{ name: 'dv_proj_wait', args: {} }] },
@@ -77,13 +96,31 @@ const RULES: ScriptedRule[] = [
     endText: '两个镜头已渲染。草稿待确认',
   },
   {
-    match: '两段待批',
+    match: '先给我看计划',
+    steps: [
+      { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'ask-first.png' } }] },
+      view => planCall(view, '先问再渲染'),
+      // Without user_approved, Project refuses the call and tells the agent to ask in the conversation.
+      { calls: [{ name: 'dv_plan_approve', args: { reason: '按计划渲染', plan: 'p1' } }] },
+      { text: '计划有两个镜头。**现在渲染这两个镜头吗？**' },
+    ],
+  },
+  {
+    match: '可以渲染',
+    steps: [
+      { calls: [{ name: 'dv_plan_approve', args: { reason: '用户同意', plan: 'p1', user_approved: true } }] },
+      { calls: [{ name: 'dv_proj_wait', args: {} }] },
+    ],
+    endText: '两个镜头已渲染。草稿待确认',
+  },
+  {
+    match: '两段渲染',
     steps: [
       { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: PNG_BASE64, mime: 'image/png', name: 'product.png' } }] },
-      view => ({ calls: [
-        { name: 'dv_shot_render', args: { reason: '第一段', prompt: '第一段画面', duration_sec: 1, inputs: { reference: assetIdOf(view.toolResults[0], 'asset') } } },
-        { name: 'dv_shot_render', args: { reason: '第二段', prompt: '第二段画面', duration_sec: 2, inputs: { reference: assetIdOf(view.toolResults[0], 'asset') } } },
-      ] }),
+      view => ({ calls: [1, 2].map(segment => ({ name: 'dv_shot_render_ref2va', args: {
+        reason: `第${String(segment)}段`, prompt: segment === 1 ? '第一段画面' : '第二段画面', duration_sec: segment,
+        inputs: { reference: assetIdOf(view.toolResults[0], 'asset') },
+      } })) }),
     ],
     endText: '处理完毕。',
   },
@@ -201,7 +238,7 @@ describe('chat with the agent', () => {
     return textOf(typed.at(-1)?.content)
   }
 
-  /** The @ reference expansion the agent integration added to a model request, or the empty string. */
+  /** The `dv:` mention expansion that `@dv/chat-references` added to a model request, or the empty string. */
   function referencesOf(request: ChatRequest): string {
     const block = request.messages.filter(message => message.role === 'user' && textOf(message.content).startsWith('The user referenced these project items'))
     return textOf(block.at(-1)?.content)
@@ -249,6 +286,9 @@ describe('chat with the agent', () => {
     // Creators get the video tools, not the developer tool set.
     const tools = (requestFor('只回复一')?.tools ?? []).map(tool => tool.function?.name ?? '')
     expect(tools.filter(name => ['bash', 'glob', 'grep', 'edit', 'write', 'web_fetch', 'web_search'].includes(name))).toEqual([])
+    // The e2e profile mounts only the ref2va render mode, so its render tool is the only one the agent gets.
+    expect(tools).toContain('dv_shot_render_ref2va')
+    expect(tools).not.toContain('dv_shot_render_t2va')
     expect(errors).toEqual([])
   })
 
@@ -284,7 +324,8 @@ describe('chat with the agent', () => {
     const draftName = drafts[0]?.name ?? ''
     const draft = await harness.api.get(`/api/dv/state?project=${projectId}&branch=${encodeURIComponent(draftName)}`) as WireState
     const agentRecords = draft.components.proj.records.filter(record => record.actor === 'agent' && record.branch === draftName)
-    expect(agentRecords.map(record => record.operation)).toEqual(['asset.import', 'bible.character_create', 'asset.import', 'shot.render'])
+    expect(agentRecords.map(record => record.operation))
+      .toEqual(['asset.import', 'bible.character_create', 'asset.import', 'shot.render_ref2va'])
     expect(new Set(agentRecords.map(record => record.turn)).size).toBe(2)
     expect(drafts[0]?.counts).toEqual({ agent_changes: 4, human_edits: 0 })
     // The user accepts the draft from the canvas bar; then `main` holds every record, and the accept is the user's.
@@ -375,7 +416,7 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('accepting the chat session draft on the canvas clears the draft bar, and the agent is told no draft is open', async () => {
+  it('accepting the chat session draft on the canvas clears the draft bar, and the agent is told it writes to main', async () => {
     const { page, errors } = await openPage()
     await newProject(page)
     await send(page, '做两个镜头的广告')
@@ -389,8 +430,8 @@ describe('chat with the agent', () => {
     await send(page, '只回复八')
     await waitChat(page, '收到八')
     const prompt = promptOf(requestFor('只回复八') as ChatRequest)
-    expect(prompt).toContain('No draft is open.')
-    expect(prompt).not.toContain('exploration branch')
+    expect(prompt).toContain('the branch you write to (main)')
+    expect(prompt).toContain('"draft": null')
     expect(errors).toEqual([])
   })
 
@@ -411,67 +452,54 @@ describe('chat with the agent', () => {
     expect(await workspace.locator('[data-node-draft="true"]').count()).toBe(0)
     await send(page, '只回复九')
     await waitChat(page, '收到九')
-    expect(promptOf(requestFor('只回复九') as ChatRequest)).toContain('No draft is open.')
+    expect(promptOf(requestFor('只回复九') as ChatRequest)).toContain('the branch you write to (main)')
     expect(errors).toEqual([])
   })
 
-  it('in 渲染前先问 mode shows each render as a visible approval card with a count, and handles 跳过 and 批准', async () => {
-    const { page, errors } = await openPage()
-    await newProject(page)
-    await chat(page).getByRole('button', { name: '渲染前先问', exact: true }).click()
-    await send(page, '两段待批')
-    // The agent asks for two renders; the tool calls run one at a time, so one card waits at a time.
-    const cards = chat(page).locator('[data-state="awaiting-approval"]')
-    await cards.first().waitFor({ state: 'attached', timeout: 30_000 })
-    await chat(page).getByText('待批准 (1)').waitFor({ timeout: 10_000 })
-    expect.soft(await onScreen(cards.first()), 'the approval card is on screen, not folded into the tool row').toBe(true)
-    // dispatchEvent reaches the button even while the card is folded away.
-    await cards.first().locator('button', { hasText: '跳过' }).dispatchEvent('click')
-    await waitFor(async () => (await cards.first().textContent() ?? '').includes('第二段画面'), 'the second approval card', 30_000)
-    expect.soft(await onScreen(cards.first()), 'the second approval card is on screen').toBe(true)
-    await chat(page).getByText('待批准 (1)').waitFor({ timeout: 10_000 })
-    await cards.first().locator('button', { hasText: '批准' }).dispatchEvent('click')
-    await waitChat(page, '处理完毕', 60_000)
-    expect(await cards.count()).toBe(0)
-    expect(await chat(page).getByText('待批准 (').count()).toBe(0)
-    const finished = chat(page).locator('[data-tool="dv_shot_render"]')
-    expect(await finished.filter({ hasText: '未渲染' }).count()).toBe(1)
-    expect(await finished.filter({ hasText: '已渲染' }).count()).toBe(1)
-    // The mode belongs to the session and survives a reload.
-    await page.reload({ waitUntil: 'load' })
-    await composer(page).waitFor({ timeout: 30_000 })
-    const ask = chat(page).getByRole('button', { name: '渲染前先问', exact: true })
-    await ask.waitFor({ timeout: 15_000 })
-    await waitFor(async () => await ask.evaluate(element => getComputedStyle(element).color) === 'rgb(255, 255, 255)', 'the ask-first toggle to be active', 10_000)
-    expect(errors).toEqual([])
-  })
-
-  it('in 渲染前先问 mode a plan approval card lists every shot and its reference images before anything renders', async () => {
+  it('the plan approval waits for the user\'s agreement in the conversation; meanwhile the canvas plan editor shows it', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
-    await chat(page).getByRole('button', { name: '渲染前先问', exact: true }).click()
-    await send(page, '做两个镜头的广告')
-    const card = chat(page).locator('[data-state="awaiting-approval"]').first()
-    await card.waitFor({ state: 'attached', timeout: 30_000 })
-    expect(await card.textContent()).toContain('产品特写')
-    expect(await card.textContent()).toContain('产品使用场景')
-    // Each shot shows its reference image as a thumbnail, and its prompt shows the image in place of the bare Picture 1.
-    const shots = card.locator('[data-testid="dv-composer-approval-shot"]')
+    await send(page, '先给我看计划')
+    await waitChat(page, '现在渲染这两个镜头吗')
+    // Project refused the call without user_approved and told the agent to ask in the conversation.
+    const answered = requestFor('先给我看计划')?.messages.filter(message => message.role === 'tool').map(message => textOf(message.content)) ?? []
+    const refusal = answered.find(text => text.includes('dv_plan_approve needs the user\'s agreement'))
+    expect(refusal).toContain('user_approved: true')
+    // The agent's question is bold, and the refused step is named for creators, never by its wire tool name.
+    expect(await chat(page).locator('strong', { hasText: '现在渲染这两个镜头吗？' }).count()).toBeGreaterThan(0)
+    const approveRows = chat(page).locator('[data-tool="dv_plan_approve"]')
+    await waitFor(async () => (await approveRows.allTextContents()).some(text => text.includes('批准分镜计划')), 'the 批准分镜计划 step', 10_000)
+    expect(await chat(page).getByText('dv_plan_approve').count()).toBe(0)
+    // Nothing renders before the user agrees: the plan on the draft waits for approval.
+    const draftName = (await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as WireState).branches
+      .find(branch => branch.counts !== null)?.name ?? ''
+    const draftState = async (): Promise<WireState> =>
+      await harness.api.get(`/api/dv/state?project=${projectId}&branch=${encodeURIComponent(draftName)}`) as WireState
+    const waiting = await draftState()
+    expect(waiting.components.plan.plans['p1']?.[0]?.approved_by).toBeNull()
+    expect(waiting.components.proj.records.filter(record => record.operation === 'shot.render_ref2va')).toHaveLength(0)
+    // The canvas plan editor lists each shot with its reference image, the image in place of the bare Picture 1, and its render mode.
+    const editor = page.locator('[data-testid="dv-canvas-node-editor"]')
+    await waitFor(async () => {
+      // The canvas fits its view after the nodes load; a click during that move can miss, so click until it opens.
+      await page.locator('[data-dv-workspace] [data-node-kind="plan"]').first().click({ timeout: 10_000 })
+      return await editor.isVisible()
+    }, 'the plan editor', 30_000)
+    expect(await editor.getByText('待批准').count()).toBe(1)
+    const shots = editor.locator('ol > li')
     expect(await shots.count()).toBe(2)
     for (const shot of await shots.all()) {
-      expect(await shot.locator('[data-testid="dv-composer-references"] img').count()).toBe(1)
-      expect(await shot.locator('img[data-testid="dv-composer-picture"]').getAttribute('alt')).toBe('Picture 1')
+      expect(await shot.locator('img[alt=""]').count()).toBe(1)
+      expect(await shot.locator('img[alt="Picture 1"]').count()).toBe(1)
+      expect(await shot.innerText()).not.toContain('Picture 1')
+      expect(await shot.locator('[data-testid="dv-canvas-shot-mode"]').textContent()).toBe('参考图生成')
     }
-    expect(await card.textContent()).not.toContain('Picture 1')
-    expect(await onScreen(card)).toBe(true)
-    // The card names the product model, and the waiting step is named for creators, never by its wire tool name.
-    expect(await card.textContent()).toContain('DreamVerse 视频模型')
-    await waitFor(async () => (await chat(page).locator('[data-process-activity]').allTextContents()).some(text => text.includes('批准分镜计划')), 'the 批准分镜计划 step title', 10_000)
-    expect(await chat(page).getByText('dv_plan_approve').count()).toBe(0)
-    const pending = await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as WireState
-    expect(pending.components.proj.records.filter(record => record.operation === 'shot.render')).toHaveLength(0)
-    await card.locator('button', { hasText: '批准' }).first().click()
+    await page.keyboard.press('Escape')
+    // The user agrees in the conversation; the agent approves with user_approved and both shots render.
+    await send(page, '可以渲染')
     await waitChat(page, '两个镜头已渲染', 60_000)
+    const rendered = (await draftState()).components.proj.records.filter(record => record.operation === 'shot.render_ref2va')
+    expect(rendered.map(record => [record.params['shot'], record.status])).toEqual([[1, 'done'], [2, 'done']])
     expect(errors).toEqual([])
   })
 
@@ -554,11 +582,13 @@ describe('chat with the agent', () => {
 
   it('让智能体改 on a canvas take prefills the open project\'s chat composer with a reference the agent can resolve', async () => {
     const { projectId, assetId } = await seedProject('改片段', 'ref.png')
-    const plan = await runOperation(projectId, 'plan.create', { title: '改片段', continuity: 'independent', references: [assetId], shots: [{ prompt: '镜头甲', duration_sec: 1 }] })
+    const plan = await runOperation(projectId, 'plan.create', {
+      title: '改片段', references: [assetId], shots: [{ prompt: '镜头甲', duration_sec: 1, mode: 'ref2va' }],
+    })
     await runOperation(projectId, 'plan.approve', { plan: plan.report?.['plan'] })
     const done = await waitFor(async () => {
       const state = await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as WireState
-      return state.components.proj.records.find(record => record.operation === 'shot.render' && record.status === 'done')
+      return state.components.proj.records.find(record => record.operation === 'shot.render_ref2va' && record.status === 'done')
     }, 'the take to render', 60_000)
     // Visit another project first, so a stale composer from it would be a wrong target.
     const { page, errors } = await openPage()
@@ -669,31 +699,24 @@ describe('chat with the agent', () => {
     expect(await chat(page).getByText('工作区内修改').count()).toBe(0)
   })
 
-  it('in English, the composer controls, placeholder, and approval cards are English', async () => {
+  it('in English, the composer placeholder, the tool rows, and the render cards of the chat are English', async () => {
     const { page, errors } = await openPage('en')
     expect(await page.evaluate(() => document.documentElement.lang)).toMatch(/^en/)
     await newProject(page, 'en')
-    // The mode controls render once the session's mode has been read, which can be after the composer shows.
-    await chat(page).getByRole('button', { name: 'Ask first', exact: true }).waitFor()
-    for (const label of ['Ask first', 'Render directly', 'Quality', 'Speed']) {
-      expect(await chat(page).getByRole('button', { name: label, exact: true }).count()).toBe(1)
-    }
-    await chat(page).getByRole('button', { name: 'Ask first', exact: true }).click()
-    await send(page, '两段待批')
-    await chat(page).locator('[data-state="awaiting-approval"]').first().waitFor({ state: 'attached', timeout: 30_000 })
-    await chat(page).getByText('Pending approval (1)').waitFor({ timeout: 10_000 })
-    // Apart from the typed message and the scripted prompts, nothing in the chat panel is Chinese.
-    const panel = (await chat(page).innerText()).replaceAll('两段待批', '').replaceAll('第一段画面', '').replaceAll('第二段画面', '')
+    await send(page, '两段渲染')
+    await waitChat(page, '处理完毕', 60_000)
+    // Apart from the typed message and the scripted prompts and reply, nothing in the chat panel is Chinese.
+    const panel = ['两段渲染', '第一段画面', '第二段画面', '处理完毕。'].reduce((text, typed) => text.replaceAll(typed, ''), await chat(page).innerText())
     expect(panel.match(/[一-鿿]+/g) ?? []).toEqual([])
     expect.soft(await composer(page).getAttribute('data-placeholder') ?? '').not.toContain('files or sessions')
-    // Approve the first card, then the second one when it arrives.
-    const cards = chat(page).locator('[data-state="awaiting-approval"]')
-    for (const prompt of ['第一段画面', '第二段画面']) {
-      await waitFor(async () => (await cards.first().textContent() ?? '').includes(prompt), `the approval card of ${prompt}`, 30_000)
-      expect.soft(await onScreen(cards.first().locator('button', { hasText: 'Approve' }).first()), 'the Approve button is on screen').toBe(true)
-      await cards.first().locator('button', { hasText: 'Approve' }).first().dispatchEvent('click')
+    // A finished turn folds its tool rows, so the labels are read from the page text rather than from what is on screen.
+    expect(await chat(page).locator('[data-tool="dv_asset_import"]').first().textContent()).toContain('Import asset')
+    const cards = chat(page).locator('[data-tool="dv_shot_render_ref2va"]')
+    expect(await cards.count()).toBe(2)
+    for (const card of await cards.all()) {
+      expect(await card.locator('strong').textContent()).toBe('Render shot from references')
+      expect(await card.textContent()).toContain('Rendered')
     }
-    await waitChat(page, '处理完毕', 60_000)
     expect(errors).toEqual([])
   })
 })
