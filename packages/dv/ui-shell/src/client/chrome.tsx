@@ -30,6 +30,8 @@ const HISTORY_ID = '@dv/ui-history'
  * and rail), the global panel list (its only entry is Plugins, whose page would replace the project center), and the
  * brand's New Session click. The composer's context-occupancy meter has no DSH UI slot either; its button is found by its
  * accessible label. Composer menu rows show their localized label only, without the internal name (`file`) beside it.
+ * The brand mark slot holds an empty entry (no DSH whale), so its empty wrappers collapse, and the collapsed rail shows
+ * its expand icon at rest instead of a blank button.
  */
 const HIDDEN_CHROME_CSS = `
 button[class$="_newSession"] { display: none !important; }
@@ -37,6 +39,9 @@ nav[class$="_panelList"] { display: none !important; }
 button[class*="_brand "] { pointer-events: none; cursor: default; }
 button[aria-label^="上下文已用"], button[aria-label$=" of context used"] { display: none !important; }
 [data-trigger-menu] span[class$="_itemAlias"] { display: none !important; }
+span[class$="_brandMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { display: none !important; }
+span[class$="_railMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) { display: none !important; }
+span[class$="_railMark"]:has(> [data-slot="sidebar.brand.mark"]:empty) ~ [class*="_panelIcon"] { display: inline !important; }
 `
 
 /** DSH dictionary entries DreamVerse rewords: namespace → key → [Chinese, English]. */
@@ -172,6 +177,9 @@ export function applyChrome(ctx: ClientContext): void {
   ctx.effect(() => ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register(
     { name: 'conversation.composer.dock', id: 'stats', priority: -1 }, Hidden,
   )), 'ui-shell: hide the composer statistics')
+  ctx.effect(() => ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.register(
+    { name: 'sidebar.brand.mark', priority: -1 }, Hidden,
+  )), 'ui-shell: hide the DSH brand mark')
   ctx.inject(['commandUi'], (scope) => {
     scope.effect(() => hideHostCommands(scope.get('commandUi')), 'ui-shell: hide host slash commands')
   })
