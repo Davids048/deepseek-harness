@@ -7853,6 +7853,58 @@ importers:
         specifier: ^22.20.0
         version: 22.20.0
 
+  packages/dv/chat-references:
+    dependencies:
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:*
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:*
+        version: link:../../attachment/attachment
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:*
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:*
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:*
+        version: link:../../core/session
+      '@dv/asset-pool':
+        specifier: workspace:*
+        version: link:../asset-pool
+      '@dv/project':
+        specifier: workspace:*
+        version: link:../project
+      '@dv/story-bible':
+        specifier: workspace:*
+        version: link:../story-bible
+      '@dv/timeline':
+        specifier: workspace:*
+        version: link:../timeline
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:*
+        version: link:../../core/system-prompt
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:*
+        version: link:../../core/tools
+      '@dv/ffmpeg':
+        specifier: workspace:*
+        version: link:../ffmpeg
+      '@dv/shot-plan':
+        specifier: workspace:*
+        version: link:../shot-plan
+      '@dv/shot-render':
+        specifier: workspace:*
+        version: link:../shot-render
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
   packages/dv/deliver:
     dependencies:
       '@deepseek-ai/schemastery':

@@ -355,6 +355,7 @@
       "@dv/agent-integration": ["./packages/dv/agent-integration/src/index.ts"],
       "@dv/api": ["./packages/dv/api/src/index.ts"],
       "@dv/asset-pool": ["./packages/dv/asset-pool/src/index.ts"],
+      "@dv/chat-references": ["./packages/dv/chat-references/src/index.ts"],
       "@dv/deliver": ["./packages/dv/deliver/src/index.ts"],
       "@dv/fasth3-ref2va": ["./packages/dv/fasth3-ref2va/src/index.ts"],
       "@dv/fasth3-t2va": ["./packages/dv/fasth3-t2va/src/index.ts"],

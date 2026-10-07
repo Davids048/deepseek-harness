@@ -1,0 +1,34 @@
+{
+  "name": "@dv/chat-references",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The DreamVerse chat references: dv: mentions in user messages expand into record and asset IDs, and the images a user attaches in a chat become imported assets of the session's project.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-attachment": "workspace:*",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@dv/asset-pool": "workspace:*",
+    "@dv/project": "workspace:*",
+    "@dv/story-bible": "workspace:*",
+    "@dv/timeline": "workspace:*"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@dv/ffmpeg": "workspace:*",
+    "@dv/shot-plan": "workspace:*",
+    "@dv/shot-render": "workspace:*",
+    "@types/node": "^22.20.0"
+  }
+}
