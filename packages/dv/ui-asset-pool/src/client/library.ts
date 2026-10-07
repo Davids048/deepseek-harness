@@ -1,10 +1,10 @@
 /**
- * Sorting of a project's assets into the panel's sections and filters, read from the state of `main` and the states of
- * the project's open drafts.
+ * Grouping of a project's images and videos, with the images that shot renders output apart, read from the state of
+ * `main` and the states of the project's open drafts.
  *
  * @module @dv/ui-asset-pool/library
  */
-import type { Asset, ProjectRecord, StoryBibleState, WireState } from '@dv/ui-kit/types.ts'
+import type { Asset, WireState } from '@dv/ui-kit/types.ts'
 
 /** The state of one open draft branch. */
 export interface DraftState {
@@ -13,116 +13,56 @@ export interface DraftState {
   state: WireState
 }
 
-/** The panel's view of one project's assets. */
+/** The shot render operations whose image outputs (the last stills of takes) the panel lists under `extracted`. */
+const RENDER_OPERATIONS: ReadonlySet<string> = new Set(['shot.render_ref2va', 'shot.render_t2va'])
+
+/** The panel's view of one project's assets: every image and video once, grouped, newest first. */
 export interface AssetLibrary {
-  /** Images that the latest version of a character references. */
-  characters: Asset[]
-  /** Imported files and the reference images of locations and styles, without characters. */
-  references: Asset[]
-  /** Takes: the videos of `shot.render_ref2va` and `shot.render_t2va` records, newest first. */
-  rendered: Asset[]
-  /** The videos of `deliver.timeline_export` records, newest first. */
-  exports: Asset[]
-  /** Outputs of `asset.import` records, newest first. */
-  imported: Asset[]
+  /** Assets whose media type is `image/*`, except the images in `extracted`. */
+  images: Asset[]
+  /** Assets whose media type is `video/*`. */
+  videos: Asset[]
+  /** Images that a `shot.render_ref2va` or `shot.render_t2va` record outputs. */
+  extracted: Asset[]
   /** IDs of the listed assets that only an open draft mentions. */
   draft: Set<string>
 }
 
-/** The records, assets and story bible of `main` with the open drafts merged in. */
-interface MergedState {
-  records: ProjectRecord[]
-  assets: Asset[]
-  bible: StoryBibleState
-}
-
 /**
- * Merge the open drafts into the state of `main`: records, assets, and character, location and style versions that
- * `main` lacks.
+ * Group a project's images and videos, with the images of shot renders apart; assets of other media types are left out.
  * @param main - the state of `main`.
- * @param drafts - the states of the draft branches.
- * @returns the merged records, assets, and story bible.
+ * @param drafts - the states of the project's open drafts; their assets are listed and flagged as drafts.
+ * @returns the groups and draft flags.
  */
-function mergeDrafts(main: WireState, drafts: readonly DraftState[]): MergedState {
-  const records: ProjectRecord[] = [...main.components.proj.records]
-  const assets: Asset[] = [...main.assets]
-  const bible: StoryBibleState = {
-    characters: { ...main.components.bible.characters },
-    locations: { ...main.components.bible.locations },
-    styles: { ...main.components.bible.styles },
+export function assetLibrary(main: WireState, drafts: readonly DraftState[] = []): AssetLibrary {
+  const states = [main, ...drafts.map(draft => draft.state)]
+  const byId = new Map<string, Asset>()
+  for (const state of states) {
+    for (const asset of state.assets) if (!byId.has(asset.id)) byId.set(asset.id, asset)
   }
-  const knownRecords = new Set(records.map(record => record.id))
-  const knownAssets = new Set(assets.map(asset => asset.id))
-  for (const { state } of drafts) {
+  const renderOutputs = new Set<string>()
+  for (const state of states) {
     for (const record of state.components.proj.records) {
-      if (!knownRecords.has(record.id)) { knownRecords.add(record.id); records.push(record) }
-    }
-    for (const asset of state.assets) if (!knownAssets.has(asset.id)) { knownAssets.add(asset.id); assets.push(asset) }
-    for (const kind of ['characters', 'locations', 'styles'] as const) {
-      for (const [id, versions] of Object.entries(state.components.bible[kind])) {
-        if ((bible[kind][id]?.length ?? 0) < versions.length) bible[kind][id] = versions
+      if (record.operation !== null && RENDER_OPERATIONS.has(record.operation)) for (const id of record.outputs) renderOutputs.add(id)
+      // The asset pool keeps the name and time of the first import of identical bytes in any project; show this
+      // project's own import name and time, read from its `asset.import` records.
+      if (record.status !== 'done' || record.operation !== 'asset.import') continue
+      const name = record.params['name']
+      for (const id of record.outputs) {
+        const asset = byId.get(id)
+        if (asset === undefined) continue
+        byId.set(id, { ...asset, created_at: record.created_at, ...(typeof name === 'string' && name.length > 0 ? { name } : {}) })
       }
     }
   }
-  return { records, assets, bible }
-}
-
-/**
- * Sort a project's assets.
- * @param main - the state of `main`.
- * @param drafts - the states of the project's open drafts; their assets are listed and flagged as drafts.
- * @returns the sections, filters, and draft flags.
- */
-export function assetLibrary(main: WireState, drafts: readonly DraftState[] = []): AssetLibrary {
-  const state = mergeDrafts(main, drafts)
+  const assets = [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at))
   const onMain = new Set(main.assets.map(asset => asset.id))
-  const byId = new Map(state.assets.map(asset => [asset.id, asset]))
-  // The asset pool keeps the name and time of the first import of identical bytes in any project; show this project's
-  // own import name and time, read from its `asset.import` records.
-  for (const record of state.records) {
-    if (record.status !== 'done' || record.operation !== 'asset.import') continue
-    const name = record.params['name']
-    for (const id of record.outputs) {
-      const asset = byId.get(id)
-      if (asset !== undefined) byId.set(id, { ...asset, created_at: record.created_at, ...(typeof name === 'string' && name.length > 0 ? { name } : {}) })
-    }
-  }
-  const pick = (ids: Iterable<string>): Asset[] => {
-    const seen = new Set<string>()
-    const rows: Asset[] = []
-    for (const id of ids) {
-      const asset = byId.get(id)
-      if (asset === undefined || seen.has(id)) continue
-      seen.add(id)
-      rows.push(asset)
-    }
-    return rows.sort((a, b) => b.created_at.localeCompare(a.created_at))
-  }
-  const characterIds = new Set<string>()
-  const bibleReferenceIds = new Set<string>()
-  for (const kind of ['characters', 'locations', 'styles'] as const) {
-    for (const versions of Object.values(state.bible[kind])) {
-      const latest = versions.at(-1)
-      if (latest === undefined) continue
-      for (const reference of latest.references) (kind === 'characters' ? characterIds : bibleReferenceIds).add(reference)
-    }
-  }
-  const importedIds: string[] = []
-  const renderedIds: string[] = []
-  const exportIds: string[] = []
-  for (const record of state.records) {
-    if (record.status !== 'done' || record.operation === null) continue
-    if (record.operation === 'asset.import') { importedIds.push(...record.outputs); continue }
-    const videos = record.outputs.filter(id => byId.get(id)?.mime.startsWith('video/') === true)
-    if (record.operation === 'shot.render_ref2va' || record.operation === 'shot.render_t2va') renderedIds.push(...videos)
-    else if (record.operation === 'deliver.timeline_export') exportIds.push(...videos)
-  }
+  const images = assets.filter(asset => asset.mime.startsWith('image/'))
+  const videos = assets.filter(asset => asset.mime.startsWith('video/'))
   return {
-    characters: pick(characterIds),
-    references: pick([...importedIds, ...bibleReferenceIds].filter(id => !characterIds.has(id) && !renderedIds.includes(id))),
-    rendered: pick(renderedIds),
-    exports: pick(exportIds),
-    imported: pick(importedIds),
-    draft: new Set(state.assets.map(asset => asset.id).filter(id => !onMain.has(id))),
+    images: images.filter(asset => !renderOutputs.has(asset.id)),
+    videos,
+    extracted: images.filter(asset => renderOutputs.has(asset.id)),
+    draft: new Set([...images, ...videos].map(asset => asset.id).filter(id => !onMain.has(id))),
   }
 }

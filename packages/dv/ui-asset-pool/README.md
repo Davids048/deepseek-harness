@@ -1,5 +1,5 @@
 ---
-description: "The DreamVerse asset pool panel: the project's characters, reference images, renders, exports, and imports in a right-Sidebar tab, with import, drag into the canvas or the timeline, and preview."
+description: "The DreamVerse asset pool panel: the project's images and videos in a right-Sidebar tab, with import, drag into the canvas or the timeline, and preview."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the web application a 素材库 / Asset pool panel beside the chat. `AssetsPanel` lists the open project's characters, reference images, renders, and exports, including assets that only an unaccepted draft has, marked 草稿 / Draft. You can import images and videos by dropping them on the panel, drag a thumbnail into the canvas or the timeline, and open a preview that inserts a video as a clip or asks the agent to use the asset. The `dv-asset-pool` right-Sidebar tab type shows the panel of the project the shell has open.
+Use this package to give the web application a 素材库 / Asset pool panel beside the chat. `AssetsPanel` lists every image and video of the open project once, grouped into images, videos, and stills extracted from generation, including assets that only an unaccepted draft has, marked 草稿 / Draft. You can import images and videos by dropping them on the panel, drag a thumbnail into the canvas or the timeline, and open a preview that inserts a video as a clip or asks the agent to use the asset. The `dv-asset-pool` right-Sidebar tab type shows the panel of the project the shell has open.
 
 ## Table of Contents
 
@@ -36,14 +36,14 @@ The Host half registers nothing. The browser half registers the `dv-asset-pool` 
 | Gesture | Request or event |
 | --- | --- |
 | Open the panel, any project change | `GET /api/dv/state` for `main` and for each open draft branch, refetched on every `/dv/events` event |
-| Drop images or videos on the drop zone, or click it to choose files | `POST /api/dv/assets/import` once per file with `surface=asset_pool` and the tab's chat session; the `asset.import` record goes to that session's working branch |
+| Drop images or videos on the drop zone, or click it to choose files | `POST /api/dv/assets/import` once per image or video file with `surface=asset_pool` and the tab's chat session; the `asset.import` record goes to that session's working branch. The zone imports no other file and shows 「<name>」不是图片或视频，没有导入。 / "<name>" is not an image or a video, so it was not imported. for each one |
 | Drag a thumbnail | a drag that carries the asset ID as `application/x-dv-asset`; the canvas moves the asset's node to the drop point, the timeline inserts a clip at the drop position |
 | 插入片段 / Insert clip in the preview of a video | `dv:timeline-insert` `{assetId}`; the shell appends the clip to the timeline selected in the editor (else the first timeline, else a new timeline `t1`) and shows the timeline |
 | 让智能体使用 / Ask the agent to use it in the preview | `dv:compose` with the text 使用这个素材： / "Use this asset: " and the asset as an `@` reference; the composer fills its draft and sends nothing |
 
 Thumbnails and the preview load the asset files from `GET /dv/assets/<AssetId>`.
 
-The sections list, newest first: 角色 / Characters, the reference images of each character's latest version; 参考图 / Reference images, imported files and the reference images of locations and styles; 渲染结果 / Rendered, the videos of `shot.render_ref2va` and `shot.render_t2va` records; and 导出 / Exports, the videos of `deliver.timeline_export` records. The filters 全部 / All, 导入 / Imported, and 渲染结果 / Rendered show the four sections, the `asset.import` outputs alone, or the renders alone. The preview shows the size, duration, and file size, with the actions 插入片段 / Insert clip (videos only), 让智能体使用 / Ask the agent to use it, and 关闭 / Close.
+The panel lists every image and video that the state of `main` or of an open draft lists in `assets` (imported files, renders and their stills, exports, and the reference images of characters, locations, and styles) once, in three sections, each newest first: 图片 / Images (`image/*`), 视频 / Videos (`video/*`), 从生成中截取的帧 / Extracted from generation (the images that a `shot.render_ref2va` or `shot.render_t2va` record outputs, such as the last still of a take). Assets of other media types are not listed. An image stays under 图片 / Images when a character, location, or style uses it, and a still of `asset.grab_still` is listed under 图片 / Images. A section without assets is hidden, and a project without assets shows 暂无 / None yet. The preview shows the size, duration, and file size, with the actions 插入片段 / Insert clip (videos only), 让智能体使用 / Ask the agent to use it, and 关闭 / Close.
 
 -----
 
@@ -53,15 +53,15 @@ The sections list, newest first: 角色 / Characters, the reference images of ea
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`assetLibrary` merges the open drafts into the state of `main`: records and assets that `main` lacks, and a character, location, or style whose draft has more versions. A record counts only when its status is `done`. An imported asset shows the name and time of this project's `asset.import` record, because the asset pool keeps the name and time of the first import of identical bytes in any project. The 参考图 section leaves out the reference images of characters and the renders. An asset counts as a draft when the state of `main` does not list it. The panel refetches the draft states whenever the state of `main` reloads, and leaves out a draft whose fetch fails. The preview reads the width and height from the loaded media when the asset has none (imported files), and renders on `document.body` so the right Sidebar cannot cover its buttons; Escape or a click outside closes it.
+`assetLibrary` merges the assets of the open drafts into the assets of `main`, each asset once, and groups the images and videos; an image that a shot render record of `main` or an open draft outputs goes to `extracted`. An imported asset shows the name and time of this project's `asset.import` record whose status is `done`, because the asset pool keeps the name and time of the first import of identical bytes in any project. An asset counts as a draft when the state of `main` does not list it. The panel refetches the draft states whenever the state of `main` reloads, and leaves out a draft whose fetch fails. The preview reads the width and height from the loaded media when the asset has none (imported files), and renders on `document.body` so the right Sidebar cannot cover its buttons; Escape or a click outside closes it.
 
 | File | Content |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | The Host half, which registers nothing |
 | [`src/client/index.ts`](src/client/index.ts) | Registrations of the tab type and the tab body |
 | [`src/client/definition.ts`](src/client/definition.ts) | The tab type |
-| [`src/client/AssetsPanel.tsx`](src/client/AssetsPanel.tsx) | The panel, its filters, the drop zone, the thumbnail grid, the preview, and the tab body |
-| [`src/client/library.ts`](src/client/library.ts) | Sorting of the assets of `main` and the open drafts into sections, filters, and draft flags |
+| [`src/client/AssetsPanel.tsx`](src/client/AssetsPanel.tsx) | The panel, the drop zone, the thumbnail grids by section, the preview, and the tab body |
+| [`src/client/library.ts`](src/client/library.ts) | Grouping of the assets of `main` and the open drafts by media type with the render stills apart, and draft flags |
 
 </details>
 

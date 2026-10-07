@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DreamVerse asset pool panel as a right-Sidebar tab: the project's characters, reference images, imports, and renders with filters, import, drag into the canvas or the timeline, and preview.",
+  "description": "DreamVerse asset pool panel as a right-Sidebar tab: the project's images and videos, with import, drag into the canvas or the timeline, and preview.",
   "exports": {
     ".": "./src/index.ts",
     "./client": {

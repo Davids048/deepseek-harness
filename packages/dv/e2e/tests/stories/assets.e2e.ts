@@ -109,6 +109,10 @@ describe('The asset pool panel', () => {
   const nav = (page: Page): Locator => page.locator('[data-dv-navigator]')
   // A project switch remounts the right panel's session seat, so the panel of the replaced seat can linger for a moment.
   const assetsPanel = (page: Page): Locator => page.locator('[data-testid="dv-asset-pool-panel"]:visible')
+  /** The thumbnails of one media-type section of the asset pool panel, found by its heading (图片 · 2). */
+  const sectionThumbs = (page: Page, title: string): Locator =>
+    assetsPanel(page).locator('section').filter({ has: page.locator('h3', { hasText: new RegExp(`^${title} · `) }) })
+      .locator('[data-asset-id]')
   const crumb = (page: Page): Locator => page.locator('[data-dv-workspace] header').first()
 
   /** Create a project through the API with a unique title; returns its ID and title. */
@@ -197,7 +201,7 @@ describe('The asset pool panel', () => {
       expect(errors).toEqual([])
     })
 
-    it('imports through the file chooser and the drop zone, listed under 导入 and 参考图', async () => {
+    it('imports through the file chooser and the drop zone under 图片 and refuses a dropped file that is not media', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
       await openProject(page, project.title)
@@ -214,9 +218,18 @@ describe('The asset pool panel', () => {
         zone?.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
       }, dropped)
       await expect.poll(() => assetsPanel(page).locator('[data-asset-id]').count()).toBe(2)
-      await assetsPanel(page).getByRole('button', { name: '导入', exact: true }).click()
-      const titles = await assetsPanel(page).locator('[data-asset-id]').evaluateAll(rows => rows.map(row => row.getAttribute('title')))
+      const titles = await sectionThumbs(page, '图片').evaluateAll(rows => rows.map(row => row.getAttribute('title')))
       expect(titles.sort()).toEqual(['chosen.png', 'dropped.png'])
+      await page.evaluate(() => {
+        const zone = document.querySelector('[data-testid="dv-asset-pool-panel"] [role="button"]')
+        const transfer = new DataTransfer()
+        transfer.items.add(new File(['plain text'], 'notes.txt', { type: 'text/plain' }))
+        zone?.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: transfer }))
+        zone?.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
+      })
+      await expect.poll(() => assetsPanel(page).innerText()).toContain('「notes.txt」不是图片或视频，没有导入。')
+      await page.waitForTimeout(1000)
+      expect(await assetsPanel(page).locator('[data-asset-id]').count()).toBe(2)
       expect(errors).toEqual([])
     })
 
@@ -252,16 +265,18 @@ describe('The asset pool panel', () => {
       expect(errors).toEqual([])
     })
 
-    it('lists rendered videos under 渲染结果', async () => {
+    it('lists rendered videos under 视频, their last stills under 从生成中截取的帧, and their reference images under 图片', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
       const videos = [await seedVideo(project.id, 'listed prompt one'), await seedVideo(project.id, 'listed prompt two')]
       await openProject(page, project.title)
       await openAssets(page)
-      await assetsPanel(page).getByRole('button', { name: '渲染结果', exact: true }).click()
-      await expect.poll(() => assetsPanel(page).locator('[data-asset-id]').count()).toBe(2)
-      const ids = await assetsPanel(page).locator('[data-asset-id]').evaluateAll(rows => rows.map(row => row.getAttribute('data-asset-id')))
+      await expect.poll(() => sectionThumbs(page, '视频').count()).toBe(2)
+      const ids = await sectionThumbs(page, '视频').evaluateAll(rows => rows.map(row => row.getAttribute('data-asset-id')))
       expect(ids.sort()).toEqual(videos.sort())
+      const images = await sectionThumbs(page, '图片').evaluateAll(rows => rows.map(row => row.getAttribute('title')))
+      expect(images.sort()).toEqual(['listed prompt one.png', 'listed prompt two.png'])
+      expect(await sectionThumbs(page, '从生成中截取的帧').count()).toBe(2)
       expect(errors).toEqual([])
     })
 
@@ -286,13 +301,12 @@ describe('The asset pool panel', () => {
       await seedVideo(project.id, 'preview prompt')
       await openProject(page, project.title)
       await openAssets(page)
-      await assetsPanel(page).getByRole('button', { name: '渲染结果', exact: true }).click()
-      await assetsPanel(page).locator('[data-asset-id]').first().click()
+      await sectionThumbs(page, '视频').first().click()
       const dialog = page.getByRole('dialog')
       await dialog.waitFor()
       await page.keyboard.press('Escape')
       await expect.poll(() => dialog.count()).toBe(0)
-      await assetsPanel(page).locator('[data-asset-id]').first().click()
+      await sectionThumbs(page, '视频').first().click()
       await dialog.getByRole('button', { name: '插入片段' }).click()
       const clipCount = async (): Promise<number> => (await stateOf(project.id)).components.timeline.timelines[0]?.clips.length ?? 0
       await expect.poll(clipCount, { timeout: 10_000 }).toBe(1)
@@ -325,7 +339,6 @@ describe('The asset pool panel', () => {
       const before = (await draftClips()).length
       expect(before).toBeGreaterThan(0)
       await openAssets(page)
-      await assetsPanel(page).getByRole('button', { name: '渲染结果', exact: true }).click()
       await assetsPanel(page).locator(`[data-asset-id="${video}"]`).click()
       await page.getByRole('dialog').getByRole('button', { name: '插入片段' }).click()
       await expect.poll(async () => (await draftClips()).length, { timeout: 10_000 }).toBe(before + 1)
@@ -358,8 +371,7 @@ describe('The asset pool panel', () => {
       await openProject(page, project.title)
       await page.getByRole('tab', { name: '时间线', exact: true }).click()
       await openAssets(page)
-      await assetsPanel(page).getByRole('button', { name: '渲染结果', exact: true }).click()
-      const clip = assetsPanel(page).locator('[data-asset-id]').first()
+      const clip = sectionThumbs(page, '视频').first()
       await clip.dragTo(page.locator('[role="list"]').first())
       const clipCount = async (): Promise<number> => (await stateOf(project.id)).components.timeline.timelines[0]?.clips.length ?? 0
       await expect.poll(clipCount, { timeout: 10_000 }).toBe(1)
@@ -394,15 +406,12 @@ describe('The asset pool panel', () => {
     it('shows every assets label in English', async () => {
       const { page, errors } = await openPage({ lang: 'en' })
       const project = await createProject('english')
+      await seedVideo(project.id, 'english prompt')
       await openProject(page, project.title)
       await openAssets(page, 'en')
-      for (const filter of ['All', 'Imported', 'Rendered']) {
-        // The panel can still be re-laying out right after the tab opens; retry a click on an unstable chip.
-        const chip = assetsPanel(page).getByRole('button', { name: filter, exact: true })
-        for (let attempt = 0; attempt < 4; attempt++) {
-          if (await chip.click({ timeout: 3000 }).then(() => true, () => false)) break
-        }
-      }
+      await expect.poll(() => sectionThumbs(page, 'Videos').count()).toBe(1)
+      expect(await sectionThumbs(page, 'Images').count()).toBe(1)
+      expect(await sectionThumbs(page, 'Extracted from generation').count()).toBe(1)
       const chinese = await page.evaluate(() => {
         const found: string[] = []
         const roots = document.querySelectorAll('[data-dv-navigator], [data-dv-workspace], [data-testid="dv-asset-pool-panel"]')
@@ -430,11 +439,11 @@ describe('The asset pool panel', () => {
       }
       const colors = await page.evaluate(() => ({
         body: getComputedStyle(document.body).backgroundColor,
-        // An inactive filter chip; the active one is drawn in the accent color.
-        filter: getComputedStyle(document.querySelectorAll('[data-testid="dv-asset-pool-panel"] button')[1] as Element).color,
+        // The text color that the panel's thumbnails and file names inherit.
+        text: getComputedStyle(document.querySelector('[data-testid="dv-asset-pool-panel"]') as Element).color,
       }))
       expect(luminance(colors.body)).toBeLessThan(60)
-      expect(luminance(colors.filter)).toBeGreaterThan(160)
+      expect(luminance(colors.text)).toBeGreaterThan(160)
       expect(errors).toEqual([])
     })
   })

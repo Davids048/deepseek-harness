@@ -1,7 +1,7 @@
 /**
- * The project asset pool panel: filters (全部 / 导入 / 渲染结果), an import drop zone, a thumbnail grid in sections
- * (角色 · 参考图 · 渲染结果 · 导出), drag sources that carry the asset ID as `application/x-dv-asset`, and a preview on click. Assets
- * of an open draft that the user has not accepted yet are listed too, with a 草稿 (Draft) badge.
+ * The project asset pool panel: an import drop zone, every asset of the project once in thumbnail grids grouped by media
+ * type (图片 · 视频 · 从生成中截取的帧), drag sources that carry the asset ID as `application/x-dv-asset`, and a
+ * preview on click. Assets of an open draft that the user has not accepted yet are listed too, with a 草稿 (Draft) badge.
  *
  * @module @dv/ui-asset-pool/AssetsPanel
  */
@@ -31,20 +31,9 @@ export interface AssetsPanelProps {
   client?: DvClient
 }
 
-/** The filters above the grid. */
-type Filter = 'all' | 'imported' | 'rendered'
-
-const FILTERS: Array<{ id: Filter; zh: string; en: string }> = [
-  { id: 'all', zh: '全部', en: 'All' }, { id: 'imported', zh: '导入', en: 'Imported' }, { id: 'rendered', zh: '渲染结果', en: 'Rendered' },
-]
-
 const line = 'var(--dv-line, rgba(127, 127, 127, 0.25))'
 const muted = 'var(--dv-muted, rgba(127, 127, 127, 0.95))'
 const accent = 'var(--dv-accent, #7c5cff)'
-const chip = (active: boolean): CSSProperties => ({
-  border: `1px solid ${active ? accent : line}`, color: active ? accent : 'inherit', background: 'transparent', borderRadius: 14,
-  padding: '3px 10px', fontSize: 12, cursor: 'pointer',
-})
 const button: CSSProperties = { border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '5px 12px', fontSize: 13, cursor: 'pointer' }
 
 /**
@@ -79,33 +68,27 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
   const state = useProjectState(client, props.projectId, 'main')
   const drafts = useDraftStates(client, props.projectId, state.value)
   const t = useText()
-  const [filter, setFilter] = useState<Filter>('all')
   const [preview, setPreview] = useState<Asset | null>(null)
   const library = useMemo(() => state.value === null ? null : assetLibrary(state.value, drafts), [state.value, drafts])
   const draft = library?.draft ?? new Set<string>()
 
   let body: ReactNode
   if (library === null) body = <p style={{ color: muted, fontSize: 12 }}>{state.error === null ? t('正在读取…', 'Loading…') : t(`读取失败：${state.error}`, `Failed to load: ${state.error}`)}</p>
-  else if (filter === 'all') {
+  else if (library.images.length + library.videos.length + library.extracted.length === 0) {
+    body = <p style={{ color: muted, fontSize: 12, margin: 0 }}>{t('暂无', 'None yet')}</p>
+  } else {
     body = (
       <>
-        <Section title={t('角色', 'Characters')} assets={library.characters} draft={draft} onOpen={setPreview} />
-        <Section title={t('参考图', 'Reference images')} assets={library.references} draft={draft} onOpen={setPreview} />
-        <Section title={t('渲染结果', 'Rendered')} assets={library.rendered} draft={draft} onOpen={setPreview} />
-        <Section title={t('导出', 'Exports')} assets={library.exports} draft={draft} onOpen={setPreview} />
+        <Section title={t('图片', 'Images')} assets={library.images} draft={draft} onOpen={setPreview} />
+        <Section title={t('视频', 'Videos')} assets={library.videos} draft={draft} onOpen={setPreview} />
+        <Section
+          title={t('从生成中截取的帧', 'Extracted from generation')} assets={library.extracted} draft={draft} onOpen={setPreview}
+        />
       </>
     )
-  } else if (filter === 'imported') body = <Section title={t('导入', 'Imported')} assets={library.imported} draft={draft} onOpen={setPreview} />
-  else body = <Section title={t('渲染结果', 'Rendered')} assets={library.rendered} draft={draft} onOpen={setPreview} />
+  }
   return (
     <div data-testid="dv-asset-pool-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: 12, gap: 10 }}>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {FILTERS.map(row => (
-          <button key={row.id} type="button" style={chip(filter === row.id)} onClick={() => { setFilter(row.id) }}>
-            {t(row.zh, row.en)}
-          </button>
-        ))}
-      </div>
       <ImportZone client={client} projectId={props.projectId} session={props.session} />
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{body}</div>
       {preview === null
@@ -116,7 +99,8 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
 }
 
 /**
- * The drop zone that imports files through `POST /api/dv/assets/import`; also opens a file chooser on click.
+ * The drop zone that imports image and video files through `POST /api/dv/assets/import`, and names each other file it
+ * refuses; also opens a file chooser on click.
  * @param props - the API client, the project, and the chat session whose working branch receives the imports.
  * @returns the zone.
  */
@@ -124,11 +108,14 @@ function ImportZone(props: { client: DvClient; projectId: string; session: strin
   const [pending, setPending] = useState(0)
   const [over, setOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refused, setRefused] = useState<string[]>([])
   const input = useRef<HTMLInputElement>(null)
   const t = useText()
   const importFiles = useCallback((files: FileList | null) => {
     if (files === null) return
-    for (const file of Array.from(files)) {
+    const accepted = Array.from(files).filter(file => file.type.startsWith('image/') || file.type.startsWith('video/'))
+    setRefused(Array.from(files).filter(file => !accepted.includes(file)).map(file => file.name))
+    for (const file of accepted) {
       setPending(count => count + 1)
       props.client.importAsset(props.projectId, file, 'asset_pool', props.session)
         .then(() => { setError(null) }, (failure: unknown) => { setError(t(`「${file.name}」导入失败：${String(failure)}`, `Failed to import "${file.name}": ${String(failure)}`)) })
@@ -149,6 +136,11 @@ function ImportZone(props: { client: DvClient; projectId: string; session: strin
         ? t(`导入中（${String(pending)}）…`, `Importing (${String(pending)})…`)
         : t('拖入图片或视频导入，或点击选择文件', 'Drop images or videos here to import, or click to choose files')}
       {error === null ? null : <div style={{ color: 'var(--dv-danger, #e5484d)', marginTop: 4 }}>{error}</div>}
+      {refused.map(name => (
+        <div key={name} style={{ color: 'var(--dv-danger, #e5484d)', marginTop: 4 }}>
+          {t(`「${name}」不是图片或视频，没有导入。`, `"${name}" is not an image or a video, so it was not imported.`)}
+        </div>
+      ))}
       <input ref={input} type="file" accept="image/*,video/*" multiple hidden onChange={(event) => { importFiles(event.currentTarget.files); event.currentTarget.value = '' }} />
     </div>
   )
@@ -157,20 +149,16 @@ function ImportZone(props: { client: DvClient; projectId: string; session: strin
 /**
  * One titled grid of thumbnails.
  * @param props - the title, the assets, the IDs of draft assets, and the preview callback.
- * @returns the section, or nothing when it has no assets and is one of several.
+ * @returns the section, or nothing when it has no assets.
  */
 function Section(props: { title: string; assets: Asset[]; draft: ReadonlySet<string>; onOpen: (asset: Asset) => void }): ReactNode {
-  const t = useText()
+  if (props.assets.length === 0) return null
   return (
     <section style={{ marginBottom: 14 }}>
       <h3 style={{ fontSize: 12, fontWeight: 600, color: muted, margin: '0 0 6px' }}>{props.title} · {props.assets.length}</h3>
-      {props.assets.length === 0
-        ? <p style={{ fontSize: 12, color: muted, margin: 0 }}>{t('暂无', 'None yet')}</p>
-        : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 6 }}>
-            {props.assets.map(asset => <Thumb key={asset.id} asset={asset} draft={props.draft.has(asset.id)} onOpen={props.onOpen} />)}
-          </div>
-        )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 6 }}>
+        {props.assets.map(asset => <Thumb key={asset.id} asset={asset} draft={props.draft.has(asset.id)} onOpen={props.onOpen} />)}
+      </div>
     </section>
   )
 }

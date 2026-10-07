@@ -137,7 +137,7 @@ function DreamVerseGuide({ useTabInfo }: PropsRuntime<'sidebar.right.tab.guide'>
   const t = useText()
   const labels: Record<(typeof GUIDE_KINDS)[number], [string, string]> = {
     'dv-chat': [t('对话', 'Chat'), t('和智能体对话，让它规划和渲染', 'Talk with the agent to plan and render')],
-    [ASSET_POOL_KIND]: [t('素材库', 'Asset pool'), t('项目的角色、参考图、导入的文件和渲染结果', "The project's characters, reference images, imports, and renders")],
+    [ASSET_POOL_KIND]: [t('素材库', 'Asset pool'), t('项目的图片和视频', "The project's images and videos")],
     [HISTORY_KIND]: [t('历史', 'History'), t('项目的每一条记录：谁在哪里做了什么', 'Every record of the project: who did what, and where')],
     'dv-trajectory': [t('轨迹', 'Trajectory'), t('智能体的每一步调用（开发者视图）', 'Every agent step (developer view)')],
   }
