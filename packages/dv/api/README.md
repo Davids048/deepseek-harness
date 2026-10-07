@@ -57,7 +57,7 @@ The Fetch routes list, create, rename and delete projects, read the state of a b
 | `/api/dv/redo` | POST | `{project, session?, surface}`: one step forward on the session's working branch | `{record, heads}` with the `proj.redo` record |
 | `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}` with the `proj.stale_accept` record |
 | `/api/dv/history` | POST | `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`; `marks` and `records` are arrays; `limit` is 1 to 200, default 50 | `WireHistory` `{entries, assets}`: the `dvProject.listHistory` entries `{record, mark}` newest first and every asset they name; a read that writes no record |
-| `/api/dv/layout` | GET / POST | GET: `project`; POST: `{project, positions?, viewport?}` | `{positions, viewport}`; POST merges positions keyed by canvas node ID |
+| `/api/dv/layout` | GET / POST | GET: `project`; POST: `{project, positions?, viewport?, placed?, removed?}` | `{positions, viewport, placed}`; POST merges positions keyed by canvas node ID, adds the asset IDs of `placed` to the project's canvas list (the imported assets that have a canvas node), and takes the asset IDs of `removed` off it |
 | `/api/dv/workspaces` | GET / POST | POST: `{project, workspace_id}` | GET: `{entry_path, projects: [{id, title, created_at, path, workspace_id}], bindings}`; POST: `{ok}` |
 | `/api/dv/workspaces/bind` | POST | `{session, project}` | `{ok}` |
 | `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`, newest first; `updated_at` is ISO-8601 UTC |

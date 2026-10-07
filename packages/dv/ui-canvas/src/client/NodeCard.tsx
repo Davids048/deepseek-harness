@@ -1,7 +1,9 @@
 /**
- * One canvas node as a card: a colored kind accent, the asset thumbnail, title, badges, and state markers. Pink accents
- * mark story bible items and assets, orange accents plans, green accents rendered takes. Surfaces, borders, and text use the
- * DSH theme tokens, so the card follows the light and dark themes.
+ * One canvas node as a card: a colored kind accent, the asset thumbnail, title, badges, and state markers. A story bible
+ * card has no large thumbnail: it shows the kind, the name, and a row of small reference images, so a character, location
+ * or style reads differently from an image. Violet accents mark story bible items, pink accents assets, orange accents
+ * plans, green accents rendered takes. Surfaces, borders, and text use the DSH theme tokens, so the card follows the light
+ * and dark themes.
  */
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
@@ -14,7 +16,7 @@ import type {} from './locales.ts'
 export type CanvasTranslate = TranslateNS<'dvCanvas'>
 
 /** The accent color of each node kind. */
-export const KIND_COLOR: Record<CanvasNode['kind'], string> = { bible: '#e86fa8', asset: '#e86fa8', plan: '#f0a14a', take: '#4cc38a' }
+export const KIND_COLOR: Record<CanvasNode['kind'], string> = { bible: '#8b6cf0', asset: '#e86fa8', plan: '#f0a14a', take: '#4cc38a' }
 
 /**
  * The node's title as the user reads it.
@@ -71,6 +73,12 @@ const thumbBox: CSSProperties = {
   justifyContent: 'center', overflow: 'hidden',
 }
 const media: CSSProperties = { width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }
+/** The most reference images a story bible card shows; the rest count in a "+N" chip. Five 44-unit boxes fit the card. */
+const MAX_CARD_REFERENCES = 4
+const referenceBox: CSSProperties = {
+  flex: 'none', width: 44, height: 44, borderRadius: 8, overflow: 'hidden', background: 'var(--dsw-alias-interactive-bg-hover)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+}
 const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
 
 /**
@@ -104,6 +112,18 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown }: NodeC
   else if (flags.failed) marker = take ? t('node.renderFailed') : t('node.failed')
   // A plan node shows its latest version, which the `plan.create` or `plan.update` record reports.
   const planVersion = node.kind === 'plan' ? node.record?.report?.['version'] : undefined
+  const extraReferences = node.references.length - MAX_CARD_REFERENCES
+  // A story bible card shows its reference images as a row of small thumbnails in place of the media box.
+  const references = (
+    <div style={{ display: 'flex', gap: 6, padding: '0 12px 12px' }}>
+      {node.references.slice(0, MAX_CARD_REFERENCES).map(reference => (
+        <div key={reference} style={referenceBox}><img src={assetUrl(reference)} alt="" style={media} draggable={false} /></div>
+      ))}
+      {extraReferences > 0
+        ? <div style={{ ...referenceBox, fontSize: size(13), fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' }}>{t('node.moreReferences', { count: extraReferences })}</div>
+        : null}
+    </div>
+  )
   return (
     <div
       style={style}
@@ -126,14 +146,21 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown }: NodeC
         <span style={{ flex: 1 }} />
         {node.durationSec !== null ? <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{node.durationSec.toFixed(1)}s</span> : null}
       </div>
-      <div style={thumbBox}>
-        {thumb}
-        {marker !== null
-          ? <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0, 0, 0, 0.55)', color: '#fff', fontSize: size(15), fontWeight: 600 }}>{marker}</span>
-          : null}
-      </div>
+      {node.kind === 'bible'
+        ? null
+        : (
+          <div style={thumbBox}>
+            {thumb}
+            {marker !== null
+              ? <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0, 0, 0, 0.55)', color: '#fff', fontSize: size(15), fontWeight: 600 }}>{marker}</span>
+              : null}
+          </div>
+        )}
       <div style={{ padding: '10px 12px 12px' }}>
         <div style={{ fontSize: size(16), fontWeight: 600, lineHeight: 1.3, ...ellipsis }}>{nodeTitle(node, t)}</div>
+        {node.kind === 'bible' && marker !== null
+          ? <div style={{ marginTop: 2, fontSize: size(13), fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' }}>{marker}</div>
+          : null}
         {node.kind !== 'plan' && node.subtitle !== '' && scale <= SUBTITLE_MAX_SCALE
           ? <div style={{ marginTop: 2, fontSize: size(13), lineHeight: 1.35, color: 'var(--dsw-alias-label-secondary)', ...ellipsis }}>{node.subtitle}</div>
           : null}
@@ -145,6 +172,7 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown }: NodeC
           )
           : null}
       </div>
+      {node.kind === 'bible' && node.references.length > 0 ? references : null}
     </div>
   )
 }

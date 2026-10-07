@@ -57,7 +57,7 @@ kind: "package-reference"
 | `/api/dv/redo` | POST | `{project, session?, surface}`：在对话的当前分支上前进一步 | `{record, heads}`，带 `proj.redo` 记录 |
 | `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}`，带 `proj.stale_accept` 记录 |
 | `/api/dv/history` | POST | `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`；`marks` 和 `records` 是数组；`limit` 取 1 到 200，默认 50 | `WireHistory` `{entries, assets}`：`dvProject.listHistory` 的条目 `{record, mark}`（最新的在前），以及条目提到的每个素材；这是只读请求，不写记录 |
-| `/api/dv/layout` | GET / POST | GET：`project`；POST：`{project, positions?, viewport?}` | `{positions, viewport}`；POST 合并以画布节点 ID 为键的位置 |
+| `/api/dv/layout` | GET / POST | GET：`project`；POST：`{project, positions?, viewport?, placed?, removed?}` | `{positions, viewport, placed}`；POST 合并以画布节点 ID 为键的位置，把 `placed` 中的素材 ID 加入项目的画布列表（有画布节点的导入素材），并把 `removed` 中的素材 ID 移出该列表 |
 | `/api/dv/workspaces` | GET / POST | POST：`{project, workspace_id}` | GET：`{entry_path, projects: [{id, title, created_at, path, workspace_id}], bindings}`；POST：`{ok}` |
 | `/api/dv/workspaces/bind` | POST | `{session, project}` | `{ok}` |
 | `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`，最新在前；`updated_at` 是 ISO-8601 UTC |

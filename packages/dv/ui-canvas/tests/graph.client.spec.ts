@@ -96,7 +96,7 @@ describe('buildCanvasGraph', () => {
       ['bible:hero', 'bible'], ['plan:p1', 'plan'], ['g1', 'take'], ['g2', 'take'], ['g3', 'take'],
     ])
     const byId = new Map(graph.nodes.map(node => [node.id, node]))
-    expect(byId.get('bible:hero')).toMatchObject({ thumb: 'ref.png', bibleKind: 'character', bibleId: 'hero' })
+    expect(byId.get('bible:hero')).toMatchObject({ thumb: null, references: ['ref.png'], bibleKind: 'character', bibleId: 'hero' })
     expect(byId.get('g1')).toMatchObject({ thumb: 'shot1-last.png', video: 'shot1.mp4', durationSec: 4 })
     expect(byId.get('g2')?.flags.stale).toBe(true)
     expect(byId.get('g2')?.badges).toEqual(['trim'])
@@ -114,6 +114,49 @@ describe('buildCanvasGraph', () => {
     expect([byId.get('g1')?.take, byId.get('g3')?.take, byId.get('g2')?.take]).toEqual([1, 2, null])
     // Reference images map to their character, location or style; derived assets map up the producer chain to a drawn take.
     expect(graph.assetNodes).toMatchObject({ 'ref.png': 'bible:hero', 'shot1.mp4': 'g1', 'export.mp4': 'g2' })
+  })
+
+  it('draws an imported asset only while it is on the canvas list, and never a story bible reference image', () => {
+    const state = fixtureState()
+    const proj = state.components.proj
+    const names = ['pool.png', 'used.png', 'listed.png', 'side.png']
+    state.assets.push(...names.map((name, index) => asset(name, 'image/png', `u${String(index + 2)}`)))
+    proj.records.push(...names.map((name, index) => record({ id: `u${String(index + 2)}`, operation: 'asset.import', params: { name }, outputs: [name] })))
+    names.forEach((name, index) => { proj.created_by[name] = `u${String(index + 2)}` })
+    // A second reference image of Hero, written by a character update, is part of Hero's node.
+    proj.records.push(record({
+      id: 'e2', operation: 'bible.character_update', params: { character: 'hero' },
+      inputs: [{ role: 'reference', ref: { asset: 'side.png' }, resolved_asset: 'side.png' }],
+    }))
+    const hero = state.components.bible.characters['hero'] ?? []
+    hero.push({ ...hero[0], id: 'hero', version: 2, name: 'Hero', description: '', references: ['ref.png', 'side.png'], created_by: 'e2' })
+    // A take reads used.png, which is off the list: no node and no edge for it.
+    proj.records.push(record({
+      id: 'g9', operation: 'shot.render_ref2va', deterministic: false, params: { prompt: 'alone' },
+      inputs: [{ role: 'reference', ref: { asset: 'used.png' }, resolved_asset: 'used.png' }],
+    }))
+    const graph = buildCanvasGraph(state, new Set(), new Set(['listed.png', 'side.png', 'ref.png']))
+    expect(graph.nodes.filter(node => node.kind === 'asset').map(node => node.id)).toEqual(['u4'])
+    expect(graph.nodes.find(node => node.id === 'bible:hero')?.references).toEqual(['ref.png', 'side.png'])
+    expect(graph.edges.filter(edge => edge.to === 'g9')).toEqual([])
+    expect(graph.assetNodes).toMatchObject({ 'listed.png': 'u4', 'side.png': 'bible:hero' })
+    expect([graph.assetNodes['pool.png'], graph.assetNodes['used.png']]).toEqual([undefined, undefined])
+    // On the list, used.png is drawn with an edge to the take that reads it.
+    const listed = buildCanvasGraph(state, new Set(), new Set(['listed.png', 'used.png']))
+    expect(listed.edges).toContainEqual({ from: 'u3', to: 'g9', kind: 'reference' })
+  })
+
+  it('draws one node for an asset imported twice', () => {
+    const state = fixtureState()
+    state.assets.push(asset('twice.png', 'image/png', 'u2'))
+    state.components.proj.records.push(
+      record({ id: 'u2', operation: 'asset.import', params: { name: 'twice.png' }, outputs: ['twice.png'] }),
+      record({ id: 'u3', operation: 'asset.import', params: { name: 'twice.png' }, outputs: ['twice.png'] }),
+    )
+    state.components.proj.created_by['twice.png'] = 'u3'
+    const graph = buildCanvasGraph(state, new Set(), new Set(['twice.png']))
+    expect(graph.nodes.filter(node => node.kind === 'asset').map(node => node.id)).toEqual(['u2'])
+    expect(graph.assetNodes['twice.png']).toBe('u2')
   })
 
   it('wraps a long shot list into a block of columns without overlapping cards', () => {
@@ -206,7 +249,7 @@ describe('buildCanvasGraph', () => {
     const merged = overlayDraft(base, draft)
     expect(merged.components.proj.records.map(record => record.id)).toEqual(expect.arrayContaining(['g3', 'm9']))
     expect(merged.components.proj.records.some(record => record.id === 'g2')).toBe(false)
-    const ids = buildCanvasGraph(merged, new Set(['g3'])).nodes.map(node => node.id)
+    const ids = buildCanvasGraph(merged, new Set(['g3']), new Set(['later.png'])).nodes.map(node => node.id)
     expect(ids).toEqual(expect.arrayContaining(['g1', 'g3', 'm9']))
     expect(ids).not.toContain('g2')
   })
@@ -217,7 +260,7 @@ describe('buildCanvasGraph', () => {
     if (firstAsset === undefined) throw new Error('fixture lacks an asset')
     full.components.proj.records.push(record({ id: 'u9', operation: 'asset.import', params: { name: 'yi-name.png' }, outputs: ['shared.png'] }))
     const state = withImportNames({ ...full, assets: [...full.assets, { ...firstAsset, id: 'shared.png', mime: 'image/png', name: 'jia-name.png' }] })
-    expect(buildCanvasGraph(state).nodes.find(node => node.id === 'u9')?.title).toBe('yi-name.png')
+    expect(buildCanvasGraph(state, new Set(), new Set(['shared.png'])).nodes.find(node => node.id === 'u9')?.title).toBe('yi-name.png')
   })
 
   it('writes stored input references as the reference text of an operation request', () => {

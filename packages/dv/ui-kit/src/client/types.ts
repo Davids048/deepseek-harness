@@ -376,10 +376,12 @@ export interface CanvasViewport {
   zoom: number
 }
 
-/** A project's stored canvas layout, keyed by canvas node ID. */
+/** A project's stored canvas layout: node positions keyed by canvas node ID, and the assets placed on the canvas. */
 export interface CanvasLayout {
   positions: Record<string, NodePosition>
   viewport: CanvasViewport | null
+  /** The canvas list: the imported assets that have a canvas node. */
+  placed: string[]
 }
 
 /** One project as `GET /api/dv/workspaces` lists it. */

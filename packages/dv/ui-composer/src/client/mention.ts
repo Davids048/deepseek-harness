@@ -2,7 +2,8 @@
  * The `@` source that lists the project items of the project the shell has open: clips by timeline name and position
  * (`时间线 1 · 片段 2`, or `Timeline 1 · Clip 2` in English, for an unnamed timeline), characters, locations, styles,
  * and assets. A pick inserts a reference chip whose text is `@[<label>](dv:<kind>/<id>)`; the host plugin
- * `@dv/chat-references` expands that address into record and asset IDs for the model.
+ * `@dv/chat-references` expands that address into record and asset IDs for the model. Sending a message that holds a
+ * `dv:asset/<id>` chip places that asset on the open project's canvas (`DvClient.placeAssets`).
  *
  * @module @dv/ui-composer/mention
  */
@@ -108,6 +109,16 @@ export function projectItems(state: WireState): Item[] {
 }
 
 /**
+ * The asset ID a reference text names, when it names an asset.
+ * @param text - the chip text, `@[<label>](dv:<kind>/<id>)`.
+ * @returns the asset ID, or undefined for a clip, character, location, or style.
+ */
+function assetOfReference(text: string): string | undefined {
+  const match = /\(dv:asset\/([^)]+)\)$/.exec(text)
+  return match?.[1] === undefined ? undefined : decodeURIComponent(match[1])
+}
+
+/**
  * The `@` source over the `/api/dv` routes.
  * @returns the source.
  */
@@ -146,7 +157,14 @@ export function projectMentionSource(): InputTriggerSource {
     },
     codec: {
       clipboardText: ref => ref,
-      serialize: ref => Promise.resolve(ref),
+      serialize: (ref) => {
+        // The message is being sent: an asset it references goes on the open project's canvas. A failed write leaves
+        // the canvas as it was and does not stop the message.
+        const assetId = assetOfReference(ref)
+        const projectId = getCurrentProject()
+        if (assetId !== undefined && projectId !== null) void client.placeAssets(projectId, [assetId]).catch(() => null)
+        return Promise.resolve(ref)
+      },
     },
   }
 }

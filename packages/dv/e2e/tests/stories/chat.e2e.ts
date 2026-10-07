@@ -347,7 +347,8 @@ describe('chat with the agent', () => {
     await newProject(page)
     await send(page, '慢慢做')
     const workspace = page.locator('[data-dv-workspace]')
-    await workspace.locator('[data-node-kind="asset"]').first().waitFor({ timeout: 15_000 })
+    // The agent's import opens the chat session's draft, so the working-branch bar offers 丢弃.
+    await workspace.getByRole('button', { name: '丢弃', exact: true }).first().waitFor({ timeout: 15_000 })
     await chat(page).getByRole('button', { name: /停止|Stop/ }).first().click({ timeout: 10_000 })
     const discard = workspace.getByRole('button', { name: '丢弃', exact: true })
     await discard.first().click({ timeout: 15_000 })
@@ -503,7 +504,7 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('an image attached in the chat becomes a project asset', async () => {
+  it('an image attached in the chat becomes a project asset on the canvas', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await composer(page).click()
@@ -520,10 +521,15 @@ describe('chat with the agent', () => {
     await page.keyboard.press('Enter')
     await waitChat(page, '收到图')
     const state = await waitFor(async () => {
-      const value = await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as { assets: Array<{ name: string; mime: string }> }
+      const value = await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as { assets: Array<{ id: string; name: string; mime: string }> }
       return value.assets.some(asset => asset.mime.startsWith('image/')) ? value : null
     }, 'the attachment as a project asset', 15_000).catch(() => null)
     expect(state, 'the chat attachment is recorded as a project asset').not.toBeNull()
+    // The browser placed the sent image on the canvas list under the asset ID the import gave it, so the canvas draws it.
+    const imageId = state?.assets.find(asset => asset.mime.startsWith('image/'))?.id
+    await expect.poll(async () => (await harness.api.get(`/api/dv/layout?project=${projectId}`) as { placed: string[] }).placed, { timeout: 10_000 })
+      .toEqual([imageId])
+    await page.locator('[data-dv-workspace] [data-node-kind="asset"]').first().waitFor({ timeout: 15_000 })
     expect(errors).toEqual([])
   })
 

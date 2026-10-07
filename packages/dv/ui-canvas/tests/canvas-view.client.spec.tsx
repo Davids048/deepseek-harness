@@ -1,14 +1,14 @@
 // @vitest-environment jsdom
 /** The canvas over a scripted API: nodes, drag persistence, the floating editor, and the `dv:compose` event. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, waitFor } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { DvClient } from '@dv/ui-kit/api.ts'
+import { assetUrl, DvClient } from '@dv/ui-kit/api.ts'
 import { DV_COMPOSE_EVENT } from '@dv/ui-kit/compose.ts'
 import type { DvComposeDetail } from '@dv/ui-kit/compose.ts'
 import type { WireState } from '@dv/ui-kit/types.ts'
-import { DV_CANVAS_FOCUS_EVENT } from '@dv/ui-kit/workspace-events.ts'
-import { fixtureState, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
+import { DV_ASSET_DRAG_TYPE, DV_CANVAS_FOCUS_EVENT } from '@dv/ui-kit/workspace-events.ts'
+import { asset, fixtureState, record, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
 import { CanvasView } from '../src/client/CanvasView.tsx'
 import type { CanvasTranslate } from '../src/client/NodeCard.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -19,9 +19,10 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
  * Mount the canvas over scripted `/api/dv` routes and a scripted layout route.
  * @param withTranslate - whether the host passes the Chinese translate.
  * @param edit - changes to the fixture state of every branch.
+ * @param stored - the canvas list the layout route returns.
  * @returns the rendered view, the recorded writes, and a node lookup.
  */
-function mount(withTranslate = true, edit: (state: WireState) => void = () => undefined) {
+function mount(withTranslate = true, edit: (state: WireState) => void = () => undefined, stored: { placed: string[] } = { placed: [] }) {
   // `main` lacks the retake g3; the draft of chat session s5 adds it with the intent the agent gave for the call.
   const scripted = scriptedFetch({
     state: (branch) => {
@@ -38,7 +39,8 @@ function mount(withTranslate = true, edit: (state: WireState) => void = () => un
   const fetchWithLayout: typeof fetch = (input, init) => {
     if (typeof input === 'string' && input.startsWith('/api/dv/layout')) {
       if (init?.method === 'POST') layoutWrites.push(JSON.parse(String(init.body)))
-      return Promise.resolve(new Response(JSON.stringify({ positions: { g1: { x: 10, y: 20 } }, viewport: { x: 0, y: 0, zoom: 1 } })))
+      const layout = { positions: { g1: { x: 10, y: 20 } }, viewport: { x: 0, y: 0, zoom: 1 }, placed: stored.placed }
+      return Promise.resolve(new Response(JSON.stringify(layout)))
     }
     return scripted.fetch(input, init)
   }
@@ -70,6 +72,57 @@ describe('CanvasView', () => {
     await waitFor(() => { expect(layoutWrites).toHaveLength(1) }, { timeout: 2000 })
     expect(layoutWrites[0]).toMatchObject({ project: 'p1', positions: { g2: { x: 1080 + 50, y: 0 + 30 } } })
   })
+
+  it('draws a character as its name and a row of up to four reference images with a count of the rest', async () => {
+    const references = ['ref.png', 'r2.png', 'r3.png', 'r4.png', 'r5.png', 'r6.png']
+    const { node } = mount(true, (state) => {
+      state.assets.push(...references.slice(1).map(id => asset(id, 'image/png', 'u1')))
+      const hero = state.components.bible.characters['hero']?.[0]
+      if (hero !== undefined) hero.references = references
+    })
+    await waitFor(() => { node('bible:hero') })
+    const card = node('bible:hero')
+    expect([...card.querySelectorAll('img')].map(image => image.getAttribute('src'))).toEqual(references.slice(0, 4).map(id => assetUrl(id)))
+    expect(card.textContent).toContain(zh['node.character'])
+    expect(card.textContent).toContain('Hero')
+    expect(card.textContent).toContain('+2')
+  })
+
+  it('puts a dropped 素材 tile on the canvas list under the pointer, and 从画布移除 takes it off the list', async () => {
+    const { view, node, layoutWrites } = mount(true, (state) => {
+      state.assets.push(asset('pool.png', 'image/png', 'u2'))
+      state.components.proj.records.push(record({ id: 'u2', operation: 'asset.import', params: { name: 'pool.png' }, outputs: ['pool.png'], surface: 'asset_pool' }))
+      state.components.proj.created_by['pool.png'] = 'u2'
+    })
+    await waitFor(() => { node('g1') })
+    expect(view.container.querySelector('[data-node-id="u2"]')).toBeNull()
+    const dataTransfer = { types: [DV_ASSET_DRAG_TYPE], getData: (type: string) => type === DV_ASSET_DRAG_TYPE ? 'pool.png' : '', files: [] }
+    // jsdom's drop event carries no pointer coordinates, so they are set on the event.
+    const drop = createEvent.drop(view.getByTestId('dv-canvas-view'), { dataTransfer })
+    Object.defineProperties(drop, { clientX: { value: 500 }, clientY: { value: 300 } })
+    fireEvent(view.getByTestId('dv-canvas-view'), drop)
+    await waitFor(() => { expect(node('u2').style.left).toBe(`${String(500 - 280 / 2)}px`) })
+    await waitFor(() => { expect(layoutWrites).toContainEqual({ project: 'p1', placed: ['pool.png'] }) })
+    fireEvent.pointerDown(node('u2'), { button: 0, clientX: 5, clientY: 5, pointerId: 1 })
+    fireEvent.pointerUp(view.getByTestId('dv-canvas-view'), { pointerId: 1 })
+    fireEvent.click(await view.findByText(zh['editor.removeFromCanvas']))
+    await waitFor(() => { expect(view.container.querySelector('[data-node-id="u2"]')).toBeNull() })
+    await waitFor(() => { expect(layoutWrites).toContainEqual({ project: 'p1', removed: ['pool.png'] }) })
+  })
+
+  it('draws an asset that another view put on the canvas list once the state refetches', async () => {
+    const stored = { placed: [] as string[] }
+    const { view, node } = mount(true, (state) => {
+      state.assets.push(asset('chat.png', 'image/png', 'u2'))
+      state.components.proj.records.push(record({ id: 'u2', operation: 'asset.import', params: { name: 'chat.png' }, outputs: ['chat.png'], surface: 'chat' }))
+      state.components.proj.created_by['chat.png'] = 'u2'
+    }, stored)
+    await waitFor(() => { node('g1') })
+    expect(view.container.querySelector('[data-node-id="u2"]')).toBeNull()
+    // The chat composer placed the sent image; the next state refetch (a 3-second poll without EventSource) reads the list.
+    stored.placed = ['chat.png']
+    await waitFor(() => { node('u2') }, { timeout: 6000 })
+  }, 10_000)
 
   it('opens the editor on click, renders a new take with based_on, and dispatches dv:compose', async () => {
     const { view, node, writes } = mount()

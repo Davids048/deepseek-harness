@@ -6,8 +6,9 @@
  * session the canvas sits beside is overlaid with dashed nodes; the working-branch bar on top names the branch the
  * canvas's own writes go to (they carry that session, so they land on the draft while it is open) and accepts or
  * discards the draft. Colors come from the DSH theme tokens, so the canvas
- * follows the app's light and dark themes. Dropping a 素材 tile places that asset's node under the pointer; dropping
- * image or video files imports them and places their nodes there.
+ * follows the app's light and dark themes. An imported asset has a node only while it is on the project's canvas list
+ * (the layout's `placed`): dropping a 素材 tile or image and video files on the canvas adds the asset to the list with its
+ * node under the pointer, and the asset node's "从画布移除" takes it off the list.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
@@ -97,6 +98,38 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
   const t = givenT ?? translates[language]
   const readOnly = branch.startsWith('draft/')
   const base = useProjectState(client, projectId, branch)
+  // The project's canvas list, from the stored layout and this view's drops and removals.
+  const [placed, setPlaced] = useState<ReadonlySet<string>>(new Set())
+  // This view's canvas list changes whose layout write has not settled: asset ID → on the list.
+  const placementsInFlight = useRef(new Map<string, boolean>())
+  // The chat composer writes the canvas list too (a sent message places its images), so the list is read again with
+  // every state refetch; this view's changes still in flight stay applied.
+  useEffect(() => {
+    if (base.value === null) return
+    let live = true
+    void client.getLayout(projectId).then((layout) => {
+      if (!live) return
+      const next = new Set(layout.placed)
+      for (const [assetId, on] of placementsInFlight.current) {
+        if (on) next.add(assetId)
+        else next.delete(assetId)
+      }
+      setPlaced(next)
+    }).catch(() => null)
+    return () => { live = false }
+  }, [client, projectId, base.value])
+  /**
+   * Put an asset on the canvas list or take it off, at once in this view and then in the stored layout.
+   * @param assetId - the asset.
+   * @param on - true to place it, false to remove it.
+   * @returns settles when the layout write settled.
+   */
+  const changePlacement = (assetId: string, on: boolean): Promise<unknown> => {
+    placementsInFlight.current.set(assetId, on)
+    setPlaced(current => new Set(on ? [...current, assetId] : [...current].filter(id => id !== assetId)))
+    const write = on ? client.placeAssets(projectId, [assetId]) : client.removeFromCanvas(projectId, [assetId])
+    return write.finally(() => { placementsInFlight.current.delete(assetId) })
+  }
   const draft = readOnly || base.value === null ? null : sessionDraft(base.value, session)
   const draftState = useProjectState(client, draft === null ? null : projectId, draft?.branch ?? branch)
   const graph = useMemo(() => {
@@ -115,8 +148,8 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     // The draft bar names the intent of the draft's latest record that states one.
     const draftIntent = state.components.proj.records
       .filter(record => draftRecords.has(record.id) && record.intent !== '').at(-1)?.intent ?? ''
-    return { state, draftIntent, ...buildCanvasGraph(state, draftRecords) }
-  }, [base.value, branch, readOnly, draft, draftState.value])
+    return { state, draftIntent, ...buildCanvasGraph(state, draftRecords, placed) }
+  }, [base.value, branch, readOnly, draft, draftState.value, placed])
 
   const [positions, setPositions] = useState<Record<string, NodePosition>>({})
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 40, y: 40, zoom: 1 })
@@ -144,9 +177,10 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     let live = true
     setLayoutReady(false)
     // A canvas without stored positions still works with the automatic layout, so a failed read counts as empty.
-    void client.getLayout(projectId).catch(() => ({ positions: {}, viewport: null })).then((layout) => {
+    void client.getLayout(projectId).catch(() => ({ positions: {}, viewport: null, placed: [] })).then((layout) => {
       if (!live) return
       setPositions(layout.positions)
+      setPlaced(new Set(layout.placed))
       if (layout.viewport !== null) setViewport(layout.viewport)
       needsFit.current = layout.viewport === null
       setLayoutReady(true)
@@ -383,7 +417,8 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     setDragOver(true)
   }
   /**
-   * Place a dropped 素材 tile's node under the pointer, or import dropped image and video files and place their nodes.
+   * Place a dropped 素材 tile's asset on the canvas with its node under the pointer, or import dropped image and video
+   * files and place their nodes there.
    * @param event - the drop event.
    */
   const onDrop = (event: ReactDragEvent<HTMLDivElement>): void => {
@@ -402,16 +437,21 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     const assetId = event.dataTransfer.getData(DV_ASSET_DRAG_TYPE)
     if (assetId !== '') {
       const id = graph?.assetNodes[assetId]
-      if (id === undefined) setNotice(t('drop.noNode'))
-      else placeNode(id, point)
+      if (id !== undefined) { placeNode(id, point); return }
+      // An imported asset of this branch that is not on the canvas list joins it, with its node under the pointer.
+      const imported = graph?.state.components.proj.records.some(record => record.operation === 'asset.import' && record.outputs.includes(assetId))
+      if (imported !== true) { setNotice(t('drop.noNode')); return }
+      pendingDrops.current.set(assetId, point)
+      void run(() => changePlacement(assetId, true))
       return
     }
     Array.from(event.dataTransfer.files).forEach((file, index) => {
       if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { setNotice(t('drop.notMedia', { name: file.name })); return }
       const position = { x: point.x + index * 32, y: point.y + index * 32 }
       void run(async () => {
-        pendingDrops.current.set((await client.importAsset(projectId, file, 'canvas', session)).asset, position)
-        placePending()
+        const assetId = (await client.importAsset(projectId, file, 'canvas', session)).asset
+        pendingDrops.current.set(assetId, position)
+        await changePlacement(assetId, true)
       })
     })
   }
@@ -524,6 +564,10 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
             t={t}
             onClose={() => { setSelected(null) }}
             run={run}
+            onRemoveFromCanvas={(assetId) => {
+              setSelected(null)
+              void run(() => changePlacement(assetId, false))
+            }}
           />
         )
         : null}

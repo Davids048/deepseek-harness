@@ -276,7 +276,7 @@ export class DvClient {
    */
   async getLayout(project: string): Promise<CanvasLayout> {
     const layout = await this.get<Partial<CanvasLayout>>('/api/dv/layout', { project })
-    return { positions: layout.positions ?? {}, viewport: layout.viewport ?? null }
+    return { positions: layout.positions ?? {}, viewport: layout.viewport ?? null, placed: layout.placed ?? [] }
   }
 
   /**
@@ -287,6 +287,26 @@ export class DvClient {
    */
   updateLayout(project: string, patch: Partial<CanvasLayout>): Promise<CanvasLayout> {
     return this.post('/api/dv/layout', { project, ...patch })
+  }
+
+  /**
+   * Add assets to the project's canvas list, so each one gets a canvas node; an asset already on the list stays as it is.
+   * @param project - the project.
+   * @param assetIds - the assets dropped on the canvas or referenced in a chat message.
+   * @returns the stored layout.
+   */
+  placeAssets(project: string, assetIds: string[]): Promise<CanvasLayout> {
+    return this.post('/api/dv/layout', { project, placed: assetIds })
+  }
+
+  /**
+   * Take assets off the project's canvas list; the assets stay in the asset pool.
+   * @param project - the project.
+   * @param assetIds - the assets whose canvas nodes the user removed.
+   * @returns the stored layout.
+   */
+  removeFromCanvas(project: string, assetIds: string[]): Promise<CanvasLayout> {
+    return this.post('/api/dv/layout', { project, removed: assetIds })
   }
 
   /** @returns every project with its directory and Workspace, and the saved chat session bindings. */

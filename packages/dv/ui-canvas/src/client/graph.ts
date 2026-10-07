@@ -1,9 +1,9 @@
 /**
  * Canvas nodes and edges derived from a branch state. The canvas shows the current state of the working branch only: a
- * node is an item a creator works with now: a character, a location or a style at its current version, an imported asset,
- * a plan at its latest version, the current take of each shot of that version, a take that is not part of a plan, and a
- * take whose outputs are in use. Deterministic edits (still grabs, timeline records) do not become nodes; a timeline trim
- * shows as a badge on the take it shortened.
+ * node is an item a creator works with now: a character, a location or a style at its current version, an imported asset
+ * on the project's canvas list (see {@link buildCanvasGraph}), a plan at its latest version, the current take of each
+ * shot of that version, a take that is not part of a plan, and a take whose outputs are in use. Deterministic edits
+ * (still grabs, timeline records) do not become nodes; a timeline trim shows as a badge on the take it shortened.
  */
 import type {
   Character, Clip, Location, PlanState, PlanVersion, ProjectRecord, RecordInput, RecordInputRef, StoryBibleState, Style, WireState,
@@ -42,8 +42,10 @@ export interface CanvasNode {
   planId?: string
   title: string
   subtitle: string
-  /** An image asset shown as the thumbnail. */
+  /** An image asset shown as the thumbnail; null for story bible nodes, which show {@link CanvasNode.references}. */
   thumb: string | null
+  /** For story bible nodes, the image references of the current version in order; empty for other nodes. */
+  references: string[]
   /** A video asset the editor plays. */
   video: string | null
   durationSec: number | null
@@ -73,7 +75,7 @@ export interface CanvasEdge {
 export interface CanvasGraph {
   nodes: CanvasNode[]
   edges: CanvasEdge[]
-  /** The node that shows each asset: its story bible node, or the nearest drawn record up its producer chain. */
+  /** The node that shows each asset: its story bible node, its import node, or the nearest drawn record up its producer chain. */
   assetNodes: Record<string, string>
 }
 
@@ -314,11 +316,17 @@ export function overlayDraft(base: WireState, draft: WireState | null): WireStat
 /**
  * The canvas graph of a branch state, with a default layout: story bible items and assets in column 0, plans in
  * column 1, takes from column 2 rightwards by first-frame chain depth, retakes in their source take's column.
+ * An imported image or video gets one node, drawn from its first `asset.import` record, when its asset ID is on the
+ * project's canvas list (`placed`) and it is not a reference image of a character, location or style, which that story
+ * bible node shows. A take that reads an asset off the list has no edge from it.
  * @param state - a branch state, possibly with a draft overlaid by {@link overlayDraft}.
  * @param draftRecords - IDs of records that belong to an open draft.
+ * @param placed - the project's canvas list: asset IDs from the stored canvas layout.
  * @returns the nodes and edges.
  */
-export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<string> = new Set()): CanvasGraph {
+export function buildCanvasGraph(
+  state: WireState, draftRecords: ReadonlySet<string> = new Set(), placed: ReadonlySet<string> = new Set(),
+): CanvasGraph {
   const proj = state.components.proj
   const assets = new Map(state.assets.map(asset => [asset.id, asset]))
   const records = new Map(proj.records.map(record => [record.id, record]))
@@ -334,6 +342,8 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
   const nodes: CanvasNode[] = []
   const byRecord = new Set<string>()
   const takes = shownTakes(state)
+  // The import node of each drawn imported asset.
+  const importNodes = new Map<string, string>()
   // A reference image of a character, location or style belongs to that node, so its import is not drawn twice.
   const bibleOfAsset = new Map<string, string>()
   for (const { kind, id: bibleId, versions } of bibleItems(state)) {
@@ -344,7 +354,7 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
     const record = records.get(latest.created_by) ?? null
     nodes.push({
       id, kind: 'bible', bibleKind: kind, bibleId, title: latest.name || bibleId, subtitle: latest.description,
-      thumb: latest.references.find(reference => isImage(reference)) ?? null, video: null, durationSec: null, record,
+      thumb: null, references: latest.references.filter(reference => isImage(reference)), video: null, durationSec: null, record,
       flags: flagsOf(record), badges: [], take: null, x: 0, y: 0,
     })
   }
@@ -354,16 +364,18 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
     if (latest === undefined) continue
     const record = records.get(latest.created_by) ?? null
     nodes.push({
-      id: `plan:${planId}`, kind: 'plan', planId, title: latest.title ?? '', subtitle: String(latest.shots.length), thumb: null, video: null,
+      id: `plan:${planId}`, kind: 'plan', planId, title: latest.title ?? '', subtitle: String(latest.shots.length), thumb: null, references: [], video: null,
       durationSec: null, record, flags: flagsOf(record), badges: [], take: null, x: 0, y: 0,
     })
   }
   for (const record of proj.records) {
     if (record.operation === 'asset.import') {
+      // An import off the canvas list stays in the asset pool only.
       const imported = record.outputs.find(id => isImage(id) || isVideo(id))
-      if (imported === undefined || bibleOfAsset.has(imported)) continue
+      if (imported === undefined || !placed.has(imported) || bibleOfAsset.has(imported) || importNodes.has(imported)) continue
+      importNodes.set(imported, record.id)
       nodes.push({
-        id: record.id, kind: 'asset', title: assets.get(imported)?.name ?? imported, subtitle: '', thumb: isImage(imported) ? imported : null,
+        id: record.id, kind: 'asset', title: assets.get(imported)?.name ?? imported, subtitle: '', thumb: isImage(imported) ? imported : null, references: [],
         video: isVideo(imported) ? imported : null, durationSec: assets.get(imported)?.duration_sec ?? null,
         record, flags: flagsOf(record), badges: [], take: null, x: 0, y: 0,
       })
@@ -373,7 +385,7 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
       nodes.push({
         id: record.id, kind: 'take', title: shot === null ? '' : String(shot),
         subtitle: typeof record.params['prompt'] === 'string' ? record.params['prompt'] : '',
-        thumb: record.outputs.find(id => isImage(id)) ?? null, video,
+        thumb: record.outputs.find(id => isImage(id)) ?? null, references: [], video,
         durationSec: video === null ? null : assets.get(video)?.duration_sec ?? null,
         record, flags: flagsOf(record), badges: [], take: null, x: 0, y: 0,
       })
@@ -381,11 +393,11 @@ export function buildCanvasGraph(state: WireState, draftRecords: ReadonlySet<str
     byRecord.add(record.id)
   }
   const nodeIds = new Set(nodes.map(node => node.id))
-  /** The node an asset comes from: its story bible node, or the nearest drawn record up its producer chain. */
+  /** The node an asset comes from: its story bible node, its import node, or the nearest drawn record up its producer chain. */
   const nodeOfAsset = (assetId: string | null, depth = 0): string | null => {
     if (assetId === null) return null
-    const bible = bibleOfAsset.get(assetId)
-    if (bible !== undefined) return bible
+    const own = bibleOfAsset.get(assetId) ?? importNodes.get(assetId)
+    if (own !== undefined) return own
     const producer = proj.created_by[assetId]
     if (producer === undefined || depth > 16) return null
     if (byRecord.has(producer)) return producer

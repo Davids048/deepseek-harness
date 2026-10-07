@@ -681,9 +681,12 @@ describe('canvas stories', () => {
     expect(await page.locator('[data-node-kind="take"]').count()).toBe(3)
   })
 
-  it('dragging an image tile from 素材库 onto the canvas places it on the canvas', async () => {
+  it('an image imported in 素材库 joins the canvas when dragged there, stays after a reload, and 从画布移除 leaves it in 素材库', async () => {
     const project = await seedProject('canvas-drop', 2)
-    const extra = await runOperation(project.id, 'asset.import', { base64: PNG_BASE64, mime: 'image/png', name: 'extra.png' })
+    const extra = await harness.api.post('/api/dv/operation', {
+      project: project.id, operation: 'asset.import', params: { base64: OTHER_PNG_BASE64, mime: 'image/png', name: 'extra.png' }, inputs: [],
+      surface: 'asset_pool', intent: 'seed: asset.import',
+    }) as ProjectRecord
     const page = await openPage()
     await gotoProject(page, project.id)
     await openAssets(page)
@@ -692,7 +695,8 @@ describe('canvas stories', () => {
     const frame = await canvas.boundingBox()
     if (frame === null) throw new Error('canvas has no box')
     const tile = page.locator(`[data-asset-id="${extra.outputs[0] ?? ''}"]`)
-    // The empty-canvas hint tells the creator to drag references in from 素材库; the canvas must accept the drop.
+    expect(await page.locator(`[data-node-id="${extra.id}"]`).count()).toBe(0)
+    // The canvas accepts a 素材库 tile drag.
     const accepted = await canvas.evaluate((element, assetId) => {
       const transfer = new DataTransfer()
       transfer.setData('application/x-dv-asset', assetId)
@@ -702,15 +706,30 @@ describe('canvas stories', () => {
     }, extra.outputs[0] ?? '')
     expect(accepted).toBe(true)
     await tile.dragTo(canvas, { targetPosition: { x: 120, y: frame.height - 140 } })
-    // Dropping places the asset's node under the pointer.
+    // Dropping puts the asset on the canvas, with its node under the pointer.
+    const node = page.locator(`[data-node-id="${extra.id}"]`)
     await expect.poll(async () => {
-      const placed = await page.locator('[data-node-id]').evaluateAll((all, point) => all.some((node) => {
-        const box = node.getBoundingClientRect()
-        return box.left <= point.x && point.x <= box.right && box.top <= point.y && point.y <= box.bottom
-      }), { x: frame.x + 120, y: frame.y + frame.height - 140 })
-      return placed
+      const box = await node.boundingBox()
+      const point = { x: frame.x + 120, y: frame.y + frame.height - 140 }
+      return box !== null && box.x <= point.x && point.x <= box.x + box.width && box.y <= point.y && point.y <= box.y + box.height
     }, { timeout: 5000 }).toBe(true)
-    expect(await page.locator('[data-node-id]').count()).toBeGreaterThanOrEqual(nodes)
+    expect(await page.locator('[data-node-id]').count()).toBe(nodes + 1)
+    // The canvas layout stores the placement, so the node is still there after a reload.
+    await expect.poll(async () => (await harness.api.get(`/api/dv/layout?project=${project.id}`) as { placed: string[] }).placed, { timeout: 5000 })
+      .toEqual([extra.outputs[0]])
+    await gotoProject(page, project.id)
+    await node.waitFor({ timeout: 15_000 })
+    // 从画布移除 takes the node off the canvas list; the image stays in 素材库.
+    const editor = page.locator('[data-testid="dv-canvas-node-editor"]')
+    await waitFor(async () => {
+      await node.click({ timeout: 10_000 })
+      return await editor.isVisible()
+    }, 'the asset editor', 30_000)
+    await editor.getByRole('button', { name: '从画布移除', exact: true }).click()
+    await expect.poll(() => node.count(), { timeout: 10_000 }).toBe(0)
+    expect((await harness.api.get(`/api/dv/layout?project=${project.id}`) as { placed: string[] }).placed).toEqual([])
+    await openAssets(page)
+    expect(await page.locator(`[data-testid="dv-asset-pool-panel"]:visible [data-asset-id="${extra.outputs[0] ?? ''}"]`).count()).toBe(1)
   })
   it('a file dropped on the canvas is not also attached to the chat', async () => {
     const project = await seedProject('canvas-file-drop', 2)
@@ -729,7 +748,13 @@ describe('canvas stories', () => {
     }, OTHER_PNG_BASE64)
     const at = { clientX: frame.x + 160, clientY: frame.y + 160 }
     for (const type of ['dragenter', 'dragover', 'drop']) await canvas.dispatchEvent(type, { dataTransfer: transfer, ...at })
+    // The dropped image joins the canvas list, with its node under the drop point.
     await expect.poll(() => page.locator('[data-node-kind="asset"]').count(), { timeout: 10_000 }).toBe(1)
+    await expect.poll(async () => {
+      const box = await page.locator('[data-node-kind="asset"]').boundingBox()
+      if (box === null) return false
+      return box.x <= at.clientX && at.clientX <= box.x + box.width && box.y <= at.clientY && at.clientY <= box.y + box.height
+    }, { timeout: 5000 }).toBe(true)
     // The composer shows a dropped attachment as a chip with its file name; only the canvas notice may name the file.
     await page.waitForTimeout(500)
     const outside = await page.getByText('notes-on-canvas.txt').evaluateAll(nodes => nodes.filter(node => node.closest('[data-testid="dv-canvas-view"]') === null).length)

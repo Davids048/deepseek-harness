@@ -33,6 +33,8 @@ export interface NodeEditorProps {
   onClose: () => void
   /** Run a write and report its failure. */
   run: (work: () => Promise<unknown>) => Promise<void>
+  /** Take an asset off the project's canvas list; the asset stays in the asset pool. */
+  onRemoveFromCanvas: (assetId: string) => void
 }
 
 // Editor styles draw on the DSH theme tokens so the floating editor matches the app in the light and dark themes.
@@ -118,7 +120,7 @@ export function NodeEditor(props: NodeEditorProps): ReactNode {
   const title = nodeTitle(node, t)
   const staleRecord = node.flags.stale ? node.record : null
   const askAgent = (): void => {
-    const shown = node.thumb ?? node.video
+    const shown = node.thumb ?? node.video ?? node.references[0] ?? null
     dispatchCompose({
       text: t('compose.text', { title }),
       refs: [{
@@ -135,7 +137,7 @@ export function NodeEditor(props: NodeEditorProps): ReactNode {
     case 'take': body = <TakeForm {...props} title={title} />; break
     case 'bible': body = <BibleForm {...props} />; break
     case 'plan': body = <PlanList {...props} />; break
-    case 'asset': body = <Preview node={node} />; break
+    case 'asset': body = <AssetPanel node={node} t={t} onRemoveFromCanvas={props.onRemoveFromCanvas} />; break
   }
   return (
     <div style={panel} role="dialog" aria-label={title} data-testid="dv-canvas-node-editor" data-dv-scroll-island="" onPointerDown={(event) => { event.stopPropagation() }}>
@@ -189,6 +191,29 @@ function Preview({ node }: { node: CanvasNode }): ReactNode {
   }
   if (node.thumb !== null) return <img src={assetUrl(node.thumb)} alt={node.title} style={{ ...style, objectFit: 'contain' }} />
   return null
+}
+
+/**
+ * An imported asset: its preview and "从画布移除", which takes it off the canvas list and leaves it in the asset pool.
+ * @param props - the node, the canvas translate, and the removal callback.
+ * @returns the element.
+ */
+function AssetPanel(
+  { node, t, onRemoveFromCanvas }: { node: CanvasNode; t: CanvasTranslate; onRemoveFromCanvas: (assetId: string) => void },
+): ReactNode {
+  const assetId = node.thumb ?? node.video
+  return (
+    <>
+      <Preview node={node} />
+      {assetId === null
+        ? null
+        : (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+            <button type="button" style={secondaryButton} onClick={() => { onRemoveFromCanvas(assetId) }}>{t('editor.removeFromCanvas')}</button>
+          </div>
+        )}
+    </>
+  )
 }
 
 /**
