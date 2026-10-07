@@ -130,6 +130,25 @@ describe('CanvasView', () => {
     expect(view.queryByTestId('dv-canvas-node-editor')).toBeNull()
   })
 
+  it('a wheel over the floating editor leaves the canvas viewport alone; a wheel over empty canvas zooms it', async () => {
+    const { view, node } = mount()
+    await waitFor(() => { node('plan:p1') })
+    fireEvent.pointerDown(node('plan:p1'), { button: 0, clientX: 5, clientY: 5, pointerId: 1 })
+    fireEvent.pointerUp(view.getByTestId('dv-canvas-view'), { pointerId: 1 })
+    const editor = await view.findByTestId('dv-canvas-node-editor')
+    const canvas = view.getByTestId('dv-canvas-view')
+    const transform = (): string => (canvas.querySelector('div[style*="transform"]') as HTMLElement).style.transform
+    const before = transform()
+    const overEditor = new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true })
+    act(() => { (editor.querySelector('li') ?? editor).dispatchEvent(overEditor) })
+    expect(overEditor.defaultPrevented).toBe(false)
+    expect(transform()).toBe(before)
+    const overCanvas = new WheelEvent('wheel', { deltaY: 120, bubbles: true, cancelable: true })
+    act(() => { canvas.dispatchEvent(overCanvas) })
+    expect(overCanvas.defaultPrevented).toBe(true)
+    expect(transform()).not.toBe(before)
+  })
+
   it('the plan editor marks a version replaced before approval as 已被 v{n} 取代 and shows each shot\'s reference images', async () => {
     const { view, node } = mount(true, (state) => {
       const [v1] = state.components.plan.plans['p1'] ?? []

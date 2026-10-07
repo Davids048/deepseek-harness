@@ -126,7 +126,7 @@ export function NodeEditor(props: NodeEditorProps): ReactNode {
     case 'asset': body = <Preview node={node} />; break
   }
   return (
-    <div style={panel} role="dialog" aria-label={title} data-testid="dv-canvas-node-editor" onPointerDown={(event) => { event.stopPropagation() }}>
+    <div style={panel} role="dialog" aria-label={title} data-testid="dv-canvas-node-editor" data-dv-scroll-island="" onPointerDown={(event) => { event.stopPropagation() }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--dsw-alias-border-l3)' }}>
         <span style={{ width: 8, height: 8, borderRadius: '50%', background: KIND_COLOR[node.kind] }} />
         <span style={{ color: 'var(--dsw-alias-label-secondary)', fontSize: 12, fontWeight: 600 }}>{kindLabel(node, t)}</span>

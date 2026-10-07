@@ -1,7 +1,8 @@
 /**
  * The project canvas as a standalone component: an infinite surface of story bible, asset, plan, and take nodes. Drag
  * empty space to pan, scroll to zoom around the cursor, drag a node to move it, click a node to open its floating
- * editor. Node positions and the viewport are stored per project through `/api/dv/layout`. The open draft of the chat
+ * editor. A scroll over an overlay marked `data-dv-scroll-island`, such as the floating editor, scrolls that overlay.
+ * Node positions and the viewport are stored per project through `/api/dv/layout`. The open draft of the chat
  * session the canvas sits beside is overlaid with dashed nodes; the working-branch bar on top names the branch the
  * canvas's own writes go to (they carry that session, so they land on the draft while it is open) and accepts or
  * discards the draft. Colors come from the DSH theme tokens, so the canvas
@@ -274,6 +275,8 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     if (element === null) return
     /** Zoom around the cursor; registered natively because React's wheel listener is passive. */
     const onWheel = (event: WheelEvent): void => {
+      // A wheel over a scroll island, such as the floating node editor, scrolls that overlay instead of the canvas.
+      if (event.target instanceof Element && event.target.closest('[data-dv-scroll-island]') !== null) return
       event.preventDefault()
       const rect = element.getBoundingClientRect()
       const px = event.clientX - rect.left

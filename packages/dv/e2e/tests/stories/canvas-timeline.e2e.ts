@@ -341,6 +341,44 @@ describe('canvas stories', () => {
     await expect.poll(() => editor.count(), { timeout: 2000 }).toBe(0)
   })
 
+  it('a wheel over an open plan editor scrolls the editor and leaves the canvas alone; a wheel over empty canvas zooms', async () => {
+    const project = await seedProject('canvas-editor-wheel')
+    const v1 = (await stateOf(project.id)).components.plan.plans['p1']?.[0]
+    if (v1 === undefined) throw new Error('the seeded plan is not p1')
+    // An unapproved v2 with 40 shots makes the plan editor taller than the canvas.
+    await runOperation(project.id, 'plan.update', {
+      plan: 'p1', title: v1.title, continuity: v1.continuity, references: v1.references,
+      shots: Array.from({ length: 40 }, (_, index) => ({ prompt: `canvas-editor-wheel shot ${String(index + 1)}`, duration_sec: 1 })),
+    })
+    const page = await openPage()
+    await gotoProject(page, project.id)
+    await fitCanvas(page)
+    const plan = page.locator('[data-node-kind="plan"]')
+    await expect.poll(() => plan.textContent()).toContain('v2')
+    await plan.click()
+    const editor = page.locator('[data-testid="dv-canvas-node-editor"]')
+    await expect.poll(() => editor.count()).toBe(1)
+    const scroll = await editor.evaluate(el => ({ top: el.scrollTop, scrollable: el.scrollHeight - el.clientHeight > 200 }))
+    expect(scroll).toEqual({ top: 0, scrollable: true })
+    // The editor is also a transformed direct child of the canvas; the pan-and-zoom surface comes first.
+    const surface = page.locator('[data-testid="dv-canvas-view"] > div[style*="transform"]').first()
+    const transform = async (): Promise<string> => await surface.evaluate(el => (el as HTMLElement).style.transform)
+    const before = await transform()
+    const box = await editor.boundingBox()
+    if (box === null) throw new Error('editor has no box')
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.wheel(0, 300)
+    await expect.poll(() => editor.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+    expect(await transform()).toBe(before)
+    const frame = await page.locator('[data-testid="dv-canvas-view"]').boundingBox()
+    if (frame === null) throw new Error('canvas has no box')
+    // The tall editor leaves a 16 px margin; the bottom-right corner of that margin holds no node, no editor, and no toolbar.
+    await page.mouse.move(frame.x + frame.width - 8, frame.y + frame.height - 8)
+    await page.mouse.wheel(0, -200)
+    await expect.poll(transform).not.toBe(before)
+    expect(page.errors).toEqual([])
+  })
+
   it('switching to the timeline and back, or to another project, leaves no editor behind', async () => {
     const first = await seedProject('canvas-leave-a')
     const second = await seedProject('canvas-leave-b', 2)
