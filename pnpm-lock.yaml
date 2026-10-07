@@ -7908,6 +7908,62 @@ importers:
         specifier: ^1.49.0
         version: 1.61.1
 
+  packages/dv/fasth3-ref2va:
+    dependencies:
+      '@deepseek-ai/dsh-skill':
+        specifier: workspace:*
+        version: link:../../skill/skill
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../../dreamverse/generation-client
+      '@dv/render-modes':
+        specifier: workspace:*
+        version: link:../render-modes
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:~
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:~
+        version: link:../../../vendor/loader
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/dv/fasth3-t2va:
+    dependencies:
+      '@deepseek-ai/dsh-skill':
+        specifier: workspace:*
+        version: link:../../skill/skill
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      '@dreamverse/generation-client':
+        specifier: workspace:*
+        version: link:../../dreamverse/generation-client
+      '@dv/render-modes':
+        specifier: workspace:*
+        version: link:../render-modes
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:~
+        version: link:../../../vendor/include
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:~
+        version: link:../../../vendor/loader
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
   packages/dv/ffmpeg:
     dependencies:
       '@deepseek-ai/dsh-subprocess':
@@ -7997,6 +8053,15 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:*
         version: link:../../core/system-prompt
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+
+  packages/dv/render-modes:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.0

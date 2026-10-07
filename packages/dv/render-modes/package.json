@@ -1,0 +1,18 @@
+{
+  "name": "@dv/render-modes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Service Definitions of the DreamVerse render mode seams: dvRef2va (Ref2vaRenderer, a prompt and reference images) and dvT2va (T2vaRenderer, a prompt only), with their request, model-fact and render-stream types.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./package.json": "./package.json"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@types/node": "^22.20.0"
+  }
+}
