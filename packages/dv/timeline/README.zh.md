@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-用本包保存项目的时间线：每条时间线是一个剪辑好的视频，以名称显示（没有名称的时间线 `t<n>` 显示为 时间线 {n}），按播放顺序保存片段。片段是带入点、出点和片段 ID（例如 `cl3`）的素材；编辑片段从不创建文件。本包向 `dvProject` 注册十个操作，`dvProject` 把它们变成智能体工具 `dv_timeline_*`；本包还注册 `timeline` 归约函数，把这些操作的记录折叠成项目状态的 `timeline` 切片。把时间线导出成一个文件属于 `@dv/deliver`。
+用本包保存项目的时间线：每条时间线是一个剪辑好的视频，按播放顺序保存片段；片段是带入点、出点和片段 ID（例如 `cl3`）的素材，编辑片段从不创建文件。本包注册十个操作，它们成为智能体工具 `dv_timeline_*`；本包还注册 `timeline` 归约函数，把这些操作的记录折叠成 `timeline` 切片。导出时间线属于 `@dv/deliver`。挂载 DSH 技能注册表时，本包还注册 `timeline-editing` 技能，它把用户的剪辑说法对应到确切的 `dv_*` 调用。
 
 ## 目录
 
@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `@dv/project` 之后挂载本插件。它没有配置项。
+在 `@dv/project` 之后挂载本插件。它没有配置项。挂载 `@deepseek-ai/dsh-skill` 的技能注册表 `skills` 时，插件用 `ctx.skills.register` 注册 [`skills/timeline-editing/SKILL.md`](skills/timeline-editing/SKILL.md) 中的 `timeline-editing` 技能；没有注册表时，操作照常工作，不注册技能。
 
 ```yaml
 - id: dv-timeline
@@ -64,6 +64,7 @@ kind: "package-reference"
 | [`src/index.ts`](src/index.ts) | `dvTimeline`：十个操作 spec、它们的注册以及片段 ID 的分配 |
 | [`src/reducer.ts`](src/reducer.ts) | `timeline` 归约函数及其与操作共用的片段检查 |
 | [`src/types.ts`](src/types.ts) | `Timeline`、`Clip`、`ClipId`、`TimelineId` 以及 `timeline` 切片声明 |
+| [`skills/timeline-editing/SKILL.md`](skills/timeline-editing/SKILL.md) | `timeline-editing` 技能的正文 |
 
 -----
 
@@ -106,6 +107,20 @@ kind: "package-reference"
 #### KV Cache 影响
 
 每个结果在调用之后追加到对话中；已缓存的前缀保持不变。
+
+### 技能
+
+#### 模型看到什么
+
+技能目录列出 `timeline-editing` 及其描述和使用时机。智能体加载该技能时，读到一张表：从用户的剪辑说法（剪辑、重做、更换参考和风格、调整顺序、删除、回到之前的版本、撤销、导出、接受或丢弃草稿）到按顺序的 `dv_*` 调用及其必需参数，以及适用于每一行的规则。重做调用片段生成方式对应的渲染工具（`dv_shot_render_ref2va` 或 `dv_shot_render_t2va`）。
+
+#### Token 影响
+
+插件挂载期间，技能目录中约 60 个 token；智能体每次加载该技能约 1,800 个 token。
+
+#### KV Cache 影响
+
+目录条目位于稳定的技能部分；挂载或移除插件会改变目录。加载的技能作为工具结果追加到对话中；已缓存的前缀保持不变。
 
 ## 已知限制与延期工作
 

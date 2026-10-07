@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-skill": "workspace:*",
     "@dv/project": "workspace:*"
   },
   "peerDependencies": {

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to keep the timelines of a project: each timeline is one edited video, shown by its name (a timeline `t<n>` without a name shows as 时间线 {n}), and holds clips in playback order. A clip is an asset with in and out points and a clip ID such as `cl3`; editing a clip never creates a file. The package registers ten operations with `dvProject`, which turns them into the agent tools `dv_timeline_*`, and the `timeline` reducer, which folds their records into the `timeline` slice of the project state. Exporting a timeline to one file belongs to `@dv/deliver`.
+Use this package to keep the timelines of a project: each timeline is one edited video that holds clips in playback order, and a clip is an asset with in and out points and a clip ID such as `cl3`; editing a clip never creates a file. The package registers ten operations, which become the agent tools `dv_timeline_*`, and the `timeline` reducer, which folds their records into the `timeline` slice. Exporting a timeline belongs to `@dv/deliver`. While the DSH skill registry is mounted, the package also registers the `timeline-editing` skill, which maps the user's editing phrasings to exact `dv_*` calls.
 
 ## Table of Contents
 
@@ -24,7 +24,7 @@ Use this package to keep the timelines of a project: each timeline is one edited
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin after `@dv/project`. It has no configuration.
+Mount the plugin after `@dv/project`. It has no configuration. While the skill registry `skills` of `@deepseek-ai/dsh-skill` is mounted, the plugin registers the `timeline-editing` skill from [`skills/timeline-editing/SKILL.md`](skills/timeline-editing/SKILL.md) with `ctx.skills.register`; without the registry the operations work and no skill is registered.
 
 ```yaml
 - id: dv-timeline
@@ -64,6 +64,7 @@ The operations write only their records. Each one's `execute` checks the call ag
 | [`src/index.ts`](src/index.ts) | `dvTimeline`: the ten operation specs, their registration, and clip ID assignment |
 | [`src/reducer.ts`](src/reducer.ts) | The `timeline` reducer and the clip checks it shares with the operations |
 | [`src/types.ts`](src/types.ts) | `Timeline`, `Clip`, `ClipId`, `TimelineId`, and the `timeline` slice declaration |
+| [`skills/timeline-editing/SKILL.md`](skills/timeline-editing/SKILL.md) | The body of the `timeline-editing` skill |
 
 -----
 
@@ -106,6 +107,20 @@ Roughly 50 to 150 tokens per call; a create or update with many clips adds its a
 #### KV Cache effect
 
 Each result is appended to the conversation after its call; the cached prefix stays intact.
+
+### Skill
+
+#### What the model sees
+
+The skill catalog lists `timeline-editing` with its description and when to use it. When the agent loads the skill, it reads a table from the user's editing phrasings (trims, retakes, reference and style changes, reordering, deletion, going back to an earlier take, undo, export, accepting or discarding the draft) to the `dv_*` calls in order and their required arguments, and the rules that apply to every row. A retake calls the render tool of the clip's render mode (`dv_shot_render_ref2va` or `dv_shot_render_t2va`).
+
+#### Token effect
+
+About 60 tokens in the skill catalog while the plugin is mounted; about 1,800 tokens each time the agent loads the skill.
+
+#### KV Cache effect
+
+The catalog entry sits in the stable skill section; mounting or removing the plugin changes the catalog. A loaded skill is appended to the conversation as a tool result; the cached prefix stays intact.
 
 ## Known Limitations and Deferred Work
 

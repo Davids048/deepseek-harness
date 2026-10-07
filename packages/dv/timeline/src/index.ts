@@ -10,11 +10,15 @@
  * reducer folds the records into the `timeline` slice. `timeline.create` and `timeline.update` declare the `clip` input
  * role in `pendingInputRoles`: a clip input may name a render that is not done, and the clip is a placeholder until
  * the render is done. `dvProject` turns each operation into its agent tool
- * (`dv_timeline_create`, `dv_timeline_clip_move`, ...). Exporting a timeline to a file belongs to Deliver.
+ * (`dv_timeline_create`, `dv_timeline_clip_move`, ...). Exporting a timeline to a file belongs to Deliver. While the DSH
+ * skill registry is mounted, the component registers the `timeline-editing` skill: the user's editing phrasings mapped
+ * to the exact `dv_*` calls.
  *
  * @module @dv/timeline
  */
+import { readFileSync } from 'node:fs'
 import { Service, type Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-skill'
 import z from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { OperationContext, OperationResult, OperationSpec, ProjectId, ProjectRecord } from '@dv/project'
@@ -35,6 +39,16 @@ export type Config = Record<string, unknown>
 
 /** Loader validation. */
 export const Config: z<Config> = z.object({})
+
+/** The skill that maps the user's editing phrasings to the timeline, render, plan and project tool calls. */
+const TIMELINE_EDITING_SKILL = {
+  name: 'timeline-editing',
+  description: 'Cheat sheet from the user\'s editing phrasings to the exact dv_* calls and their required arguments: trims, retakes, '
+    + 'reference and style changes, reordering, deletion, going back to an earlier take, and export.',
+  whenToUse: 'The user asks for a change to an existing shot or timeline in a DreamVerse project and you need the exact tool call.',
+  content: readFileSync(new URL('../skills/timeline-editing/SKILL.md', import.meta.url), 'utf8'),
+  source: 'runtime',
+}
 
 /** The `timeline` param of `timeline.clip_insert`, which may omit it. */
 const TIMELINE_PARAM = {
@@ -116,13 +130,16 @@ export default class DvTimeline extends Service {
     super(ctx, 'dvTimeline')
     ctx.effect(() => ctx.dvProject.registerReducer('timeline', timelineReducer), 'dvTimeline reducer')
     for (const spec of this.operations()) ctx.effect(() => ctx.dvProject.registerOperation(spec), `dvTimeline ${spec.name}`)
+    ctx.inject(['skills'], (child) => {
+      child.effect(() => child.skills.register(TIMELINE_EDITING_SKILL), `dvTimeline ${TIMELINE_EDITING_SKILL.name}`)
+    })
   }
 
   /**
    * Assign new clip IDs in a project. The number after `cl` is one more than the highest number that any Timeline
-   * record of the project stored in `report.clips`, on any branch (`main`, drafts, exploration branches, undone and
-   * discarded records), and than any number this service assigned to a call still running. So no two clips of a project
-   * ever share an ID, whichever branches they were added on.
+   * record of the project stored in `report.clips`, on any branch (`main` and drafts, including undone and discarded
+   * records), and than any number this service assigned to a call still running. So no two clips of a project ever share
+   * an ID, whichever branches they were added on.
    * @param project - the project.
    * @param count - how many IDs to assign.
    * @returns the IDs in order.

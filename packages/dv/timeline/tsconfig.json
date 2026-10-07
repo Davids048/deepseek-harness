@@ -15,6 +15,9 @@
       "path": "../../../vendor/schemastery"
     },
     {
+      "path": "../../skill/skill"
+    },
+    {
       "path": "../../util/brand"
     },
     {
