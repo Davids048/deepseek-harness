@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-本包组只有一个包 `stream`（`@video-harness/stream`），它是一个 Cordis 服务：`shot.render` 渲染一个版本时，该服务通过 WebSocket 路由 `/vh/ws` 把这个版本的 fMP4 分块发给订阅该项目的每个浏览器。DreamVerse 的项目组件、其他组件、API、智能体集成、界面插件和浏览器测试位于 `packages/dv/`，入口是 [`@dv/project`](../dv/project/README.zh.md)；bundle 是 [`@dv/bundle`](../bundle/dv/README.zh.md)。
+本包组只有一个包 `stream`（`@video-harness/stream`），它是一个 Cordis 服务：镜头渲染操作（`shot.render_ref2va`、`shot.render_t2va`）渲染一个版本时，该服务通过 WebSocket 路由 `/vh/ws` 把这个版本的 fMP4 分块发给订阅该项目的每个浏览器。DreamVerse 的项目组件、其他组件、生成方式各包、对话引用、API、界面插件和浏览器测试位于 `packages/dv/`，入口是 [`@dv/project`](../dv/project/README.zh.md)；bundle 是 [`@dv/bundle`](../bundle/dv/README.zh.md)。
 
 ## 目录
 

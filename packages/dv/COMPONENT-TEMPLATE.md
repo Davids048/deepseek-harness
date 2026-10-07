@@ -55,31 +55,31 @@ export default class DvTimeline extends Service {
 }
 ```
 
-Every registration is inside `ctx.effect`, so disposal removes it. An operation that needs an optional service (the model, the generation client) is registered inside `ctx.inject([...], child => child.effect(...))`, as `inspect.image` is. Service methods named by registry verbs (`insertClip`, `renderShot`, `exportTimeline`) do the work; each operation's `execute` calls one of them.
+Every registration is inside `ctx.effect`, so disposal removes it. An operation that needs an optional service (the model, a render mode service such as `dvRef2va`) is registered inside `ctx.inject([...], child => child.effect(...))`, as `inspect.image` is. Service methods named by registry verbs (`insertClip`, `renderShot`, `exportTimeline`) do the work; each operation's `execute` calls one of them.
 
 **Operation spec** (`OperationSpec` of `@dv/project`; read its JSDoc in `packages/dv/project/src/types.ts`):
 
-| Field             | Rule                                                                                              |
-| ----------------- | ------------------------------------------------------------------------------------------------- |
+| Field             | Rule                                                                                                  |
+| ----------------- | ----------------------------------------------------------------------------------------------------- |
 | `name`            | `<component key>.<verb>` or `<component key>.<object>_<verb>` from the glossary; the runner checks it |
-| `component`       | the component key (`asset bible plan shot timeline deliver inspect`)                              |
-| `version`         | `'1'`; bump when the meaning of `params` changes                                                  |
-| `description`     | model-facing and canvas-facing text; registry words only                                          |
-| `params`          | DSH parameter schema in snake_case registry words (`timeline`, `clip`, `in_sec`)                  |
-| `inputs`          | role → `{type, description, required?, many?, bible?}`; `bible: true` accepts `<id>@<version>`    |
-| `outputs`         | the roles of the assets `execute` returns, in order                                               |
-| `summarize`       | one line for chat cards and canvas nodes, from a finished record                                  |
-| `confirm`         | `agent_ask_first` only for renders the human must approve (`shot.render`, `plan.approve`)         |
-| `deterministic`   | true when the same params and inputs give the same outputs (the runner then reuses outputs)       |
-| `resource`        | `gpu`, `cpu` or `none`; `estimate(params)` for `gpu` operations                                   |
-| `readOnly`        | true for reads; no record, no confirmation, the answer is `report`                                |
-| `supersedes`      | the records a call replaces (a character update replaces the record of the previous version)      |
-| `toolParams`      | tool-only arguments, removed from `params` before the run (`continue_from` of `shot.render`)      |
-| `precondition`    | refuses a call of any caller before a record is written (the reference-image rule)                |
-| `prepareToolCall` | component logic before an agent call (`continue_from`); never a confirmation gate                 |
-| `execute`         | does the work; creates files only through `context.importAsset`; throws to fail the record        |
+| `component`       | the component key (`asset bible plan shot timeline deliver inspect`)                                  |
+| `version`         | `'1'`; bump when the meaning of `params` changes                                                      |
+| `description`     | model-facing and canvas-facing text; registry words only                                              |
+| `params`          | DSH parameter schema in snake_case registry words (`timeline`, `clip`, `in_sec`)                      |
+| `inputs`          | role → `{type, description, required?, many?, bible?}`; `bible: true` accepts `<id>@<version>`        |
+| `outputs`         | the roles of the assets `execute` returns, in order                                                   |
+| `summarize`       | one line for chat cards and canvas nodes, from a finished record                                      |
+| `confirm`         | `never`, `always` (`plan.approve`) or `over_gpu_budget` (`shot.render_ref2va`); with `confirmSummary` |
+| `deterministic`   | true when the same params and inputs give the same outputs (the runner then reuses outputs)           |
+| `resource`        | `gpu`, `cpu` or `none`; `estimate(params)` for `gpu` operations                                       |
+| `readOnly`        | true for reads; no record, no confirmation, the answer is `report`                                    |
+| `supersedes`      | the records a call replaces (a character update replaces the record of the previous version)          |
+| `toolParams`      | tool-only arguments, removed from `params` before the run (`continue_from` of `shot.render_ref2va`)   |
+| `precondition`    | refuses a call of any caller before a record is written (the reference-image rule)                    |
+| `prepareToolCall` | component logic before an agent call (`continue_from`); Project applies `confirm` after it            |
+| `execute`         | does the work; creates files only through `context.importAsset`; throws to fail the record            |
 
-**Tools.** `registerOperation` also registers the agent tool `dv_<name with _>` while the DSH `tools` registry is mounted, with the shared arguments `reason`, `project_id`, `inputs`, `supersedes` and `based_on`, and the result `{record, status, summary, outputs, scheduled, params, report?, images?}`. A component writes no tool code. The DSH question rule (`user_approved`, `user_requested`, the GPU budget) is the agent integration's `ToolCallCheck` (`packages/dv/agent-integration/src/question-rule.ts`), which applies to operations by name: an operation that needs the user's approval before an agent call gets its rule there. A rule that every caller must meet belongs in the operation's `precondition`, which the runner calls for every caller.
+**Tools.** `registerOperation` also registers the agent tool `dv_<name with _>` while the DSH `tools` registry is mounted, with the shared arguments `reason`, `project_id`, `inputs`, `supersedes` and `based_on`, and the result `{record, status, summary, outputs, scheduled, params, report?, images?}`. A component writes no tool code. An operation that needs the user's agreement before an agent call declares it in its own spec: `confirm: 'always'` (the tool takes `user_approved`) or `confirm: 'over_gpu_budget'` (the tool takes `user_requested`, needed once the turn's GPU seconds pass the budget), and `confirmSummary(call, state)`, which returns `{text, gpu_seconds}` for the refusal that tells the agent to ask the user in the conversation with the question in bold. Calls by the human and by the system are never refused. A rule that every caller must meet belongs in the operation's `precondition`, which the runner calls for every caller.
 
 **Reducer.** Declare the slice in `src/types.ts` and register the reducer under the component key:
 
@@ -111,7 +111,7 @@ At most one registered reducer defines `createdBy` and at most one defines `asse
 1. `tsconfig.base.json` `paths`: `"@dv/<dir>": ["./packages/dv/<dir>/src/index.ts"]` next to the other `@dv/*` rows.
 2. `tsconfig.host.json` `references`: `{ "path": "./packages/dv/<dir>" }` next to the other `packages/dv` rows.
 3. `packages/bundle/dv/cordis.patch.yml`: one row `- id: dv-<dir>` / `name: '@dv/<dir>'` with its config, in the `insert` list after the rows it injects; and `@dv/<dir>` in that bundle's `package.json`.
-4. Every consumer's `tsconfig.json` `references` and `package.json` `dependencies` (api, agent-integration for a slice type).
+4. Every consumer's `tsconfig.json` `references` and `package.json` `dependencies` (api and chat-references for a slice type).
 
 **node_modules.** Run `pnpm install` from the worktree root; it links `@dv/<dir>` into every package that lists it in `dependencies` and records the package in `pnpm-lock.yaml`.
 
@@ -119,11 +119,11 @@ At most one registered reducer defines `createdBy` and at most one defines `asse
 
 **Unit tests** in `packages/dv/<dir>/tests`, run from `packages/dv` with `../../node_modules/.bin/vitest run --config vitest.config.ts <dir>`:
 
-- one Loader composition test (copy `inspector/tests/inspector.spec.ts`): a test-only `cordis.yml` with `system-prompt`, `tools`, the asset pool, `dv-project`, `dv-ffmpeg` when used, and your plugin; fakes only for outside services (model, generation backend). Assert through the agent tool (`ctx.tools.execute` with an agent) and through `dvProject.run`: the record (actor, component, operation, params, inputs, outputs), the state slice, the tool result, and that disposing your plugin removes its operations and tools;
+- one Loader composition test (copy `inspector/tests/inspector.spec.ts`): a test-only `cordis.yml` with `system-prompt`, `tools`, the asset pool, `dv-project`, `dv-ffmpeg` when used, and your plugin; fakes only for outside services (model, render mode provider). Assert through the agent tool (`ctx.tools.execute` with an agent) and through `dvProject.run`: the record (actor, component, operation, params, inputs, outputs), the state slice, the tool result, and that disposing your plugin removes its operations and tools;
 - one test per operation for its failures (`execute` throws → record `failed` with the message; invalid params → `invalid_params` before any record);
 - pure reducer tests: every operation's effect on the slice, records of other components ignored, `createdBy`, `assetsOf`, `conflict` and `agentSummary` where present.
 
-**E2E stories.** Add or update the stories that exercise your component, and run every suite you touched, from the worktree root: `node_modules/.bin/vitest run --config packages/dv/e2e/vitest.e2e.config.ts <story>` (stories: `navigation`, `chat`, `canvas-timeline`, `assets`). The scripted model in `e2e/tests/scripted-model.ts` and the rules in each story name tools by their `dv_*` names.
+**E2E stories.** Add or update the stories that exercise your component, and run every suite you touched, from the worktree root: `node_modules/.bin/vitest run --config packages/dv/e2e/vitest.e2e.config.ts <story>` (stories: `navigation`, `chat`, `canvas-timeline`, `assets`, `history`). The scripted model in `e2e/tests/scripted-model.ts` and the rules in each story name tools by their `dv_*` names.
 
 ## 6. README
 

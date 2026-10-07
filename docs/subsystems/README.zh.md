@@ -69,6 +69,6 @@
 | [session-telemetry.md](session-telemetry.zh.md) | 对外会话上报能力 seam：`SessionTelemetryRecord`/`SessionTelemetrySeverity`、`SessionTelemetrySink` 约定和 `session-telemetry/record` 脱敏 waterfall（瀑布式事件） |
 | [product-telemetry.md](product-telemetry.zh.md) | 显式产品分析事件提交与 OTLP/HTTP 传输 |
 | [dreamverse.md](dreamverse.zh.md) | DreamVerse 各包：进程布局、共享项目层（文件存储、项目存储、片段生成）、工作负载，以及与 FastVideo 参考实现的差异 |
-| [video-harness.md](video-harness.zh.md) | DreamVerse 各包：Project（作为唯一事实来源的记录日志、草稿、撤销、分支、过期）、各组件及其 `dv_*` 工具、分镜计划版次和片段 ID、智能体集成、API、界面、历史面板及其轨迹链接，以及术语表 |
+| [video-harness.md](video-harness.zh.md) | DreamVerse 各包：分层及其角色、生成方式 seam、Project（作为唯一事实来源的记录日志、草稿、撤销、过期）、各组件及其 `dv_*` 工具、在对话中确认、智能体读到什么、API、界面、历史面板及其轨迹链接、新行为的归属位置，以及术语表 |
 
 > 这些页面上的类型声明及其 JSDoc 与源码等价，并由 `pnpm run verify-type-equiv` 检查漂移（见 [development.md](../development.zh.md#documenting-types-verbatim-ts-type-equiv)）。普通块保留完整声明；`public-api` 块保留去除实现体的公开 class 声明。Cordis 服务与事件使用每页生成的 **Cordis API** 小节。
