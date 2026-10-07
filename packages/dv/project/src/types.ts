@@ -33,14 +33,17 @@ export type ProjectId = Branded<'DvProjectId'>
 /** The ID of one record in a project's `records.jsonl`. */
 export type RecordId = Branded<'DvRecordId'>
 
-/** The ID of one agent turn: one run of the agent from a request to its reply. The agent integration assigns it. */
+/**
+ * The ID of one agent turn: one run of the agent from a request to its reply. It is the DSH turn number of the chat
+ * session as a string (`"3"`), unique within the session; Project reads it when an agent tool runs.
+ */
 export type TurnId = Branded<'DvTurnId'>
 
 /** The ID of one chat session; the DSH session ID of the agent that the human talks to. */
 export type SessionId = Branded<'DvSessionId'>
 
-/** What a record represents: the human's words that start an agent turn, or one call of one operation. */
-export type RecordKind = 'request' | 'operation'
+/** What a record represents: one call of one operation. */
+export type RecordKind = 'operation'
 
 /** Who caused a record. `system` is used only for automatic actions, such as a scheduled render. */
 export type Actor = 'user' | 'agent' | 'system'
@@ -88,9 +91,8 @@ export interface RecordCost {
 
 /**
  * Why a call failed or was cancelled, in words a creator can read. `code` is one of `operation_failed` (the
- * operation's execute threw), `input_failed` (a record the scheduled call waited for failed), `skipped` (the human
- * skipped the approval card), or `stopped` (the turn was stopped: the run request's signal aborted). A skipped or
- * stopped record ends with status `cancelled`.
+ * operation's execute threw), `input_failed` (a record the scheduled call waited for failed), or `stopped` (the turn
+ * was stopped: the run request's signal aborted). A stopped record ends with status `cancelled`.
  */
 export interface RecordFailure {
   code: string
@@ -106,14 +108,14 @@ export interface ProjectRecord {
   id: RecordId
   /** The record this one follows on its branch; empty only for the first record of a project. */
   parents: RecordId[]
-  /** The branch the record was appended to: `main`, `draft/<session>`, or `explore/<name>`. */
+  /** The branch the record was appended to: `main` or `draft/<session>`. */
   branch: string
   kind: RecordKind
-  /** The component key that owns the operation, for example `timeline`; `proj` for request records. */
+  /** The component key that owns the operation, for example `timeline`. */
   component: string
-  /** The operation name, for example `shot.render`; null only for request records. */
+  /** The operation name, for example `timeline.clip_move`. */
   operation: string | null
-  /** The version of the operation's parameter schema; null only for request records. */
+  /** The version of the operation's parameter schema. */
   operation_version: string | null
   actor: Actor
   surface: Surface
@@ -123,7 +125,7 @@ export interface ProjectRecord {
   session: SessionId | null
   /** The agent's tool-call ID that made the record; null when the human acted directly. */
   tool_call: string | null
-  /** Why: the human's words, or a short description of the gesture, such as "move clip 3 before clip 1". */
+  /** Why: the agent's `reason` argument, or a short description of the human's gesture, such as "move clip 3 before clip 1". */
   intent: string
   /** The operation's parameters, valid against its schema. The owning component defines their meaning. */
   params: Record<string, unknown>
@@ -200,15 +202,15 @@ export interface DraftCounts {
 
 /** One branch of a project: a named pointer to a record. `branches.json` stores every field except `counts`. */
 export interface Branch {
-  /** `main`, `draft/<session>`, or `explore/<name>`. */
+  /** `main` or `draft/<session>`. */
   name: string
   /** The record the branch points at. */
   head: RecordId
-  /** The branch that accepting this branch merges into; null for `main` and exploration branches. */
+  /** The branch that accepting this draft merges into (`main`); null for `main`. */
   base: string | null
   /** The head of `base` when the draft was opened, or when an accept last replayed it; null for `main`. */
   forked_at: RecordId | null
-  /** The chat session that owns the draft; null for `main` and exploration branches. */
+  /** The chat session that owns the draft; null for `main`. */
   session: SessionId | null
   /** The draft's record counts; null for branches that are not drafts. Computed on read, never stored. */
   counts: DraftCounts | null
@@ -312,21 +314,36 @@ export interface OperationSpec {
   /** The outputs, in the order `execute` returns them. */
   outputs: OperationOutput[]
   /**
-   * `agent_ask_first`: when the actor is `agent` and the session's composer asks first, the runner waits for the
-   * human's approval before executing. `never`: the runner never waits.
+   * Whether an agent tool call needs the user's agreement, given in the conversation. `never`: no agreement.
+   * `always`: the tool takes `user_approved`, and a call without `user_approved: true` is refused. `over_gpu_budget`:
+   * the tool takes `user_requested`, and a call without `user_requested: true` is refused when the turn's GPU seconds
+   * (the cost of the turn's finished records, the `estimate` of its unfinished records, and this call's
+   * `confirmSummary` estimate) pass `dvProject`'s Config field `confirmGpuSecondsThreshold`. The refusal tells the agent
+   * to ask the user in the conversation, the question in bold. Project adds the argument to the tool; the operation
+   * declares nothing for it, and it never reaches the record's params. Calls by the human and by the system are never
+   * refused.
    */
-  confirm: 'never' | 'agent_ask_first'
+  confirm: 'never' | 'always' | 'over_gpu_budget'
+  /**
+   * What an agent call will do and cost, for the refusal text. `registerOperation` refuses a spec whose `confirm` is
+   * not `never` and that has no `confirmSummary` (`invalid_params`).
+   * @param call - the parsed call, after the operation's `prepareToolCall`.
+   * @param state - the state of the session's working branch.
+   * @returns `text`: what the agent shows the user before asking (for `plan.approve`: one line per shot it renders);
+   *   `gpu_seconds`: the call's GPU estimate, which also counts against the turn's budget.
+   */
+  confirmSummary?(call: OperationToolCall, state: ProjectState): { text: string; gpu_seconds: number }
   /** Whether identical inputs and parameters always give identical outputs; the runner then reuses earlier outputs. */
   deterministic: boolean
   /** The scheduler's concurrency class: `gpu` and `cpu` calls share a configured limit each; `none` is unlimited. */
   resource: 'none' | 'cpu' | 'gpu'
   /**
-   * The expected GPU time of a call, shown on the approval card.
+   * The expected GPU time of a call; Project counts it for the turn's unfinished records (scheduled renders).
    * @param params - the call's parameters.
    * @returns the estimate; omit the function for operations that use no GPU.
    */
   estimate?(params: Record<string, unknown>): { gpu_seconds: number }
-  /** A read: the runner writes no record, asks no confirmation, and takes no lock. */
+  /** A read: the runner writes no record and takes no lock. */
   readOnly?: boolean
   /**
    * The records a call of this operation replaces; the runner adds them to the record's `supersedes`.
@@ -344,8 +361,8 @@ export interface OperationSpec {
   /** Tool-only arguments besides `params`; Project removes them from the run request's params before `prepareToolCall`. */
   toolParams?: ParameterSchemaSpec
   /**
-   * Check or change an agent tool call before Project runs it, for example to ask the user a question or to turn a
-   * tool-only argument into an input. It is never a confirmation gate: the runner alone enforces `confirm`.
+   * Check or change an agent tool call before Project runs it, for example to turn a tool-only argument into an input.
+   * Project applies `confirm` after it.
    * @param call - the parsed call; throw to refuse it with the error's message.
    */
   prepareToolCall?(call: OperationToolCall): Promise<void>
@@ -493,9 +510,9 @@ export interface HistoryEntry {
   /**
    * Where the record stands: `main` (on the effective chain of `main`), `draft` (on an open draft), `undone` (left
    * behind by an undo), `discarded` (on a discarded draft), `replayed` (a draft record that accept replay copied onto
-   * `main`; the copy has its own entry), or `branch` (only on an exploration branch).
+   * `main`; the copy has its own entry).
    */
-  mark: 'main' | 'draft' | 'undone' | 'discarded' | 'replayed' | 'branch'
+  mark: 'main' | 'draft' | 'undone' | 'discarded' | 'replayed'
 }
 
 /** One operation call through `dvProject.run`. */
@@ -506,18 +523,13 @@ export interface RunRequest extends RecordOrigin {
   params: Record<string, unknown>
   inputs: Array<{ role: string; ref: RecordInputRef }>
   /**
-   * The human's words that started the agent turn. When set and the turn has no request record yet, the runner writes
-   * the turn's `request` record before the turn's first operation record.
-   */
-  request_text?: string
-  /**
    * Schedule the call instead of running it now: the runner writes the pending record at once and the scheduler runs
    * it after these records and the producers of its `{record, output}` inputs are done.
    */
   after?: RecordId[]
   based_on?: RecordId | null
   supersedes?: RecordId[]
-  /** The turn's stop signal: aborting it cancels a confirmation wait (code `stopped`) and aborts the execution. */
+  /** The turn's stop signal: aborting it aborts the execution (code `stopped`). */
   signal?: AbortSignal
 }
 
@@ -535,17 +547,6 @@ export type ProjectEvent =
   | { kind: 'update'; record: ProjectRecord }
   /** A branch was created or its pointer moved (`branch` set), or a closed draft was removed (`branch` null). */
   | { kind: 'branch'; name: string; branch: Branch | null }
-
-/** An agent call that waits for the human's approval card. */
-export interface PendingApproval {
-  project: ProjectId
-  /** The pending record; its params and inputs are what the card shows. */
-  record: ProjectRecord
-  /** The operation's estimate, or 0 when it has none. */
-  gpu_seconds: number
-  /** Aborted when the run request aborts; the channel then resolves false. */
-  signal: AbortSignal
-}
 
 /**
  * The asset pool as Project sees it: Project checks that input assets exist, imports the files operations produce,
@@ -584,41 +585,4 @@ export interface AssetStore {
    * @returns the URL that serves its bytes, as the agent and chat cards show it.
    */
   url(asset: AssetId): string
-}
-
-/**
- * The agent integration's check of every agent tool call, registered with `dvProject.registerToolCallCheck`: the DSH
- * question rule that asks the user before an operation runs. It is never a confirmation gate: the runner alone
- * enforces `OperationSpec.confirm`.
- */
-export interface ToolCallCheck {
-  /**
-   * @param spec - an operation.
-   * @returns the tool-only arguments the check adds to the operation's tool, such as `user_approved`.
-   */
-  params(spec: OperationSpec): ParameterSchemaSpec
-  /**
-   * Check a call after the operation's own `prepareToolCall` and before Project runs it.
-   * @param spec - the operation.
-   * @param call - the parsed call; the check may change the request's params.
-   */
-  check(spec: OperationSpec, call: OperationToolCall): Promise<void>
-}
-
-/**
- * The composer's side of confirmation. During stage 2 the composer service in the mentions package implements it and
- * registers it with `dvProject.registerApprovalChannel`.
- */
-export interface ApprovalChannel {
-  /**
-   * @param session - a chat session.
-   * @returns whether the session's composer asks before agent renders.
-   */
-  asksFirst(session: SessionId): boolean
-  /**
-   * Show an approval card and wait for the human.
-   * @param approval - the pending call.
-   * @returns true when approved; false when skipped or aborted.
-   */
-  requestApproval(approval: PendingApproval): Promise<boolean>
 }

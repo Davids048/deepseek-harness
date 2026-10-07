@@ -1,7 +1,7 @@
 /**
  * Project's own `dv_proj_*` tools through the `dvProject` service with the real DSH tool registry: session binding,
  * the project summary with the reducers' `agentSummary` fields, history, draft accept and discard, undo and redo,
- * stale acceptance, branches, and waiting for scheduled records.
+ * stale acceptance, reading another branch, and waiting for scheduled records.
  */
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -25,7 +25,7 @@ declare module '@dv/project' {
 /** Every `dv_proj_*` tool. */
 const PROJ_TOOLS = [
   'dv_proj_create', 'dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_draft_accept', 'dv_proj_draft_discard',
-  'dv_proj_undo', 'dv_proj_redo', 'dv_proj_stale_accept', 'dv_proj_branch_create', 'dv_proj_branch_switch', 'dv_proj_wait',
+  'dv_proj_undo', 'dv_proj_redo', 'dv_proj_stale_accept', 'dv_proj_wait',
 ]
 
 interface Fixture {
@@ -54,7 +54,10 @@ async function start(): Promise<Fixture> {
   contexts.push(context)
   await context.plugin(SystemPrompt, {}).await()
   await context.plugin(ToolRuntime).await()
-  const fiber = context.plugin(DvProject, { root: join(root, 'projects'), sessionRoot: join(root, 'sessions'), cpuConcurrency: 4, gpuConcurrency: 1 })
+  const fiber = context.plugin(DvProject, {
+    root: join(root, 'projects'), sessionRoot: join(root, 'sessions'), cpuConcurrency: 4, gpuConcurrency: 1,
+    confirmGpuSecondsThreshold: 60, promptSectionOrder: 4900,
+  })
   await fiber.await()
   const assets = new MemoryAssets()
   context.dvProject.registerAssetStore(assets)
@@ -172,7 +175,6 @@ describe('dv_proj_* tools', () => {
     const removeStill = fixture.project.registerOperation(still())
     fixture.project.registerOperation(still({ name: 'asset.import', execute: () => Promise.reject(new Error('no such file')) }))
     const projectId = brandString<ProjectId>(String(json(await fixture.call('dv_proj_create', { title: 'recent' }))['project_id']))
-    fixture.project.noteTurn(brandString<SessionId>('s1'), 1, 'make a kite')
     const made = value(await fixture.call('dv_asset_grab_still', { reason: 'a still', prompt: 'kite' }))
     expect(errorOf(await fixture.call('dv_asset_import', { reason: 'bring it', prompt: 'x' }))).toContain('no such file')
     const state = json(await fixture.call('dv_proj_state', {}))
@@ -191,10 +193,10 @@ describe('dv_proj_* tools', () => {
     expect(json(await fixture.call('dv_proj_history_list', { limit: 3 }))).toEqual([
       expect.objectContaining({ operation: 'asset.import', mark: 'draft', status: 'failed', actor: 'agent', branch: 'draft/s1' }),
       { record: made.record, mark: 'draft', operation: 'asset.grab_still', status: 'done', actor: 'agent', intent: 'a still', branch: 'draft/s1', outputs: [made.outputs[0]?.asset_id] },
-      expect.objectContaining({ operation: 'request', intent: 'make a kite', actor: 'user' }),
+      expect.objectContaining({ operation: 'proj.create', mark: 'main', actor: 'agent' }),
     ])
     expect(json(await fixture.call('dv_proj_history_list', { operation: 'asset.grab_still' }))).toHaveLength(1)
-    expect(json(await fixture.call('dv_proj_history_list', { project_id: projectId }))).toHaveLength(4)
+    expect(json(await fixture.call('dv_proj_history_list', { project_id: projectId }))).toHaveLength(3)
   })
 
   it('accepts and discards the draft, undoes and redoes, and accepts a stale record only when called', async () => {
@@ -237,8 +239,10 @@ describe('dv_proj_* tools', () => {
     const discarded = json(await fixture.call('dv_proj_draft_discard', {}))
     expect(discarded['record']).toBe(newest('proj.draft_discard'))
     expect(metaOf('dv_proj_draft_discard', discarded)).toEqual({ record: newest('proj.draft_discard') })
-    const branched = json(await fixture.call('dv_proj_branch_create', { name: 'alt' }))
-    expect(branched['record']).toBe(newest('proj.branch_switch'))
+    value(await fixture.call('dv_asset_grab_still', { reason: 'second', prompt: 'two' }))
+    const undone = json(await fixture.call('dv_proj_undo', {}))
+    expect(undone['record']).toBe(newest('proj.undo'))
+    expect(metaOf('dv_proj_undo', undone)).toEqual({ record: newest('proj.undo') })
     const state = json(await fixture.call('dv_proj_state', {}))
     expect(state['record']).toBeUndefined()
     for (const name of ['dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_wait']) {
@@ -246,18 +250,14 @@ describe('dv_proj_* tools', () => {
     }
   })
 
-  it('creates and switches branches, and reads another branch', async () => {
+  it('reads another branch than the one the session writes to', async () => {
     const fixture = await start()
     fixture.project.registerOperation(still())
     json(await fixture.call('dv_proj_create', { title: 'branches' }))
-    expect(json(await fixture.call('dv_proj_branch_create', { name: 'alt' }))).toMatchObject({ branch: 'explore/alt', draft: null })
-    expect(json(await fixture.call('dv_proj_branch_create', { name: 'explore/second', at: 'main' }))['branch']).toBe('explore/second')
-    value(await fixture.call('dv_asset_grab_still', { reason: 'on the branch', prompt: 'alt' }))
-    expect(json(await fixture.call('dv_proj_state', {}))).toMatchObject({ branch: 'draft/s1', records: 4 })
+    value(await fixture.call('dv_asset_grab_still', { reason: 'on the draft', prompt: 'alt' }))
+    expect(json(await fixture.call('dv_proj_state', {}))).toMatchObject({ branch: 'draft/s1', records: 2, branches: ['main', 'draft/s1'] })
     expect(json(await fixture.call('dv_proj_state', { branch: 'main' }))).toMatchObject({ branch: 'main', draft: null, records: 1 })
-    expect((await fixture.call('dv_proj_branch_switch', { name: 'explore/ghost' })).isError).toBe(true)
-    expect(json(await fixture.call('dv_proj_draft_accept', {}))['branch']).toBe('explore/second')
-    expect(json(await fixture.call('dv_proj_branch_switch', { name: 'main' }))['branch']).toBe('main')
+    expect((await fixture.call('dv_proj_state', { branch: 'draft/ghost' })).isError).toBe(true)
   })
 
   it('waits for scheduled records and shows a pending record by its status', async () => {

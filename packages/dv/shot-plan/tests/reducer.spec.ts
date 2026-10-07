@@ -39,11 +39,10 @@ describe('plan reducer', () => {
     expect(reduceAll([created, record('plan.approve', { plan: 'p1' })]).plans['p1' as never]?.[0]?.approved_by).not.toBeNull()
   })
 
-  it('ignores other components\' records, requests, unknown plans and versions, and creates without a plan ID', () => {
+  it('ignores other components\' records, unknown plans and versions, and creates without a plan ID', () => {
     const created = record('plan.create', { shots: [{ prompt: 'a' }] }, { report: { plan: 'p1', version: 1 } })
     const slice = reduceAll([created])
     expect(planReducer.reduce(slice, record('timeline.create', { plan: 'p1' }, { component: 'timeline' }))).toBe(slice)
-    expect(planReducer.reduce(slice, record(null, {}, { kind: 'request', component: 'proj' }))).toBe(slice)
     expect(planReducer.reduce(slice, record('plan.approve', {}))).toBe(slice)
     expect(planReducer.reduce(slice, record('plan.approve', { plan: 'p9' }))).toBe(slice)
     expect(planReducer.reduce(slice, record('plan.approve', { plan: 'p1', version: 3 }))).toBe(slice)

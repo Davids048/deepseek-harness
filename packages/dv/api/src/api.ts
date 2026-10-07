@@ -1,12 +1,11 @@
 /**
  * The handlers behind the browser routes, independent of transport: list and create projects, read a branch state,
- * list operations, run an operation as the human, accept or discard a chat session's draft, undo and redo, create and
- * switch branches, accept a stale record, list the history, and remember a view's selection. The Fetch routes and the tests call these
- * methods directly.
+ * list operations, run an operation as the human, accept or discard a chat session's draft, undo and redo, accept a
+ * stale record, and list the history. The Fetch routes and the tests call these methods directly.
  *
  * Every write goes through `dvProject` with actor `user`, the surface the request names, and the chat session the view
  * sits beside (`session`, when the request names one), so a human edit lands on that session's working branch: its open
- * draft, else its exploration branch, else `main`.
+ * draft, else `main`.
  *
  * @module @dv/api/api
  */
@@ -16,10 +15,10 @@ import { draftBranch, MAIN_BRANCH, ProjectError } from '@dv/project'
 import type DvProject from '@dv/project'
 import type {
   AssetId, Branch, DraftCounts, HistoryEntry, HistoryQuery, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordOrigin, RunRequest,
-  SessionId, Surface, TurnId,
+  SessionId, Surface,
 } from '@dv/project'
 import {
-  projectIdOf, toWireOperation, toWireState, type ViewSelection, type WireHistory, type WireOperation, type WireState,
+  projectIdOf, toWireOperation, toWireState, type WireHistory, type WireOperation, type WireState,
 } from './wire.ts'
 
 /**
@@ -163,9 +162,6 @@ function stringOf(value: unknown, field: string): string {
   return value
 }
 
-/** The kinds of item a view can select. */
-const SELECTION_KINDS: ReadonlySet<ViewSelection['kind']> = new Set(['record', 'clip', 'asset', 'character', 'location', 'style'])
-
 /**
  * @param value - the raw `surface` of a request.
  * @returns the surface; anything but `timeline`, `asset_pool` or `history` counts as the canvas.
@@ -177,9 +173,9 @@ function surfaceOf(value: unknown): Surface & ('canvas' | 'timeline' | 'asset_po
 /** The values each enumerated history filter accepts. */
 const HISTORY_ENUMS = {
   actor: ['user', 'agent', 'system'],
-  kind: ['request', 'operation'],
+  kind: ['operation'],
   status: ['pending', 'running', 'done', 'failed', 'cancelled'],
-  marks: ['main', 'draft', 'undone', 'discarded', 'replayed', 'branch'],
+  marks: ['main', 'draft', 'undone', 'discarded', 'replayed'],
 } as const
 
 /** The history filters that take one free-form string, copied to the query as they are. */
@@ -269,8 +265,6 @@ function countsOf(value: unknown): DraftCounts | null {
 
 /** Reads and writes a project on behalf of the canvas, the timeline, and the asset pool panel. */
 export class ApiHandlers {
-  private readonly selections = new Map<ProjectId, ViewSelection>()
-
   constructor(private readonly services: ApiServices) {}
 
   /**
@@ -445,34 +439,6 @@ export class ApiHandlers {
   }
 
   /**
-   * Start an exploration branch `explore/<name>`.
-   * @param raw - `{project, name, at, session?, surface}` where `at` is a record ID or a branch name.
-   * @returns the branch and the heads after creation.
-   */
-  async createBranch(raw: unknown): Promise<{ branch: Branch; heads: Record<string, RecordId> }> {
-    const body = objectOf(raw)
-    const projectId = this.requireProject(body['project'])
-    const name = `explore/${stringOf(body['name'], 'name')}`
-    const at = typeof body['at'] === 'string' && body['at'].length > 0 ? body['at'] : MAIN_BRANCH
-    const branch = await refused(() => this.services.project.createBranch(projectId, name, at, humanOrigin(body, `create ${name}`)))
-    return { branch, heads: this.heads(projectId) }
-  }
-
-  /**
-   * Switch the working branch of a chat session to `main` or an exploration branch.
-   * @param raw - `{project, branch, session, surface}`.
-   * @returns the target branch and the heads afterwards.
-   */
-  async switchBranch(raw: unknown): Promise<{ branch: Branch; heads: Record<string, RecordId> }> {
-    const body = objectOf(raw)
-    const projectId = this.requireProject(body['project'])
-    const target = stringOf(body['branch'], 'branch')
-    stringOf(body['session'], 'session')
-    const branch = await refused(() => this.services.project.switchBranch(projectId, target, humanOrigin(body, `switch to ${target}`)))
-    return { branch, heads: this.heads(projectId) }
-  }
-
-  /**
    * Accept a stale record as it is: a `proj.stale_accept` record on the working branch of the request's chat session
    * (`main` without one) removes its stale mark and the marks of the records made from it.
    * @param raw - `{project, record, session?, surface}`.
@@ -492,7 +458,7 @@ export class ApiHandlers {
    * `dv_proj_history_list`). A read: it writes no record.
    * @param raw - the history query: `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?,
    *   turn?, tool_call?, records?, before?, limit?}`; `limit` is 1 to 200, default 50.
-   * @returns the entries, the `request` record of every turn the entries belong to, and every asset they name.
+   * @returns the entries and every asset they name.
    * @throws ApiRequestError (400 `invalid_params`, 404 `unknown_project`, 404 `unknown_record` for `before`).
    */
   async listHistory(raw: unknown): Promise<WireHistory> {
@@ -500,15 +466,6 @@ export class ApiHandlers {
     const projectId = this.requireProject(body['project'])
     const query = historyQueryOf(body, projectId)
     const entries: HistoryEntry[] = await refused(() => this.services.project.listHistory(query))
-    const turns = new Set(entries.flatMap(entry => entry.record.turn === null ? [] : [entry.record.turn]))
-    // The request record heads its turn, so it is looked up even when the filters or the page leave it out.
-    const requests: Record<string, ProjectRecord> = {}
-    if (turns.size > 0) {
-      for (const { record } of this.services.project.listHistory({ project: projectId, kind: 'request' })) {
-        const turn: TurnId | null = record.turn
-        if (turn !== null && turns.has(turn) && requests[turn] === undefined) requests[turn] = record
-      }
-    }
     const named = new Set<AssetId>()
     for (const { record } of entries) {
       for (const id of record.outputs) named.add(id)
@@ -518,37 +475,7 @@ export class ApiHandlers {
       const asset = this.assetOrNull(id)
       return asset === null ? [] : [asset]
     })
-    return { entries, requests, assets }
-  }
-
-  /**
-   * Remember what a view selected, for the agent integration's project block.
-   * @param raw - `{project, kind, id, surface}`.
-   * @returns the stored selection.
-   */
-  select(raw: unknown): ViewSelection {
-    const body = objectOf(raw)
-    const projectId = this.requireProject(body['project'])
-    const kind = body['kind']
-    const surface = surfaceOf(body['surface'])
-    // A selection names a canvas, timeline or asset pool item; the History panel's selection counts as the canvas.
-    const selectionSurface = surface === 'history' ? 'canvas' : surface
-    if (typeof kind !== 'string' || !SELECTION_KINDS.has(kind as ViewSelection['kind'])) {
-      throw new ApiRequestError(400, `'kind' must be one of ${[...SELECTION_KINDS].join(', ')}.`, 'invalid_params')
-    }
-    const selection: ViewSelection = {
-      kind: kind as ViewSelection['kind'], id: stringOf(body['id'], 'id'), surface: selectionSurface, at: new Date().toISOString(),
-    }
-    this.selections.set(projectId, selection)
-    return selection
-  }
-
-  /**
-   * @param project - the raw project ID.
-   * @returns the last selection in the project, or null.
-   */
-  getSelection(project: unknown): ViewSelection | null {
-    return this.selections.get(this.requireProject(project)) ?? null
+    return { entries, assets }
   }
 
   /**

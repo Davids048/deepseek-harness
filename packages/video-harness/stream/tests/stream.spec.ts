@@ -121,7 +121,7 @@ describe('/vh/ws', () => {
   })
 })
 
-describe('shot.render with a live stream', () => {
+describe('shot.render_ref2va with a live stream', () => {
   it('broadcasts the shot while the backend streams it', async () => {
     const fixture = await startBase({ dsh: false })
     cleanups.push(() => fixture.dispose())
@@ -140,10 +140,10 @@ describe('shot.render with a live stream', () => {
       intent: 'character',
     })
     const { record: shot } = await fixture.project.run({
-      ...user, project: projectId, operation: 'shot.render', inputs: [{ role: 'reference', ref: { character: brandString<CharacterId>('c1'), version: 1 } }],
+      ...user, project: projectId, operation: 'shot.render_ref2va', inputs: [{ role: 'reference', ref: { character: brandString<CharacterId>('c1'), version: 1 } }],
       params: { prompt: 'Picture 1 waves', duration_sec: 1, shot: 3 }, intent: 'shot',
     })
-    if (shot === null) throw new Error('shot.render wrote no record')
+    if (shot === null) throw new Error('shot.render_ref2va wrote no record')
     expect(shot.status).toBe('done')
     const kinds = frames.map(frame => frame.kind === 'json' ? frame.data['type'] : 'chunk')
     expect(kinds).toEqual(['media_init', 'chunk', 'chunk', 'media_segment_complete'])

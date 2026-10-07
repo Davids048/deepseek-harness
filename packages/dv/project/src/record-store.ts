@@ -5,7 +5,7 @@
  * ```
  * <root>/<ProjectId>/project.json    ProjectInfo
  * <root>/<ProjectId>/records.jsonl   record lines and update lines, appended in write order
- * <root>/<ProjectId>/branches.json   BranchesFile: branch pointers and the branch each chat session switched to
+ * <root>/<ProjectId>/branches.json   BranchesFile: branch pointers
  * ```
  *
  * The store keeps every project in memory and mirrors each change to disk before it returns. It enforces the record
@@ -21,7 +21,7 @@ import { join } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { MAIN_BRANCH, ProjectError } from './shared.ts'
 import type {
-  Branch, ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordStatus, RecordUpdate, SessionId,
+  Branch, ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordStatus, RecordUpdate,
 } from './types.ts'
 
 /** A branch as `branches.json` stores it: every field of {@link Branch} except the computed `counts`. */
@@ -31,8 +31,6 @@ export type StoredBranch = Omit<Branch, 'counts'>
 export interface BranchesFile {
   /** Branch name → branch. */
   branches: Record<string, StoredBranch>
-  /** Chat session → the exploration branch it switched to with `proj.branch_switch`; absent means `main`. */
-  sessions: Record<SessionId, string>
 }
 
 /** A record line as a caller hands it to {@link RecordStore.append}: the store assigns `id` and `created_at`. */
@@ -155,7 +153,7 @@ export class RecordStore {
       throw new ProjectError('invalid_params', `A project with ID ${info.id} already exists.`)
     }
     const stored: ProjectInfo = { id: info.id, title: info.title, created_at: info.created_at }
-    const branches: BranchesFile = { branches: {}, sessions: {} }
+    const branches: BranchesFile = { branches: {} }
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'project.json'), `${JSON.stringify(stored, null, 2)}\n`)
     writeFileSync(join(dir, 'records.jsonl'), '')
@@ -373,29 +371,6 @@ export class RecordStore {
     loaded.branches.branches = rest
     this.writeBranches(project, loaded)
     this.onChange(project, { kind: 'branch', name, branch: null })
-  }
-
-  /**
-   * @param project - the project.
-   * @param session - a chat session.
-   * @returns the exploration branch the session switched to, or undefined for `main`.
-   */
-  getSessionBranch(project: ProjectId, session: SessionId): string | undefined {
-    return this.loaded(project).branches.sessions[session]
-  }
-
-  /**
-   * Set or clear the branch a session switched to, and rewrite `branches.json` atomically.
-   * @param project - the project.
-   * @param session - a chat session.
-   * @param branch - an exploration branch, or null to return the session to `main`.
-   */
-  setSessionBranch(project: ProjectId, session: SessionId, branch: string | null): void {
-    const loaded = this.loaded(project)
-    const { [session]: previous, ...rest } = loaded.branches.sessions
-    void previous
-    loaded.branches.sessions = branch === null ? rest : { ...rest, [session]: branch }
-    this.writeBranches(project, loaded)
   }
 
   /**

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The DreamVerse profile layer: the generation client, the components, the API, the agent integration, the interface plugins, the directing skills, and the model routes, stacked on dsh-base and dsh-web-app or dsh-headless.",
+  "description": "The DreamVerse profile layer: the render mode providers, the components, the chat references, the API, the interface plugins, the video-directing skill, and the model routes, stacked on dsh-base and dsh-web-app or dsh-headless.",
   "exports": {
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
@@ -14,11 +14,12 @@
     }
   },
   "dependencies": {
-    "@dreamverse/generation-client": "workspace:*",
-    "@dv/agent-integration": "workspace:*",
     "@dv/api": "workspace:*",
     "@dv/asset-pool": "workspace:*",
+    "@dv/chat-references": "workspace:*",
     "@dv/deliver": "workspace:*",
+    "@dv/fasth3-ref2va": "workspace:*",
+    "@dv/fasth3-t2va": "workspace:*",
     "@dv/ffmpeg": "workspace:*",
     "@dv/inspector": "workspace:*",
     "@dv/project": "workspace:*",
@@ -39,6 +40,7 @@
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
-    "@deepseek-ai/dsh-tools": "workspace:*"
+    "@deepseek-ai/dsh-tools": "workspace:*",
+    "@dv/render-modes": "workspace:*"
   }
 }

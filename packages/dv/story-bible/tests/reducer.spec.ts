@@ -69,7 +69,6 @@ describe('bibleReducer', () => {
       record('r1', 'timeline.create', { character: 'c1' }),
       record('r2', 'bible.character_create', { character: 'c1', name: 'Lead' }, [], 'failed'),
       record('r3', 'bible.character_create', { character: 'c1', name: 'Lead' }, [], 'pending'),
-      { ...record('r4', 'bible.character_create', {}), kind: 'request' as const, operation: null },
     ]) expect(bibleReducer.reduce(initial, entry)).toBe(initial)
   })
 

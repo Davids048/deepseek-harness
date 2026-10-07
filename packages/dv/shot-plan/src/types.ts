@@ -23,18 +23,19 @@ export interface Shot {
   /** Character, location or style versions (`c1@1`) or asset IDs this shot uses instead of the plan's references. */
   references?: string[]
   seed?: number
+  /** The render mode: `plan.approve` renders the shot with the operation `shot.render_<mode>`. */
+  mode: 'ref2va' | 't2va'
+  /** The shot starts from the previous shot's last still (its `first_frame` input); `ref2va` only, never on shot 1. */
+  continue_previous?: boolean
 }
 
 /** The shots and settings of one plan version, which `plan.approve` turns into shot renders. */
 export interface Plan {
   title?: string
-  /** `chained`: each shot after the first starts from its predecessor's last still; `independent`: shots only share the references. */
-  continuity?: 'independent' | 'chained'
-  /** References every shot carries unless it names its own: `<id>@<version>` or asset IDs. */
+  /** References every `ref2va` shot carries unless it names its own: `<id>@<version>` or asset IDs. */
   references?: string[]
   aspect_ratio?: string
   resolution?: string
-  generation_mode?: string
   seed?: number
   shots: Shot[]
 }

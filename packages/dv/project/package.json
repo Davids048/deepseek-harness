@@ -3,15 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Project component of DreamVerse: the record store, branches and drafts, undo and redo, the operation runner and scheduler, the reducer registry, history, subscriptions, chat session bindings, and the agent tool of every operation.",
+  "description": "Project component of DreamVerse: the record store, branches and drafts, undo and redo, the operation runner and scheduler, the reducer registry, history, subscriptions, chat session bindings, the agent tool of every operation with its confirmation, and the dv:project prompt section.",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-attachment": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-util-values": "workspace:*"
   },
@@ -21,7 +24,6 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
-    "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
     "@types/node": "^22.20.0"
   }

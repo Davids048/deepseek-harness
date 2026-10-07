@@ -1,7 +1,7 @@
 /**
  * The agent tools of operations and the chat session bindings, through the `dvProject` service with the real DSH tool
  * registry: one `dv_*` tool per registered operation, calls that run as the agent on the session's project and turn,
- * reads, held calls, and input parsing.
+ * confirmation, reads, held calls, input parsing, and the `dv:project` prompt section.
  */
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,7 +13,7 @@ import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it } from 'vitest'
 import DvProject, {
   formatInputRef, toolNameOf, type OperationSpec, type OperationToolValue, type ProjectId,
-  type RecordId, type SessionId, type ToolCallCheck,
+  type RecordId, type SessionId, type TurnId,
 } from '../src/index.ts'
 import { formatToolResult } from '../src/agent-tools.ts'
 import { MemoryAssets, tempRoot, versionKey } from './support.ts'
@@ -33,6 +33,8 @@ interface Fixture {
   project: DvProject
   assets: MemoryAssets
   root: string
+  /** Chat session → the DSH turn number its `turnBoundary` session projection reports. */
+  turns: Map<string, number>
   /** Run one tool as the agent of chat session `session`. */
   call(name: string, args: Record<string, unknown>, session?: string): Promise<ToolExecutionResult>
 }
@@ -44,7 +46,8 @@ afterEach(async () => {
 })
 
 /**
- * Mount the DSH tool registry and `dvProject` with an in-memory asset store.
+ * Mount the DSH tool registry, a session projection registry that answers `turnBoundary` from `turns`, and `dvProject`
+ * with an in-memory asset store.
  * @param root - the store root; a fresh one by default.
  * @param attachments - whether an attachment service is mounted.
  * @returns the fixture.
@@ -53,17 +56,26 @@ async function start(root = tempRoot(), attachments = true): Promise<Fixture> {
   const context = new Context()
   contexts.push(context)
   if (attachments) context.provide('attachments', new MemoryAttachments())
+  const turns = new Map<string, number>()
+  // A session stands in as `{id}`; the agent loop's `turnBoundary` projection reports the session's latest turn.
+  const projections = {
+    stateOf: (session: { id: string }, key: string) => key === 'turnBoundary' ? { lastTurn: turns.get(session.id) ?? 0 } : undefined,
+  }
+  context.provide('sessionProjections', projections as never)
   await context.plugin(SystemPrompt, {}).await()
   await context.plugin(ToolRuntime).await()
-  await context.plugin(DvProject, { root: join(root, 'projects'), sessionRoot: join(root, 'sessions'), cpuConcurrency: 4, gpuConcurrency: 1 }).await()
+  await context.plugin(DvProject, {
+    root: join(root, 'projects'), sessionRoot: join(root, 'sessions'), cpuConcurrency: 4, gpuConcurrency: 1,
+    confirmGpuSecondsThreshold: 60, promptSectionOrder: 4900,
+  }).await()
   const assets = new MemoryAssets()
   context.dvProject.registerAssetStore(assets)
   let calls = 0
   return {
-    context, project: context.dvProject, assets, root,
+    context, project: context.dvProject, assets, root, turns,
     call(name, args, session = 's1') {
       calls += 1
-      const agent = { id: session }
+      const agent = { id: session, session: { id: session } }
       return context.tools.execute({ callId: ToolCallId(`call-${calls}`), name, arguments: args, signal: new AbortController().signal, agent: agent as never })
     },
   }
@@ -132,15 +144,12 @@ describe('agent tools', () => {
     const refused = await fixture.call('dv_asset_grab_still', { reason: 'no project yet', prompt: 'x' })
     expect(refused.isError && refused.error.message).toContain('No project selected')
     const projectId = await boundProject(fixture)
-    const session = brandString<SessionId>('s1')
-    fixture.project.noteTurn(session, 1, '')
-    fixture.project.noteTurn(session, 1, 'grab a still of the kite')
-    const turn = fixture.project.sessionTurn(session)
+    fixture.turns.set('s1', 3)
     const result = await fixture.call('dv_asset_grab_still', { reason: 'the kite', prompt: 'kite' })
     const grabbed = value(result)
     const record = fixture.project.getRecord(projectId, brandString<RecordId>(grabbed.record))
     expect(record).toMatchObject({
-      actor: 'agent', surface: 'chat', session: 's1', turn, tool_call: 'call-2', intent: 'the kite', params: { prompt: 'kite' }, branch: 'draft/s1',
+      actor: 'agent', surface: 'chat', session: 's1', turn: '3', tool_call: 'call-2', intent: 'the kite', params: { prompt: 'kite' }, branch: 'draft/s1',
     })
     expect(grabbed).toMatchObject({
       status: 'done', summary: 'made from kite', scheduled: [], params: { prompt: 'kite' },
@@ -149,8 +158,6 @@ describe('agent tools', () => {
     expect(grabbed.images).toHaveLength(1)
     expect(result.content.filter(block => block.type === 'image')).toHaveLength(1)
     expect(result.meta).toMatchObject({ record: grabbed.record, tool: 'asset.grab_still', status: 'done' })
-    const requests = fixture.project.listHistory({ project: projectId, kind: 'request' })
-    expect(requests.map(entry => entry.record.intent)).toEqual(['grab a still of the kite'])
     // An empty reason falls back to the operation name; based_on and supersedes reach the record.
     const again = value(await fixture.call('dv_asset_grab_still', { reason: '', prompt: 'kite 2', based_on: grabbed.record, supersedes: [grabbed.record] }))
     expect(fixture.project.getRecord(projectId, brandString<RecordId>(again.record)))
@@ -216,53 +223,103 @@ describe('agent tools', () => {
     expect(fixture.project.getRecord(projectId, brandString<RecordId>(still.record)).status).toBe('done')
   })
 
-  it('adds the tool call check\'s arguments to every tool, and stops a call the check refuses before any record', async () => {
+  it('refuses an always call without user_approved before any record, and runs it with the argument kept out of params', async () => {
     const fixture = await start()
     const projectId = await boundProject(fixture)
-    fixture.project.registerOperation(operation({ name: 'shot.render', component: 'shot' }))
-    const seen: Array<Record<string, unknown>> = []
-    const remove = fixture.project.registerToolCallCheck({
-      params: spec => spec.name === 'shot.render' ? { user_requested: { type: 'boolean' } } : {},
-      check: (spec, call) => {
-        seen.push(call.args)
-        if (call.args['user_requested'] !== true) return Promise.reject(new Error(`${spec.name} needs the user's agreement`))
-        call.request.params['user_requested'] = true
-        return Promise.resolve()
-      },
-    })
-    const properties = () => Object.keys((fixture.context.tools.schemas().find(tool => tool.name === 'dv_shot_render')?.parameters as { properties: object }).properties)
-    expect(properties()).toContain('user_requested')
+    fixture.project.registerOperation(operation({
+      name: 'plan.approve', component: 'plan', confirm: 'always',
+      confirmSummary: call => ({ text: `1. ${String(call.request.params['prompt'])} (5 s)`, gpu_seconds: 25 }),
+    }))
+    const properties = Object.keys((fixture.context.tools.schemas().find(tool => tool.name === 'dv_plan_approve')?.parameters as { properties: object }).properties)
+    expect(properties).toContain('user_approved')
+    expect(properties).not.toContain('user_requested')
     const before = fixture.project.listHistory({ project: projectId }).length
-    const refused = await fixture.call('dv_shot_render', { reason: 'render', prompt: 'x' })
-    expect(refused.isError && refused.error.message).toBe('shot.render needs the user\'s agreement')
+    const refused = await fixture.call('dv_plan_approve', { reason: 'approve', prompt: 'kite' })
+    expect(refused.isError && refused.error.message).toBe([
+      'dv_plan_approve needs the user\'s agreement.', 'What it will do:', '1. kite (5 s)', 'Estimated GPU time: about 25 s.',
+      'Show this to the user and ask in the conversation, with the question in bold (for example **Render these shots now?**). '
+        + 'Wait for the user\'s answer, then call again with user_approved: true.',
+    ].join('\n'))
     expect(fixture.project.listHistory({ project: projectId })).toHaveLength(before)
-    const agreed = value(await fixture.call('dv_shot_render', { reason: 'render', prompt: 'x', user_requested: true }))
-    expect(agreed.params).toEqual({ prompt: 'x', user_requested: true })
-    expect(seen).toHaveLength(2)
-    remove()
-    expect(properties()).not.toContain('user_requested')
+    const approved = value(await fixture.call('dv_plan_approve', { reason: 'approve', prompt: 'kite', user_approved: true }))
+    expect(approved).toMatchObject({ status: 'done', params: { prompt: 'kite' } })
+    expect(fixture.project.getRecord(projectId, brandString<RecordId>(approved.record)).params).toEqual({ prompt: 'kite' })
+    // A human call through the run path is never refused.
+    const origin = { actor: 'user' as const, surface: 'canvas' as const, session: null, turn: null, tool_call: null, intent: 'approve' }
+    const human = await fixture.project.run({ ...origin, project: projectId, operation: 'plan.approve', params: { prompt: 'kite' }, inputs: [] })
+    expect(human.record?.status).toBe('done')
   })
 
-  it('keeps every operation tool when the fiber that registered the tool call check unloads', async () => {
+  it('refuses an over_gpu_budget call past the turn\'s budget, counting the turn\'s finished cost and unfinished estimates', async () => {
     const fixture = await start()
-    fixture.project.registerOperation(operation({ name: 'shot.render', component: 'shot' }))
+    const projectId = await boundProject(fixture)
+    let release = (): void => {}
+    const held = new Promise<void>((resolve) => { release = resolve })
+    fixture.project.registerOperation(operation({
+      name: 'shot.render_ref2va', component: 'shot', confirm: 'over_gpu_budget', resource: 'gpu', estimate: () => ({ gpu_seconds: 40 }),
+      confirmSummary: call => ({ text: `render ${String(call.request.params['prompt'])}`, gpu_seconds: 40 }),
+      execute: async (context) => {
+        if (context.params['prompt'] === 'slow') await held
+        return { outputs: [context.importAsset(Buffer.from(`take ${String(context.params['prompt'])}`), { mime: 'video/mp4', name: 'take.mp4' })], cost: { gpu_seconds: 40 } }
+      },
+    }))
+    const properties = Object.keys((fixture.context.tools.schemas().find(tool => tool.name === 'dv_shot_render_ref2va')?.parameters as { properties: object }).properties)
+    expect(properties).toContain('user_requested')
+    fixture.turns.set('s1', 1)
+    expect(value(await fixture.call('dv_shot_render_ref2va', { reason: 'first', prompt: 'a' })).status).toBe('done')
+    // The turn's finished render cost 40 s; another 40 s passes the 60 s budget.
+    const refused = await fixture.call('dv_shot_render_ref2va', { reason: 'second', prompt: 'b' })
+    expect(refused.isError && refused.error.message).toBe([
+      'dv_shot_render_ref2va would bring this turn to about 80 GPU seconds, above the 60 s budget.', 'What it will do:', 'render b',
+      'Estimated GPU time: about 40 s.',
+      'Show this to the user and ask in the conversation, with the question in bold (for example **Render these shots now?**). '
+        + 'Wait for the user\'s answer, then call again with user_requested: true.',
+    ].join('\n'))
+    const requested = value(await fixture.call('dv_shot_render_ref2va', { reason: 'second', prompt: 'b', user_requested: true }))
+    expect(fixture.project.getRecord(projectId, brandString<RecordId>(requested.record)).params).toEqual({ prompt: 'b' })
+    // A new turn starts with an empty budget; a running render of the turn counts with its estimate.
+    fixture.turns.set('s1', 2)
+    const slow = fixture.call('dv_shot_render_ref2va', { reason: 'slow', prompt: 'slow' })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    const whileRunning = await fixture.call('dv_shot_render_ref2va', { reason: 'next', prompt: 'c' })
+    expect(whileRunning.isError && whileRunning.error.message).toContain('about 80 GPU seconds')
+    release()
+    expect(value(await slow).status).toBe('done')
+    expect(fixture.project.listHistory({ project: projectId, turn: brandString<TurnId>('2') }).map(entry => entry.record.params['prompt']))
+      .toEqual(['slow'])
+  })
+
+  it('records no turn for a call outside any turn', async () => {
+    const fixture = await start()
+    const projectId = await boundProject(fixture)
     fixture.project.registerOperation(operation({ name: 'asset.grab_still', component: 'asset' }))
-    const check: ToolCallCheck = { params: () => ({ user_requested: { type: 'boolean' } }), check: () => Promise.resolve() }
-    const checker = fixture.context.plugin({
-      name: 'test-check', inject: ['dvProject'],
-      apply: (ctx: Context) => { ctx.effect(() => ctx.dvProject.registerToolCallCheck(check), 'test check') },
-    })
-    await checker.await()
-    const properties = (name: string) => {
-      const schema = fixture.context.tools.schemas().find(tool => tool.name === name)
-      return Object.keys((schema?.parameters as { properties?: object } | undefined)?.properties ?? {})
+    const grabbed = value(await fixture.call('dv_asset_grab_still', { reason: 'still', prompt: 'a' }))
+    expect(fixture.project.getRecord(projectId, brandString<RecordId>(grabbed.record)).turn).toBeNull()
+  })
+
+  it('refuses to register an operation that asks for confirmation without a confirmSummary', async () => {
+    const fixture = await start()
+    expect(() => fixture.project.registerOperation(operation({ name: 'plan.approve', component: 'plan', confirm: 'always' })))
+      .toThrow(expect.objectContaining({ code: 'invalid_params' }))
+    expect(fixture.project.listOperations()).toEqual([])
+  })
+
+  it('gives the agent the dv:project prompt section: Project\'s rules, and the summary of the bound session\'s working branch', async () => {
+    const fixture = await start()
+    const sectionOf = async (session: string): Promise<string | undefined> => {
+      const assembly = await fixture.context.systemPrompt.assemble({ agent: { id: session } as never })
+      return assembly.sections.find(section => section.name === 'dv:project')?.text
     }
-    expect(properties('dv_shot_render')).toContain('user_requested')
-    await checker.dispose()
-    for (const name of ['dv_shot_render', 'dv_asset_grab_still']) {
-      expect(fixture.context.tools.get(name), name).toBeDefined()
-      expect(properties(name), name).not.toContain('user_requested')
-    }
+    const unbound = await sectionOf('s1')
+    expect(unbound).toContain('DreamVerse project rules:')
+    expect(unbound).toContain('ask in the conversation with the question in bold')
+    expect(unbound).toMatch(/No project is bound to this conversation yet: start the work with dv_proj_create\.$/)
+    const projectId = await boundProject(fixture)
+    const bound = await sectionOf('s1')
+    expect(bound).toContain(`This conversation belongs to project ${projectId}`)
+    expect(bound).toContain('Project summary of the branch you write to (main), as dv_proj_state returns it:')
+    expect(bound).toContain(`"project_id": "${projectId}"`)
+    expect(bound).not.toContain('selection')
   })
 
   it('holds a session\'s calls until its held work settles, even when that work fails', async () => {
@@ -330,7 +387,6 @@ describe('session bindings and the asset store', () => {
     const second = await start(root)
     expect(second.project.sessionProject(brandString<SessionId>('s1'))).toBe(projectId)
     expect(second.project.sessionProject(brandString<SessionId>('s2'))).toBeNull()
-    expect(second.project.sessionTurn(brandString<SessionId>('s1'))).toBeNull()
     writeFileSync(join(root, 'sessions', 's3.json'), '{"project":null}')
     expect(second.project.sessionProject(brandString<SessionId>('s3'))).toBeNull()
     writeFileSync(join(root, 'sessions', 's4.json'), '"text"')

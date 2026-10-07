@@ -8,11 +8,10 @@
  * write no record.
  *
  * Working branch. Each chat session has at most one open draft, `draft/<session>`, which spans turns. The working
- * branch of a session is its open draft, else the exploration branch it switched to, else `main`; an action without a
- * session works on `main`. The first `agent` write of a session without an open draft opens the draft, forked from
- * the session's working branch. A human edit with a session goes to that session's draft when one is open, else to
- * the session's working branch; human and `system` writes never open a draft. Project never accepts or discards a
- * draft by itself.
+ * branch of a session is its open draft, else `main`; an action without a session works on `main`. The first `agent`
+ * write of a session without an open draft opens the draft, forked from `main`. A human edit with a session goes to
+ * that session's draft when one is open, else to the session's working branch; human and `system` writes never open a
+ * draft. Project never accepts or discards a draft by itself.
  *
  * Accept merges the draft into the branch it was forked from (normally `main`). When that branch moved after the draft
  * was opened, accept replays the draft's records on it and stops with `DraftConflictError`, writing nothing, at the
@@ -20,32 +19,37 @@
  * the counts it showed.
  *
  * Concurrency: one lock per project. A run holds it while it checks and appends its record and while it writes each
- * update line, and releases it while an approval card waits and while the operation executes. Accept, discard, undo,
- * redo, branch creation, branch switching and project creation hold it for their whole duration.
+ * update line, and releases it while the operation executes. Accept, discard, undo, redo and project creation hold it
+ * for their whole duration.
  *
  * Agent tools. While the DSH `tools` registry is mounted, every registered operation also has its agent tool
  * `dv_<operation name with _>`, built by the `agent-tools` module. A tool call runs the operation as the agent on the
- * project its chat session is bound to (`bindSession`), in the session's current turn (`noteTurn`). Project also
- * registers its own `dv_proj_*` tools (the `proj-tools` module); they bind the session to its project and return the
- * project summary, to which each component's reducer adds its fields through `Reducer.agentSummary`.
+ * project its chat session is bound to (`bindSession`), in the session's DSH turn; an operation whose `confirm` asks
+ * for the user's agreement refuses a call without it (`OperationSpec.confirm`). Project also registers its own
+ * `dv_proj_*` tools (the `proj-tools` module); they bind the session to its project and return the project summary,
+ * to which each component's reducer adds its fields through `Reducer.agentSummary`. While the DSH `systemPrompt`
+ * service is mounted, Project's rules and the summary of the session's working branch reach the agent at every step
+ * as the `dv:project` prompt section (the `agent-context` module).
  *
  * The asset pool registers itself with {@link DvProject.registerAssetStore}; until it does, a run that names an input
  * asset or imports an output fails.
  *
  * The internal modules (`record-store`, `runner`, `scheduler`, `drafts`, `history`, `reducers`, `subscriptions`,
- * `sessions`, `agent-tools`, `proj-tools`) are private; `CONTRACTS.md` in this package specifies each of them.
+ * `sessions`, `agent-tools`, `proj-tools`, `agent-context`) are private; `CONTRACTS.md` in this package specifies each of them.
  *
  * @module @dv/project
  */
 import { randomUUID } from 'node:crypto'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
-import { AgentTools, parseInputs } from './agent-tools.ts'
+import { PROMPT_SECTION, projectContext } from './agent-context.ts'
+import { AgentTools, parseInputs, turnOf } from './agent-tools.ts'
 import { Drafts } from './drafts.ts'
 import { History } from './history.ts'
-import { projTools } from './proj-tools.ts'
+import { projTools, type ProjToolDeps } from './proj-tools.ts'
 import { RecordStore } from './record-store.ts'
 import { projReducer, ReducerRegistry } from './reducers.ts'
 import { Runner } from './runner.ts'
@@ -54,9 +58,9 @@ import { MAIN_BRANCH, ProjectError } from './shared.ts'
 import { Sessions } from './sessions.ts'
 import { Subscriptions } from './subscriptions.ts'
 import type {
-  ApprovalChannel, AssetId, AssetStore, Branch, ComponentStates, DraftCounts, HistoryEntry, HistoryQuery, OperationSpec,
+  AssetId, AssetStore, Branch, ComponentStates, DraftCounts, HistoryEntry, HistoryQuery, OperationSpec,
   ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId, RecordInputRef, RecordOrigin, Reducer,
-  RunRequest, RunResult, SessionId, ToolCallCheck, TurnId,
+  RunRequest, RunResult, SessionId,
 } from './types.ts'
 
 export * from './types.ts'
@@ -80,6 +84,10 @@ export interface Config {
   gpuConcurrency: number
   /** The directory holding one file per chat session with the project it is bound to (`$DV_STATE_ROOT/sessions`). */
   sessionRoot: string
+  /** Estimated GPU seconds one agent turn may spend on `over_gpu_budget` operations before the user must agree. */
+  confirmGpuSecondsThreshold: number
+  /** Order of the `dv:project` section in the system prompt; before the tool SDK section at 5000. */
+  promptSectionOrder: number
 }
 
 /** Loader validation. */
@@ -88,6 +96,8 @@ export const Config: z<Config> = z.object({
   cpuConcurrency: z.number().default(4),
   gpuConcurrency: z.number().default(1),
   sessionRoot: z.string().required(),
+  confirmGpuSecondsThreshold: z.number().default(60),
+  promptSectionOrder: z.number().default(4900),
 })
 
 /** The Project service. */
@@ -104,7 +114,6 @@ export default class DvProject extends Service {
   private readonly sessions: Sessions
   private readonly agentTools: AgentTools
   private assetStore: AssetStore | null = null
-  private toolCallCheck: ToolCallCheck | null = null
   /**
    * Registers one operation's agent tool while the DSH tool registry is mounted, else null; and the disposer of each
    * operation's tool by operation name.
@@ -141,7 +150,8 @@ export default class DvProject extends Service {
     this.agentTools = new AgentTools(ctx, {
       sessions: this.sessions,
       assets: () => this.requireAssetStore(),
-      toolCallCheck: () => this.toolCallCheck,
+      confirmGpuSecondsThreshold: config.confirmGpuSecondsThreshold,
+      listOperations: () => this.listOperations(),
       workingState: (project, session) => this.getState(project, this.workingBranch(project, session).name),
       versionCreatedBy: (state, ref) => this.reducers.versionCreatedBy(state, ref),
       run: request => this.run(request),
@@ -150,6 +160,12 @@ export default class DvProject extends Service {
     })
     this.store.load()
     this.reducers.register('proj', projReducer)
+    // The project summary that the `dv_proj_*` tools return and the `dv:project` prompt section shows.
+    const projToolDeps: ProjToolDeps = {
+      assets: () => this.requireAssetStore(),
+      agentSummaries: (state: ProjectState) => this.reducers.agentSummaries(state, this.requireAssetStore()),
+      turnOf: exec => turnOf(ctx, exec),
+    }
     // Every registered operation has its agent tool while the DSH tool registry is mounted.
     ctx.inject(['tools'], (child) => {
       // The registry stays in this closure: read through the service from another plugin, it would bind each tool to
@@ -164,11 +180,15 @@ export default class DvProject extends Service {
           this.registerOperationTool = null
         }
       }, 'dvProject operation tools')
-      const projToolDeps = {
-        assets: () => this.requireAssetStore(),
-        agentSummaries: (state: ProjectState) => this.reducers.agentSummaries(state, this.requireAssetStore()),
-      }
       for (const definition of projTools(this, projToolDeps)) child.effect(() => registry.register(definition), `dvProject ${definition.name}`)
+    })
+    ctx.inject(['systemPrompt'], (child) => {
+      child.effect(() => child.systemPrompt.section({
+        name: PROMPT_SECTION,
+        order: config.promptSectionOrder,
+        interpolate: false,
+        text: context => projectContext(this, projToolDeps, context.agent?.id),
+      }), 'dvProject prompt section')
     })
     ctx.effect(() => () => { this.scheduler.dispose() }, 'dvProject stop scheduling')
     this.runner.recover().catch((error: unknown) => {
@@ -228,11 +248,9 @@ export default class DvProject extends Service {
 
   /**
    * Run one operation call: the single change path for every component's operations. The record goes to the working
-   * branch of `request.session` (an `agent` call opens the session's draft first when none is open). When the
-   * operation's `confirm` is `agent_ask_first`, the actor is `agent`, and the session's composer asks first, the
-   * runner waits for the approval card before executing; a skipped card ends the record `cancelled` with code
-   * `skipped`. With `after`, the call is scheduled and the result holds the `pending` record. A read-only operation
-   * writes no record and returns its answer in `report`.
+   * branch of `request.session` (an `agent` call opens the session's draft first when none is open). With `after`,
+   * the call is scheduled and the result holds the `pending` record. A read-only operation writes no record and
+   * returns its answer in `report`.
    * @param request - the call.
    * @returns the record in its final status (or `pending` when scheduled), its outputs and report. Rejects with
    *   `ProjectError` only when the call is refused before a record is written.
@@ -291,31 +309,6 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Create an exploration branch `explore/<name>` at a record or at a branch head. Writes a `proj.branch_create`
-   * record on the new branch.
-   * @param project - the project.
-   * @param name - the full branch name, starting with `explore/`.
-   * @param at - a record ID or a branch name.
-   * @param origin - who creates it.
-   * @returns the branch. Throws `branch_exists`, `unknown_branch`, `unknown_record`, or `invalid_params`.
-   */
-  createBranch(project: ProjectId, name: string, at: RecordId | string, origin: RecordOrigin): Promise<Branch> {
-    return this.store.lock(project, () => this.drafts.createBranch(project, name, at, origin))
-  }
-
-  /**
-   * Switch the working branch of `origin.session` to `main` or an exploration branch. Writes a `proj.branch_switch`
-   * record on the target branch. While the session has an open draft, the draft stays its working branch.
-   * @param project - the project.
-   * @param branch - `main` or an exploration branch name.
-   * @param origin - who switches; `session` is required.
-   * @returns the target branch. Throws `unknown_branch` or `invalid_params`.
-   */
-  switchBranch(project: ProjectId, branch: string, origin: RecordOrigin): Promise<Branch> {
-    return this.store.lock(project, () => this.drafts.switchBranch(project, branch, origin))
-  }
-
-  /**
    * Accept a stale record's result: write a `proj.stale_accept` record with `params {record}` on the origin's working
    * branch, which removes the record's stale mark from then on.
    * @param project - the project.
@@ -347,8 +340,7 @@ export default class DvProject extends Service {
   }
 
   /**
-   * List a project's records, newest first, with their marks (`main`, `draft`, `undone`, `discarded`, `replayed`,
-   * `branch`).
+   * List a project's records, newest first, with their marks (`main`, `draft`, `undone`, `discarded`, `replayed`).
    * @param query - the project and the filters.
    * @returns the entries.
    */
@@ -365,7 +357,7 @@ export default class DvProject extends Service {
   }
 
   /**
-   * The branch a session reads and writes: its open draft, else the exploration branch it switched to, else `main`.
+   * The branch a session reads and writes: its open draft, else `main`.
    * @param project - the project.
    * @param session - a chat session, or null for an action outside any chat session (always `main`).
    * @returns the branch, with `counts` when it is a draft.
@@ -399,7 +391,8 @@ export default class DvProject extends Service {
    * component calls it from its plugin inside `ctx.effect` and returns the disposer.
    * @param spec - the operation.
    * @returns a function that removes the operation and its tool. Throws `operation_exists`, or `invalid_params` for
-   *   an unknown component key or a name that does not start with `<component>.`.
+   *   an unknown component key, a name that does not start with `<component>.`, or a `confirm` other than `never`
+   *   without `confirmSummary`.
    */
   registerOperation(spec: OperationSpec): () => void {
     const remove = this.runner.registerOperation(spec)
@@ -472,26 +465,6 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Note the agent turn a chat session is in and the human's words that started it, so the records of the turn's tool
-   * calls carry the turn and the first one writes the turn's `request` record. A new turn number starts a new turn ID;
-   * the same number with words sets the words.
-   * @param session - the chat session.
-   * @param turn - the agent loop's turn number.
-   * @param requestText - the human's words; empty while they are not known.
-   */
-  noteTurn(session: SessionId, turn: number, requestText: string): void {
-    this.sessions.noteTurn(session, turn, requestText)
-  }
-
-  /**
-   * @param session - a chat session.
-   * @returns the ID of the turn it is in, or null before its first noted turn.
-   */
-  sessionTurn(session: SessionId): TurnId | null {
-    return this.sessions.turn(session)?.turn ?? null
-  }
-
-  /**
    * Make the session's next agent tool calls wait until `work` settles, for example while the images of the human's
    * message are imported. A failure of `work` does not fail the calls.
    * @param session - the chat session.
@@ -513,43 +486,10 @@ export default class DvProject extends Service {
     }
   }
 
-  /**
-   * Register the agent integration's check of every agent tool call; one at a time, a later registration replaces the
-   * earlier one. The tools are registered again so that their schemas carry the check's tool-only arguments.
-   * @param check - the check.
-   * @returns a function that removes it.
-   */
-  registerToolCallCheck(check: ToolCallCheck): () => void {
-    this.toolCallCheck = check
-    this.refreshTools()
-    return () => {
-      if (this.toolCallCheck !== check) return
-      this.toolCallCheck = null
-      this.refreshTools()
-    }
-  }
-
-  /**
-   * Register the composer's approval channel; one at a time, a later registration replaces the earlier one.
-   * @param channel - the channel.
-   * @returns a function that removes it.
-   */
-  registerApprovalChannel(channel: ApprovalChannel): () => void {
-    return this.runner.registerApprovalChannel(channel)
-  }
-
   /** @returns the registered asset store; throws while the asset pool has not registered one. */
   private requireAssetStore(): AssetStore {
     if (this.assetStore === null) throw new Error('No asset store is registered with dvProject; mount the asset pool.')
     return this.assetStore
-  }
-
-  /** Register every operation's agent tool again, after the tool call check changed. */
-  private refreshTools(): void {
-    if (this.registerOperationTool === null) return
-    for (const dispose of this.toolDisposers.values()) dispose()
-    this.toolDisposers.clear()
-    for (const spec of this.listOperations()) this.addTool(spec)
   }
 
   /** Register the agent tool of an operation while the DSH tool registry is mounted. */

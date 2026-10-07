@@ -1,14 +1,14 @@
 /**
  * Project's own agent tools, `dv_proj_*`: create and open projects, read state and history, accept or discard the
- * draft, undo and redo, accept a stale record, create and switch branches, and wait for scheduled records. Every tool
+ * draft, undo and redo, accept a stale record, and wait for scheduled records. Every tool
  * except `dv_proj_history_list` returns the project summary of a branch: Project's fields (head, branch, draft counts,
  * branches, record count, stale records, recent records) and the fields each component's reducer adds through
  * `Reducer.agentSummary`. A tool that writes records leads its summary with `record`, the newest record the call wrote, and
  * names that record in its presentation metadata (`{record}`), as the operation tools do; a read tool has no metadata.
  * `dv_proj_create` and `dv_proj_open` bind the chat session to its project.
  *
- * Calls the `dvProject` service's public methods and, through {@link ProjToolDeps}, the asset store and the reducers'
- * summaries. Called by the service, which registers the tools while the DSH `tools` registry is mounted.
+ * Calls the `dvProject` service's public methods and, through {@link ProjToolDeps}, the asset store, the reducers'
+ * summaries and the turn of a call. Called by the service, which registers the tools while the DSH `tools` registry is mounted.
  *
  * @module @dv/project/proj-tools
  */
@@ -18,8 +18,8 @@ import { defineTool, type ToolDefinition, type ToolRunContext } from '@deepseek-
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { callProject, sessionOf, toJson } from './agent-tools.ts'
 import type DvProject from './index.ts'
-import { MAIN_BRANCH, ProjectError } from './shared.ts'
-import type { AssetStore, ProjectId, ProjectRecord, ProjectState, RecordId, RecordOrigin } from './types.ts'
+import { ProjectError } from './shared.ts'
+import type { AssetStore, ProjectId, ProjectRecord, ProjectState, RecordId, RecordOrigin, TurnId } from './types.ts'
 
 /** What the `dv_proj_*` tools read besides the service's public methods. */
 export interface ProjToolDeps {
@@ -27,6 +27,8 @@ export interface ProjToolDeps {
   assets(): AssetStore
   /** The `agentSummary` fields of every reducer that defines it, in component key order. */
   agentSummaries(state: ProjectState): Array<Record<string, JsonValue>>
+  /** The agent turn a tool call belongs to, or null outside any turn. */
+  turnOf(exec: Pick<ToolRunContext, 'agent'>): TurnId | null
 }
 
 /** The recent records a project summary lists. */
@@ -34,9 +36,6 @@ const RECENT_RECORDS = 12
 
 /** The history entries `dv_proj_history_list` returns when the call names no limit. */
 const HISTORY_LIMIT = 20
-
-/** The prefix of exploration branch names. */
-const EXPLORE_PREFIX = 'explore/'
 
 /** A project summary the agent can read. */
 const STATE_SCHEMA = { type: 'json' } as const
@@ -52,15 +51,14 @@ function boundProjectMessage(projectId: string): string {
 }
 
 /**
- * Who makes a `dv_proj_*` tool's records: the agent, in the chat, in the call's session and current turn.
- * @param project - the service, for the session's turn.
+ * Who makes a `dv_proj_*` tool's records: the agent, in the chat, in the call's session and turn.
+ * @param deps - the turn of a call.
  * @param exec - the call.
  * @param intent - why.
  * @returns the origin.
  */
-function originOf(project: DvProject, exec: Pick<ToolRunContext, 'agent' | 'callId'>, intent: string): RecordOrigin {
-  const session = sessionOf(exec)
-  return { actor: 'agent', surface: 'chat', session, turn: project.sessionTurn(session), tool_call: exec.callId, intent }
+function originOf(deps: ProjToolDeps, exec: Pick<ToolRunContext, 'agent' | 'callId'>, intent: string): RecordOrigin {
+  return { actor: 'agent', surface: 'chat', session: sessionOf(exec), turn: deps.turnOf(exec), tool_call: exec.callId, intent }
 }
 
 /**
@@ -73,7 +71,7 @@ function originOf(project: DvProject, exec: Pick<ToolRunContext, 'agent' | 'call
  * @param written - the record the tool call wrote, or null for a read.
  * @returns the summary. Throws `invalid_params` when two summaries use the same field name.
  */
-function projectSummary(
+export function projectSummary(
   project: DvProject, deps: ProjToolDeps, projectId: ProjectId, state: ProjectState, written: RecordId | null,
 ): JsonValue {
   const { proj } = state.components
@@ -89,7 +87,7 @@ function projectSummary(
     records: proj.records.length,
   }
   const stale = Object.keys(proj.stale)
-  const recent = proj.records.filter(record => record.kind === 'operation').slice(-RECENT_RECORDS).map(record => ({
+  const recent = proj.records.slice(-RECENT_RECORDS).map(record => ({
     record: record.id, operation: record.operation, status: record.status, intent: record.intent,
     summary: record.status === 'done' ? summaryOf(project, record) : record.error?.message ?? record.status,
     outputs: record.outputs.map(id => assets.url(id)), report: record.report, based_on: record.based_on,
@@ -154,7 +152,7 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
       execute: async (args, exec) => {
         const bound = project.sessionProject(sessionOf(exec))
         if (bound !== null) throw new Error(boundProjectMessage(bound))
-        const info = await project.createProject(args.title, originOf(project, exec, `create project ${args.title}`))
+        const info = await project.createProject(args.title, originOf(deps, exec, `create project ${args.title}`))
         project.bindSession(sessionOf(exec), info.id)
         return written(exec, info.id)
       },
@@ -185,7 +183,7 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
     defineTool({
       name: 'dv_proj_history_list',
       description: 'List the project history, newest first: each record with its operation, status, intent, '
-        + 'and mark (main, draft, undone, discarded, replayed, branch).',
+        + 'and mark (main, draft, undone, discarded, replayed).',
       parameters: {
         ...projectParam,
         limit: { type: 'integer', description: `At most this many records; default ${HISTORY_LIMIT}.` },
@@ -211,7 +209,7 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
       output: writeOutput,
       execute: async (args, exec) => {
         const projectId = projectOf(exec, args.project_id)
-        await project.acceptDraft(projectId, originOf(project, exec, 'accept the draft'))
+        await project.acceptDraft(projectId, originOf(deps, exec, 'accept the draft'))
         return written(exec, projectId)
       },
     }),
@@ -223,7 +221,7 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
       output: writeOutput,
       execute: async (args, exec) => {
         const projectId = projectOf(exec, args.project_id)
-        const origin = originOf(project, exec, 'discard the draft')
+        const origin = originOf(deps, exec, 'discard the draft')
         const counts = project.workingBranch(projectId, origin.session).counts
         if (counts === null) {
           throw new Error('No open draft to discard: the user already accepted or discarded it, or nothing was recorded.')
@@ -246,7 +244,7 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
       execute: async (args, exec) => {
         const projectId = projectOf(exec, args.project_id)
         const to = args.to === undefined ? undefined : brandString<RecordId>(args.to)
-        await project.undo(projectId, originOf(project, exec, args.to === undefined ? 'undo' : `go back to ${args.to}`), to)
+        await project.undo(projectId, originOf(deps, exec, args.to === undefined ? 'undo' : `go back to ${args.to}`), to)
         return written(exec, projectId)
       },
     }),
@@ -257,7 +255,7 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
       output: writeOutput,
       execute: async (args, exec) => {
         const projectId = projectOf(exec, args.project_id)
-        await project.redo(projectId, originOf(project, exec, 'redo'))
+        await project.redo(projectId, originOf(deps, exec, 'redo'))
         return written(exec, projectId)
       },
     }),
@@ -269,35 +267,7 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
       output: writeOutput,
       execute: async (args, exec) => {
         const projectId = projectOf(exec, args.project_id)
-        await project.acceptStale(projectId, brandString<RecordId>(args.record), originOf(project, exec, `accept ${args.record}`))
-        return written(exec, projectId)
-      },
-    }),
-    defineTool({
-      name: 'dv_proj_branch_create',
-      description: 'Start an exploration branch at a record or branch head, and switch this conversation to it.',
-      parameters: {
-        ...projectParam, name: { type: 'string', required: true }, at: { type: 'string', description: 'A record ID or branch name; default main.' },
-      },
-      output: writeOutput,
-      execute: async (args, exec) => {
-        const projectId = projectOf(exec, args.project_id)
-        const name = args.name.startsWith(EXPLORE_PREFIX) ? args.name : `${EXPLORE_PREFIX}${args.name}`
-        const origin = originOf(project, exec, `explore ${name}`)
-        await project.createBranch(projectId, name, args.at ?? MAIN_BRANCH, origin)
-        await project.switchBranch(projectId, name, origin)
-        return written(exec, projectId)
-      },
-    }),
-    defineTool({
-      name: 'dv_proj_branch_switch',
-      description: 'Switch this conversation to main or an exploration branch. '
-        + 'While a draft is open, the draft stays the branch you write to.',
-      parameters: { ...projectParam, name: { type: 'string', required: true } },
-      output: writeOutput,
-      execute: async (args, exec) => {
-        const projectId = projectOf(exec, args.project_id)
-        await project.switchBranch(projectId, args.name, originOf(project, exec, `switch to ${args.name}`))
+        await project.acceptStale(projectId, brandString<RecordId>(args.record), originOf(deps, exec, `accept ${args.record}`))
         return written(exec, projectId)
       },
     }),

@@ -1,25 +1,22 @@
 /**
- * Drafts and branches: the working branch of each chat session, opening drafts, accept (with replay), discard,
- * exploration branches, and switching a session's branch.
+ * Drafts and branches: the working branch of each chat session, opening drafts, accept (with replay), and discard.
+ * A project has two kinds of branches: `main`, the accepted project, and one draft `draft/<S>` per chat session S
+ * that has an open draft.
  *
- * Working branch of a session S (`workingBranch`):
- * 1. `draft/<S>` when S has an open draft;
- * 2. else the exploration branch S switched to with `proj.branch_switch`;
- * 3. else `main`. A null session always works on `main`.
+ * Working branch of a session S (`workingBranch`): `draft/<S>` when S has an open draft, else `main`. A null session
+ * always works on `main`.
  *
  * Branch for a write (`branchForWrite`): the working branch, except that an `agent` write with a session and no open
- * draft first opens `draft/<S>`, forked from the session's working branch at its head. Human (`user`) and `system`
+ * draft first opens `draft/<S>`, forked from `main` at its head. Human (`user`) and `system`
  * writes never open a draft. A draft stays open across turns until the human accepts or discards it; Project never
  * accepts or discards a draft by itself.
  *
  * Calls: the record store (branches, records) and the reducer registry (the base state and conflicts during accept
- * replay; the registry computes states from the history module's `effectiveChain`). The service calls `accept`,
- * `discard`, `createBranch` and `switchBranch` while it holds the project lock; the runner calls `branchForWrite`
- * while it holds the lock.
+ * replay; the registry computes states from the history module's `effectiveChain`). The service calls `accept` and
+ * `discard` while it holds the project lock; the runner calls `branchForWrite` while it holds the lock.
  *
  * @module @dv/project/drafts
  */
-import { brandString } from '@deepseek-ai/dsh-brand'
 import { effectiveChain } from './history.ts'
 import type { ReducerRegistry } from './reducers.ts'
 import type { RecordLineInput, RecordStore, StoredBranch } from './record-store.ts'
@@ -27,9 +24,6 @@ import { DraftConflictError, draftBranch, MAIN_BRANCH, ProjectError } from './sh
 import type {
   Branch, DraftCounts, ProjectId, ProjectRecord, RecordId, RecordOrigin, RecordUpdate, SessionId,
 } from './types.ts'
-
-/** The prefix of every exploration branch name. */
-const EXPLORE_PREFIX = 'explore/'
 
 /**
  * The record line of a `proj.*` record (template in CONTRACTS.md section 3): written `done`, with no update lines.
@@ -49,7 +43,7 @@ function projLine(
   }
 }
 
-/** Working branches, drafts and exploration branches of every project. */
+/** Working branches and drafts of every project. */
 export class Drafts {
   /**
    * @param store - the record store.
@@ -68,13 +62,13 @@ export class Drafts {
       const draft = this.store.getBranch(project, draftBranch(session))
       if (draft !== undefined) return { ...draft, counts: this.counts(project, draft) }
     }
-    return { ...this.requireBranch(project, this.sessionLine(project, session)), counts: null }
+    return { ...this.requireBranch(project, MAIN_BRANCH), counts: null }
   }
 
   /**
    * The branch a record of this origin goes to, opening the session's draft first for an agent write without one.
-   * Opening writes `{name: draft/<S>, head: H, base: B, forked_at: H, session: S}` to `branches.json`, where B is the
-   * session's working branch and H its head; it appends no record. The caller holds the project lock.
+   * Opening writes `{name: draft/<S>, head: H, base: main, forked_at: H, session: S}` to `branches.json`, where H is
+   * the head of `main`; it appends no record. The caller holds the project lock.
    * @param project - the project.
    * @param origin - the write's actor and session.
    * @returns the branch name.
@@ -97,7 +91,7 @@ export class Drafts {
   counts(project: ProjectId, branch: StoredBranch): DraftCounts {
     const counts: DraftCounts = { agent_changes: 0, human_edits: 0 }
     for (const record of this.draftRecords(project, branch)) {
-      if (record.kind !== 'operation' || record.component === 'proj') continue
+      if (record.component === 'proj') continue
       if (record.actor === 'user') counts.human_edits += 1
       else counts.agent_changes += 1
     }
@@ -194,63 +188,6 @@ export class Drafts {
     }))
     this.store.removeBranch(project, draft.name)
     return counts
-  }
-
-  /**
-   * Create an exploration branch. The caller holds the project lock. `name` must start with `explore/`
-   * (`invalid_params`) and must not exist (`branch_exists`); `at` is a record ID or a branch name (`unknown_record`,
-   * `unknown_branch`). Writes `{name, head: at, base: null, forked_at: null, session: null}`, then appends
-   * `proj.branch_create` with `params {name, at}` on the branch.
-   * @param project - the project.
-   * @param name - the branch name.
-   * @param at - the record or branch to start from.
-   * @param origin - who creates it.
-   * @returns the branch after the `proj.branch_create` record.
-   */
-  createBranch(project: ProjectId, name: string, at: RecordId | string, origin: RecordOrigin): Branch {
-    if (!name.startsWith(EXPLORE_PREFIX)) {
-      throw new ProjectError('invalid_params', `The branch name ${name} must start with ${EXPLORE_PREFIX}.`)
-    }
-    if (this.store.getBranch(project, name) !== undefined) {
-      throw new ProjectError('branch_exists', `Project ${project} already has a branch ${name}.`)
-    }
-    const head = this.resolveAt(project, at)
-    this.store.setBranch(project, { name, head, base: null, forked_at: null, session: null })
-    this.store.append(project, projLine(name, head, 'proj.branch_create', origin, { name, at: head }))
-    return { ...this.requireBranch(project, name), counts: null }
-  }
-
-  /**
-   * Switch the working branch of `origin.session` (required, else `invalid_params`) to `main` or an exploration branch
-   * (`unknown_branch`; a draft name → `invalid_params`). The caller holds the project lock. Appends `proj.branch_switch`
-   * with `params {from, to}` on the target branch and stores the session's branch (`main` clears it). While the
-   * session has an open draft, the draft stays its working branch; the switch takes effect when the draft closes.
-   * @param project - the project.
-   * @param branch - the target branch name.
-   * @param origin - who switches; `session` is the session whose branch changes.
-   * @returns the target branch after the record.
-   */
-  switchBranch(project: ProjectId, branch: string, origin: RecordOrigin): Branch {
-    const session = origin.session
-    if (session === null) throw new ProjectError('invalid_params', 'Switching a branch needs a chat session.')
-    if (branch !== MAIN_BRANCH && !branch.startsWith(EXPLORE_PREFIX)) {
-      throw new ProjectError('invalid_params', `A session can switch only to ${MAIN_BRANCH} or an exploration branch, not ${branch}.`)
-    }
-    const target = this.requireBranch(project, branch)
-    const from = this.sessionLine(project, session)
-    this.store.append(project, projLine(branch, target.head, 'proj.branch_switch', origin, { from, to: branch }))
-    this.store.setSessionBranch(project, session, branch === MAIN_BRANCH ? null : branch)
-    return { ...this.requireBranch(project, branch), counts: null }
-  }
-
-  /**
-   * The branch a session works on when it has no open draft: the exploration branch it switched to, else `main`.
-   * @param project - the project.
-   * @param session - a chat session, or null (always `main`).
-   * @returns the branch name.
-   */
-  private sessionLine(project: ProjectId, session: SessionId | null): string {
-    return (session === null ? undefined : this.store.getSessionBranch(project, session)) ?? MAIN_BRANCH
   }
 
   /**
@@ -370,18 +307,5 @@ export class Drafts {
     this.store.setBranch(project, { ...base, head: accepted.id })
     this.store.removeBranch(project, draft.name)
     return accepted
-  }
-
-  /**
-   * Resolve the start of an exploration branch.
-   * @param project - the project.
-   * @param at - a branch name or a record ID.
-   * @returns the record ID; throws `unknown_branch` for a missing branch name and `unknown_record` for a missing record.
-   */
-  private resolveAt(project: ProjectId, at: string): RecordId {
-    const branch = this.store.getBranch(project, at)
-    if (branch !== undefined) return branch.head
-    if (at === MAIN_BRANCH || at.includes('/')) throw new ProjectError('unknown_branch', `Project ${project} has no branch ${at}.`)
-    return this.store.getRecord(project, brandString<RecordId>(at)).id
   }
 }

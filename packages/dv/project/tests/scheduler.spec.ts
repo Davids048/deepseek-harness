@@ -63,7 +63,7 @@ describe('Scheduler', () => {
     const seenInputs: OperationContext['inputs'][] = []
     const first = gate()
     m.runner.registerOperation(operation({
-      name: 'shot.render', component: 'shot',
+      name: 'shot.render_ref2va', component: 'shot',
       execute: async (context) => {
         const prompt = String(context.params['prompt'])
         if (prompt === 'A') await first.promise
@@ -73,9 +73,9 @@ describe('Scheduler', () => {
       },
     }))
 
-    const a = await schedule(m, project, 'shot.render', 'A')
-    const b = await schedule(m, project, 'shot.render', 'B', { after: [a.id] })
-    const c = await schedule(m, project, 'shot.render', 'C', { inputs: [{ role: 'reference', ref: { record: b.id, output: 0 } }] })
+    const a = await schedule(m, project, 'shot.render_ref2va', 'A')
+    const b = await schedule(m, project, 'shot.render_ref2va', 'B', { after: [a.id] })
+    const c = await schedule(m, project, 'shot.render_ref2va', 'C', { inputs: [{ role: 'reference', ref: { record: b.id, output: 0 } }] })
     expect(m.store.getRecord(project, c.id).inputs[0]?.resolved_asset).toBeNull()
     first.resolve()
     await m.scheduler.wait(project)
@@ -94,7 +94,7 @@ describe('Scheduler', () => {
     let runningGpu = 0
     let mostGpu = 0
     m.runner.registerOperation(operation({
-      name: 'shot.render', component: 'shot', resource: 'gpu',
+      name: 'shot.render_ref2va', component: 'shot', resource: 'gpu',
       execute: async (context) => {
         const prompt = String(context.params['prompt'])
         started.push(prompt)
@@ -113,8 +113,8 @@ describe('Scheduler', () => {
       },
     }))
 
-    await schedule(m, project, 'shot.render', 'gpu 1')
-    const second = await schedule(m, project, 'shot.render', 'gpu 2')
+    await schedule(m, project, 'shot.render_ref2va', 'gpu 1')
+    const second = await schedule(m, project, 'shot.render_ref2va', 'gpu 2')
     const edit = await schedule(m, project, 'timeline.clip_insert', 'edit')
 
     await vi.waitFor(() => { expect(m.store.getRecord(project, edit.id).status).toBe('done') })
@@ -133,7 +133,7 @@ describe('Scheduler', () => {
     const held = gate()
     const executed: string[] = []
     m.runner.registerOperation(operation({
-      name: 'shot.render', component: 'shot',
+      name: 'shot.render_ref2va', component: 'shot',
       execute: async (context) => {
         executed.push(String(context.params['prompt']))
         await held.promise
@@ -141,8 +141,8 @@ describe('Scheduler', () => {
       },
     }))
 
-    const a = await schedule(m, project, 'shot.render', 'A')
-    const b = await schedule(m, project, 'shot.render', 'B', { inputs: [{ role: 'reference', ref: { record: a.id, output: 0 } }] })
+    const a = await schedule(m, project, 'shot.render_ref2va', 'A')
+    const b = await schedule(m, project, 'shot.render_ref2va', 'B', { inputs: [{ role: 'reference', ref: { record: a.id, output: 0 } }] })
     held.resolve()
     await m.scheduler.wait(project)
 
@@ -159,7 +159,7 @@ describe('Scheduler', () => {
     const held = gate()
     const seen: Array<string | null> = []
     m.runner.registerOperation(operation({
-      name: 'shot.render', component: 'shot',
+      name: 'shot.render_ref2va', component: 'shot',
       execute: async () => {
         await held.promise
         throw new Error('The renderer ran out of memory.')
@@ -172,7 +172,7 @@ describe('Scheduler', () => {
         return Promise.resolve({ outputs: [] })
       },
     }))
-    const render = await schedule(m, project, 'shot.render', 'A')
+    const render = await schedule(m, project, 'shot.render_ref2va', 'A')
     const inputs = [{ role: 'reference', ref: { record: render.id, output: 0 } }]
 
     // Without `after`, the call executes at once; with `after`, it starts before the render finishes.
@@ -200,14 +200,14 @@ describe('Scheduler', () => {
       execute: async () => {
         await new Promise(resolve => setTimeout(resolve, 10))
         const scheduled = await m.runner.run({
-          project, operation: 'shot.render', params: { prompt: 'shot 1' }, inputs: [], after: [], ...userOrigin(), actor: 'system',
+          project, operation: 'shot.render_ref2va', params: { prompt: 'shot 1' }, inputs: [], after: [], ...userOrigin(), actor: 'system',
         })
         followUps.push((scheduled.record as ProjectRecord).id)
         return { outputs: [] }
       },
     }))
     m.runner.registerOperation(operation({
-      name: 'shot.render', component: 'shot', resource: 'gpu',
+      name: 'shot.render_ref2va', component: 'shot', resource: 'gpu',
       execute: async (context) => {
         await new Promise(resolve => setTimeout(resolve, 20))
         return { outputs: [importTake(context)] }

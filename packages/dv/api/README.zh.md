@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse 的浏览器 API：经认证的路由读取分支状态、把画布、时间线和素材库面板的操作写成人的记录、接受或丢弃草稿、撤销和重做、开分支、接受过期记录，并以事件流推送项目变化。"
+description: "DreamVerse 的浏览器 API：经认证的路由读取分支状态、把画布、时间线和素材库面板的操作写成人的记录、接受或丢弃草稿、撤销和重做、接受过期记录，并以事件流推送项目变化。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包让浏览器视图通过 HTTP 而不是通过智能体读取和修改 DreamVerse 项目。`dvApi` 在 `/api/dv/` 下注册经认证的 Fetch 路由，涵盖项目、分支状态、以人的身份运行的操作、素材导入、草稿、撤销和重做、分支、过期记录、历史、画布布局、Workspace 关联和视图选中项。原始路由 `GET /dv/events` 以 server-sent events 推送每一次项目变化。`@dv/ui-*` 各包是它的消费者；浏览器客户端是 `@dv/ui-kit` 的 `DvClient`。
+使用本包让浏览器视图通过 HTTP 而不是通过智能体读取和修改 DreamVerse 项目。`dvApi` 在 `/api/dv/` 下注册经认证的 Fetch 路由，涵盖项目、分支状态、以人的身份运行的操作、素材导入、草稿、撤销和重做、过期记录、历史、画布布局和 Workspace 关联。原始路由 `GET /dv/events` 以 server-sent events 推送每一次项目变化。`@dv/ui-*` 各包是它的消费者；浏览器客户端是 `@dv/ui-kit` 的 `DvClient`。
 
 ## 目录
 
@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在 `@dv/project` 和 `@dv/asset-pool` 之后挂载插件，并且 profile 还要挂载 `dsh-web-app`（提供 `connection` 和 `webServer` 服务）。没有 `connection` 时 Fetch 路由不会注册；没有 `webServer` 时事件流不会注册。
 
-这些 Fetch 路由列出、新建、重命名和删除项目，把一条分支的状态读成 JSON，列出操作声明，以人的身份运行一个操作，把文件导入素材库，接受或丢弃一个对话的草稿，撤销和重做，新建和切换分支，接受一条过期记录，列出历史，保存画布布局，把项目关联到 DSH Workspace，以及记住视图选中了什么。事件流用同一个 Connection cookie 放行浏览器。
+这些 Fetch 路由列出、新建、重命名和删除项目，把一条分支的状态读成 JSON，列出操作声明，以人的身份运行一个操作，把文件导入素材库，接受或丢弃一个对话的草稿，撤销和重做，接受一条过期记录，列出历史，保存画布布局，以及把项目关联到 DSH Workspace。事件流用同一个 Connection cookie 放行浏览器。
 
 ```yaml
 - id: dv-api
@@ -55,18 +55,15 @@ kind: "package-reference"
 | `/api/dv/drafts/discard` | POST | `{project, session \| branch, surface, counts?}` | 不带 `counts`：`{draft, counts}`；带已确认的计数：`{draft, counts, heads}` |
 | `/api/dv/undo` | POST | `{project, session?, surface, to?}`：在对话的当前分支上后退一步，或回到记录 `to`（向前跳到可重做的步骤时写 `proj.redo`） | `{record, heads}`，带 `proj.undo` 记录 |
 | `/api/dv/redo` | POST | `{project, session?, surface}`：在对话的当前分支上前进一步 | `{record, heads}`，带 `proj.redo` 记录 |
-| `/api/dv/branches/create` | POST | `{project, name, at, session?, surface}` | 分支 `explore/<name>` 的 `{branch, heads}` |
-| `/api/dv/branches/switch` | POST | `{project, branch, session, surface}` | 对话所在分支的 `{branch, heads}` |
 | `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}`，带 `proj.stale_accept` 记录 |
-| `/api/dv/history` | POST | `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`；`marks` 和 `records` 是数组；`limit` 取 1 到 200，默认 50 | `WireHistory` `{entries, requests, assets}`：`dvProject.listHistory` 的条目 `{record, mark}`（最新的在前）、条目所属每个轮次的 `request` 记录（按轮次索引），以及条目提到的每个素材；这是只读请求，不写记录 |
-| `/api/dv/selection` | GET / POST | GET：`project`；POST：`{project, kind, id, surface}`，`kind` 为 `record \| clip \| asset \| character \| location \| style` | `ViewSelection` `{kind, id, surface, at}`（GET 也可能是 null） |
+| `/api/dv/history` | POST | `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`；`marks` 和 `records` 是数组；`limit` 取 1 到 200，默认 50 | `WireHistory` `{entries, assets}`：`dvProject.listHistory` 的条目 `{record, mark}`（最新的在前），以及条目提到的每个素材；这是只读请求，不写记录 |
 | `/api/dv/layout` | GET / POST | GET：`project`；POST：`{project, positions?, viewport?}` | `{positions, viewport}`；POST 合并以画布节点 ID 为键的位置 |
 | `/api/dv/workspaces` | GET / POST | POST：`{project, workspace_id}` | GET：`{entry_path, projects: [{id, title, created_at, path, workspace_id}], bindings}`；POST：`{ok}` |
 | `/api/dv/workspaces/bind` | POST | `{session, project}` | `{ok}` |
 | `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`，最新在前；`updated_at` 是 ISO-8601 UTC |
 | `/dv/events?project=<id>` | GET | — | `text/event-stream`：先 `ready`，再是 `record`、`update` 和 `branch` 事件，每个事件带一个 `ProjectEvent` |
 
-`surface` 是 `canvas`、`timeline`、`asset_pool` 或 `history`；其他值都按 `canvas` 处理，素材导入除外：它只接受 `canvas` 或 `asset_pool`。一次运行以人的身份调用 `dvProject.run`，写在请求所属对话的当前分支上（没有对话时是 `main`）；当某个输入指向尚未完成的记录时改为排队。每条路由（包括事件流）的每个错误都以 JSON 体 `{error, code, ...details}` 回答：`error` 是消息文本，`code` 是下表中的一个错误码；`details` 携带拒绝的附加字段，例如计数已变化的草稿的当前 `counts`。智能体集成通过 `dvApi.selection(projectId)` 读到项目的最近一次选择，让智能体的项目块能提到用户指向的东西。
+`surface` 是 `canvas`、`timeline`、`asset_pool` 或 `history`；其他值都按 `canvas` 处理，素材导入除外：它只接受 `canvas` 或 `asset_pool`。一次运行以人的身份调用 `dvProject.run`，写在请求所属对话的当前分支上（没有对话时是 `main`）；当某个输入指向尚未完成的记录时改为排队。每条路由（包括事件流）的每个错误都以 JSON 体 `{error, code, ...details}` 回答：`error` 是消息文本，`code` 是下表中的一个错误码；`details` 携带拒绝的附加字段，例如计数已变化的草稿的当前 `counts`。
 
 | 错误码 | 状态 | 含义 |
 | --- | --- | --- |
@@ -90,7 +87,7 @@ kind: "package-reference"
 
 | 文件 | 内容 |
 | --- | --- |
-| [`src/wire.ts`](src/wire.ts) | `WireState`、`WireHistory`、`WireOperation`、`ViewSelection`、`toWireState`、`toWireOperation`、`mentionedAssets`、`projectIdOf` |
+| [`src/wire.ts`](src/wire.ts) | `WireState`、`WireHistory`、`WireOperation`、`toWireState`、`toWireOperation`、`mentionedAssets`、`projectIdOf` |
 | [`src/api.ts`](src/api.ts) | `ApiHandlers`、`ApiRequestError`、`OperationRequest`、`WireProject`：每条路由背后的校验和 `dvProject` 调用；所有路由共用的 `answer`、`json` 和 `requireProject` |
 | [`src/asset-import.ts`](src/asset-import.ts) | 素材导入路由 |
 | [`src/layout.ts`](src/layout.ts) | `CanvasLayoutStore` 和布局路由 |
@@ -107,8 +104,7 @@ kind: "package-reference"
 ## 进一步探索
 
 - [DreamVerse 各包](../../../docs/subsystems/video-harness.zh.md) — 记录、草稿、过期标记，以及每个视图遵守的规则。
-- [`@dv/project`](../project/README.zh.md) — 路由背后的记录、草稿、分支、撤销和过期标记。
-- [`@dv/agent-integration`](../agent-integration/README.zh.md) — 为智能体的项目块读取视图选择。
+- [`@dv/project`](../project/README.zh.md) — 路由背后的记录、草稿、分支、撤销和过期标记，以及把用户记录告诉模型的项目摘要。
 - [`@dv/ui-canvas`](../ui-canvas/README.zh.md) 与 [`@dv/ui-timeline`](../ui-timeline/README.zh.md) — 其中两个浏览器消费者。
 
 -----
@@ -116,7 +112,7 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-间接地，通过路由把视图手势记成用户记录；智能体集成决定模型从中了解什么。
+间接地，通过路由把视图手势记成用户记录；`@dv/project` 决定模型从中了解什么。
 
 #### KV Cache 影响
 
@@ -126,6 +122,5 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **选择只在内存里** — 每个项目的最近一次选择重启即丢，也不是记录。
 - **整份状态读取** — 每次变化视图都重新拉取完整状态；没有增量状态路由。
 - **缺少 `connection` 时事件流不认证** — 此时路由放行所有请求；profile 应挂载 `dsh-web-app`。

@@ -1,7 +1,7 @@
 /**
  * The browser API over the real Project service, components, and asset pool: branch state on the wire, human
  * operation calls from the canvas and the timeline, a chat session's draft (accept, discard with confirmed counts), undo and
- * redo, branches, selections, the Fetch routes, and the event stream.
+ * redo, the history, the Fetch routes, and the event stream.
  */
 import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
@@ -99,7 +99,7 @@ async function start(): Promise<Fixture> {
       const { record } = await base.project.run({
         project: projectId, operation: 'asset.import', params: { path: base.writeFile(name, name), mime: 'image/png' }, inputs: [],
         actor: 'agent', surface: 'chat', session: brandString<SessionId>(session), turn: brandString<TurnId>(`turn-${String(calls)}`),
-        tool_call: `call-${String(calls)}`, intent: `import ${name}`, request_text: `please import ${name}`,
+        tool_call: `call-${String(calls)}`, intent: `import ${name}`,
       })
       if (record === null) throw new Error('asset.import wrote no record')
       return record.id
@@ -199,9 +199,6 @@ describe('dvApi', () => {
       .rejects.toMatchObject({ status: 400, code: 'invalid_params' })
     await expect(fixture.handlers.acceptDraft({ project: projectId, session: 'nobody' })).rejects.toMatchObject({ status: 409, code: 'no_open_draft' })
     await expect(fixture.handlers.discardDraft({ project: projectId })).rejects.toThrow(/branch/)
-    expect(() => fixture.handlers.select({ project: projectId, kind: 'thing', id: 'x' })).toThrow(/kind/)
-    await expect(fixture.handlers.createBranch({ project: projectId, name: '' })).rejects.toThrow(/name/)
-    await expect(fixture.handlers.switchBranch({ project: projectId, branch: 'main' })).rejects.toThrow(/session/)
   })
 
   it('records timeline gestures on main without a turn and schedules calls that wait for a producer', async () => {
@@ -261,7 +258,7 @@ describe('dvApi', () => {
     const draft = fixture.handlers.getState(projectId, 'draft/s1')
     const draftRecords = draft.components.proj.records.filter(record => record.branch === 'draft/s1')
     expect(draftRecords.map(record => [record.kind, record.actor])).toEqual([
-      ['request', 'user'], ['operation', 'agent'], ['request', 'user'], ['operation', 'agent'], ['operation', 'user'],
+      ['operation', 'agent'], ['operation', 'agent'], ['operation', 'user'],
     ])
 
     // Discard: a dry read returns the counts; stale counts are refused with the current ones; nothing changes.
@@ -305,31 +302,6 @@ describe('dvApi', () => {
     await expect(fixture.handlers.undo({ project: projectId, to: 7 })).rejects.toMatchObject({ status: 400, code: 'invalid_params' })
     await expect(fixture.handlers.undo({ project: projectId, to: 'missing' })).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
 
-    const branch = await fixture.handlers.createBranch({ project: projectId, name: 'style-b', at: 'main' })
-    expect(branch.branch.name).toBe('explore/style-b')
-    expect(branch.heads['explore/style-b']).toBe(branch.branch.head)
-    await expect(fixture.handlers.createBranch({ project: projectId, name: 'style-b' })).rejects.toMatchObject({ code: 'branch_exists' })
-    const switched = await fixture.handlers.switchBranch({ project: projectId, branch: 'explore/style-b', session: 's3' })
-    expect(switched.branch.name).toBe('explore/style-b')
-    const onBranch = await fixture.handlers.runOperation({
-      project: projectId, operation: 'asset.import', surface: 'canvas', session: 's3', params: { path: fixture.writeFile('e.png', 'E'), mime: 'image/png' },
-    })
-    expect(onBranch.branch).toBe('explore/style-b')
-    expect(fixture.handlers.getState(projectId, 'explore/style-b').components.proj.records.map(record => record.id)).toContain(onBranch.id)
-    expect(fixture.handlers.getState(projectId).components.proj.records.map(record => record.id)).not.toContain(onBranch.id)
-  })
-
-  it('keeps the last selection per project', async () => {
-    const fixture = await start()
-    const projectId = await fixture.newProject('demo')
-    expect(fixture.dvApi.selection(projectId)).toBeNull()
-    const selection = fixture.handlers.select({ project: projectId, kind: 'clip', id: 'cl2', surface: 'timeline' })
-    expect(selection).toMatchObject({ kind: 'clip', id: 'cl2', surface: 'timeline' })
-    expect(fixture.dvApi.selection(projectId)?.id).toBe('cl2')
-    fixture.handlers.select({ project: projectId, kind: 'character', id: 'c1', surface: 'asset_pool' })
-    expect(fixture.dvApi.selection(projectId)).toMatchObject({ kind: 'character', id: 'c1', surface: 'asset_pool' })
-    fixture.handlers.select({ project: projectId, kind: 'record', id: 'r1', surface: 'chat' })
-    expect(fixture.dvApi.selection(projectId)).toMatchObject({ kind: 'record', surface: 'canvas' })
   })
 
   it('serves the Fetch routes under /api/dv with statuses and codes from the operations', async () => {
@@ -370,20 +342,12 @@ describe('dvApi', () => {
     const noBody = await call(fixture, ROUTES.undo, { method: 'POST' })
     expect(noBody.status).toBe(400)
     expect(await call(fixture, ROUTES.redo, { method: 'POST', body: { project: projectId } })).toMatchObject({ status: 409, json: { code: 'nothing_to_redo' } })
-    const branched = await call(fixture, ROUTES.createBranch, { method: 'POST', body: { project: projectId, name: 'b2' } })
-    expect(branched.status).toBe(200)
-    const switched = await call(fixture, ROUTES.switchBranch, { method: 'POST', body: { project: projectId, branch: 'explore/b2', session: 's5' } })
-    expect(switched.status).toBe(200)
     const keep = (record: string) => call(fixture, ROUTES.acceptStale, {
       method: 'POST', body: { project: projectId, record, surface: 'canvas' },
     })
     expect(await keep('nope')).toMatchObject({ status: 404, json: { code: 'unknown_record' } })
     const kept = await keep((invoked.json as { id: string }).id)
     expect(kept).toMatchObject({ status: 200, json: { record: { operation: 'proj.stale_accept', actor: 'user', branch: 'main' } } })
-    const selected = await call(fixture, ROUTES.selection, { method: 'POST', body: { project: projectId, kind: 'asset', id: 'a', surface: 'canvas' } })
-    expect(selected.status).toBe(200)
-    const read = await call(fixture, ROUTES.selection, { query: { project: projectId } })
-    expect((read.json as { id: string }).id).toBe('a')
   })
 
   it('answers every refusal of the project routes with the body {error, code}', async () => {
@@ -392,8 +356,7 @@ describe('dvApi', () => {
     const named: Array<{ path: string; method: 'GET' | 'POST' }> = [
       { path: ROUTES.state, method: 'GET' }, { path: ROUTES.operation, method: 'POST' }, { path: ROUTES.acceptDraft, method: 'POST' },
       { path: ROUTES.discardDraft, method: 'POST' }, { path: ROUTES.undo, method: 'POST' }, { path: ROUTES.redo, method: 'POST' },
-      { path: ROUTES.createBranch, method: 'POST' }, { path: ROUTES.switchBranch, method: 'POST' }, { path: ROUTES.acceptStale, method: 'POST' },
-      { path: ROUTES.history, method: 'POST' }, { path: ROUTES.selection, method: 'GET' }, { path: ROUTES.selection, method: 'POST' },
+      { path: ROUTES.acceptStale, method: 'POST' }, { path: ROUTES.history, method: 'POST' },
     ]
     for (const { path, method } of named) {
       const send = (project: string | undefined) => method === 'GET'
@@ -409,7 +372,7 @@ describe('dvApi', () => {
     expect({ status: failed.status, json: await failed.json() as unknown }).toEqual({ status: 500, json: { error: 'disk gone', code: 'internal_error' } })
   })
 
-  it('lists the history with marks, turn requests, assets, filters and pages, and refuses bad queries', async () => {
+  it('lists the history with marks, assets, filters and pages, and refuses bad queries', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')
     const human = await fixture.handlers.runOperation({
@@ -427,7 +390,6 @@ describe('dvApi', () => {
         status: number
         json: {
           entries: Array<{ record: { id: string }; mark: string }>
-          requests: Record<string, { intent: string }>
           assets: Array<{ id: string }>
         }
       }
@@ -439,22 +401,23 @@ describe('dvApi', () => {
     expect(all.json.entries.map(entry => [entry.record.id, entry.mark])).toEqual([
       [agent, 'draft'], [undo.record.id, 'main'], [undone.id, 'undone'], [human.id, 'main'], [expect.any(String), 'main'],
     ])
-    // The agent's turn is headed by its request record, though the request is not an entry of this page.
-    expect(Object.values(all.json.requests).map(request => request.intent)).toEqual(['please import a.png'])
     const named = [...human.outputs, ...undone.outputs, ...fixture.project.getRecord(projectId, agent).outputs]
     expect(all.json.assets.map(asset => asset.id).sort()).toEqual(named.sort())
 
     expect(ids(await history({ marks: ['main', 'undone'], limit: 2 }))).toEqual([undo.record.id, undone.id])
-    expect((await history({ kind: 'request' })).json.entries.map(entry => entry.mark)).toEqual(['draft'])
     expect(ids(await history({ tool_call: 'call-1' }))).toEqual([agent])
     expect(ids(await history({ actor: 'user', component: 'asset', before: undone.id }))).toEqual([human.id])
     expect(ids(await history({ records: [human.id, agent] }))).toEqual([agent, human.id])
-    expect((await history({ actor: 'agent', kind: 'operation', session: 's9' })).json).toEqual({ entries: [], requests: {}, assets: [] })
+    expect((await history({ actor: 'agent', kind: 'operation', session: 's9' })).json).toEqual({ entries: [], assets: [] })
 
     expect(await call(fixture, ROUTES.history, { method: 'POST', body: {} })).toMatchObject({ status: 400, json: { code: 'invalid_params' } })
     expect(await call(fixture, ROUTES.history, { method: 'POST', body: { project: 'nope' } })).toMatchObject({ status: 404, json: { code: 'unknown_project' } })
     expect(await history({ before: 'missing' })).toMatchObject({ status: 404, json: { code: 'unknown_record' } })
-    for (const bad of [{ actor: 'robot' }, { marks: ['kept'] }, { marks: 'main' }, { limit: 0 }, { limit: 201 }, { limit: 1.5 }, { branch: 3 }]) {
+    const refused = [
+      { actor: 'robot' }, { kind: 'request' }, { marks: ['branch'] }, { marks: ['kept'] }, { marks: 'main' }, { limit: 0 }, { limit: 201 },
+      { limit: 1.5 }, { branch: 3 },
+    ]
+    for (const bad of refused) {
       expect(await history(bad)).toMatchObject({ status: 400, json: { code: 'invalid_params' } })
     }
   })
@@ -513,7 +476,7 @@ describe('dvApi', () => {
     expect(mentionedAssets(fixture.project.getState(projectId))).toEqual(imported.outputs)
   })
 
-  it('names errors, orders projects, and refuses an undo without changes or a branch at an unknown record', async () => {
+  it('names errors, orders projects, and refuses an undo without changes', async () => {
     expect(messageOf(new Error('boom'))).toBe('boom')
     expect(messageOf('plain')).toBe('plain')
     const fixture = await start()
@@ -521,7 +484,6 @@ describe('dvApi', () => {
     const projectId = await fixture.newProject('demo')
     expect(fixture.handlers.listProjects().map(entry => entry.id).sort()).toEqual([older, projectId].sort())
     await expect(fixture.handlers.undo({ project: older })).rejects.toMatchObject({ status: 409, code: 'nothing_to_undo' })
-    await expect(fixture.handlers.createBranch({ project: older, name: 'b', at: 'nowhere' })).rejects.toBeInstanceOf(ApiRequestError)
   })
 
   it('records based_on and supersedes, lists only known assets, and reads an empty or non-string branch as main', async () => {

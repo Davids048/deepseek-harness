@@ -1,17 +1,15 @@
 /**
  * The operation runner: the operation registry and the single change path of operations. `run` checks a request,
- * writes its pending record on the right branch, asks for confirmation when the rule requires it, then executes the
- * operation now or hands the record to the scheduler.
+ * writes its pending record on the right branch, then executes the operation now or hands the record to the
+ * scheduler. The agent's confirmation (`OperationSpec.confirm`) is checked earlier, in the agent tool call.
  *
  * Lock scope: the runner holds the project lock (from the record store) while it checks and appends a record and
- * while it writes each update line. It releases the lock while an approval card waits and while `execute` runs, so a
- * long render or an unanswered card does not block other edits, and an operation's `execute` may itself call
- * `dvProject.run`.
+ * while it writes each update line. It releases the lock while `execute` runs, so a long render does not block other
+ * edits, and an operation's `execute` may itself call `dvProject.run`.
  *
  * Calls: the record store (lock, append, update, records), drafts (`branchForWrite`, `workingBranch`), the reducer
- * registry (state at a record's parent, character, location and style assets), the scheduler (`enqueue`), the asset store
- * (stage 2: the asset package's service), and the registered approval channel. Called by the service and by the
- * scheduler (`execute`).
+ * registry (state at a record's parent, character, location and style assets), the scheduler (`enqueue`), and the
+ * asset store. Called by the service and by the scheduler (`execute`).
  *
  * @module @dv/project/runner
  */
@@ -25,7 +23,7 @@ import type { RecordStore } from './record-store.ts'
 import type { Scheduler } from './scheduler.ts'
 import { COMPONENT_KEYS, ProjectError } from './shared.ts'
 import type {
-  ApprovalChannel, AssetId, OperationContext, OperationSpec, ProjectId, ProjectRecord, ProjectState, RecordFailure, RecordId,
+  AssetId, OperationContext, OperationSpec, ProjectId, ProjectRecord, ProjectState, RecordFailure, RecordId,
   RecordInput, RecordOrigin, RecordUpdate, RunRequest, RunResult,
 } from './types.ts'
 
@@ -105,7 +103,6 @@ function originOf(request: RunRequest): RecordOrigin {
 /** The operation registry and the change path. */
 export class Runner {
   private readonly operations = new Map<string, OperationSpec>()
-  private channel: ApprovalChannel | null = null
 
   /**
    * @param deps - the modules and services the runner calls.
@@ -114,8 +111,8 @@ export class Runner {
 
   /**
    * Register an operation. Refused with `operation_exists` when the name is registered, and with `invalid_params`
-   * when `component` is not one of the component keys `proj asset bible plan shot timeline deliver inspect` or `name`
-   * does not start with `<component>.`.
+   * when `component` is not one of the component keys `proj asset bible plan shot timeline deliver inspect`, when `name`
+   * does not start with `<component>.`, or when `confirm` is not `never` and the spec has no `confirmSummary`.
    * @param spec - the operation.
    * @returns a function that removes the registration (only if it is still this spec).
    */
@@ -127,6 +124,9 @@ export class Runner {
     if (!spec.name.startsWith(`${spec.component}.`)) {
       throw new ProjectError('invalid_params', `Operation ${spec.name} does not start with its component key '${spec.component}.'.`)
     }
+    if (spec.confirm !== 'never' && spec.confirmSummary === undefined) {
+      throw new ProjectError('invalid_params', `Operation ${spec.name} asks for confirmation (${spec.confirm}) but has no confirmSummary.`)
+    }
     this.operations.set(spec.name, spec)
     return () => {
       if (this.operations.get(spec.name) === spec) this.operations.delete(spec.name)
@@ -136,19 +136,6 @@ export class Runner {
   /** @returns every registered operation, in registration order. */
   listOperations(): OperationSpec[] {
     return [...this.operations.values()]
-  }
-
-  /**
-   * Set the channel that answers whether a session asks first and shows approval cards. One channel at a time: a
-   * later registration replaces the earlier one.
-   * @param channel - the channel.
-   * @returns a function that removes the registration (only if it is still this channel).
-   */
-  registerApprovalChannel(channel: ApprovalChannel): () => void {
-    this.channel = channel
-    return () => {
-      if (this.channel === channel) this.channel = null
-    }
   }
 
   /**
@@ -181,24 +168,12 @@ export class Runner {
       const supersedes = [...new Set([...request.supersedes ?? [], ...spec.supersedes?.(request.params, state) ?? []])]
       const branch = drafts.branchForWrite(request.project, request)
       const origin = originOf(request)
-      if (request.request_text !== undefined && request.turn !== null && !store.listRecords(request.project)
-        .some(record => record.kind === 'request' && record.turn === request.turn)) {
-        store.append(request.project, {
-          parents: [this.headOf(request.project, branch)], branch, kind: 'request', component: 'proj', operation: null,
-          operation_version: null, ...origin, actor: 'user', surface: 'chat', tool_call: null, intent: request.request_text,
-          params: {}, inputs: [],
-          outputs: [], based_on: null, supersedes: [], deterministic: true, status: 'done',
-        })
-      }
       return store.append(request.project, {
         parents: [this.headOf(request.project, branch)], branch, kind: 'operation', component: spec.component, operation: spec.name,
         operation_version: spec.version, ...origin, params: request.params, inputs, outputs: [], based_on: request.based_on ?? null,
         supersedes, deterministic: spec.deterministic, status: 'pending',
       })
     })
-
-    const declined = await this.confirm(spec, request, pending)
-    if (declined !== null) return { record: declined, outputs: [], report: null }
 
     if (request.after !== undefined) {
       scheduler.enqueue(request.project, pending.id, spec.resource, request.after, spec.pendingInputRoles ?? [])
@@ -301,7 +276,7 @@ export class Runner {
     const { store } = this.deps
     await Promise.all(store.listProjects().map(info => store.lock(info.id, () => {
       for (const record of store.listRecords(info.id)) {
-        if (record.kind !== 'operation' || (record.status !== 'pending' && record.status !== 'running')) continue
+        if (record.status !== 'pending' && record.status !== 'running') continue
         store.update(info.id, {
           update: record.id, status: 'cancelled', finished_at: new Date().toISOString(),
           error: { code: 'stopped', message: 'The server stopped before the call finished.' },
@@ -394,28 +369,6 @@ export class Runner {
       if (resolved === null) throw new ProjectError('invalid_inputs', `Input '${role}' names an unknown version: ${JSON.stringify(ref)}.`)
       return resolved.map(asset => ({ role, ref, resolved_asset: asset }))
     })
-  }
-
-  /**
-   * Hold a pending agent record for the human's approval when the confirmation rule applies (`CONTRACTS.md`,
-   * "Confirmation rule"). Takes no lock while the card waits.
-   * @param spec - the operation.
-   * @param request - the call.
-   * @param pending - the pending record.
-   * @returns the `cancelled` record when the card was skipped or the turn stopped; null to go on.
-   */
-  private async confirm(spec: OperationSpec, request: RunRequest, pending: ProjectRecord): Promise<ProjectRecord | null> {
-    const channel = this.channel
-    if (spec.confirm !== 'agent_ask_first' || request.actor !== 'agent' || request.session === null || channel === null) return null
-    if (!channel.asksFirst(request.session)) return null
-    const signal = request.signal ?? new AbortController().signal
-    const approved = signal.aborted ? false : await channel.requestApproval({
-      project: request.project, record: pending, gpu_seconds: spec.estimate?.(request.params).gpu_seconds ?? 0, signal,
-    })
-    if (approved) return null
-    return await this.finish(request.project, pending.id, 'cancelled', signal.aborted
-      ? { code: 'stopped', message: `The turn was stopped before ${spec.name} was approved.` }
-      : { code: 'skipped', message: `The approval card for ${spec.name} was skipped.` })
   }
 
   /**

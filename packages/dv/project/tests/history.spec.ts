@@ -229,7 +229,7 @@ describe('history', () => {
     let release: () => void = () => undefined
     const held = new Promise<void>((done) => { release = done })
     m.runner.registerOperation({
-      name: 'shot.render', version: '1', component: 'shot', params: { shot: { type: 'integer' } }, confirm: 'never', inputs: {},
+      name: 'shot.render_ref2va', version: '1', component: 'shot', params: { shot: { type: 'integer' } }, confirm: 'never', inputs: {},
       outputs: [], description: 'A test render.', summarize: () => 'render', deterministic: true, resource: 'none',
       execute: async (context) => {
         renders += 1
@@ -239,10 +239,10 @@ describe('history', () => {
     })
     const before = await write(m, project, DIRECT, 1)
     const approval = await write(m, project, DIRECT, 2)
-    const run = { project, operation: 'shot.render', params: { shot: 1 }, inputs: [], ...DIRECT }
+    const run = { project, operation: 'shot.render_ref2va', params: { shot: 1 }, inputs: [], ...DIRECT }
     const rendering = m.runner.run(run)
-    await expect.poll(() => m.store.listRecords(project).find(record => record.operation === 'shot.render')?.status).toBe('running')
-    const render = m.store.listRecords(project).find(record => record.operation === 'shot.render')!
+    await expect.poll(() => m.store.listRecords(project).find(record => record.operation === 'shot.render_ref2va')?.status).toBe('running')
+    const render = m.store.listRecords(project).find(record => record.operation === 'shot.render_ref2va')!
     await undoOn(m, project, DIRECT, before.id)
     expect(m.history.redoSteps(project, MAIN_BRANCH)).toEqual([approval.id, render.id])
     release()
@@ -311,16 +311,15 @@ describe('history', () => {
     const copy = (accept.params.replayed as RecordId[][])[0]![1]!
     // The next agent write of the session opens a draft with the same name.
     const drafted = await write(m, project, agentOrigin('turn-3'), 6)
-    const explored = await m.store.lock(project, () => m.drafts.createBranch(project, 'explore/look', MAIN_BRANCH, DIRECT))
 
     const mark = new Map(m.history.list({ project }).map(entry => [entry.record.id, entry.mark]))
     const discardRecord = m.history.list({ project, operation: 'proj.draft_discard' })[0]!.record.id
     expect(Object.fromEntries([
       ['kept', kept.id], ['undo', undo.id], ['moved', moved.id], ['copy', copy], ['accept', accept.id], ['undone', undone.id],
-      ['original', original.id], ['dropped', dropped.id], ['discard', discardRecord], ['drafted', drafted.id], ['explored', explored.head],
+      ['original', original.id], ['dropped', dropped.id], ['discard', discardRecord], ['drafted', drafted.id],
     ].map(([name, id]) => [name, mark.get(id as RecordId)]))).toEqual({
       kept: 'main', undo: 'main', moved: 'main', copy: 'main', accept: 'main', undone: 'undone', original: 'replayed',
-      dropped: 'discarded', discard: 'discarded', drafted: 'draft', explored: 'branch',
+      dropped: 'discarded', discard: 'discarded', drafted: 'draft',
     })
     expect(mainValues(m, project)).toEqual([1, 5, 3])
   })

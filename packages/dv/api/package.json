@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Browser API of DreamVerse: authenticated routes that read branch state, run operations from the canvas and the timeline, accept and discard drafts, undo and redo, manage branches, and stream project changes.",
+  "description": "Browser API of DreamVerse: authenticated routes that read branch state, run operations from the canvas and the timeline, accept and discard drafts, undo and redo, and stream project changes.",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"
@@ -29,8 +29,8 @@
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~",
-    "@dreamverse/generation-client": "workspace:*",
     "@dv/ffmpeg": "workspace:*",
+    "@dv/render-modes": "workspace:*",
     "@types/node": "^22.20.0"
   }
 }

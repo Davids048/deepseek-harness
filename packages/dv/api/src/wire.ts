@@ -7,7 +7,7 @@
  */
 import type { Asset } from '@dv/asset-pool'
 import type {
-  AssetId, Branch, ComponentStates, HistoryEntry, OperationSpec, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId,
+  AssetId, Branch, ComponentStates, HistoryEntry, OperationSpec, ProjectId, ProjectInfo, ProjectState, RecordId,
 } from '@dv/project'
 import type {} from '@dv/shot-plan'
 import type {} from '@dv/shot-render'
@@ -37,8 +37,6 @@ export interface WireState {
 export interface WireHistory {
   /** The entries, newest first, as `dvProject.listHistory` returns them. */
   entries: HistoryEntry[]
-  /** The `request` record of every turn that has a record in `entries`, by turn. */
-  requests: Record<string, ProjectRecord>
   /** The asset pool entry of every asset the entries name as an output or a resolved input. */
   assets: Asset[]
 }
@@ -55,16 +53,6 @@ export interface WireOperation {
   /** The scheduler class: `none` for operations that wait in neither the CPU nor the GPU queue. */
   resource: OperationSpec['resource']
   confirm: OperationSpec['confirm']
-}
-
-/** What a view last selected in a project, so the agent integration can resolve "this one". */
-export interface ViewSelection {
-  kind: 'record' | 'clip' | 'asset' | 'character' | 'location' | 'style'
-  /** The `RecordId`, `ClipId`, `AssetId`, or character, location or style ID. */
-  id: string
-  surface: 'canvas' | 'timeline' | 'asset_pool'
-  /** ISO-8601 UTC of the selection. */
-  at: string
 }
 
 /**

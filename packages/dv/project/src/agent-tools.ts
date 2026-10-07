@@ -5,23 +5,31 @@
  * result names the record, its outputs with their URLs, and the records the call scheduled. Image outputs also reach
  * the model as image blocks through the attachment service.
  *
- * Calls the sessions module (project binding, turn, held work), the asset store (output types, bytes, URLs), and the
- * service's run, state, record and history reads through {@link AgentToolDeps}. Called by the service, which registers
- * and removes the tools while the DSH `tools` registry is mounted.
+ * Confirmation: an operation whose `confirm` is `always` or `over_gpu_budget` gets the tool-only argument
+ * `user_approved` or `user_requested`; a call that needs the user's agreement and lacks it is refused, before anything
+ * is written, with the operation's `confirmSummary` and the instruction to ask the user in the conversation with the
+ * question in bold. The record's turn is the DSH turn number of the calling agent's session, read from the
+ * `turnBoundary` session projection.
+ *
+ * Calls the sessions module (project binding, held work), the asset store (output types, bytes, URLs), and the
+ * service's run, state, record, operation and history reads through {@link AgentToolDeps}. Called by the service,
+ * which registers and removes the tools while the DSH `tools` registry is mounted.
  *
  * @module @dv/project/agent-tools
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-agent'
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-attachment'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool, type ParameterSchemaSpec, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { Sessions } from './sessions.ts'
 import type {
-  AssetId, AssetStore, CharacterId, HistoryEntry, HistoryQuery, LocationId, OperationSpec, ProjectId, ProjectRecord, ProjectState,
-  RecordId, RecordInputRef, RecordOrigin, RunRequest, RunResult, SessionId, StyleId, ToolCallCheck,
+  AssetId, AssetStore, CharacterId, HistoryEntry, HistoryQuery, LocationId, OperationSpec, OperationToolCall, ProjectId, ProjectRecord,
+  ProjectState, RecordId, RecordInputRef, RecordOrigin, RunRequest, RunResult, SessionId, StyleId, TurnId,
 } from './types.ts'
 
 /** What the agent tools read and call. */
@@ -29,8 +37,10 @@ export interface AgentToolDeps {
   sessions: Sessions
   /** The registered asset store; throws when none is registered. */
   assets(): AssetStore
-  /** The registered tool call check, or null. */
-  toolCallCheck(): ToolCallCheck | null
+  /** Estimated GPU seconds one agent turn may spend on `over_gpu_budget` operations before the user must agree. */
+  confirmGpuSecondsThreshold: number
+  /** Every registered operation, for the GPU estimate of the turn's unfinished records. */
+  listOperations(): OperationSpec[]
   /** The service's working-branch state read: the state of the branch `session` writes to. */
   workingState(project: ProjectId, session: SessionId): ProjectState
   /** The record that created a character, location or style version, or null for an unknown version. */
@@ -48,6 +58,28 @@ const IMAGE_MEDIA_TYPES: ReadonlySet<string> = new Set<ImageMediaType>(['image/p
 
 /** The arguments every operation tool takes besides the operation's params; they never reach the run's params. */
 const SHARED_ARGS = ['reason', 'project_id', 'inputs', 'supersedes', 'based_on'] as const
+
+/** The tool-only argument that carries the user's agreement, by `OperationSpec.confirm`. */
+const CONFIRM_ARGS = { always: 'user_approved', over_gpu_budget: 'user_requested' } as const
+
+/** The tool-only confirmation argument of each `OperationSpec.confirm` value, as the model sees it. */
+const CONFIRM_PARAMS: Record<OperationSpec['confirm'], ParameterSchemaSpec> = {
+  never: {},
+  always: {
+    user_approved: {
+      type: 'boolean',
+      description: 'Set true only after the user agreed to this exact call in the conversation. Without it the call is refused '
+        + 'with what to show the user and ask.',
+    },
+  },
+  over_gpu_budget: {
+    user_requested: {
+      type: 'boolean',
+      description: 'Set true when the user asked for this exact change, or agreed to it in the conversation. Without it a call '
+        + 'past this turn\'s GPU budget is refused with what to show the user and ask.',
+    },
+  },
+}
 
 /** The value every operation tool returns to the model. */
 const RESULT_SCHEMA = {
@@ -107,6 +139,19 @@ export function toolNameOf(spec: Pick<OperationSpec, 'name'>): string {
  */
 export function sessionOf(exec: Pick<ToolRunContext, 'agent'>): SessionId {
   return brandString<SessionId>(exec.agent?.id ?? ANONYMOUS_SESSION)
+}
+
+/**
+ * The agent turn a tool call belongs to: the DSH turn number of the calling agent's session, from the `turnBoundary`
+ * session projection that the agent loop registers.
+ * @param ctx - a context that may hold the `sessionProjections` registry.
+ * @param exec - the call.
+ * @returns the turn, or null for a call without an agent or outside any turn.
+ */
+export function turnOf(ctx: Context, exec: Pick<ToolRunContext, 'agent'>): TurnId | null {
+  const session = exec.agent?.session
+  const turn = session === undefined ? undefined : ctx.get('sessionProjections')?.stateOf(session, 'turnBoundary')?.lastTurn
+  return turn === undefined || turn === 0 ? null : brandString<TurnId>(String(turn))
 }
 
 /**
@@ -279,7 +324,7 @@ export class AgentTools {
   define(spec: OperationSpec): ToolDefinition {
     const name = toolNameOf(spec)
     const parameters: ParameterSchemaSpec = {
-      ...spec.params, ...spec.toolParams, ...this.deps.toolCallCheck()?.params(spec), ...sharedParams(spec),
+      ...spec.params, ...spec.toolParams, ...CONFIRM_PARAMS[spec.confirm], ...sharedParams(spec),
     }
     // The description ends with where the operation runs and whether it writes a record or reuses earlier results.
     const hints = [
@@ -302,22 +347,20 @@ export class AgentTools {
 
   /**
    * Run one tool call: wait for the session's held work, resolve the project and the inputs against the session's
-   * working branch, let the operation prepare the call and the registered check look at it, run it as the agent, and
-   * describe the record.
+   * working branch, let the operation prepare the call, refuse it when it needs the user's agreement, run it as the
+   * agent, and describe the record.
    */
   private async call(spec: OperationSpec, args: Record<string, unknown>, exec: ToolRunContext): Promise<OperationToolValue> {
     const { sessions } = this.deps
     const session = sessionOf(exec)
     await sessions.ready(session)
     const project = callProject(args['project_id'], sessions.project(session))
-    const turn = sessions.turn(session)
     const origin: RecordOrigin = {
-      actor: 'agent', surface: 'chat', session, turn: turn?.turn ?? null, tool_call: exec.callId,
+      actor: 'agent', surface: 'chat', session, turn: turnOf(this.ctx, exec), tool_call: exec.callId,
       intent: optionalString(args['reason']) ?? spec.name,
     }
     const state = this.deps.workingState(project, session)
-    const check = this.deps.toolCallCheck()
-    const toolOnly = new Set<string>([...SHARED_ARGS, ...Object.keys(spec.toolParams ?? {}), ...Object.keys(check?.params(spec) ?? {})])
+    const toolOnly = new Set<string>([...SHARED_ARGS, ...Object.keys(spec.toolParams ?? {}), ...Object.keys(CONFIRM_PARAMS[spec.confirm])])
     const params = Object.fromEntries(Object.entries(args).filter(([key]) => !toolOnly.has(key)))
     const basedOn = optionalString(args['based_on'])
     const supersedes = args['supersedes']
@@ -325,12 +368,11 @@ export class AgentTools {
       ...origin, project, operation: spec.name, params,
       inputs: parseInputs(spec, args['inputs'], state, this.deps.versionCreatedBy, toolNameOf(spec)),
       signal: exec.signal,
-      ...turn === undefined || turn.requestText === '' ? {} : { request_text: turn.requestText },
       ...basedOn === undefined ? {} : { based_on: brandString<RecordId>(basedOn) },
       ...Array.isArray(supersedes) ? { supersedes: supersedes.map(id => brandString<RecordId>(String(id))) } : {},
     }
     await spec.prepareToolCall?.({ args, request, state, exec })
-    await check?.check(spec, { args, request, state, exec })
+    this.confirm(spec, { args, request, state, exec })
     if (this.waitsForProducer(project, spec, request.inputs)) request.after = []
     const before = new Set(this.deps.listHistory({ project }).map(entry => entry.record.id))
     const result = await this.deps.run(request)
@@ -348,6 +390,52 @@ export class AgentTools {
       .map(entry => entry.record).filter(other => !before.has(other.id) && other.session === session)
       .map(other => other.id).reverse()
     return await this.valueOf(spec, record, scheduled)
+  }
+
+  /**
+   * Refuse a call that needs the user's agreement and does not carry it (`OperationSpec.confirm`): `always` needs
+   * `user_approved: true`; `over_gpu_budget` needs `user_requested: true` once the turn's GPU seconds with this call
+   * pass the budget. The refusal names what the call will do and cost and tells the model to ask in the conversation,
+   * with the question in bold.
+   * @param spec - the operation.
+   * @param call - the parsed call, after `prepareToolCall`.
+   * @throws Error with the refusal text.
+   */
+  private confirm(spec: OperationSpec, call: OperationToolCall): void {
+    if (spec.confirm === 'never' || spec.confirmSummary === undefined) return
+    const flag = CONFIRM_ARGS[spec.confirm]
+    if (call.args[flag] === true) return
+    const summary = spec.confirmSummary(call, call.state)
+    const threshold = this.deps.confirmGpuSecondsThreshold
+    const total = summary.gpu_seconds + this.turnGpuSeconds(call.request)
+    if (spec.confirm === 'over_gpu_budget' && total <= threshold) return
+    const name = toolNameOf(spec)
+    throw new Error([
+      spec.confirm === 'always'
+        ? `${name} needs the user's agreement.`
+        : `${name} would bring this turn to about ${String(Math.round(total))} GPU seconds, above the ${String(threshold)} s budget.`,
+      'What it will do:', summary.text, `Estimated GPU time: about ${String(Math.round(summary.gpu_seconds))} s.`,
+      'Show this to the user and ask in the conversation, with the question in bold (for example **Render these shots now?**). '
+        + `Wait for the user's answer, then call again with ${flag}: true.`,
+    ].join('\n'))
+  }
+
+  /**
+   * The GPU seconds the call's turn already spent or scheduled: the cost of its finished records and the operation
+   * estimate of its unfinished ones, on every branch of the project.
+   * @param request - the call; its session and turn select the records.
+   * @returns the seconds; 0 for a call outside any turn.
+   */
+  private turnGpuSeconds(request: RunRequest): number {
+    if (request.turn === null) return 0
+    const specs = new Map(this.deps.listOperations().map(spec => [spec.name, spec]))
+    const session = request.session === null ? {} : { session: request.session }
+    return this.deps.listHistory({ project: request.project, ...session, turn: request.turn })
+      .reduce((sum, { record }) => {
+        if (record.status !== 'pending' && record.status !== 'running') return sum + (record.cost?.gpu_seconds ?? 0)
+        const spec = record.operation === null ? undefined : specs.get(record.operation)
+        return sum + (spec?.estimate?.(record.params).gpu_seconds ?? 0)
+      }, 0)
   }
 
   /**
@@ -400,14 +488,12 @@ export class AgentTools {
 }
 
 /**
- * The error a call reports when its record did not finish `done`: the failure message, or that the user skipped the
- * approval card, or that the turn was stopped.
+ * The error a call reports when its record did not finish `done`: the failure message, or that the turn was stopped.
  * @param spec - the operation.
  * @param record - the record in its final status.
  * @returns the error.
  */
 function failureOf(spec: OperationSpec, record: ProjectRecord): Error {
-  if (record.error?.code === 'skipped') return new Error(`The user declined ${toolNameOf(spec)}. Do not retry it unchanged.`)
   if (record.error?.code === 'stopped') return new Error(`${toolNameOf(spec)} was stopped before it finished.`)
   return new Error(record.error?.message ?? `${toolNameOf(spec)} ${record.status}`)
 }

@@ -352,7 +352,6 @@
       // Video harness plugin entries, mapped to source for the same reason as the DreamVerse entries above.
       "@video-harness/stream": ["./packages/video-harness/stream/src/index.ts"],
       // DreamVerse component entries, mapped to source for the same reason as the video harness entries above.
-      "@dv/agent-integration": ["./packages/dv/agent-integration/src/index.ts"],
       "@dv/api": ["./packages/dv/api/src/index.ts"],
       "@dv/asset-pool": ["./packages/dv/asset-pool/src/index.ts"],
       "@dv/chat-references": ["./packages/dv/chat-references/src/index.ts"],

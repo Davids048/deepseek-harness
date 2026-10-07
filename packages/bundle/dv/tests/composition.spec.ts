@@ -1,7 +1,8 @@
 /**
- * The REAL composition of the bundle: the component rows, the `dv-api` row and the `dv-agent-integration` row of
- * `cordis.patch.yml`, with their `!!js` configuration, boot through the Loader beside the DSH tool registry, with the
- * generation backend as the one fake, and a model-visible tool call becomes a durable record.
+ * The REAL composition of the bundle: the component rows, the render mode provider rows, the `dv-chat-references` row
+ * and the `dv-api` row of `cordis.patch.yml`, with their `!!js` configuration and `disabled` flags, boot through the
+ * Loader beside the DSH system prompt and tool registry, with each render mode provider replaced by a fake, and a
+ * model-visible tool call becomes a durable record.
  */
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -22,11 +23,12 @@ import DvShotPlan from '@dv/shot-plan'
 import DvShotRender from '@dv/shot-render'
 import DvStoryBible from '@dv/story-bible'
 import DvTimeline from '@dv/timeline'
-import DvAgentIntegration from '@dv/agent-integration'
 import DvApi from '@dv/api'
+import DvChatReferences from '@dv/chat-references'
+import { T2vaRenderer, type RenderModelFacts, type RenderStreamEvent } from '@dv/render-modes'
 import * as yaml from 'js-yaml'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FakeGeneration, FFMPEG, FFPROBE } from '../../../dv/api/tests/support.ts'
+import { FakeRef2vaRenderer, FFMPEG, FFPROBE } from '../../../dv/api/tests/support.ts'
 
 const disposers: Array<() => Promise<void> | void> = []
 
@@ -34,25 +36,44 @@ afterEach(async () => {
   for (const dispose of disposers.splice(0).reverse()) await dispose()
 })
 
-/** The plugin of each package a bundle row names, resolved through `globalThis` because Node imports the rows outside Vite. */
+/** A `t2va` provider that fails every call; the composition only checks whether its row mounts it. */
+class FakeT2vaRenderer extends T2vaRenderer {
+  model(): Promise<RenderModelFacts> {
+    return Promise.reject(new Error('the composition test renders no t2va shot'))
+  }
+
+  ready(): Promise<{ ready: boolean; detail: string | null }> {
+    return Promise.resolve({ ready: false, detail: 'composition test' })
+  }
+
+  render(): AsyncIterable<RenderStreamEvent> {
+    throw new Error('the composition test renders no t2va shot')
+  }
+}
+
+/**
+ * The plugin of each package a bundle row names, resolved through `globalThis` because Node imports the rows outside
+ * Vite. Each render mode provider row loads a fake provider of its render mode.
+ */
 const PLUGINS: Record<string, object> = {
   '@deepseek-ai/dsh-system-prompt': SystemPrompt, '@deepseek-ai/dsh-tools': ToolRuntime, '@dv/project': DvProject,
   '@dv/ffmpeg': DvFfmpeg, '@dv/asset-pool': DvAssetPool, '@dv/inspector': DvInspector, '@dv/story-bible': DvStoryBible,
   '@dv/shot-plan': DvShotPlan, '@dv/shot-render': DvShotRender, '@dv/timeline': DvTimeline, '@dv/deliver': DvDeliver,
-  '@dv/api': DvApi, '@dv/agent-integration': DvAgentIntegration,
+  '@dv/api': DvApi, '@dv/chat-references': DvChatReferences,
+  '@dv/fasth3-ref2va': FakeRef2vaRenderer, '@dv/fasth3-t2va': FakeT2vaRenderer,
 }
 
 /** One row of a Loader entry list. */
-interface Row { id: string; name: string; config?: unknown }
+interface Row { id: string; name: string; config?: unknown; disabled?: unknown }
 
 /**
  * The rows of the bundle patch that mount host plugins of DreamVerse, as the bundle writes them.
- * @returns the `dv-*` rows of the patch's first insert list, without the interface plugins and the generation client.
+ * @returns the `dv-*` rows of the patch's first insert list, without the interface plugins.
  */
 function bundleRows(): Row[] {
   const patch = yaml.load(readFileSync(fileURLToPath(new URL('../cordis.patch.yml', import.meta.url)), 'utf8'), { schema: entryListSchema })
   const [first] = patch as Array<{ insert?: Row[] }>
-  return (first?.insert ?? []).filter(row => row.id.startsWith('dv-') && !row.id.startsWith('dv-ui-') && row.id !== 'dv-generation-client')
+  return (first?.insert ?? []).filter(row => row.id.startsWith('dv-') && !row.id.startsWith('dv-ui-'))
 }
 
 describe('DreamVerse bundle composition', () => {
@@ -63,13 +84,16 @@ describe('DreamVerse bundle composition', () => {
     vi.stubEnv('DV_STATE_ROOT', dir)
     vi.stubEnv('DV_FFMPEG', FFMPEG)
     vi.stubEnv('DV_FFPROBE', FFPROBE)
+    // Without a t2va backend URL the `dv-fasth3-t2va` row stays disabled.
+    vi.stubEnv('DV_T2VA_BACKEND_URL', '')
     disposers.push(() => { vi.unstubAllEnvs() })
     const globals = globalThis as typeof globalThis & { __dvComposition?: Record<string, object> }
     globals.__dvComposition = PLUGINS
     disposers.push(() => { delete globals.__dvComposition })
     const rows = bundleRows()
-    expect(rows.map(row => row.id))
-      .toEqual(expect.arrayContaining(['dv-project', 'dv-shot-plan', 'dv-shot-render', 'dv-timeline', 'dv-api', 'dv-agent-integration']))
+    expect(rows.map(row => row.id)).toEqual(expect.arrayContaining([
+      'dv-fasth3-ref2va', 'dv-fasth3-t2va', 'dv-project', 'dv-shot-plan', 'dv-shot-render', 'dv-timeline', 'dv-chat-references', 'dv-api',
+    ]))
     // Each row keeps its id and `!!js` config; its package name points at a module that re-exports the plugin class.
     const entries = [
       { id: 'system-prompt', name: '@deepseek-ai/dsh-system-prompt' }, { id: 'tools', name: '@deepseek-ai/dsh-tools' }, ...rows,
@@ -83,19 +107,21 @@ describe('DreamVerse bundle composition', () => {
     writeFileSync(join(dir, 'cordis.yml'), yaml.dump(entries, { schema: entryListSchema }))
 
     const ctx = new Context()
-    const generation = new FakeGeneration()
-    ctx.provide('dreamverseGeneration', generation)
     await ctx.plugin(Loader)
     ctx.loader.builtins.include = Include
     await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })
     await ctx.loader.await()
     disposers.push(async () => { await ctx.fiber.dispose() })
 
-    expect(ctx.get('dvAgentIntegration')).toBeDefined()
+    expect(ctx.get('dvChatReferences')).toBeDefined()
     expect(ctx.get('dvApi')).toBeDefined()
     expect(ctx.get('dvProject')?.listOperations().map(spec => spec.name))
-      .toEqual(expect.arrayContaining(['plan.create', 'shot.render', 'timeline.create', 'timeline.update']))
-    expect(ctx.get('tools')?.get('dv_shot_render')).toBeDefined()
+      .toEqual(expect.arrayContaining(['plan.create', 'shot.render_ref2va', 'timeline.create', 'timeline.update']))
+    expect(ctx.get('tools')?.get('dv_shot_render_ref2va')).toBeDefined()
+    // The disabled t2va row mounts no provider, so Shot render registers no t2va operation and the agent has no t2va tool.
+    expect(ctx.get('dvT2va')).toBeUndefined()
+    expect(ctx.get('tools')?.get('dv_shot_render_t2va')).toBeUndefined()
+    const renderer = ctx.dvRef2va as FakeRef2vaRenderer
 
     const signal = new AbortController().signal
     const call = async (name: string, args: Record<string, unknown>) => {
@@ -109,7 +135,9 @@ describe('DreamVerse bundle composition', () => {
     await call('dv_asset_import', { reason: 'reference', path: join(dir, 'ref.png'), mime: 'image/png' })
     const reference = ctx.dvAssetPool.list().map(asset => asset.id)
     await call('dv_bible_character_create', { reason: 'lead', character: 'c1', name: 'Lead', inputs: { reference } })
-    const shot = await call('dv_shot_render', { reason: 'the opening shot', prompt: 'Picture 1 looks up', duration_sec: 1, inputs: { reference: 'c1@1' } })
+    const shot = await call('dv_shot_render_ref2va', {
+      reason: 'the opening shot', prompt: 'Picture 1 looks up', duration_sec: 1, inputs: { reference: 'c1@1' },
+    })
     const shotValue = shot.value as OperationToolValue
     expect(shotValue.status).toBe('done')
     // Model-visible: the rendered text names the record and the asset URLs.
@@ -118,12 +146,12 @@ describe('DreamVerse bundle composition', () => {
     expect(text?.type === 'text' ? text.text : '').toContain('/dv/assets/')
     // Durable: the project holds the record with its outputs on the session's draft, and the asset pool holds the bytes.
     const record = ctx.dvProject.getRecord(projectId, shotValue.record as RecordId)
-    expect(record).toMatchObject({ status: 'done', intent: 'the opening shot', operation: 'shot.render', operation_version: '1', actor: 'agent' })
+    expect(record).toMatchObject({ status: 'done', intent: 'the opening shot', operation: 'shot.render_ref2va', actor: 'agent' })
     expect(record.branch).toBe('draft/anonymous')
     expect(record.outputs).toHaveLength(2)
     const [video] = record.outputs
     expect(video !== undefined && ctx.dvAssetPool.has(video)).toBe(true)
-    expect(generation.requests).toHaveLength(1)
+    expect(renderer.requests).toHaveLength(1)
     await call('dv_timeline_create', { reason: 'lay out the shot', assets: [video] })
     const clips = ctx.dvProject.getState(projectId, 'draft/anonymous').components.timeline.timelines[0]?.clips
     expect(clips?.map(clip => [clip.id, clip.asset])).toEqual([['cl1', video]])
@@ -131,6 +159,6 @@ describe('DreamVerse bundle composition', () => {
     await call('dv_proj_draft_accept', {})
     expect(Object.keys(ctx.dvProject.getState(projectId).components.proj.created_by)).toHaveLength(3)
     // The bundle's `!!js` configuration put the project records under the state root the test set.
-    expect(readFileSync(join(dir, 'projects', projectId, 'records.jsonl'), 'utf8')).toContain('shot.render')
+    expect(readFileSync(join(dir, 'projects', projectId, 'records.jsonl'), 'utf8')).toContain('shot.render_ref2va')
   })
 })

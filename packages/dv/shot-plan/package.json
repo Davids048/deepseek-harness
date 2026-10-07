@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Shot plan component of DreamVerse: plan.create and plan.update store a plan of shots, and plan.approve schedules one shot.render per shot and the timeline.create or timeline.update of their clips.",
+  "description": "Shot plan component of DreamVerse: plan.create and plan.update store a plan of shots, each with its render mode, and plan.approve schedules one render per new or changed shot with the Shot render operation of its mode (shot.render_<mode>) and the timeline.create or timeline.update of their clips.",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"

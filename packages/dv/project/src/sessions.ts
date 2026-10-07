@@ -1,25 +1,17 @@
 /**
  * Chat sessions as Project's agent tools see them: the project each session is bound to (saved to one file per
- * session, so a restart continues the session), the agent turn each session is in with the human's words that started
- * it, and the work a session's tool calls wait for (chat images still being imported).
+ * session, so a restart continues the session), and the work a session's tool calls wait for (chat images still being
+ * imported).
  *
- * Calls nothing else in Project. Called by the service (`bindSession`, `sessionProject`, `noteTurn`, `sessionTurn`,
- * `holdToolCalls`) and by the agent tools module.
+ * Calls nothing else in Project. Called by the service (`bindSession`, `sessionProject`, `holdToolCalls`) and by the
+ * agent tools module.
  *
  * @module @dv/project/sessions
  */
-import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { ProjectId, SessionId, TurnId } from './types.ts'
-
-/** The agent turn a session is in: the DSH turn number, the turn ID, and the human's words that started it. */
-export interface SessionTurn {
-  number: number
-  turn: TurnId
-  requestText: string
-}
+import type { ProjectId, SessionId } from './types.ts'
 
 /**
  * The project of a session file, or null for a file without a binding. The file is `{"project": <ProjectId>}`; the
@@ -36,10 +28,9 @@ function boundProject(path: string): ProjectId | null {
   return brandString<ProjectId>(value)
 }
 
-/** Session bindings, turns, and held tool calls. */
+/** Session bindings and held tool calls. */
 export class Sessions {
   private readonly projects = new Map<SessionId, ProjectId | null>()
-  private readonly turns = new Map<SessionId, SessionTurn>()
   private readonly holds = new Map<SessionId, Promise<unknown>>()
 
   /**
@@ -68,30 +59,6 @@ export class Sessions {
       this.projects.set(session, existsSync(path) ? boundProject(path) : null)
     }
     return this.projects.get(session) ?? null
-  }
-
-  /**
-   * Note the agent turn a session is in. A new turn number starts a new turn ID; the same number with words sets the
-   * words of the turn.
-   * @param session - the chat session.
-   * @param turn - the agent loop's turn number.
-   * @param requestText - the human's words; empty when they are not known yet.
-   */
-  noteTurn(session: SessionId, turn: number, requestText: string): void {
-    const current = this.turns.get(session)
-    if (current !== undefined && current.number === turn) {
-      if (requestText !== '') current.requestText = requestText
-      return
-    }
-    this.turns.set(session, { number: turn, turn: brandString<TurnId>(randomUUID()), requestText })
-  }
-
-  /**
-   * @param session - the chat session.
-   * @returns the turn it is in, or undefined before its first noted turn.
-   */
-  turn(session: SessionId): SessionTurn | undefined {
-    return this.turns.get(session)
   }
 
   /**

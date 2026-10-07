@@ -7,10 +7,10 @@
  * `effectiveChain(U) = effectiveChain(X) + [U]`, and the records between X and U drop out. Every other record R gives
  * `effectiveChain(R) = effectiveChain(parents[0] of R) + [R]`. State is always computed from the effective chain.
  *
- * Steps. Undo and redo act on one branch, the caller's working branch (an open draft, an exploration branch, or
- * `main`). Every `operation` record is one step, except `proj.create`, `proj.undo`, `proj.redo`, `proj.draft_accept`,
- * `proj.draft_discard`, `proj.branch_create` and `proj.branch_switch`. An accepted draft's records stay separate steps
- * on `main`: a fast-forward accept keeps them on the effective chain of `main`, and a replay accept copies each one.
+ * Steps. Undo and redo act on one branch, the caller's working branch (an open draft, or `main`). Every record is one
+ * step, except `proj.create`, `proj.undo`, `proj.redo`, `proj.draft_accept` and `proj.draft_discard`. An accepted
+ * draft's records stay separate steps on `main`: a fast-forward accept keeps them on the effective chain of `main`, and
+ * a replay accept copies each one.
  *
  * Redo line. The jump run of a branch is the trailing run of `proj.undo` and `proj.redo` records on the raw chain of its
  * head. With H the record just before that run, the redo line is `effectiveChain(H)`, and the redo steps are the steps
@@ -29,7 +29,7 @@ import type { HistoryEntry, HistoryQuery, ProjectId, ProjectRecord, RecordId, Re
 
 /** `proj.*` operations whose records are not steps (see the module comment). */
 const NOT_A_STEP = new Set([
-  'proj.create', 'proj.undo', 'proj.redo', 'proj.draft_accept', 'proj.draft_discard', 'proj.branch_create', 'proj.branch_switch',
+  'proj.create', 'proj.undo', 'proj.redo', 'proj.draft_accept', 'proj.draft_discard',
 ])
 
 /**
@@ -37,7 +37,7 @@ const NOT_A_STEP = new Set([
  * @returns whether undo and redo count the record as one step.
  */
 function isStep(record: ProjectRecord): boolean {
-  return record.kind === 'operation' && !NOT_A_STEP.has(record.operation ?? '')
+  return !NOT_A_STEP.has(record.operation ?? '')
 }
 
 /**
@@ -196,7 +196,7 @@ export class History {
    * on the effective chain of its `forked_at`; `discarded` for records on the raw chain of a `proj.draft_discard` record
    * after its `params.base`, including that record; `replayed` for records listed in a `proj.draft_accept` record's
    * `params.replayed` as originals; `undone` for records on the raw chain of a branch after its `forked_at` that are not
-   * on its effective chain; `branch` for every other record. The first matching mark in that order wins. Draft names
+   * on its effective chain, and for every other record. The first matching mark in that order wins. Draft names
    * are reused per session, so a specific draft is identified by its fork record (`forked_at`, `params.base`), never
    * by the branch name alone. The `marks` filter applies after the record filters and before `limit`. Takes no lock.
    * @param query - the project and the filters.
@@ -277,8 +277,7 @@ export class History {
       if (onDraft.has(id)) return 'draft'
       if (discarded.has(id)) return 'discarded'
       if (replayed.has(id)) return 'replayed'
-      if (undone.has(id)) return 'undone'
-      return 'branch'
+      return 'undone'
     }
   }
 

@@ -153,16 +153,13 @@ describe('RecordStore', () => {
     const { project, first } = createProject(store)
     const record = store.append(project, line(first.id))
     store.update(project, { update: record.id, status: 'done', outputs: [ASSET_X] })
-    store.setBranch(project, { name: 'explore/look', head: record.id, base: null, forked_at: null, session: null })
-    store.append(project, line(record.id, { branch: 'explore/look' }))
-    store.setSessionBranch(project, SESSION, 'explore/look')
+    store.setBranch(project, { name: `draft/${SESSION}`, head: record.id, base: MAIN_BRANCH, forked_at: record.id, session: SESSION })
+    store.append(project, line(record.id, { branch: `draft/${SESSION}` }))
 
     const reloaded = openStore(root).store
     expect(reloaded.listProjects()).toEqual(store.listProjects())
     expect(reloaded.listRecords(project)).toEqual(store.listRecords(project))
     expect(reloaded.listBranches(project)).toEqual(store.listBranches(project))
-    expect(reloaded.getSessionBranch(project, SESSION)).toBe('explore/look')
-    expect(reloaded.getSessionBranch(project, OTHER_SESSION)).toBeUndefined()
   })
 
   it('fills resolved_asset of an output input once the producer is done', () => {
@@ -239,9 +236,9 @@ describe('RecordStore', () => {
     const { root, store, events } = openStore()
     const { project, first } = createProject(store)
     const draft = { name: `draft/${SESSION}`, head: first.id, base: MAIN_BRANCH, forked_at: first.id, session: SESSION }
-    store.setBranch(project, { ...draft, name: 'explore/b' })
+    store.setBranch(project, { ...draft, name: `draft/${OTHER_SESSION}`, session: OTHER_SESSION })
     store.setBranch(project, draft)
-    expect(store.listBranches(project).map(branch => branch.name)).toEqual([MAIN_BRANCH, `draft/${SESSION}`, 'explore/b'])
+    expect(store.listBranches(project).map(branch => branch.name)).toEqual([MAIN_BRANCH, `draft/${SESSION}`, `draft/${OTHER_SESSION}`])
     expect(events.at(-1)?.event).toEqual({ kind: 'branch', name: draft.name, branch: { ...draft, counts: null } })
     expect(errorCode(() => { store.setBranch(project, { ...draft, head: brandString<RecordId>('missing') }) })).toBe('unknown_record')
 
@@ -251,7 +248,7 @@ describe('RecordStore', () => {
     expect(errorCode(() => { store.removeBranch(project, draft.name) })).toBe('unknown_branch')
     expect(errorCode(() => { store.removeBranch(project, MAIN_BRANCH) })).toBe('invalid_params')
     expect(Object.keys((JSON.parse(readFileSync(join(root, project, 'branches.json'), 'utf8')) as { branches: object }).branches))
-      .toEqual([MAIN_BRANCH, 'explore/b'])
+      .toEqual([MAIN_BRANCH, `draft/${OTHER_SESSION}`])
   })
 
   it('emits record, update and branch events after the write', () => {

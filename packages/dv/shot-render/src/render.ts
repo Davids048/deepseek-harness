@@ -1,13 +1,10 @@
 /**
- * The pure helpers of `shot.render`: the frame size and frame count a shot asks the backend for, the GPU time the
- * backend reported, and the DreamVerse asset record of an asset-pool asset that the conditioning helpers read.
+ * The pure helpers of the Shot render operations: the frame size and frame count a shot asks the render mode for, the
+ * prompt labels of a `ref2va` request's images, and the GPU time the backend reported.
  *
  * @module @dv/shot-render/render
  */
-import { brandString } from '@deepseek-ai/dsh-brand'
-import type { AssetRecord, ModelFacts } from '@dreamverse/segment-generation'
-import type DvAssetPool from '@dv/asset-pool'
-import type { AssetId } from '@dv/project'
+import type { RenderModelFacts } from '@dv/render-modes'
 
 /** A params field as text, or the fallback when it is absent or not a string. */
 export function text(value: unknown, fallback = ''): string {
@@ -21,7 +18,6 @@ export function number(value: unknown, fallback: number): number {
 
 /** The frame size and frame count a shot asks for, after the model facts validated the choices. */
 export interface ShotGeometry {
-  mode: string
   aspectRatio: string
   resolution: string
   width: number
@@ -32,29 +28,48 @@ export interface ShotGeometry {
 
 /**
  * Resolve a shot's geometry from its params and the served model's facts. Omitted params take the model's first
- * mode, first aspect ratio, first resolution, and shortest duration.
+ * aspect ratio, first resolution, and shortest duration.
  * @param facts - the served model.
  * @param params - the record params.
  * @returns the geometry.
  * @throws Error naming the allowed values when a param is outside the model's facts.
  */
-export function shotGeometry(facts: ModelFacts, params: Record<string, unknown>): ShotGeometry {
-  const mode = text(params['generation_mode'], Object.keys(facts.generationModes)[0] ?? '')
-  if (facts.generationModes[mode] === undefined) {
-    throw new Error(`generation_mode must be one of ${Object.keys(facts.generationModes).join(', ')}.`)
-  }
+export function shotGeometry(facts: RenderModelFacts, params: Record<string, unknown>): ShotGeometry {
   const aspectRatio = text(params['aspect_ratio'], facts.aspectRatios[0] ?? '')
   const resolution = text(params['resolution'], facts.resolutions[0] ?? '')
   const size = facts.frameSizes[aspectRatio]?.[resolution]
   if (size === undefined) {
     throw new Error(`aspect_ratio and resolution must be one of ${facts.aspectRatios.join(', ')} at ${facts.resolutions.join(', ')}.`)
   }
-  const durationSec = number(params['duration_sec'], facts.minSegmentDurationSec)
+  const durationSec = number(params['duration_sec'], facts.minDurationSec)
   const numFrames = facts.numFramesByDurationSec[String(durationSec)]
   if (numFrames === undefined) {
-    throw new Error(`duration_sec must be a whole number from ${facts.minSegmentDurationSec} to ${facts.maxSegmentDurationSec}.`)
+    throw new Error(`duration_sec must be a whole number from ${facts.minDurationSec} to ${facts.maxDurationSec}.`)
   }
-  return { mode, aspectRatio, resolution, width: size[0], height: size[1], durationSec, numFrames }
+  return { aspectRatio, resolution, width: size[0], height: size[1], durationSec, numFrames }
+}
+
+/** The prompt labels of a `ref2va` request's images, as the record report keeps them (`image_labels`). */
+export interface ImageLabels {
+  /** Labels of the reference images, in input order. */
+  referenceLabels: string[]
+  /** Label of the first frame; null when the request carries none. */
+  firstFrameLabel: string | null
+}
+
+/**
+ * Name the images of a `ref2va` request: the reference images take the first labels in input order, and the first
+ * frame takes the next one.
+ * @param facts - the served model.
+ * @param referenceCount - the number of reference images.
+ * @param firstFrame - whether the request carries a first frame.
+ * @returns the labels; an image beyond the model's labels gets none.
+ */
+export function imageLabels(facts: RenderModelFacts, referenceCount: number, firstFrame: boolean): ImageLabels {
+  return {
+    referenceLabels: facts.imageLabels.slice(0, referenceCount),
+    firstFrameLabel: firstFrame ? facts.imageLabels[referenceCount] ?? null : null,
+  }
 }
 
 /**
@@ -66,21 +81,6 @@ export function shotGeometry(facts: ModelFacts, params: Record<string, unknown>)
 export function backendSeconds(timings: Record<string, number>): number {
   const seconds = Object.entries(timings).map(([key, value]) => key.endsWith('_ms') ? value / 1000 : value)
   return Math.round(Math.max(0, ...seconds) * 1000) / 1000
-}
-
-/**
- * A DreamVerse asset record over an asset-pool asset, so the DreamVerse conditioning helpers can read the file.
- * @param pool - the asset pool.
- * @param asset - the asset.
- * @returns the record; its owner is nominal because the asset pool has no owners.
- */
-export function assetRecord(pool: Pick<DvAssetPool, 'get' | 'path'>, asset: AssetId): AssetRecord {
-  const meta = pool.get(asset)
-  return {
-    assetId: brandString<AssetRecord['assetId']>(asset), owner: 'library', name: meta.name,
-    mediaType: meta.mime.startsWith('video/') ? 'video' : 'image', mimeType: meta.mime, filePath: pool.path(asset),
-    sizeBytes: meta.size_bytes, width: meta.width, height: meta.height, durationSec: meta.duration_sec, createdAt: meta.created_at,
-  }
 }
 
 /** The MIME type without parameters, as the asset pool records it. */

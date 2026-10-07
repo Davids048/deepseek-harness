@@ -463,7 +463,6 @@
     { "path": "./packages/video-harness/stream" },
     { "path": "./packages/dv/project" },
     { "path": "./packages/dv/api" },
-    { "path": "./packages/dv/agent-integration" },
     { "path": "./packages/dv/chat-references" },
     { "path": "./packages/dv/ffmpeg" },
     { "path": "./packages/dv/asset-pool" },

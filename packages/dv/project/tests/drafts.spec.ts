@@ -1,6 +1,6 @@
 /**
  * Tests of the drafts module: the working branch of a chat session, drafts that span turns, human edits on the
- * working branch, accept by fast-forward and by replay, conflicts, discard with counts, and exploration branches.
+ * working branch, accept by fast-forward and by replay, conflicts, and discard with counts.
  * Writes go through `drafts.branchForWrite` under the project lock, as the runner does.
  */
 import { readFileSync } from 'node:fs'
@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ProjectModules } from './support.ts'
 import { agentOrigin, createTestProject, OTHER_SESSION, readLines, SESSION, startModules, userOrigin } from './support.ts'
-import { DraftConflictError, draftBranch, MAIN_BRANCH, ProjectError } from '../src/shared.ts'
+import { DraftConflictError, draftBranch, MAIN_BRANCH } from '../src/shared.ts'
 import type { ProjectId, ProjectRecord, RecordId, RecordOrigin, RecordStatus } from '../src/types.ts'
 
 declare module '@dv/project' {
@@ -229,36 +229,5 @@ describe('drafts', () => {
       })
     }
     expect(m.store.getBranch(project, DRAFT)?.head).toBe(render.id)
-  })
-
-  it('creates and switches to an exploration branch', async () => {
-    const m = startModules()
-    const project = await createTestProject(m)
-    const mainHead = headOf(m, project, MAIN_BRANCH)
-    const created = await m.store.lock(project, () => m.drafts.createBranch(project, 'explore/alt', MAIN_BRANCH, userOrigin()))
-    const createRecord = m.store.getRecord(project, created.head)
-    expect(createRecord).toMatchObject({
-      branch: 'explore/alt', parents: [mainHead], operation: 'proj.branch_create', params: { name: 'explore/alt', at: mainHead },
-    })
-    expect(created).toMatchObject({ name: 'explore/alt', base: null, forked_at: null, session: null, counts: null })
-    await expect(m.store.lock(project, () => m.drafts.createBranch(project, 'explore/alt', MAIN_BRANCH, userOrigin())))
-      .rejects.toMatchObject({ code: 'branch_exists' })
-    await expect(m.store.lock(project, () => m.drafts.createBranch(project, 'alt', MAIN_BRANCH, userOrigin())))
-      .rejects.toBeInstanceOf(ProjectError)
-
-    const switched = await m.store.lock(project, () => m.drafts.switchBranch(project, 'explore/alt', userOrigin()))
-    expect(m.store.getRecord(project, switched.head)).toMatchObject({
-      branch: 'explore/alt', parents: [created.head], operation: 'proj.branch_switch', params: { from: MAIN_BRANCH, to: 'explore/alt' },
-    })
-    expect(m.drafts.workingBranch(project, SESSION).name).toBe('explore/alt')
-    expect(m.drafts.workingBranch(project, OTHER_SESSION).name).toBe(MAIN_BRANCH)
-
-    const change = await write(m, project, agentOrigin())
-    expect(change.branch).toBe(DRAFT)
-    expect(m.store.getBranch(project, DRAFT)).toMatchObject({ base: 'explore/alt', forked_at: switched.head })
-    const accepted = await m.store.lock(project, () => m.drafts.accept(project, userOrigin()))
-    expect(headOf(m, project, 'explore/alt')).toBe(accepted.id)
-    expect(headOf(m, project, MAIN_BRANCH)).toBe(mainHead)
-    expect(m.drafts.workingBranch(project, SESSION)).toMatchObject({ name: 'explore/alt', head: accepted.id })
   })
 })

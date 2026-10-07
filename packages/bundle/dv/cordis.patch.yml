@@ -1,7 +1,9 @@
 # The DreamVerse bundle patch: the DreamVerse plugins over dsh-base, for a profile that also stacks dsh-web-app (the
 # chat page) or dsh-headless (one task per process). Every row reads its configuration from the environment that
 # scripts/video-harness/launch.sh prepares:
-#   DV_BACKEND_URL   FastVideo streaming_v2 server (default http://127.0.0.1:8029)
+#   DV_BACKEND_URL   FastVideo streaming_v2 server of the ref2va render mode (default http://127.0.0.1:8029)
+#   DV_T2VA_BACKEND_URL  FastVideo streaming_v2 server of the t2va render mode (FastVideo/FastVideo-FastH3-8-Step-V2);
+#                        unset, the t2va render mode is not mounted
 #   DV_STATE_ROOT    where assets, project records, session bindings, and view state live (default ~/.local/state/dv)
 #   DV_FFMPEG / DV_FFPROBE  media binaries
 #   DV_PUBLIC_URL    origin that serves /dv/assets to remote viewers, for links in chat cards
@@ -12,10 +14,18 @@
 #   GROQ_API_KEY          key of the documented fallback route
 
 - insert:
-    - id: dv-generation-client
-      name: '@dreamverse/generation-client'
+    # The render mode providers; Shot render registers dv_shot_render_<mode> only for the modes mounted here.
+    - id: dv-fasth3-ref2va
+      name: '@dv/fasth3-ref2va'
       config:
         baseUrl: !!js process.env.DV_BACKEND_URL || 'http://127.0.0.1:8029'
+
+    # Mounted only when DV_T2VA_BACKEND_URL names a t2va backend; without it the agent has no dv_shot_render_t2va tool.
+    - id: dv-fasth3-t2va
+      name: '@dv/fasth3-t2va'
+      disabled: !!js "!process.env.DV_T2VA_BACKEND_URL"
+      config:
+        baseUrl: !!js process.env.DV_T2VA_BACKEND_URL
 
     - id: dv-ffmpeg
       name: '@dv/ffmpeg'
@@ -64,12 +74,9 @@
     - id: dv-deliver
       name: '@dv/deliver'
 
-    - id: dv-agent-integration
-      name: '@dv/agent-integration'
-      config:
-        stateRoot: !!js >-
-          process.env.DV_STATE_ROOT || process.getBuiltinModule('node:path').join(
-          process.getBuiltinModule('node:os').homedir(), '.local/state/dv')
+    # dv: mentions in chat messages and chat image import.
+    - id: dv-chat-references
+      name: '@dv/chat-references'
 
     # The browser API for the interface plugins, and the interface plugins themselves.
     - id: dv-api
@@ -98,11 +105,12 @@
     - id: dv-ui-shell
       name: '@dv/ui-shell'
 
-# The directing skills ship inside @dv/agent-integration; skill-filesystem discovers them beside the user's own.
+# The video-directing skill ships in this bundle's skills directory; skill-filesystem discovers it beside the user's own.
+# The model and timeline skills are registered by their plugins through ctx.skills.
 - id: skill-filesystem
   config:
     customSkillDirs:
-      - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@dv/agent-integration/package.json')), 'skills')
+      - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@dv/bundle/package.json')), 'skills')
 
 # DreamVerse identity. The host prompt drops the harness opener and states the creator-facing persona, which the
 # headless profile uses as is; the Web surface's prompt section (Web GUI URL, harness checkout) is left out, because
@@ -115,7 +123,7 @@
       project: characters and reference images, shots, takes, and the clips of each timeline. You work only through
       the dv_* video tools and the skills listed for you; you have no shell, file, or web access. Reply in the language of
       the user's latest message, in plain words a creator understands; mention record IDs, asset IDs, and tool names
-      only when the user asks for them.
+      only when the user asks for them. Call the video model "DreamVerse 视频模型" and never name a model codename or ID.
     personaSuffix: ''
 
 - id: web-runtime
@@ -151,7 +159,7 @@
             config:
               includeDefaultRoots: false
               customSkillDirs:
-                - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@dv/agent-integration/package.json')), 'skills')
+                - !!js process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:path').dirname(process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('@dv/bundle/package.json')), 'skills')
           - id: tool-skill
             name: '@deepseek-ai/dsh-tool-skill'
           - id: tool-ask-user

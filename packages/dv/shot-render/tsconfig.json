@@ -18,12 +18,6 @@
       "path": "../../core/tools"
     },
     {
-      "path": "../../dreamverse/generation-client"
-    },
-    {
-      "path": "../../dreamverse/segment-generation"
-    },
-    {
       "path": "../../util/brand"
     },
     {
@@ -31,6 +25,9 @@
     },
     {
       "path": "../project"
+    },
+    {
+      "path": "../render-modes"
     }
   ]
 }

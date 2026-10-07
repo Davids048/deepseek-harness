@@ -28,7 +28,7 @@ export default defineConfig(({ env }) => {
         // Video harness host packages load from source the same way; ui-kit is bundled into the two client plugins.
         // One pattern per package: the matcher does not expand braces.
         'packages/video-harness/oplog/**', 'packages/video-harness/runtime/**',
-        'packages/dv/agent-integration/**',
+        'packages/dv/chat-references/**',
         'packages/dv/api/**', 'packages/dv/ui-kit/**', 'packages/video-harness/stream/**',
         'packages/bundle/dv/**',
       ],

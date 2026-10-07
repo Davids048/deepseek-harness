@@ -1,7 +1,7 @@
 /**
- * Tests of the operation runner: recorded runs, the turn's request record, refusals before any write, failures,
- * deterministic reuse, read-only operations, confirmation of agent renders, the lock scope during execution, and the
- * recovery of records an earlier process left unfinished.
+ * Tests of the operation runner: recorded runs, refusals before any write, failures, deterministic reuse, read-only
+ * operations, runs of operations that ask for confirmation, the lock scope during execution, and the recovery of
+ * records an earlier process left unfinished.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -16,7 +16,7 @@ import { Runner } from '../src/runner.ts'
 import { Scheduler } from '../src/scheduler.ts'
 import { MAIN_BRANCH } from '../src/shared.ts'
 import type {
-  ApprovalChannel, AssetId, OperationSpec, PendingApproval, ProjectId, ProjectRecord, RecordOrigin, RunRequest,
+  AssetId, OperationSpec, ProjectId, ProjectRecord, RecordOrigin, RunRequest,
 } from '../src/types.ts'
 
 /**
@@ -98,26 +98,6 @@ describe('Runner', () => {
     expect(m.assets.created.get(record?.outputs[0] as AssetId)).toBe(record?.id)
     const lines = readLines(m.root, project).filter(line => line['id'] === record?.id || line['update'] === record?.id)
     expect(lines.map(line => line['status'])).toEqual(['pending', 'running', 'done'])
-  })
-
-  it('writes the turn\'s request record once', async () => {
-    const m = startModules()
-    const project = await createTestProject(m)
-    m.runner.registerOperation(operation({ name: 'timeline.clip_insert', component: 'timeline' }))
-
-    const origin = agentOrigin('turn-1')
-    await m.runner.run(request(project, 'timeline.clip_insert', origin, { request_text: 'cut the kite scene in two' }))
-    await m.runner.run(request(project, 'timeline.clip_insert', origin, { request_text: 'cut the kite scene in two' }))
-
-    const records = m.store.listRecords(project)
-    const requests = records.filter(record => record.kind === 'request')
-    expect(requests).toHaveLength(1)
-    expect(requests[0]).toMatchObject({
-      component: 'proj', operation: null, actor: 'user', surface: 'chat', intent: 'cut the kite scene in two', status: 'done',
-    })
-    const firstOperation = records.findIndex(record => record.operation === 'timeline.clip_insert')
-    expect(records.indexOf(requests[0] as ProjectRecord)).toBe(firstOperation - 1)
-    expect(records[firstOperation]?.parents).toEqual([requests[0]?.id])
   })
 
   it('adds the records an operation replaces to the record\'s supersedes', async () => {
@@ -264,82 +244,22 @@ describe('Runner', () => {
     expect(files(m, project)).toBe(before)
   })
 
-  it('asks before an agent render in ask-first mode', async () => {
+  it('runs an operation that asks for confirmation at once for every caller, holding no call', async () => {
     const m = startModules()
     const project = await createTestProject(m)
     m.runner.registerOperation(operation({
-      name: 'shot.render', component: 'shot', confirm: 'agent_ask_first', estimate: () => ({ gpu_seconds: 40 }),
+      name: 'shot.render_ref2va', component: 'shot', confirm: 'over_gpu_budget', estimate: () => ({ gpu_seconds: 400 }),
+      confirmSummary: () => ({ text: 'render', gpu_seconds: 400 }),
     }))
-    const approvals: Array<{ approval: PendingApproval; answer: (approved: boolean) => void }> = []
-    m.runner.registerApprovalChannel({
-      asksFirst: () => true,
-      requestApproval: approval => new Promise((resolve) => {
-        approvals.push({ approval, answer: resolve })
-        approval.signal.addEventListener('abort', () => { resolve(false) })
-      }),
-    })
-
-    // Approved: the record waits pending until the card answers, then runs.
-    const approved = m.runner.run(request(project, 'shot.render', agentOrigin()))
-    await vi.waitFor(() => { expect(approvals).toHaveLength(1) })
-    const card = approvals[0]
-    expect(card?.approval.gpu_seconds).toBe(40)
-    expect(m.store.getRecord(project, card?.approval.record.id as ProjectRecord['id']).status).toBe('pending')
-    card?.answer(true)
-    expect((await approved).record?.status).toBe('done')
-
-    // Skipped: the record ends cancelled without running.
-    const skipped = m.runner.run(request(project, 'shot.render', agentOrigin()))
-    await vi.waitFor(() => { expect(approvals).toHaveLength(2) })
-    approvals[1]?.answer(false)
-    expect((await skipped).record).toMatchObject({ status: 'cancelled', error: { code: 'skipped' } })
-
-    // Stopped: aborting the turn's signal ends the wait.
-    const stop = new AbortController()
-    const stopped = m.runner.run(request(project, 'shot.render', agentOrigin(), { signal: stop.signal }))
-    await vi.waitFor(() => { expect(approvals).toHaveLength(3) })
-    stop.abort()
-    expect((await stopped).record).toMatchObject({ status: 'cancelled', error: { code: 'stopped' } })
-
-    // An already-aborted signal shows no card.
-    const early = await m.runner.run(request(project, 'shot.render', agentOrigin(), { signal: AbortSignal.abort() }))
-    expect(early.record).toMatchObject({ status: 'cancelled', error: { code: 'stopped' } })
-    expect(approvals).toHaveLength(3)
-  })
-
-  it('does not ask for human calls or in direct mode', async () => {
-    const m = startModules()
-    const project = await createTestProject(m)
-    m.runner.registerOperation(operation({ name: 'shot.render', component: 'shot', confirm: 'agent_ask_first' }))
-    let asksFirst = true
-    const requestApproval = vi.fn<ApprovalChannel['requestApproval']>(() => Promise.resolve(false))
-    m.runner.registerApprovalChannel({ asksFirst: () => asksFirst, requestApproval })
-
-    const human = await m.runner.run(request(project, 'shot.render', userOrigin()))
-    asksFirst = false
-    const direct = await m.runner.run(request(project, 'shot.render', agentOrigin()))
-
-    expect(human.record?.status).toBe('done')
-    expect(direct.record?.status).toBe('done')
-    expect(requestApproval).not.toHaveBeenCalled()
-  })
-
-  it('asks in ask-first mode even when the agent call says the user approved it', async () => {
-    const m = startModules()
-    const project = await createTestProject(m)
     m.runner.registerOperation(operation({
-      name: 'shot.render', component: 'shot', confirm: 'agent_ask_first',
-      params: { prompt: { type: 'string' }, user_approved: { type: 'boolean' }, user_requested: { type: 'boolean' } },
+      name: 'plan.approve', component: 'plan', confirm: 'always', confirmSummary: () => ({ text: 'approve', gpu_seconds: 0 }),
     }))
-    const requestApproval = vi.fn<ApprovalChannel['requestApproval']>(() => Promise.resolve(false))
-    m.runner.registerApprovalChannel({ asksFirst: () => true, requestApproval })
-
-    const result = await m.runner.run(request(project, 'shot.render', agentOrigin(), {
-      params: { prompt: 'a red kite', user_approved: true, user_requested: true },
-    }))
-
-    expect(requestApproval).toHaveBeenCalledTimes(1)
-    expect(result.record).toMatchObject({ status: 'cancelled', error: { code: 'skipped' } })
+    // The agent's agreement is checked by the operation's tool; the run path itself never waits for it.
+    expect((await m.runner.run(request(project, 'shot.render_ref2va', agentOrigin()))).record?.status).toBe('done')
+    expect((await m.runner.run(request(project, 'plan.approve', agentOrigin()))).record?.status).toBe('done')
+    expect((await m.runner.run(request(project, 'plan.approve', userOrigin()))).record?.status).toBe('done')
+    expect(() => m.runner.registerOperation(operation({ name: 'shot.render_t2va', component: 'shot', confirm: 'always' })))
+      .toThrow(expect.objectContaining({ code: 'invalid_params' }))
   })
 
   it('refuses an operation whose name does not start with its component key', () => {

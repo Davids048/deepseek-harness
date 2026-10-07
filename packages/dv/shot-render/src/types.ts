@@ -5,7 +5,7 @@
  */
 import type { RecordId } from '@dv/project'
 
-/** The `shot` slice: the takes of each shot, rebuilt from the finished `shot.render` records. */
+/** The `shot` slice: the takes of each shot, rebuilt from the finished render records of every render mode. */
 export interface ShotState {
   /** The root record of each shot → the root and every take that is `based_on` it, directly or through others. */
   takes: Record<RecordId, RecordId[]>

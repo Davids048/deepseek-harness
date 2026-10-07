@@ -21,7 +21,6 @@ import { serveEventStream } from './events.ts'
 import { CanvasLayoutStore, layoutRoutes } from './layout.ts'
 import { projectAdminRoutes } from './projects-admin.ts'
 import { workspaceRoutes } from './workspaces.ts'
-import type { ViewSelection } from './wire.ts'
 
 export { answer, ApiHandlers, ApiRequestError, messageOf, type ApiServices, type OperationRequest, type WireProject } from './api.ts'
 export { ASSET_IMPORT_ROUTE } from './asset-import.ts'
@@ -30,12 +29,12 @@ export { LAYOUT_ROUTE, type CanvasLayout, type CanvasViewport, type NodePosition
 export { PROJECT_ADMIN_ROUTES } from './projects-admin.ts'
 export { WORKSPACE_ROUTES } from './workspaces.ts'
 export {
-  mentionedAssets, projectIdOf, toWireOperation, toWireState, type ViewSelection, type WireHistory, type WireOperation, type WireState,
+  mentionedAssets, projectIdOf, toWireOperation, toWireState, type WireHistory, type WireOperation, type WireState,
 } from './wire.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** The browser API: branch state, operation declarations, human operation calls, drafts, and view selections. */
+    /** The browser API: branch state, operation declarations, human operation calls, drafts, and the history. */
     dvApi: DvApi
   }
 }
@@ -70,11 +69,8 @@ export const ROUTES = {
   discardDraft: '/api/dv/drafts/discard',
   undo: '/api/dv/undo',
   redo: '/api/dv/redo',
-  createBranch: '/api/dv/branches/create',
-  switchBranch: '/api/dv/branches/switch',
   acceptStale: '/api/dv/stale/accept',
   history: '/api/dv/history',
-  selection: '/api/dv/selection',
 } as const
 
 /**
@@ -118,14 +114,6 @@ export default class DvApi extends Service {
     })
   }
 
-  /**
-   * @param projectId - a project.
-   * @returns what a view last selected there, or null.
-   */
-  selection(projectId: ProjectId): ViewSelection | null {
-    return this.api.getSelection(projectId)
-  }
-
   /** @returns the Fetch routes in path order. */
   fetchRoutes(): ConnectionFetchRoute[] {
     const api = this.api
@@ -153,16 +141,8 @@ export default class DvApi extends Service {
       { path: ROUTES.discardDraft, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.discardDraft(body)) },
       { path: ROUTES.undo, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.undo(body)) },
       { path: ROUTES.redo, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.redo(body)) },
-      { path: ROUTES.createBranch, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.createBranch(body)) },
-      { path: ROUTES.switchBranch, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.switchBranch(body)) },
       { path: ROUTES.acceptStale, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.acceptStale(body)) },
       { path: ROUTES.history, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.listHistory(body)) },
-      {
-        path: ROUTES.selection, methods: ['GET', 'POST'], requestBody: 'buffered',
-        fetch: request => request.method === 'GET'
-          ? answer(() => api.getSelection(query(request, 'project')))
-          : withBody(body => api.select(body))(request),
-      },
       ...layoutRoutes(this.ctx.dvProject, layouts),
       ...workspaceRoutes(this.ctx.dvProject, this.config.stateRoot),
       ...projectAdminRoutes(this.ctx.dvProject, this.config.stateRoot, layouts),

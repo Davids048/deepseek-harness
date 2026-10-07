@@ -18,10 +18,19 @@
       "path": "../../attachment/attachment"
     },
     {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../core/system-prompt"
+    },
+    {
       "path": "../../core/tools"
     },
     {
       "path": "../../llm/llm"
+    },
+    {
+      "path": "../../session/session-projection"
     },
     {
       "path": "../../util/brand"

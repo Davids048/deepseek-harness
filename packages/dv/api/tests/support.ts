@@ -1,7 +1,7 @@
 /**
- * Mounting for the API, agent integration, stream, bundle and e2e specs: the real Project service, asset pool, `dvFfmpeg`, the Story bible,
- * Shot plan, Shot render and Timeline components, and optionally the DSH tool registry, over a temporary root, with a
- * fake generation backend.
+ * Mounting for the API, chat references, stream, bundle and e2e specs: the real Project service, asset pool, `dvFfmpeg`,
+ * the Story bible, Shot plan, Shot render and Timeline components, and optionally the DSH tool registry, over a temporary
+ * root, with a fake `ref2va` render mode provider.
  */
 import { execFile } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -12,10 +12,10 @@ import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
-import type { ModelFacts, SegmentOutput, SegmentRequest } from '@dreamverse/generation-client'
 import DvAssetPool from '@dv/asset-pool'
 import DvFfmpeg from '@dv/ffmpeg'
 import DvProject from '@dv/project'
+import { Ref2vaRenderer, type Ref2vaRequest, type RenderModelFacts, type RenderStreamEvent } from '@dv/render-modes'
 import DvShotPlan from '@dv/shot-plan'
 import DvShotRender from '@dv/shot-render'
 import DvStoryBible from '@dv/story-bible'
@@ -33,15 +33,15 @@ function framesByDuration(min: number, max: number): Record<string, number> {
 }
 
 /**
- * A reference-image model with small frames so the fake backend renders quickly.
+ * A reference-image model with small frames so the fake provider renders quickly.
  * @returns the facts.
  */
-export function testFacts(): ModelFacts {
+export function testFacts(): RenderModelFacts {
   return {
-    modelId: 'test-ref2va', name: 'Test Ref2VA', generationModes: { ref2va: 'reference_images' }, unsupportedGenerationModes: {},
-    aspectRatios: ['16:9', '9:16'], resolutions: ['720p'], minSegmentDurationSec: 1, maxSegmentDurationSec: 5, maxReferenceImages: 3,
-    maxReferenceAspectRatio: 4, usesPreviousFrame: true, frameSizes: { '16:9': { '720p': [192, 112] }, '9:16': { '720p': [112, 192] } },
-    numFramesByDurationSec: framesByDuration(1, 5), referenceLabels: ['Picture 1', 'Picture 2', 'Picture 3'],
+    modelId: 'test-ref2va', name: 'Test Ref2VA', aspectRatios: ['16:9', '9:16'], resolutions: ['720p'],
+    frameSizes: { '16:9': { '720p': [192, 112] }, '9:16': { '720p': [112, 192] } }, minDurationSec: 1, maxDurationSec: 5,
+    numFramesByDurationSec: framesByDuration(1, 5), maxReferenceImages: 2, imageLabels: ['Picture 1', 'Picture 2', 'Picture 3'],
+    gpuSecondsPerVideoSecond: 4,
   }
 }
 
@@ -62,19 +62,23 @@ export async function encodeClip(dir: string, width: number, height: number, num
   return { video: readFileSync(video), lastFrame: readFileSync(frame) }
 }
 
-/** A generation backend that renders a solid-color clip for every request and remembers the requests. */
-export class FakeGeneration {
+/** A `ref2va` provider (`dvRef2va`) that renders a solid-color clip for every request and remembers the requests. */
+export class FakeRef2vaRenderer extends Ref2vaRenderer {
   facts = testFacts()
-  readonly requests: SegmentRequest[] = []
+  readonly requests: Ref2vaRequest[] = []
 
-  model(): Promise<ModelFacts> {
+  model(): Promise<RenderModelFacts> {
     return Promise.resolve(this.facts)
   }
 
+  ready(): Promise<{ ready: boolean; detail: string | null }> {
+    return Promise.resolve({ ready: true, detail: null })
+  }
+
   /** Render the request's frames as a solid clip, then stream its last frame, its bytes in two chunks, and completion. */
-  async *generateSegment(request: SegmentRequest): AsyncIterable<SegmentOutput> {
+  async *render(request: Ref2vaRequest): AsyncIterable<RenderStreamEvent> {
     this.requests.push(request)
-    const dir = mkdtempSync(join(tmpdir(), 'dv-fake-generation-'))
+    const dir = mkdtempSync(join(tmpdir(), 'dv-fake-render-'))
     try {
       const encoded = await encodeClip(dir, request.frameWidth, request.frameHeight, request.numFrames, colorFor(request.prompt))
       yield { kind: 'last_frame', png: encoded.lastFrame }
@@ -101,7 +105,8 @@ export interface BaseFixture {
   context: Context
   project: DvProject
   assets: DvAssetPool
-  generation: FakeGeneration
+  /** The fake `ref2va` provider, or null when the fixture mounts none. */
+  renderer: FakeRef2vaRenderer | null
   root: string
   /** Write a file with the given content and return its path, for imports. */
   writeFile(name: string, content?: string | Buffer): string
@@ -113,7 +118,7 @@ export interface BaseFixture {
 /** What a fixture mounts beside the components. */
 export interface BaseFixtureOptions {
   root?: string
-  /** `fake` provides the fake generation backend; `none` provides no backend. */
+  /** `fake` mounts the fake `ref2va` provider; `none` mounts no render mode provider. */
   generation?: 'fake' | 'none'
   /** Whether the DSH system prompt and tool registry are mounted. */
   dsh?: boolean
@@ -129,22 +134,28 @@ export interface BaseFixtureOptions {
 export async function startBase(options: BaseFixtureOptions = {}): Promise<BaseFixture> {
   const root = options.root ?? mkdtempSync(join(tmpdir(), 'dv-base-'))
   const context = new Context()
-  const generation = new FakeGeneration()
-  if ((options.generation ?? 'fake') === 'fake') context.provide('dreamverseGeneration', generation)
+  let renderer: FakeRef2vaRenderer | null = null
+  if ((options.generation ?? 'fake') === 'fake') {
+    await context.plugin(FakeRef2vaRenderer).await()
+    renderer = context.dvRef2va as FakeRef2vaRenderer
+  }
   if (options.dsh !== false) {
     await context.plugin(SystemPrompt, {}).await()
     await context.plugin(ToolRuntime).await()
   }
-  await context.plugin(DvProject, { root: join(root, 'projects'), gpuConcurrency: 1, cpuConcurrency: 4, sessionRoot: join(root, 'sessions') }).await()
+  await context.plugin(DvProject, {
+    root: join(root, 'projects'), gpuConcurrency: 1, cpuConcurrency: 4, sessionRoot: join(root, 'sessions'), confirmGpuSecondsThreshold: 60,
+    promptSectionOrder: 4900,
+  }).await()
   await context.plugin(DvFfmpeg, { ffmpegPath: FFMPEG, ffprobePath: FFPROBE, outputLimitBytes: 1_048_576 }).await()
   await context.plugin(DvAssetPool, { root: join(root, 'assets'), publicBaseUrl: options.publicBaseUrl ?? '' }).await()
   await context.plugin(DvTimeline).await()
   await context.plugin(DvShotPlan).await()
   await context.plugin(DvStoryBible).await()
-  await context.plugin(DvShotRender, { gpuSecondsPerVideoSecond: 4 }).await()
+  await context.plugin(DvShotRender).await()
   let calls = 0
   return {
-    context, project: context.dvProject, assets: context.dvAssetPool, generation, root,
+    context, project: context.dvProject, assets: context.dvAssetPool, renderer, root,
     writeFile(name, content = `FILE:${name}`) {
       const path = join(root, name)
       writeFileSync(path, content)

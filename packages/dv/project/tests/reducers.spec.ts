@@ -82,7 +82,7 @@ describe('reducers', () => {
     expect(next.components.reducers_test?.count).toBe(3)
     expect(state.components.reducers_test?.count).toBe(2)
     expect(m.reducers.conflict(state, last)).toBeNull()
-    expect(() => m.reducers.getState(project, 'explore/missing')).toThrow(ProjectError)
+    expect(() => m.reducers.getState(project, 'draft/missing')).toThrow(ProjectError)
   })
 
   it('refuses a second reducer for a key', () => {
