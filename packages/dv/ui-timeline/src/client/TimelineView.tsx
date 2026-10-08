@@ -70,11 +70,11 @@ export function TimelineView({ projectId, branch, client = sharedClient, session
   }, [reload])
   const readOnly = branch.startsWith('draft/')
   if (state.value === null) {
-    return <p style={{ padding: 12 }} role={state.error === null ? undefined : 'alert'}>{state.error === null ? t('loading') : t('error', { message: state.error })}</p>
+    return <p style={{ padding: 12, color: 'var(--dv-text-2)', fontSize: 13, lineHeight: '20px' }} role={state.error === null ? undefined : 'alert'}>{state.error === null ? t('loading') : t('error', { message: state.error })}</p>
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      {notice !== null ? <p role="alert" style={{ margin: 0, padding: '4px 8px', color: 'var(--dv-accent, #b4432a)' }}>{t('error', { message: notice })}</p> : null}
+      {notice !== null ? <p role="alert" style={{ margin: 0, padding: '4px 12px', color: 'var(--dv-danger)', fontSize: 13, lineHeight: '20px' }}>{t('error', { message: notice })}</p> : null}
       <div style={{ flex: 1, minHeight: 0 }}>
         <TimelineEditor
           client={client}

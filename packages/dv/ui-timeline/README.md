@@ -26,7 +26,7 @@ Use this package to give the web application a timeline editor beside the chat. 
 
 Mount the plugin in a profile that stacks `dsh-web-app` and `@dv/api`, and build the browser bundle first with `pnpm run build`.
 
-The editor also has a toolbar and a ruler, and each clip carries its producer's last frame. Dragging a clip moves it, dragging its edges trims it, the toolbar splits the clip under the playhead, its 撤销 / Undo and 重做 / Redo step the working branch back and forward one step (whichever view made the step), and Delete removes the selected clip.
+The editor also has a toolbar and a ruler, and each clip carries its producer's last frame. Dragging a clip moves it, dragging its edges trims it, the toolbar splits the clip under the playhead, its 撤销 / Undo and 重做 / Redo step the working branch back and forward one step (whichever view made the step), and Delete removes the selected clip. The bar under the preview shows the timecode on the left; back 5 s, play or pause, and forward 5 s in the center (J, L, Shift+← and Shift+→ on the focused editor also skip 5 s); and on the right the playback speed button, which cycles 0.5×, 1×, 1.5× and 2× and keeps the speed for the browser tab's session, and full screen. The 原声 / Original audio track draws each clip's waveform over its played range. Dragging the line between the preview and the toolbar (or pressing ArrowUp and ArrowDown on it) changes the track area's height, which the browser remembers under the `localStorage` key `dv-timeline-track-height`; the preview keeps at least 160 px.
 
 ```yaml
 - id: dv-ui-timeline
@@ -69,6 +69,7 @@ The DOM carries test IDs `dv-timeline-body`, `dv-timeline-editor`, `dv-timeline-
 | [`src/client/TimelineEditor.tsx`](src/client/TimelineEditor.tsx) | The editor: tabs, viewer, toolbar, ruler, tracks, gestures |
 | [`src/client/timelines.ts`](src/client/timelines.ts) | Clip placement, drop position, timecode |
 | [`src/client/player.ts`](src/client/player.ts) | Continuous playback across clips |
+| [`src/client/waveform.ts`](src/client/waveform.ts) | Audio decoding, peak envelopes, and waveform bars of the 原声 track |
 | [`src/client/locales.ts`](src/client/locales.ts) | The `dvTimeline` dictionaries |
 
 </details>
@@ -98,4 +99,5 @@ None; the timeline sends nothing to a model.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **One video track** — the A1 track only mirrors the clips; audio and overlays have no lane of their own.
+- **One video track** — the 原声 (original audio) track mirrors the video clips and has no edits of its own; subtitles and music have no lane.
+- **Waveforms decode in the browser** — the 原声 track draws each clip's waveform by downloading the clip's whole media file and decoding its audio with the Web Audio API, one asset at a time and cached in memory per page load; a clip keeps a plain block while its audio decodes, when decoding fails, and when the media has no audio track.

@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在叠了 `dsh-web-app` 和 `@dv/api` 的 profile 里挂载插件，先用 `pnpm run build` 构建浏览器 bundle。
 
-编辑器还有一条工具栏和一把标尺，每个片段带生产它的记录的最后一帧。拖动片段即移动，拖动片段边缘即裁剪，工具栏在播放头处拆分片段，其 撤销 和 重做 把当前分支后退或前进一步（不论这一步是哪个视图做的），Delete 键移除选中的片段。
+编辑器还有一条工具栏和一把标尺，每个片段带生产它的记录的最后一帧。拖动片段即移动，拖动片段边缘即裁剪，工具栏在播放头处拆分片段，其 撤销 和 重做 把当前分支后退或前进一步（不论这一步是哪个视图做的），Delete 键移除选中的片段。预览下方的控制栏左侧是时间码；中间是后退 5 秒、播放或暂停、前进 5 秒（编辑器获得焦点时，J、L、Shift+← 和 Shift+→ 也能跳 5 秒）；右侧是播放速度按钮和全屏按钮，播放速度按钮在 0.5×、1×、1.5×、2× 之间循环，并在浏览器标签页的会话内保持所选速度。原声轨道按每个片段的播放区间画出它的波形。拖动预览和工具栏之间的分隔线（或在分隔线上按 ArrowUp 和 ArrowDown）可改变轨道区的高度，浏览器把它记在 `localStorage` 键 `dv-timeline-track-height` 下；预览至少保留 160 px。
 
 ```yaml
 - id: dv-ui-timeline
@@ -69,6 +69,7 @@ DOM 带测试 ID `dv-timeline-body`、`dv-timeline-editor`、`dv-timeline-viewer
 | [`src/client/TimelineEditor.tsx`](src/client/TimelineEditor.tsx) | 编辑器：标签、预览、工具栏、标尺、轨道、手势 |
 | [`src/client/timelines.ts`](src/client/timelines.ts) | 片段摆放、放下位置、时间码 |
 | [`src/client/player.ts`](src/client/player.ts) | 跨片段连续播放 |
+| [`src/client/waveform.ts`](src/client/waveform.ts) | 原声轨道的音频解码、峰值包络和波形条 |
 | [`src/client/locales.ts`](src/client/locales.ts) | `dvTimeline` 词典 |
 
 </details>
@@ -98,4 +99,5 @@ DOM 带测试 ID `dv-timeline-body`、`dv-timeline-editor`、`dv-timeline-viewer
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **只有一条视频轨道** — A1 轨道只镜像片段；音频和叠加层没有自己的泳道。
+- **只有一条视频轨道** — 原声轨道镜像视频片段，没有自己的编辑操作；字幕和配乐没有泳道。
+- **波形在浏览器里解码** — 原声轨道为每个片段画波形时，会下载片段的整个媒体文件，用 Web Audio API 解码其音频，一次解码一个素材，并在本次页面加载内按素材缓存在内存里；音频解码期间、解码失败时、媒体没有音轨时，片段保持纯色块。

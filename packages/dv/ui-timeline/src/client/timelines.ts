@@ -143,12 +143,25 @@ export function dropPosition(clips: TrackClip[], centerSec: number, exclude: num
 }
 
 /**
- * Format a time as `m:ss.s`.
+ * The playhead time after a skip, clamped to the timeline.
+ * @param position - the playhead time in seconds.
+ * @param seconds - the skip, negative to go back.
+ * @param total - the timeline's length in seconds.
+ * @returns the time in seconds, from 0 to `total`.
+ */
+export function skipTarget(position: number, seconds: number, total: number): number {
+  return Math.max(0, Math.min(position + seconds, total))
+}
+
+/**
+ * Format a time as `mm:ss.cc`: minutes padded to two digits, seconds to hundredths.
  * @param seconds - a position or duration.
  * @returns the text.
  */
 export function timecode(seconds: number): string {
-  const minutes = Math.floor(seconds / 60)
-  const rest = seconds - minutes * 60
-  return `${String(minutes)}:${rest < 10 ? '0' : ''}${rest.toFixed(1)}`
+  // Rounding to hundredths first keeps 59.999 s from printing as `00:60.00`.
+  const hundredths = Math.round(seconds * 100)
+  const minutes = Math.floor(hundredths / 6000)
+  const rest = (hundredths - minutes * 6000) / 100
+  return `${String(minutes).padStart(2, '0')}:${rest < 10 ? '0' : ''}${rest.toFixed(2)}`
 }
