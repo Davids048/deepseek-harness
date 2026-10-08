@@ -58,6 +58,18 @@ const TEXT_OVERRIDES: Record<string, Record<string, [string, string]>> = {
   },
 }
 
+/** The DreamVerse tab icon (`icon-simple.svg` of the FastVideo DreamVerse web app), shown in place of DSH's whale. */
+const DREAMVERSE_ICON =
+  'data:image/svg+xml,%3Csvg%20width%3D%22160%22%20height%3D%2293%22%20viewBox%3D%220%200%20160%2093%22%20fill%3D' +
+  '%22none%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cpath%20d%3D%22M28.8511%2091.66L57.6319%20' +
+  '1.86368H64.5394L35.7585%2091.66H28.8511Z%22%20fill%3D%22%23356CFF%22%20stroke%3D%22%23356CFF%22%20stroke-width' +
+  '%3D%222.30244%22%2F%3E%3Cpath%20d%3D%22M15.0376%2091.66L43.8185%201.86368H46.1209L17.3401%2091.66H15.0376Z%22%' +
+  '20fill%3D%22%23356CFF%22%20stroke%3D%22%23356CFF%22%20stroke-width%3D%222.30244%22%2F%3E%3Cpath%20d%3D%22M1.22' +
+  '217%2091.66L30.003%201.86366H31.1543L2.3734%2091.66H1.22217Z%22%20fill%3D%22%23356CFF%22%20stroke%3D%22%23356C' +
+  'FF%22%20stroke-width%3D%221.15122%22%2F%3E%3Cpath%20d%3D%22M71.4465%201.86483L42.666%2091.6599H69.144L78.3538%' +
+  '2058.2746H123.251L129.007%2039.855H84.1099L89.866%2022.5868H152.032L157.788%201.86483H71.4465Z%22%20fill%3D%22' +
+  '%23356CFF%22%20stroke%3D%22%23356CFF%22%20stroke-width%3D%222.30244%22%2F%3E%3C%2Fsvg%3E'
+
 /** Renders nothing in place of a DSH UI slot entry DreamVerse hides. */
 function Hidden(): ReactNode {
   return null
@@ -159,6 +171,17 @@ function DreamVerseGuide({ useTabInfo }: PropsRuntime<'sidebar.right.tab.guide'>
  * @param ctx - client root context with the DSH UI slots and `locale`.
  */
 export function applyChrome(ctx: ClientContext): void {
+  // The browser tab shows the DreamVerse icon: the page's icon links (DSH's whale) are swapped out while the shell is
+  // loaded.
+  ctx.effect(() => {
+    const icons = [...document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]')]
+    for (const link of icons) link.remove()
+    const icon = document.createElement('link')
+    icon.rel = 'icon'
+    icon.href = DREAMVERSE_ICON
+    document.head.append(icon)
+    return () => { icon.remove(); document.head.append(...icons) }
+  }, 'ui-shell: DreamVerse tab icon')
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = '@dv/ui-shell/chrome'
