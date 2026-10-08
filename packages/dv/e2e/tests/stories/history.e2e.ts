@@ -159,9 +159,10 @@ async function rowAttributes(page: Page, name: string): Promise<string[]> {
  */
 async function openHistory(page: Page): Promise<void> {
   const tab = page.locator('[role="tab"]', { hasText: /^历史$/ }).filter({ visible: true }).first()
-  // The panels open by themselves once the project's chat session is in place; 面板 reopens a collapsed panel.
+  // The panels open by themselves once the project's chat session is in place; the top bar's right-panel toggle reopens
+  // a collapsed panel.
   const shown = await tab.waitFor({ timeout: 5000 }).then(() => true, () => false)
-  if (!shown) await page.getByRole('button', { name: '面板', exact: true }).click()
+  if (!shown) await page.getByRole('button', { name: '显示或隐藏右侧面板', exact: true }).click()
   // A project switch remounts the right panel's session seat, so the tab found first can be replaced mid-click.
   for (let attempt = 0; attempt < 4; attempt++) {
     if (await tab.click({ timeout: 3000 }).then(() => true, () => false)) break

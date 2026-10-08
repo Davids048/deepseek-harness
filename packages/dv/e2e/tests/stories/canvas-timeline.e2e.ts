@@ -116,7 +116,7 @@ async function openPage(options: { lang?: string; scheme?: 'light' | 'dark' } = 
 /**
  * Load a project location the way a shared link or a reload does, and wait until the center shows that project. A
  * fresh browser can land on the project of DSH's last session instead of the linked one, a defect that the navigation
- * stories pin; the story then opens the project from the navigator, so canvas and timeline stories do not depend on it.
+ * stories pin; the story then opens the project from the session switcher, so canvas and timeline stories do not depend on it.
  * @param page - the page.
  * @param project - the project.
  * @param view - the center view.
@@ -135,12 +135,35 @@ async function gotoProject(page: Page, project: string, view: 'canvas' | 'timeli
     return (first ?? '').startsWith(title) && (second ?? '').startsWith(title)
   }
   if (!await settled()) {
-    await page.locator('nav, aside, body').getByText(title, { exact: true }).first().click()
+    await openProjectByTitle(page, title)
     await expect.poll(settled, { timeout: 15_000 }).toBe(true)
     if (view === 'timeline') await viewToggle(page, '时间线').or(viewToggle(page, 'Timeline')).first().click()
   }
   if (view === 'canvas') await page.locator('[data-testid="dv-canvas-view"]').waitFor({ timeout: 30_000 })
   else await page.locator('[data-testid="dv-timeline-editor"]').waitFor({ timeout: 30_000 })
+}
+
+/**
+ * Open a project by its title the way a creator does: from the 其他项目 list of the session switcher menu in the
+ * workspace top bar, because an open project collapses the left sidebar, or from the navigator on the entry page.
+ * @param page - the page.
+ * @param title - the project title.
+ */
+async function openProjectByTitle(page: Page, title: string): Promise<void> {
+  const switcher = page.locator('[data-dv-workspace] header button[aria-haspopup="menu"]')
+  if (await switcher.count() === 0) {
+    await page.locator('nav, aside, body').getByText(title, { exact: true }).first().click()
+    return
+  }
+  await switcher.click()
+  // The menu lists the open project under its own heading and every other project under 其他项目; when the page
+  // settled on the wanted project meanwhile, the menu only needs closing.
+  const menu = page.getByRole('menu')
+  const other = menu.getByRole('menuitem', { name: title, exact: true })
+  const open = menu.getByText(new RegExp(`^${title} · (会话|Chats)$`))
+  await expect.poll(async () => await other.count() + await open.count()).toBeGreaterThan(0)
+  if (await other.count() > 0) await other.click()
+  else await page.keyboard.press('Escape')
 }
 
 /** The 画布 | 时间线 toggle button in the workspace top bar. */
@@ -195,9 +218,9 @@ async function timelineClips(project: string, timelineId = 't1'): Promise<string
   return (timeline?.clips ?? []).map(clip => `${(clip.asset ?? 'pending').slice(0, 8)}[${String(clip.in_sec ?? '')}-${String(clip.out_sec ?? '')}]`)
 }
 
-/** Click 适配 on the canvas toolbar. */
+/** Click 适应 on the canvas zoom control. */
 async function fitCanvas(page: Page): Promise<void> {
-  await page.locator('[data-testid="dv-canvas-view"] button', { hasText: /^(适配|Fit)$/ }).click()
+  await page.locator('[data-testid="dv-canvas-view"] button', { hasText: /^(适应|Fit)$/ }).click()
   await page.waitForTimeout(300)
 }
 
@@ -363,13 +386,15 @@ describe('canvas stories', () => {
     await gotoProject(page, project.id)
     await fitCanvas(page)
     const plan = page.locator('[data-node-kind="plan"]')
-    await expect.poll(() => plan.textContent()).toContain('v2')
+    await expect.poll(() => plan.textContent()).toContain('第 2 版')
     await plan.click()
     const editor = page.locator('[data-testid="dv-canvas-node-editor"]')
     await expect.poll(() => editor.count()).toBe(1)
-    const scroll = await editor.evaluate(el => ({ top: el.scrollTop, scrollable: el.scrollHeight - el.clientHeight > 200 }))
+    // The editor panel keeps its header fixed and scrolls the shot cards in the body under it.
+    const body = editor.locator(':scope > div').first()
+    const scroll = await body.evaluate(el => ({ top: el.scrollTop, scrollable: el.scrollHeight - el.clientHeight > 200 }))
     expect(scroll).toEqual({ top: 0, scrollable: true })
-    // The editor is also a transformed direct child of the canvas; the pan-and-zoom surface comes first.
+    // The pan-and-zoom surface is the first transformed direct child of the canvas.
     const surface = page.locator('[data-testid="dv-canvas-view"] > div[style*="transform"]').first()
     const transform = async (): Promise<string> => await surface.evaluate(el => (el as HTMLElement).style.transform)
     const before = await transform()
@@ -377,11 +402,12 @@ describe('canvas stories', () => {
     if (box === null) throw new Error('editor has no box')
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
     await page.mouse.wheel(0, 300)
-    await expect.poll(() => editor.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+    await expect.poll(() => body.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
     expect(await transform()).toBe(before)
     const frame = await page.locator('[data-testid="dv-canvas-view"]').boundingBox()
     if (frame === null) throw new Error('canvas has no box')
-    // The tall editor leaves a 16 px margin; the bottom-right corner of that margin holds no node, no editor, and no toolbar.
+    // The centered editor leaves a margin around it; the bottom-right corner of the dimmed canvas holds no node, no editor,
+    // and no toolbar.
     await page.mouse.move(frame.x + frame.width - 8, frame.y + frame.height - 8)
     await page.mouse.wheel(0, -200)
     await expect.poll(transform).not.toBe(before)
@@ -404,7 +430,7 @@ describe('canvas stories', () => {
     expect(await editor.count()).toBe(0)
     await page.locator('[data-node-kind="take"]').first().click()
     await expect.poll(() => editor.count()).toBe(1)
-    await page.getByText('canvas-leave-b', { exact: true }).first().click()
+    await openProjectByTitle(page, 'canvas-leave-b')
     await expect.poll(() => page.locator('[data-dv-workspace] header').first().textContent()).toContain('canvas-leave-b')
     expect(await editor.count()).toBe(0)
     expect(page.url()).toContain(second.id)
@@ -490,7 +516,7 @@ describe('canvas stories', () => {
     const plans = page.locator('[data-node-kind="plan"]')
     await expect.poll(() => plans.count()).toBe(1)
     expect(await plans.getAttribute('data-node-id')).toBe('plan:p1')
-    expect(await plans.textContent()).toContain('v2')
+    expect(await plans.textContent()).toContain('第 2 版')
     const takes = page.locator('[data-node-kind="take"]')
     await expect.poll(() => takes.count()).toBe(3)
     expect(await takes.evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')))).toEqual(['镜头 1', '镜头 2', '镜头 3'])
@@ -499,12 +525,13 @@ describe('canvas stories', () => {
     await plans.click()
     const editor = page.locator('[data-testid="dv-canvas-node-editor"]')
     const versions = editor.getByRole('group', { name: '分镜计划版次' }).getByRole('button')
-    expect(await versions.allTextContents()).toEqual(['v1', 'v2'])
-    expect(await editor.getByRole('button', { name: 'v2' }).getAttribute('aria-pressed')).toBe('true')
+    expect(await versions.allTextContents()).toEqual(['第 1 版', '第 2 版'])
+    expect(await editor.getByRole('button', { name: '第 2 版' }).getAttribute('aria-pressed')).toBe('true')
     await expect.poll(() => editor.locator('ol > li').count()).toBe(3)
-    // Each shot names its render mode; the continuing shot says so.
-    expect(await editor.locator('[data-testid="dv-canvas-shot-mode"]').allTextContents()).toEqual(['参考图生成', '参考图生成', '参考图生成 · 接上一镜头'])
-    await editor.getByRole('button', { name: 'v1' }).click()
+    // Each shot card names its render mode, and its 首帧 row says whether it continues the previous shot.
+    expect(await editor.locator('[data-testid="dv-canvas-shot-mode"]').allTextContents()).toEqual(['参考图生成', '参考图生成', '参考图生成'])
+    expect(await editor.locator('ol > li dd').filter({ hasText: /^(接上一镜头|无 · 不接上一镜头)$/ }).allTextContents()).toEqual(['无 · 不接上一镜头', '无 · 不接上一镜头', '接上一镜头'])
+    await editor.getByRole('button', { name: '第 1 版' }).click()
     await expect.poll(() => editor.locator('ol > li').count()).toBe(2)
     expect(page.errors).toEqual([])
   })
@@ -537,30 +564,30 @@ describe('canvas stories', () => {
     await gotoProject(page, project.id)
     const plans = page.locator('[data-node-kind="plan"]')
     const takes = page.locator('[data-node-kind="take"]')
-    await expect.poll(() => plans.textContent()).toContain('v4')
+    await expect.poll(() => plans.textContent()).toContain('第 4 版')
     // v4 reuses the v1 takes: three takes, no take of the removed shot 4.
     await expect.poll(() => takes.evaluateAll(nodes => nodes.map(node => node.getAttribute('data-node-id')))).toEqual(project.shots)
     expect(await takes.evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label')))).toEqual(['镜头 1', '镜头 2', '镜头 3'])
     await plans.click()
     const editor = page.locator('[data-testid="dv-canvas-node-editor"]')
-    await editor.getByRole('button', { name: 'v3' }).click()
-    await expect.poll(() => editor.getByText('已被 v4 取代').count()).toBe(1)
+    await editor.getByRole('button', { name: '第 3 版' }).click()
+    await expect.poll(() => editor.getByText('已被第 4 版取代').count()).toBe(1)
     expect(await editor.getByText('待批准').count()).toBe(0)
     await page.keyboard.press('Escape')
     // A jump back to the v2 approval's timeline update shows plan v2 and its four takes again.
     await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas', to: v2Layout.id })
-    await expect.poll(() => plans.textContent(), { timeout: 15_000 }).toContain('v2')
+    await expect.poll(() => plans.textContent(), { timeout: 15_000 }).toContain('第 2 版')
     await expect.poll(() => takes.count()).toBe(4)
     expect(await page.locator(`[data-node-id="${shot4.id}"]`).count()).toBe(1)
     expect(page.errors).toEqual([])
   })
 
-  it('让智能体改 prefills the chat with a reference to the node and closes the editor', async () => {
+  it('问 agent prefills the chat with a reference to the node and closes the editor', async () => {
     const project = await seedProject('canvas-ask', 2)
     const page = await openPage()
     await gotoProject(page, project.id)
     await page.locator('[data-node-kind="take"]').first().click()
-    await page.getByRole('button', { name: '让智能体改' }).click()
+    await page.getByRole('button', { name: '问 agent' }).click()
     await expect.poll(() => page.locator('[data-testid="dv-canvas-node-editor"]').count()).toBe(0)
     await expect.poll(() => page.locator('[data-dv-chat] [contenteditable="true"]').first().innerText(), { timeout: 10_000 }).toContain('镜头 1')
   })
@@ -584,10 +611,10 @@ describe('canvas stories', () => {
     const page = await openPage()
     await gotoProject(page, project.id)
     await fitCanvas(page)
-    const smallest = await page.locator('[data-node-id]').evaluateAll(nodes => Math.min(...nodes.map((node) => {
-      const title = node.querySelector(':scope > div:last-child > div')
-      return title === null ? 0 : title.getBoundingClientRect().height
-    })))
+    // The smallest line box among the card elements that hold text directly: titles, kind labels, durations, and badges.
+    const smallest = await page.locator('[data-node-id]').evaluateAll(nodes => Math.min(...nodes.flatMap(node => [...node.querySelectorAll('*')]
+      .filter(element => [...element.childNodes].some(child => child.nodeType === Node.TEXT_NODE && (child.textContent ?? '').trim() !== ''))
+      .map(element => element.getBoundingClientRect().height))))
     expect(smallest).toBeGreaterThanOrEqual(12)
     expect(await overlappingNodes(page)).toEqual([])
   })
@@ -642,7 +669,8 @@ describe('canvas stories', () => {
     await gotoProject(page, project.id)
     const staleTakes = page.locator('[data-node-kind="take"][data-node-stale="true"]')
     await expect.poll(() => staleTakes.count()).toBe(2)
-    const border = await staleTakes.first().evaluate(el => getComputedStyle(el).borderTopColor)
+    // The stale card's outline is the first ring of its box shadow.
+    const border = await staleTakes.first().evaluate(el => getComputedStyle(el).boxShadow)
     const [r = 0, g = 0, b = 0] = border.match(/\d+/g)?.map(Number) ?? []
     expect(r).toBeGreaterThan(150)
     expect(g + b).toBeLessThan(r)
@@ -657,7 +685,7 @@ describe('canvas stories', () => {
     await expect.poll(() => page.locator('[data-node-stale="true"]').count()).toBe(0)
   })
 
-  it('a draft draws dashed nodes with an accept bar; accepting makes them solid', async () => {
+  it('a draft marks its nodes and shows an accept bar; accepting makes them main nodes', async () => {
     const project = await seedProject('canvas-draft', 2)
     model.rules.push({
       match: 'draft-shot-please',
@@ -673,9 +701,9 @@ describe('canvas stories', () => {
     await composer.click()
     await page.keyboard.type('draft-shot-please')
     await page.keyboard.press('Enter')
+    // The canvas draws draft nodes like main nodes; the working-branch bar above the canvas names the draft.
     await expect.poll(() => page.locator('[data-node-draft="true"]').count(), { timeout: 60_000 }).toBeGreaterThan(0)
-    const outline = await page.locator('[data-node-draft="true"]').first().evaluate(el => getComputedStyle(el).outlineStyle)
-    expect(outline).toBe('dashed')
+    expect(await page.locator('[data-testid="dv-canvas-view"] [data-testid="dv-kit-working-branch"]').getAttribute('data-branch')).toMatch(/^draft\//)
     await page.locator('[data-testid="dv-canvas-view"] button', { hasText: '接受' }).first().click()
     await expect.poll(() => page.locator('[data-node-draft="true"]').count(), { timeout: 15_000 }).toBe(0)
     expect(await page.locator('[data-node-kind="take"]').count()).toBe(3)
@@ -899,14 +927,15 @@ describe('timeline stories', () => {
     const page = await openPage()
     await gotoProject(page, project.id, 'timeline')
     await expect.poll(() => viewerAsset(page)).toBe(project.clipAssets[0])
-    await page.getByRole('button', { name: '播放' }).click()
+    await page.getByRole('button', { name: '播放', exact: true }).click()
     const shown = new Set<string>()
     const started = Date.now()
     for (;;) {
       const asset = await viewerAsset(page)
       if (asset !== null) shown.add(asset)
       const [position, total] = await timelineTime(page)
-      if (position >= total - 0.05 || Date.now() - started > 12_000) break
+      // The timecode shows hundredths, so the loop waits for the end itself instead of a position that rounds to it.
+      if (position >= total || Date.now() - started > 12_000) break
       await page.waitForTimeout(100)
     }
     // Four seconds of clips play in about four seconds and every clip appears in the viewer on the way.
@@ -917,7 +946,7 @@ describe('timeline stories', () => {
     expect(await timelineTime(page), players).toEqual([4, 4])
     expect(Date.now() - started).toBeLessThan(9000)
     expect([...shown].sort()).toEqual([...new Set(project.clipAssets)].sort())
-    await expect.poll(() => page.getByRole('button', { name: '播放' }).count(), { timeout: 2000 }).toBe(1)
+    await expect.poll(() => page.getByRole('button', { name: '播放', exact: true }).count(), { timeout: 2000 }).toBe(1)
   })
 
   it('scrubbing the ruler moves the playhead, the time, and the viewer frame', async () => {

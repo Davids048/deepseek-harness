@@ -200,6 +200,19 @@ describe('chat with the agent', () => {
   }
 
   /**
+   * Open the session switcher at the left of the workspace top bar and pick one of its menu entries: 首页, 新建项目, a
+   * chat session of the open project, 新建会话, or another project. The left sidebar is collapsed while a project is
+   * open, so the switcher is how a creator moves between projects and sessions there.
+   * @param page - the page.
+   * @param name - the entry's label.
+   */
+  async function pickFromSwitcher(page: Page, name: string): Promise<void> {
+    await page.locator('[data-dv-workspace] header button[aria-haspopup="menu"]').first().click()
+    // The menu lists projects from the shell's links, which pick up a project created through the API within seconds.
+    await page.getByRole('menu').getByRole('menuitem', { name, exact: true }).click({ timeout: 15_000 })
+  }
+
+  /**
    * Whether the user can see an element: its center is inside the viewport and the topmost element there is it or its
    * descendant. Playwright's isVisible also counts elements that an overflow-hidden ancestor clips away.
    */
@@ -399,7 +412,7 @@ describe('chat with the agent', () => {
     await composer(page).click()
     await page.keyboard.type('还没发出去的话')
     const second = await harness.api.post('/api/dv/projects', { title: '切换目标项目', surface: 'canvas' }) as { id: string }
-    await page.locator('[title="切换目标项目"]').first().click({ timeout: 15_000 })
+    await pickFromSwitcher(page, '切换目标项目')
     await waitFor(() => Promise.resolve(locationOf(page).project === second.id), 'the second project in the URL', 15_000)
     await composer(page).waitFor({ timeout: 15_000 })
     // The chat follows the project within a moment of the click.
@@ -410,7 +423,7 @@ describe('chat with the agent', () => {
       const links = await (await fetch('/api/dv/workspaces')).json() as { projects: Array<{ id: string; title: string }> }
       return links.projects.find(project => project.id === id)?.title ?? ''
     }, first)
-    await page.locator(`[title="${firstTitle}"]`).first().click()
+    await pickFromSwitcher(page, firstTitle)
     await waitFor(() => Promise.resolve(locationOf(page).project === first), 'the first project in the URL', 15_000)
     await waitChat(page, '收到七')
     expect(await userMessages(page)).toEqual(['只回复七'])
@@ -492,7 +505,9 @@ describe('chat with the agent', () => {
     for (const shot of await shots.all()) {
       expect(await shot.locator('img[alt=""]').count()).toBe(1)
       expect(await shot.locator('img[alt="Picture 1"]').count()).toBe(1)
-      expect(await shot.innerText()).not.toContain('Picture 1')
+      // The 参考图 row names the image as Picture 1; the prompt text shows the image instead of the bare token.
+      expect(await shot.innerText()).toContain('Picture 1 · ask-first.png')
+      expect(await shot.locator('p').innerText()).not.toContain('Picture 1')
       expect(await shot.locator('[data-testid="dv-canvas-shot-mode"]').textContent()).toBe('参考图生成')
     }
     await page.keyboard.press('Escape')
@@ -586,7 +601,7 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('让智能体改 on a canvas take prefills the open project\'s chat composer with a reference the agent can resolve', async () => {
+  it('问 agent on a canvas take prefills the open project\'s chat composer with a reference the agent can resolve', async () => {
     const { projectId, assetId } = await seedProject('改片段', 'ref.png')
     const plan = await runOperation(projectId, 'plan.create', {
       title: '改片段', references: [assetId], shots: [{ prompt: '镜头甲', duration_sec: 1, mode: 'ref2va' }],
@@ -599,7 +614,7 @@ describe('chat with the agent', () => {
     // Visit another project first, so a stale composer from it would be a wrong target.
     const { page, errors } = await openPage()
     await newProject(page)
-    await page.locator('[title="改片段"]').first().click({ timeout: 15_000 })
+    await pickFromSwitcher(page, '改片段')
     await waitFor(() => Promise.resolve(locationOf(page).project === projectId), 'the seeded project in the URL', 15_000)
     const editor = page.locator('[data-testid="dv-canvas-node-editor"]')
     await waitFor(async () => {
@@ -607,7 +622,7 @@ describe('chat with the agent', () => {
       await page.locator('[data-dv-workspace] [data-node-kind="take"]').first().click({ timeout: 10_000 })
       return await editor.isVisible()
     }, 'the take editor', 30_000)
-    await editor.getByRole('button', { name: '让智能体改', exact: true }).click()
+    await editor.getByRole('button', { name: '问 agent', exact: true }).click()
     await waitFor(async () => (await composer(page).innerText()).includes('修改'), 'the prefilled composer', 10_000)
     expect(locationOf(page).project).toBe(projectId)
     await page.keyboard.type('只回复十一')
@@ -631,8 +646,8 @@ describe('chat with the agent', () => {
     const accept = page.locator('[data-dv-workspace]').getByRole('button', { name: '接受', exact: true })
     await accept.click({ timeout: 15_000 })
     await waitFor(async () => await accept.count() === 0, 'the draft bar to close', 10_000)
-    // The project row's ＋ starts a second chat session in the same project.
-    await page.locator('[data-dv-navigator] [data-active]').filter({ hasText: '＋' }).first().locator('button', { hasText: '＋' }).click()
+    // 新建会话 in the session switcher starts a second chat session in the same project.
+    await pickFromSwitcher(page, '新建会话')
     await waitFor(() => Promise.resolve(locationOf(page).session !== first && locationOf(page).session !== null), 'a second session', 15_000)
     expect(locationOf(page).project).toBe(projectId)
     expect(await userMessages(page)).toEqual([])
@@ -687,7 +702,9 @@ describe('chat with the agent', () => {
     await waitChat(page, '好的。')
     // The developer view mounts the same session's conversation next to the kept-mounted chat.
     const tab = (title: string) => page.locator('[data-dockkit-tab]:visible', { has: page.locator('[data-dockkit-tab-title]', { hasText: title }) }).first()
-    await tab('轨迹').click()
+    // 轨迹 is not one of the default tabs; the right panel's ＋ guide opens it.
+    await page.getByRole('button', { name: '新标签页' }).click()
+    await page.getByRole('button', { name: /^轨迹/ }).click()
     await page.locator('[data-dv-trajectory]').first().waitFor({ timeout: 10_000 })
     await tab('对话').click()
     await send(page, '只回复十八')
@@ -720,7 +737,8 @@ describe('chat with the agent', () => {
     const cards = chat(page).locator('[data-tool="dv_shot_render_ref2va"]')
     expect(await cards.count()).toBe(2)
     for (const card of await cards.all()) {
-      expect(await card.locator('strong').textContent()).toBe('Render shot from references')
+      // The card header starts with the tool's label, followed by the status.
+      expect(await card.locator('span').first().textContent()).toBe('Render shot from references')
       expect(await card.textContent()).toContain('Rendered')
     }
     expect(errors).toEqual([])
