@@ -413,6 +413,8 @@ const RESIZE_KEYS: Readonly<Record<string, readonly [number, number]>> = {
 export function NodeEditor(props: NodeEditorProps): ReactNode {
   const { node, t, onClose } = props
   const title = nodeTitle(node, t)
+  // A node without its own title is titled by its kind, so the label beside the kind dot would repeat the title.
+  const kind = kindLabel(node, t)
   const staleRecord = node.flags.stale ? node.record : null
   // The plan version on show; the editor holds the choice so the header row and the shot list read the same version.
   const planVersions = node.kind === 'plan' ? props.state.components.plan.plans[node.planId ?? ''] ?? [] : []
@@ -460,7 +462,7 @@ export function NodeEditor(props: NodeEditorProps): ReactNode {
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, lineHeight: '16px', color: 'var(--dv-text-2)' }}>
             <span style={{ width: 6, height: 6, borderRadius: 9999, background: KIND_COLOR[node.kind] }} />
-            {kindLabel(node, t)}
+            {kind === title ? null : kind}
           </span>
           <h2 style={{ flex: 1, minWidth: 0, margin: 0, fontSize: 16, lineHeight: '24px', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</h2>
           <button type="button" className="dv-canvas-soft" style={button} onClick={askAgent}>{t('editor.askAgent')}</button>

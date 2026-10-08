@@ -86,6 +86,20 @@ describe('ChatMediaView', () => {
     expect(container.querySelector('a')).toBeNull()
   })
 
+  it('pauses the playing card when another card starts playing', () => {
+    const { container } = view({ kind: 'grid', shots: [{ asset: 'v1.mp4', caption: '1' }, { asset: 'v2.mp4', caption: '2' }] })
+    fireEvent.click(screen.getByRole('button', { name: '播放: 1' }))
+    fireEvent.click(screen.getByRole('button', { name: '播放: 2' }))
+    const [first, second] = [...container.querySelectorAll('video')]
+    if (first === undefined || second === undefined) throw new Error('expected two card players')
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+    vi.spyOn(first, 'paused', 'get').mockReturnValue(false)
+    vi.spyOn(second, 'paused', 'get').mockReturnValue(false)
+    fireEvent.play(second)
+    expect(pause.mock.contexts).toEqual([first])
+    pause.mockRestore()
+  })
+
   it('lays out a grid of cards with their captions', () => {
     const { container } = view({ kind: 'grid', shots: [{ asset: 'v1.mp4', caption: '1 · 开场' }, { asset: 'v2.mp4', caption: '' }] })
     expect([...container.querySelectorAll('[data-dv-chat-video]')].map(node => node.getAttribute('data-dv-chat-video')))

@@ -29,8 +29,11 @@ export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'workspaces'
 /** Milliseconds between reads of the project ↔ Workspace links, which pick up projects the agent creates. */
 const LINKS_POLL_MS = 4000
 
-/** Width in px of the right panel until the user drags its edge. */
-const RIGHT_PANEL_WIDTH = 360
+/**
+ * Width in px of the right panel until the user drags its edge; 392 fits the 对话, 素材库, and 历史 tabs beside the
+ * tab bar buttons.
+ */
+const RIGHT_PANEL_WIDTH = 392
 
 /**
  * Register the shell's DSH UI slot entries and tab types. The center and the navigator shadow DSH's entries at priority -1.

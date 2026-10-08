@@ -1,6 +1,7 @@
 /**
  * The DreamVerse cards that replace asset links, asset images, and shot tables in settled chat Markdown. A video card
- * shows the video's first frame with a play badge; a click plays the video in the card with controls. An image
+ * shows the video's first frame with a play badge; a click plays the video in the card with controls and pauses the
+ * other card that was playing. An image
  * thumbnail is at most 240 px wide; a click opens it large in DSH's image preview.
  *
  * @module @dv/ui-composer/ChatMedia
@@ -55,7 +56,18 @@ function PlayIcon(): ReactNode {
 }
 
 /**
- * One 16:9 video card: the first frame and a play badge until clicked, then the video with controls.
+ * Pause every other chat card video that is playing, so two shots never play their sound over each other.
+ * @param playing - the card video that started playing.
+ */
+function pauseOtherCards(playing: HTMLVideoElement): void {
+  for (const video of document.querySelectorAll<HTMLVideoElement>('[data-dv-chat-video] video')) {
+    if (video !== playing && !video.paused) video.pause()
+  }
+}
+
+/**
+ * One 16:9 video card: the first frame and a play badge until clicked, then the video with controls. A card that starts
+ * playing pauses the other chat cards.
  * @param props - the asset, the caption under the frame, and whether the card fills a grid cell.
  * @returns the card.
  */
@@ -68,7 +80,7 @@ function VideoCard({ asset, label, inGrid }: { asset: string; label: string; inG
     <span style={inGrid ? gridCard : card} data-dv-chat-video={asset}>
       <span style={frame}>
         {playing
-          ? <video style={media} src={src} controls autoPlay playsInline />
+          ? <video style={media} src={src} controls autoPlay playsInline onPlay={(event) => { pauseOtherCards(event.currentTarget) }} />
           : (
             <button type="button" style={thumbButton} aria-label={label === '' ? play : `${play}: ${label}`}
               onClick={() => { setPlaying(true) }}>

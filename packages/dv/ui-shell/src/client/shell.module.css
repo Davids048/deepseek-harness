@@ -674,8 +674,11 @@
   margin-top: 24px;
 }
 
+/* The composer seat's fade into the chat background covers a transcript; without one it would draw a band in the
+   chat background color around the card on the page background. */
 .center[data-blank] .entryChat :global([class*='_embeddedBody']),
-.center[data-blank] .entryChat :global([class*='_scrollBody']) {
+.center[data-blank] .entryChat :global([class*='_scrollBody']),
+.center[data-blank] .entryChat :global([data-composer-seat]) {
   overflow: visible;
   background: transparent;
 }
