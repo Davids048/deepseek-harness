@@ -6,13 +6,15 @@ import type { MarkdownElement, MarkdownTableCell } from '@deepseek-ai/dsh-client
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { DvClient } from '@dv/ui-kit/api.ts'
 import { publishCurrentProject } from '@dv/ui-kit/current-project.ts'
-import { followAssetKinds, kindOf, NO_ASSET_KINDS, type AssetKinds } from '../src/client/asset-kinds.ts'
+import { followAssetKinds, kindOf, NO_ASSET_KINDS, type AssetEntry, type AssetKinds } from '../src/client/asset-kinds.ts'
 import {
   assetIdOf, registerChatMedia, resolveChatMedia, selectAssetReference, type ChatMedia,
 } from '../src/client/chat-media.ts'
 import { ChatMediaView } from '../src/client/ChatMedia.tsx'
 
-const KINDS: AssetKinds = new Map([['v1.mp4', 'video'], ['v2.mp4', 'video'], ['i1.png', 'image']])
+const KINDS: AssetKinds = new Map<string, AssetEntry>([
+  ['v1.mp4', { kind: 'video', shot: 2 }], ['v2.mp4', { kind: 'video', shot: null }], ['i1.png', { kind: 'image', shot: null }],
+])
 
 const link = (href: string, text = '播放'): MarkdownElement => ({ kind: 'link', href, title: undefined, text })
 const cell = (text: string, href?: string): MarkdownTableCell => ({ text, links: href === undefined ? [] : [{ href, text }] })
@@ -35,7 +37,7 @@ afterEach(() => {
 
 describe('selectAssetReference', () => {
   it('matches asset paths without the asset kinds and declines other destinations', () => {
-    expect(selectAssetReference(link('/dv/assets/missing.mp4'))).toEqual({ kind: 'link', asset: 'missing.mp4', label: '播放' })
+    expect(selectAssetReference(link('/dv/assets/missing.mp4'))).toEqual({ kind: 'link', asset: 'missing.mp4' })
     expect(selectAssetReference(link('https://example.com/v1.mp4'))).toBeNull()
     expect(selectAssetReference(table([cell('1'), cell('播放', '/dv/assets/a1.wav')]))).toEqual({
       kind: 'table', rows: [{ assets: [{ column: 1, asset: 'a1.wav' }], texts: ['1', '播放'] }],
@@ -45,9 +47,9 @@ describe('selectAssetReference', () => {
 })
 
 describe('selectChatMedia', () => {
-  it('turns a link to a video asset into a card, with root-relative and absolute destinations', () => {
-    expect(selectChatMedia(link('/dv/assets/v1.mp4'), KINDS)).toEqual({ kind: 'video', asset: 'v1.mp4', label: '播放' })
-    expect(selectChatMedia(link('http://host:8080/dv/assets/v%32.mp4'), KINDS)).toEqual({ kind: 'video', asset: 'v2.mp4', label: '播放' })
+  it('turns a link to a video asset into a card with the take\'s shot number, with root-relative and absolute destinations', () => {
+    expect(selectChatMedia(link('/dv/assets/v1.mp4'), KINDS)).toEqual({ kind: 'video', asset: 'v1.mp4', shot: 2 })
+    expect(selectChatMedia(link('http://host:8080/dv/assets/v%32.mp4'), KINDS)).toEqual({ kind: 'video', asset: 'v2.mp4', shot: null })
   })
 
   it('keeps links to image assets, unknown assets, and other paths', () => {
@@ -98,17 +100,27 @@ describe('ChatMediaView', () => {
   const view = (matched: ChatMedia) => render(<p><ChatMediaView matched={matched} /></p>)
 
   it('shows the first frame and plays the video in the card on click', () => {
-    const { container } = view({ kind: 'video', asset: 'v1.mp4', label: '播放' })
+    const { container } = view({ kind: 'video', asset: 'v1.mp4', shot: 2 })
     const preview = container.querySelector('video')
     expect(preview?.getAttribute('src')).toBe('/dv/assets/v1.mp4#t=0.1')
     expect(preview?.muted).toBe(true)
     expect(preview?.getAttribute('preload')).toBe('metadata')
     expect(preview?.hasAttribute('controls')).toBe(false)
-    fireEvent.click(screen.getByRole('button', { name: '播放: 播放' }))
+    expect(screen.getByTitle('镜头 2').textContent).toBe('镜头 2')
+    fireEvent.click(screen.getByRole('button', { name: '播放: 镜头 2' }))
     const player = container.querySelector('video')
     expect(player?.getAttribute('src')).toBe('/dv/assets/v1.mp4')
     expect(player?.hasAttribute('controls')).toBe(true)
     expect(container.querySelector('a')).toBeNull()
+  })
+
+  it('captions a standalone video without a shot number 视频 / Video', () => {
+    view({ kind: 'video', asset: 'v2.mp4', shot: null })
+    expect(screen.getByRole('button', { name: '播放: 视频' })).toBeTruthy()
+    cleanup()
+    document.documentElement.lang = 'en'
+    view({ kind: 'video', asset: 'v1.mp4', shot: 3 })
+    expect(screen.getByRole('button', { name: 'Play: Shot 3' })).toBeTruthy()
   })
 
   it('pauses the playing card when another card starts playing', () => {
@@ -149,13 +161,24 @@ describe('ChatMediaView', () => {
   })
 })
 
-/** A project state with the given assets and branches, in the fields the index reads. */
-function state(assets: Array<[string, string]>, branches: Array<{ name: string; counts: object | null }> = []) {
+/** A record of a project state, in the fields the index reads. */
+interface StateRecord { operation: string; params: Record<string, unknown>; outputs: string[] }
+
+/** A project state with the given assets, branches, and records, in the fields the index reads. */
+function state(
+  assets: Array<[string, string]>, branches: Array<{ name: string; counts: object | null }> = [], records: StateRecord[] = [],
+) {
   return {
     branches: [{ name: 'main', counts: null }, ...branches],
     assets: assets.map(([id, mime]) => ({ id, mime })),
+    components: { proj: { records } },
   }
 }
+
+/** A take record of `shot.render_ref2va` with the given `shot` param and outputs. */
+const take = (shot: number | undefined, ...outputs: string[]): StateRecord => ({
+  operation: 'shot.render_ref2va', params: shot === undefined ? {} : { shot }, outputs,
+})
 
 /** Serve `/api/dv/state` from `states`, keyed by `<project>/<branch>`; other keys fail. */
 function stateFetch(states: Record<string, unknown>) {
@@ -192,7 +215,7 @@ describe('followAssetKinds', () => {
     const fetchImpl = stateFetch(states)
     const stop = followAssetKinds(new DvClient(fetchImpl), (kinds) => { seen.push(kinds) })
     await vi.waitFor(() => { expect(seen).toHaveLength(1) })
-    expect([...seen[0]!]).toEqual([['v1.mp4', 'video'], ['i1.png', 'image']])
+    expect([...seen[0]!]).toEqual([['v1.mp4', { kind: 'video', shot: null }], ['i1.png', { kind: 'image', shot: null }]])
 
     // A burst of events causes one refetch; an unchanged refetch publishes nothing; a new asset publishes again.
     events.send()
@@ -203,7 +226,7 @@ describe('followAssetKinds', () => {
     states['p1/main'] = state([['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4']])
     events.send()
     await vi.waitFor(() => { expect(seen).toHaveLength(2) })
-    expect([...seen[1]!]).toEqual([['v1.mp4', 'video'], ['v2.mp4', 'video']])
+    expect([...seen[1]!]).toEqual([['v1.mp4', { kind: 'video', shot: null }], ['v2.mp4', { kind: 'video', shot: null }]])
 
     publishCurrentProject(null)
     expect(seen.at(-1)).toBe(NO_ASSET_KINDS)
@@ -225,6 +248,32 @@ describe('followAssetKinds', () => {
     stop()
   })
 
+  it('gives each take video the shot number of its render record, from main and open drafts', async () => {
+    const events = fakeEvents()
+    const assets: Array<[string, string]> = [['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4'], ['v3.mp4', 'video/mp4'], ['s1.png', 'image/png']]
+    const states: Record<string, unknown> = {
+      'p1/main': state(assets, [{ name: 'draft/s1', counts: {} }], [
+        take(3, 'v1.mp4', 's1.png'), take(undefined, 'v2.mp4'), { operation: 'timeline.trim', params: { shot: 5 }, outputs: ['v3.mp4'] },
+      ]),
+      'p1/draft/s1': state([['v4.mp4', 'video/mp4']], [], [take(4, 'v4.mp4')]),
+    }
+    const seen: AssetKinds[] = []
+    publishCurrentProject('p1')
+    const stop = followAssetKinds(new DvClient(stateFetch(states)), (kinds) => { seen.push(kinds) })
+    await vi.waitFor(() => { expect(seen).toHaveLength(1) })
+    expect(Object.fromEntries(seen[0]!)).toEqual({
+      'v1.mp4': { kind: 'video', shot: 3 }, 'v2.mp4': { kind: 'video', shot: null }, 'v3.mp4': { kind: 'video', shot: null },
+      's1.png': { kind: 'image', shot: 3 }, 'v4.mp4': { kind: 'video', shot: 4 },
+    })
+
+    // A changed shot number publishes the index again.
+    states['p1/draft/s1'] = state([['v4.mp4', 'video/mp4']], [], [take(6, 'v4.mp4')])
+    events.send()
+    await vi.waitFor(() => { expect(seen).toHaveLength(2) })
+    expect(seen[1]!.get('v4.mp4')).toEqual({ kind: 'video', shot: 6 })
+    stop()
+  })
+
   it('maps MIME types to the drawn kinds', () => {
     expect([kindOf('video/mp4'), kindOf('image/webp'), kindOf('audio/mpeg')]).toEqual(['video', 'image', undefined])
   })
@@ -241,7 +290,7 @@ describe('registerChatMedia', () => {
     expect(entries()).toHaveLength(1)
     const entry = entries()[0]
     const select = entry!.select as (owner: { element: MarkdownElement }) => unknown
-    expect(select({ element: link('/dv/assets/v1.mp4') })).toEqual({ kind: 'link', asset: 'v1.mp4', label: '播放' })
+    expect(select({ element: link('/dv/assets/v1.mp4') })).toEqual({ kind: 'link', asset: 'v1.mp4' })
 
     act(() => { publishCurrentProject('p1') })
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -255,7 +304,7 @@ describe('registerChatMedia', () => {
 
   it('keeps a playing card mounted while the asset index changes, and keeps the default link for other assets', async () => {
     const events = fakeEvents()
-    const states: Record<string, unknown> = { 'p1/main': state([['v1.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']]) }
+    const states: Record<string, unknown> = { 'p1/main': state([['v1.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']], [], [take(1, 'v1.mp4')]) }
     const fetchImpl = stateFetch(states)
     vi.stubGlobal('fetch', fetchImpl)
     const runtime = await SlotTestRuntime.create()
@@ -264,7 +313,7 @@ describe('registerChatMedia', () => {
     const anchor = (href: string, text: string) => <a href={href}>{text}</a>
     await runtime.root.declare({ 'conversation.chat.markdown': { kind: 'chain', scope: 'session' } }, props => (
       <props.SessionProvider session={reference}>
-        {[['/dv/assets/v1.mp4', '镜头 1'], ['/dv/assets/a1.wav', '配乐']].map(([href, text]) => {
+        {[['/dv/assets/v1.mp4', '点此播放'], ['/dv/assets/a1.wav', '配乐']].map(([href, text]) => {
           const fallback = anchor(href!, text!)
           return (
             <p key={href}>
@@ -277,8 +326,9 @@ describe('registerChatMedia', () => {
     await runtime.mount({ inject: ['slots'], apply: registerChatMedia })
     const view = runtime.renderRoot()
     // Before the index loads, both assets keep the default link.
-    expect(view.getByRole('link', { name: '镜头 1' })).toBeTruthy()
+    expect(view.getByRole('link', { name: '点此播放' })).toBeTruthy()
 
+    // The card names the shot of the take instead of the link text.
     act(() => { publishCurrentProject('p1') })
     await vi.waitFor(() => { expect(view.getByRole('button', { name: '播放: 镜头 1' })).toBeTruthy() })
     expect(view.getByRole('link', { name: '配乐' })).toBeTruthy()
@@ -287,7 +337,7 @@ describe('registerChatMedia', () => {
     expect(player).not.toBeNull()
 
     // Another shot finishes rendering: the index changes, and the playing card stays the same DOM node.
-    states['p1/main'] = state([['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']])
+    states['p1/main'] = state([['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']], [], [take(1, 'v1.mp4')])
     const fetches = fetchImpl.mock.calls.length
     await act(async () => {
       events.send()

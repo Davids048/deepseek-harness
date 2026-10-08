@@ -1,7 +1,8 @@
 /**
  * The DreamVerse cards that replace asset links, asset images, and shot tables in settled chat Markdown. A video card
  * shows the video's first frame with a play badge; a click plays the video in the card with controls and pauses the
- * other card that was playing. An image
+ * other card that was playing. The card of a standalone link is captioned 镜头 N / Shot N with the take's shot number,
+ * else 视频 / Video, because chat link texts such as 点此播放 do not name the video. An image
  * thumbnail is at most 240 px wide; a click opens it large in DSH's image preview.
  *
  * @module @dv/ui-composer/ChatMedia
@@ -123,9 +124,13 @@ function ImageThumb({ asset, alt }: { asset: string; alt: string }): ReactNode {
  * @returns the card, the thumbnail, or the grid.
  */
 export function ChatMediaView({ matched }: { matched: ChatMedia }): ReactNode {
+  const t = useText()
   switch (matched.kind) {
-    case 'video':
-      return <VideoCard asset={matched.asset} label={matched.label} inGrid={false} />
+    case 'video': {
+      const shot = matched.shot === null ? null : String(matched.shot)
+      const label = shot === null ? t('视频', 'Video') : t(`镜头 ${shot}`, `Shot ${shot}`)
+      return <VideoCard asset={matched.asset} label={label} inGrid={false} />
+    }
     case 'image':
       return <ImageThumb asset={matched.asset} alt={matched.alt} />
     case 'grid':

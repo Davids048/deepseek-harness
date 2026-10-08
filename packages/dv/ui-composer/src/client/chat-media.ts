@@ -15,7 +15,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { createElement, type ReactNode } from 'react'
 import { DvClient } from '@dv/ui-kit/api.ts'
-import { followAssetKinds, NO_ASSET_KINDS, type AssetKind, type AssetKinds } from './asset-kinds.ts'
+import { followAssetKinds, NO_ASSET_KINDS, type AssetKinds } from './asset-kinds.ts'
 import { ChatMediaView } from './ChatMedia.tsx'
 
 /** One video card of a shot grid. */
@@ -42,13 +42,14 @@ export interface AssetRow {
 
 /** The asset references that the entry's `select` finds in one Markdown element, before the asset kinds are known. */
 export type AssetReference =
-  | { readonly kind: 'link'; readonly asset: string; readonly label: string }
+  | { readonly kind: 'link'; readonly asset: string }
   | { readonly kind: 'image'; readonly asset: string; readonly alt: string }
   | { readonly kind: 'table'; readonly rows: readonly AssetRow[] }
 
 /** What the chain entry draws in place of one Markdown element. */
 export type ChatMedia =
-  | { readonly kind: 'video'; readonly asset: string; readonly label: string }
+  /** A standalone video link; `shot` is the take's shot number from the asset index, null when the index has none. */
+  | { readonly kind: 'video'; readonly asset: string; readonly shot: number | null }
   | { readonly kind: 'image'; readonly asset: string; readonly alt: string }
   | { readonly kind: 'grid'; readonly shots: readonly ShotCard[] }
 
@@ -105,7 +106,7 @@ export function selectAssetReference(element: MarkdownElement): AssetReference |
   switch (element.kind) {
     case 'link': {
       const asset = assetIdOf(element.href)
-      return asset === undefined ? null : { kind: 'link', asset, label: element.text }
+      return asset === undefined ? null : { kind: 'link', asset }
     }
     case 'image': {
       const asset = assetIdOf(element.src)
@@ -122,7 +123,7 @@ export function selectAssetReference(element: MarkdownElement): AssetReference |
  * @returns the card of the row's first video link, or undefined when the row links no video asset.
  */
 function shotCard(row: AssetRow, kinds: AssetKinds): ShotCard | undefined {
-  const video = row.assets.find(({ asset }) => kinds.get(asset) === 'video')
+  const video = row.assets.find(({ asset }) => kinds.get(asset)?.kind === 'video')
   if (video === undefined) return undefined
   const caption = row.texts.filter((text, column) => column !== video.column && text !== '')
   return { asset: video.asset, caption: caption.join(' · ') }
@@ -135,12 +136,13 @@ function shotCard(row: AssetRow, kinds: AssetKinds): ShotCard | undefined {
  * @returns the card form, or null when an asset is not of the kind that its card needs.
  */
 export function resolveChatMedia(reference: AssetReference, kinds: AssetKinds): ChatMedia | null {
-  const isKind = (asset: string, kind: AssetKind): boolean => kinds.get(asset) === kind
   switch (reference.kind) {
-    case 'link':
-      return isKind(reference.asset, 'video') ? { kind: 'video', asset: reference.asset, label: reference.label } : null
+    case 'link': {
+      const entry = kinds.get(reference.asset)
+      return entry?.kind === 'video' ? { kind: 'video', asset: reference.asset, shot: entry.shot } : null
+    }
     case 'image':
-      return isKind(reference.asset, 'image') ? { kind: 'image', asset: reference.asset, alt: reference.alt } : null
+      return kinds.get(reference.asset)?.kind === 'image' ? { kind: 'image', asset: reference.asset, alt: reference.alt } : null
     case 'table': {
       const shots: ShotCard[] = []
       for (const row of reference.rows) {

@@ -1,7 +1,7 @@
 /**
- * The media kind of each asset of the open DreamVerse project, followed outside React and read by the chat Markdown
- * cards through a selector hook. The index holds the assets that the `main` branch and every open draft
- * branch mention, and it is fetched again after the project's change events.
+ * The media kind of each asset of the open DreamVerse project, and the shot number of each take video, followed outside
+ * React and read by the chat Markdown cards through a selector hook. The index holds the assets that the `main` branch
+ * and every open draft branch mention, and it is fetched again after the project's change events.
  *
  * @module @dv/ui-composer/asset-kinds
  */
@@ -11,14 +11,27 @@ import { DV_CURRENT_PROJECT_EVENT, getCurrentProject } from '@dv/ui-kit/current-
 /** The media kinds that the chat cards draw. */
 export type AssetKind = 'video' | 'image'
 
-/** Asset ID → media kind; assets of other kinds, such as audio, are absent. */
-export type AssetKinds = ReadonlyMap<string, AssetKind>
+/** One asset of the index. */
+export interface AssetEntry {
+  readonly kind: AssetKind
+  /**
+   * The `shot` param of the `shot.render_ref2va` or `shot.render_t2va` record whose outputs include the asset, the
+   * number that the canvas titles the take 镜头 N / Shot N by; null for other assets and for a take without one.
+   */
+  readonly shot: number | null
+}
+
+/** Asset ID → media kind and shot number; assets of other kinds, such as audio, are absent. */
+export type AssetKinds = ReadonlyMap<string, AssetEntry>
 
 /** The index while no project is open or before the first fetch settles. */
 export const NO_ASSET_KINDS: AssetKinds = new Map()
 
 /** The pause after a project event before the fetch, so a burst of events causes one fetch. */
 const REFETCH_DELAY_MS = 150
+
+/** The operations whose records write takes. */
+const RENDER_OPERATIONS: ReadonlySet<string> = new Set(['shot.render_ref2va', 'shot.render_t2va'])
 
 /**
  * @param mime - an asset's MIME type.
@@ -33,16 +46,19 @@ export function kindOf(mime: string): AssetKind | undefined {
 /**
  * @param a - an index.
  * @param b - another index.
- * @returns whether both map the same assets to the same kinds.
+ * @returns whether both map the same assets to the same kinds and shot numbers.
  */
 function sameKinds(a: AssetKinds, b: AssetKinds): boolean {
   if (a.size !== b.size) return false
-  for (const [id, kind] of a) if (b.get(id) !== kind) return false
+  for (const [id, entry] of a) {
+    const other = b.get(id)
+    if (other?.kind !== entry.kind || other.shot !== entry.shot) return false
+  }
   return true
 }
 
 /**
- * Fetch the assets of `main` and of every open draft branch.
+ * Fetch the assets and records of `main` and of every open draft branch.
  * @param client - the API client.
  * @param project - the project.
  * @param signal - cancels the requests.
@@ -52,11 +68,19 @@ async function fetchKinds(client: DvClient, project: string, signal: AbortSignal
   const main = await client.getState(project, 'main', signal)
   const drafts = main.branches.filter(branch => branch.name !== 'main' && branch.counts !== null)
   const states = [main, ...await Promise.all(drafts.map(branch => client.getState(project, branch.name, signal)))]
-  const kinds = new Map<string, AssetKind>()
+  const shots = new Map<string, number>()
+  for (const state of states) {
+    for (const record of state.components.proj.records) {
+      const shot = record.params['shot']
+      if (!RENDER_OPERATIONS.has(record.operation ?? '') || typeof shot !== 'number') continue
+      for (const output of record.outputs) shots.set(output, shot)
+    }
+  }
+  const kinds = new Map<string, AssetEntry>()
   for (const state of states) {
     for (const asset of state.assets) {
       const kind = kindOf(asset.mime)
-      if (kind !== undefined) kinds.set(asset.id, kind)
+      if (kind !== undefined) kinds.set(asset.id, { kind, shot: shots.get(asset.id) ?? null })
     }
   }
   return kinds
