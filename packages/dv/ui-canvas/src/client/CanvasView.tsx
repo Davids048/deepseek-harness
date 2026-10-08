@@ -1,14 +1,15 @@
 /**
  * The project canvas as a standalone component: an infinite surface of story bible, asset, plan, and take nodes. Drag
- * empty space to pan, scroll to zoom around the cursor, drag a node to move it, click a node to open its floating
- * editor. A scroll over an overlay marked `data-dv-scroll-island`, such as the floating editor, scrolls that overlay.
- * Node positions and the viewport are stored per project through `/api/dv/layout`. The open draft of the chat
- * session the canvas sits beside is overlaid with dashed nodes; the working-branch bar on top names the branch the
- * canvas's own writes go to (they carry that session, so they land on the draft while it is open) and accepts or
- * discards the draft. Colors come from the DSH theme tokens, so the canvas
- * follows the app's light and dark themes. An imported asset has a node only while it is on the project's canvas list
- * (the layout's `placed`): dropping a 素材 tile or image and video files on the canvas adds the asset to the list with its
- * node under the pointer, and the asset node's "从画布移除" takes it off the list.
+ * empty space to pan, scroll to zoom around the cursor, drag a node to move it, click a node to open its editor panel.
+ * A scroll over an overlay marked `data-dv-scroll-island`, such as the editor panel, scrolls that overlay.
+ * Node positions and the viewport are stored per project through `/api/dv/layout`; a project without a stored viewport
+ * opens at 100%, or fitted when its nodes do not fit the view at 100%. The open draft of the chat session the canvas
+ * sits beside is overlaid; the working-branch bar on top names the branch the canvas's own writes go to (they carry
+ * that session, so they land on the draft while it is open) and accepts or discards the draft. Colors come from the
+ * `--dv-*` theme variables that `@dv/ui-shell` defines, so the canvas follows the app's light and dark themes. An
+ * imported asset has a node only while it is on the project's canvas list (the layout's `placed`): dropping a 素材 tile
+ * or image and video files on the canvas adds the asset to the list with its node under the pointer, and the asset
+ * node's "从画布移除" takes it off the list.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
@@ -20,9 +21,9 @@ import { DV_ASSET_DRAG_TYPE, DV_CANVAS_FOCUS_EVENT } from '@dv/ui-kit/workspace-
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import { WorkingBranchBar } from '@dv/ui-kit/WorkingBranchBar.tsx'
-import { buildCanvasGraph, NODE_WIDTH, overlayDraft, ROW, withImportNames } from './graph.ts'
+import { buildCanvasGraph, NODE_WIDTH, overlayDraft, planShotFrames, referenceText, ROW, withImportNames } from './graph.ts'
 import type { CanvasEdge, CanvasNode } from './graph.ts'
-import { NodeCard } from './NodeCard.tsx'
+import { NodeCard, nodeHeight, nodeTitle } from './NodeCard.tsx'
 import type { CanvasTranslate } from './NodeCard.tsx'
 import { NodeEditor } from './NodeEditor.tsx'
 import { en, zh } from './locales.ts'
@@ -41,8 +42,6 @@ export interface CanvasViewProps {
   t?: CanvasTranslate
 }
 
-/** Approximate rendered node height, used for edge anchors. */
-const NODE_HEIGHT = 260
 /** The tallest a card grows (larger text at low zoom plus a badge row), used when fitting. */
 const FIT_NODE_HEIGHT = ROW - 20
 /** How far above the pointer a dropped node's top edge lands, in canvas units, so the pointer rests on its header. */
@@ -52,8 +51,21 @@ const MAX_ZOOM = 2
 const DRAG_THRESHOLD = 4
 const SAVE_DELAY_MS = 500
 
-/** Edge stroke per kind, dark enough to read on the light canvas and bright enough on the dark one. */
-const EDGE_COLOR: Record<CanvasEdge['kind'], string> = { reference: '#d0568f', first_frame: '#2fa66d', plan: '#e08a2e', take: 'var(--dsw-alias-label-tertiary)' }
+/** Edge stroke per kind: the kind color of the node the edge leaves (a reference leaves a character or an asset). */
+const EDGE_COLOR: Record<CanvasEdge['kind'], string> = {
+  reference: 'var(--dv-kind-character)', first_frame: 'var(--dv-kind-take)', plan: 'var(--dv-kind-plan)', take: 'var(--dv-kind-take)',
+}
+/** Canvas dot grid pitch at 100%, in canvas units. */
+const GRID = 20
+
+// Hover and focus states, which inline styles cannot express; scoped to the canvas by class name.
+const CANVAS_CSS = `
+.dv-canvas-btn { background: transparent; transition: background-color 120ms var(--dv-ease); }
+.dv-canvas-btn:hover:not(:disabled) { background: var(--dv-surface-3); }
+.dv-canvas-btn:focus-visible, .dv-canvas-soft:focus-visible, [data-node-id]:focus-visible { outline: 2px solid var(--dv-accent); outline-offset: 2px; }
+.dv-canvas-soft { background: var(--dv-accent-soft); color: var(--dv-accent-text); }
+@media (prefers-reduced-motion: reduce) { .dv-canvas-btn { transition: none; } }
+`
 
 /**
  * A translate over one `dvCanvas` dictionary, for hosts that mount the canvas without a locale binding.
@@ -209,7 +221,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
 
   const positionOf = useCallback((node: CanvasNode): NodePosition => positions[node.id] ?? { x: node.x, y: node.y }, [positions])
 
-  /** Pan and zoom so every node is visible. */
+  /** Pan and zoom so every node is visible, at 100% at most: content that fits the view keeps its true size. */
   const fit = useCallback(() => {
     const element = container.current
     if (graph === null || graph.nodes.length === 0 || element === null) return
@@ -221,7 +233,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     const minY = Math.min(...points.map(point => point.y))
     const spanX = Math.max(...points.map(point => point.x)) + NODE_WIDTH - minX
     const spanY = Math.max(...points.map(point => point.y)) + FIT_NODE_HEIGHT - minY
-    const zoom = clampZoom(Math.min((width - 80) / spanX, (height - 80) / spanY, 1.25))
+    const zoom = clampZoom(Math.min((width - 80) / spanX, (height - 80) / spanY, 1))
     setViewport({ x: (width - spanX * zoom) / 2 - minX * zoom, y: (height - spanY * zoom) / 2 - minY * zoom, zoom })
   }, [graph, positionOf])
 
@@ -277,7 +289,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     setViewport(current => ({
       ...current,
       x: (rect?.width || 800) / 2 - (position.x + NODE_WIDTH / 2) * current.zoom,
-      y: (rect?.height || 600) / 2 - (position.y + NODE_HEIGHT / 2) * current.zoom,
+      y: (rect?.height || 600) / 2 - (position.y + nodeHeight(node) / 2) * current.zoom,
     }))
     setSelected(node.id)
   }, [focusRequest, layoutReady, graph])
@@ -401,6 +413,21 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
       setNotice(t('error', { message: error instanceof Error ? error.message : String(error) }))
     }
   }
+  /**
+   * Render a failed take again: its own operation, inputs, and params, as a new take based on it. This is the request
+   * the take editor's 渲染新版本 sends when nothing was edited.
+   * @param node - the failed take's node.
+   */
+  const retryTake = (node: CanvasNode): void => {
+    const record = node.record
+    const operation = record?.operation ?? null
+    if (record === null || operation === null) return
+    void run(() => client.runOperation({
+      project: projectId, operation, inputs: record.inputs.map(input => ({ role: input.role, ref: referenceText(input.ref) })),
+      params: record.params, surface: 'canvas', intent: t('intent.retryTake', { title: nodeTitle(node, t) }), based_on: record.id,
+      ...session === null ? {} : { session },
+    }))
+  }
   const accepts = (event: ReactDragEvent): boolean => event.dataTransfer.types.includes(DV_ASSET_DRAG_TYPE) || event.dataTransfer.types.includes('Files')
   // A drag the canvas accepts stops here, so the chat composer's document-level file listeners neither show their drop
   // overlay nor attach the dropped files.
@@ -456,21 +483,24 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     })
   }
 
-  // The surface is the app background tinted one step darker (lighter in the dark theme), under a dot grid that pans and zooms.
-  const grid = 24 * viewport.zoom
+  // The surface is the app background under a dot grid that pans and zooms with the nodes.
+  const grid = GRID * viewport.zoom
   const root: CSSProperties = {
-    position: 'relative', width: '100%', height: '100%', minHeight: 320, overflow: 'hidden', backgroundColor: 'var(--dsw-alias-bg-base)',
-    color: 'var(--dsw-alias-label-primary)',
-    backgroundImage: 'radial-gradient(var(--dsw-alias-border-l3) 1.2px, transparent 1.2px), linear-gradient(var(--dsw-alias-interactive-bg-hover), var(--dsw-alias-interactive-bg-hover))',
-    backgroundSize: `${String(grid)}px ${String(grid)}px, auto`, backgroundPosition: `${String(viewport.x)}px ${String(viewport.y)}px, 0 0`,
+    position: 'relative', width: '100%', height: '100%', minHeight: 320, overflow: 'hidden', backgroundColor: 'var(--dv-bg)',
+    color: 'var(--dv-text)', fontFamily: 'var(--dv-font-sans)', fontSize: 13, lineHeight: '20px',
+    backgroundImage: 'radial-gradient(var(--dv-grid) 1px, transparent 1px)',
+    backgroundSize: `${String(grid)}px ${String(grid)}px`, backgroundPosition: `${String(viewport.x)}px ${String(viewport.y)}px`,
     cursor: gesture.current?.kind === 'pan' ? 'grabbing' : 'default', touchAction: 'none',
-    boxShadow: dragOver ? 'inset 0 0 0 2px var(--dsw-alias-button-primary-fill)' : 'none',
+    boxShadow: dragOver ? 'inset 0 0 0 2px var(--dv-accent)' : 'none',
   }
   const floating: CSSProperties = {
-    background: 'var(--dsw-alias-bg-layer-3)', border: '1px solid var(--dsw-alias-border-l3)', boxShadow: '0 4px 14px rgba(0, 0, 0, 0.08)', zIndex: 5,
+    background: 'var(--dv-surface-2)', boxShadow: '0 0 0 1px var(--dv-line-strong), var(--dv-shadow-1)', zIndex: 5,
   }
-  const toolButton: CSSProperties = { border: 'none', borderRadius: 6, background: 'transparent', color: 'var(--dsw-alias-label-primary)', padding: '6px 10px', cursor: 'pointer', font: 'inherit' }
-  const centered: CSSProperties = { position: 'absolute', inset: 0, margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center', fontSize: 14, color: 'var(--dsw-alias-label-tertiary)' }
+  const toolButton: CSSProperties = {
+    height: 28, minWidth: 28, border: 'none', borderRadius: 'var(--dv-radius-sm)', color: 'var(--dv-text-2)', padding: '0 6px', cursor: 'pointer',
+    fontFamily: 'inherit', fontSize: 12, lineHeight: '16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  }
+  const centered: CSSProperties = { position: 'absolute', inset: 0, margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center', fontSize: 14, lineHeight: '22px', color: 'var(--dv-text-2)' }
   let content: ReactNode = null
   if (graph === null) {
     content = <p style={centered}>{base.error !== null ? t('error', { message: base.error }) : t('loading')}</p>
@@ -478,27 +508,39 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     content = <p style={{ ...centered, pointerEvents: 'none' }}>{t('canvas.empty')}</p>
   } else {
     const byId = new Map(graph.nodes.map(node => [node.id, node]))
+    // Each plan node's latest version and its shots' frames, for the plan card's version label, mini grid, and duration.
+    const plans = new Map(graph.nodes.flatMap((node) => {
+      const latest = node.planId === undefined ? undefined : graph.state.components.plan.plans[node.planId]?.at(-1)
+      if (latest === undefined || node.planId === undefined) return []
+      return [[node.id, { latest, frames: planShotFrames(graph.nodes, node.planId, latest.shots.length) }] as const]
+    }))
+    const heightOf = (node: CanvasNode): number => nodeHeight(node, plans.get(node.id)?.frames.some(frame => frame !== null) === true)
+    // The selected node's edges are drawn last, so they stay on top of the others.
+    const touchesSelected = (edge: CanvasEdge): boolean => selected !== null && (edge.from === selected || edge.to === selected)
+    const edges = [...graph.edges.filter(edge => !touchesSelected(edge)), ...graph.edges.filter(touchesSelected)]
     content = (
       <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${String(viewport.x)}px, ${String(viewport.y)}px) scale(${String(viewport.zoom)})`, transformOrigin: '0 0' }}>
         <svg style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, overflow: 'visible', pointerEvents: 'none' }} aria-hidden="true">
-          {graph.edges.map((edge) => {
+          {edges.map((edge) => {
             const from = byId.get(edge.from)
             const to = byId.get(edge.to)
             if (from === undefined || to === undefined) return null
             const a = positionOf(from)
             const b = positionOf(to)
             const x1 = a.x + NODE_WIDTH
-            const y1 = a.y + NODE_HEIGHT / 2
+            const y1 = a.y + heightOf(from) / 2
             const x2 = b.x
-            const y2 = b.y + NODE_HEIGHT / 2
+            const y2 = b.y + heightOf(to) / 2
             const bend = Math.max(40, Math.abs(x2 - x1) / 2)
+            const highlighted = touchesSelected(edge)
             return (
               <path
                 key={`${edge.from}>${edge.to}`}
                 d={`M ${String(x1)} ${String(y1)} C ${String(x1 + bend)} ${String(y1)}, ${String(x2 - bend)} ${String(y2)}, ${String(x2)} ${String(y2)}`}
                 fill="none"
-                style={{ stroke: EDGE_COLOR[edge.kind] }}
-                strokeWidth={2.5}
+                style={{ stroke: highlighted ? 'var(--dv-accent)' : EDGE_COLOR[edge.kind], strokeOpacity: highlighted ? 0.9 : 0.28 }}
+                strokeWidth={highlighted ? 2 : 1.25}
+                vectorEffect="non-scaling-stroke"
                 strokeDasharray={edge.kind === 'take' ? '6 5' : undefined}
                 data-edge={`${edge.from}>${edge.to}`}
               />
@@ -507,6 +549,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
         </svg>
         {[...graph.nodes.filter(node => node.id !== topNode), ...graph.nodes.filter(node => node.id === topNode)].map((node) => {
           const position = positionOf(node)
+          const plan = plans.get(node.id)
           return (
             <NodeCard
               key={node.id}
@@ -517,6 +560,8 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
               zoom={viewport.zoom}
               t={t}
               onPointerDown={onNodeDown(node)}
+              {...plan === undefined ? {} : { plan: plan.latest, frames: plan.frames }}
+              {...node.kind === 'take' && node.flags.failed && !readOnly ? { onRetry: () => { retryTake(node) } } : {}}
             />
           )
         })}
@@ -539,18 +584,26 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
       onDragLeave={(event) => { if (event.currentTarget === event.target) setDragOver(false) }}
       onDrop={onDrop}
     >
+      <style>{CANVAS_CSS}</style>
       {content}
       <WorkingBranchBar
         client={client} project={projectId} session={session} surface="canvas" state={base.value} intent={graph?.draftIntent ?? ''} run={run}
         style={{ ...floating, position: 'absolute', top: 12, left: 0, right: 0, width: 'max-content', margin: '0 auto', padding: '6px 6px 6px 12px', borderRadius: 10, fontSize: 13 }}
       />
-      {notice !== null ? <p role="alert" style={{ position: 'absolute', top: 56, left: '50%', transform: 'translateX(-50%)', margin: 0, padding: '6px 10px', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-3)', border: '1px solid var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)', fontSize: 13, zIndex: 6 }}>{notice}</p> : null}
-      <div style={{ ...floating, position: 'absolute', left: 12, bottom: 12, display: 'flex', alignItems: 'center', gap: 2, padding: 3, borderRadius: 10, fontSize: 13 }} onPointerDown={(event) => { event.stopPropagation() }}>
-        <button type="button" aria-label={t('canvas.zoomOut')} style={toolButton} onClick={() => { zoomBy(1 / 1.2) }}>−</button>
-        <span style={{ minWidth: 44, textAlign: 'center' }}>{`${String(Math.round(viewport.zoom * 100))}%`}</span>
-        <button type="button" aria-label={t('canvas.zoomIn')} style={toolButton} onClick={() => { zoomBy(1.2) }}>＋</button>
-        <button type="button" style={toolButton} onClick={() => { autoFit.current = true; fit(); scheduleSave() }}>{t('canvas.fit')}</button>
+      {notice !== null ? <p role="alert" style={{ position: 'absolute', top: 56, left: '50%', transform: 'translateX(-50%)', margin: 0, padding: '6px 10px', borderRadius: 'var(--dv-radius-md)', background: 'var(--dv-surface-1)', border: '1px solid var(--dv-danger)', color: 'var(--dv-danger)', fontSize: 13, lineHeight: '20px', zIndex: 6 }}>{notice}</p> : null}
+      <div role="toolbar" aria-label={t('canvas.zoom')} style={{ ...floating, position: 'absolute', left: 16, bottom: 16, display: 'flex', alignItems: 'center', gap: 2, padding: 4, borderRadius: 10 }} onPointerDown={(event) => { event.stopPropagation() }}>
+        <button type="button" className="dv-canvas-btn" aria-label={t('canvas.zoomOut')} title={t('canvas.zoomOut')} style={toolButton} onClick={() => { zoomBy(1 / 1.2) }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" aria-hidden="true"><path d="M5 12h14" /></svg>
+        </button>
+        <span style={{ minWidth: 44, textAlign: 'center', fontFamily: 'var(--dv-font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 12, lineHeight: '16px', color: 'var(--dv-text-2)' }}>{`${String(Math.round(viewport.zoom * 100))}%`}</span>
+        <button type="button" className="dv-canvas-btn" aria-label={t('canvas.zoomIn')} title={t('canvas.zoomIn')} style={toolButton} onClick={() => { zoomBy(1.2) }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+        <button type="button" className="dv-canvas-btn" style={{ ...toolButton, padding: '0 8px' }} onClick={() => { autoFit.current = true; fit(); scheduleSave() }}>{t('canvas.fit')}</button>
       </div>
+      {editing !== null && graph !== null
+        ? <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'var(--dv-overlay)', zIndex: 9 }} />
+        : null}
       {editing !== null && graph !== null
         ? (
           <NodeEditor
