@@ -58,6 +58,9 @@ const TEXT_OVERRIDES: Record<string, Record<string, [string, string]>> = {
   },
 }
 
+/** An empty SVG used as the browser tab icon in place of DSH's whale. */
+const BLANK_ICON = 'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%2F%3E'
+
 /** Renders nothing in place of a DSH UI slot entry DreamVerse hides. */
 function Hidden(): ReactNode {
   return null
@@ -159,6 +162,16 @@ function DreamVerseGuide({ useTabInfo }: PropsRuntime<'sidebar.right.tab.guide'>
  * @param ctx - client root context with the DSH UI slots and `locale`.
  */
 export function applyChrome(ctx: ClientContext): void {
+  // The browser tab shows no DSH whale: the page's icon links are swapped for an empty icon while the shell is loaded.
+  ctx.effect(() => {
+    const icons = [...document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]')]
+    for (const link of icons) link.remove()
+    const blank = document.createElement('link')
+    blank.rel = 'icon'
+    blank.href = BLANK_ICON
+    document.head.append(blank)
+    return () => { blank.remove(); document.head.append(...icons) }
+  }, 'ui-shell: hide the DSH tab icon')
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = '@dv/ui-shell/chrome'
