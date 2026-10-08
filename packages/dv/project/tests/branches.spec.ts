@@ -193,6 +193,12 @@ describe('branches', () => {
     expect((await m.store.lock(project, () => m.branches.rename(project, MAIN_BRANCH, 'day'))).title).toBe('day')
     expect((await m.store.lock(project, () => m.branches.rename(project, 'b2', ' '))).title).toBeNull()
     await expectCode(() => m.store.lock(project, () => m.branches.rename(project, 'b9', 'x')), 'unknown_branch')
+    // A title is at most 40 characters and unique among the branches; a branch may keep its own title.
+    await expectCode(() => m.store.lock(project, () => m.branches.rename(project, 'b2', 'x'.repeat(41))), 'invalid_params')
+    await expectCode(() => m.store.lock(project, () => m.branches.rename(project, 'b2', ' day ')), 'branch_exists')
+    await expectCode(() => m.store.lock(project, () => m.branches.create(project, 'day')), 'branch_exists')
+    expect((await m.store.lock(project, () => m.branches.rename(project, MAIN_BRANCH, 'day'))).title).toBe('day')
+    expect((await m.store.lock(project, () => m.branches.rename(project, 'b2', 'x'.repeat(40)))).title).toHaveLength(40)
   })
 
 })

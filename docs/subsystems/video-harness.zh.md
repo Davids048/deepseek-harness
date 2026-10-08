@@ -83,7 +83,7 @@ bundle         @dv/bundle                 the cordis.patch.yml rows of every pac
 
 ## 分支和撤销
 
-一个项目从分支 `main` 开始；其他分支都是从另一个分支分出的 `b<n>`（`b2`、`b3`、…），分支之间从不合并：它们只共用素材库，所以一个分支要用另一个分支渲染出的片段，就把它当作普通素材插入。`branches.json` 保存每个分支指针和项目的当前分支：每个视图和每个对话都读取它，每个执行者（`user`、`agent`、`system`）的每次写入都立即进入它；没有人需要接受修改。只有两种情况会分出分支：人新建分支（在分支切换器里，或者让智能体调用 `dv_proj_branch_create`），或者撤销后当前分支的 head 停在末端之前时有写入到达。新分支从 head 所在的位置开始，旧分支回到末端并保留分叉点之后的步骤，新分支成为当前分支。撤销、重做、切换和读取都不会分出分支。新建、切换和重命名分支只修改 `branches.json`，不写记录；分支可以有标题，没有标题时视图显示 主线 / Main 或 分支 n / Branch n。
+一个项目从分支 `main` 开始；其他分支都是从另一个分支分出的 `b<n>`（`b2`、`b3`、…），分支之间从不合并：它们只共用素材库，所以一个分支要用另一个分支渲染出的片段，就把它当作普通素材插入。`branches.json` 保存每个分支指针和项目的当前分支：每个视图和每个对话都读取它，每个执行者（`user`、`agent`、`system`）的每次写入都立即进入它；没有人需要接受修改。只有两种情况会分出分支：人新建分支（在分支菜单里，或者让智能体调用 `dv_proj_branch_create`），或者撤销后当前分支的 head 停在末端之前时有写入到达。新分支从 head 所在的位置开始，旧分支回到末端并保留分叉点之后的步骤，新分支成为当前分支。撤销、重做、切换和读取都不会分出分支。新建、切换和重命名分支只修改 `branches.json`，不写记录；分支可以有标题，没有标题时视图显示 主线 / Main 或 分支 n / Branch n。
 
 撤销和重做作用于项目的当前分支。不带 `to` 的撤销（`proj.undo`）后退一步，每条记录算一步；带 `to` 时，它把分支恢复到紧接那条记录之后的状态。每次撤销追加一条记录，其 `params.to` 指出分支回到其状态的那条记录。重做（`proj.redo`）沿重做线前进一步。撤销之后的写入会分出新分支，所以重做步骤留在旧分支上。切换到另一个分支的某一步，会让那个分支成为当前分支并回到那一步。记录从不被改写或删除。
 
@@ -107,11 +107,11 @@ skill 承载工作流程和模型专属的规则，各由其主人注册：
 
 [`@dv/api`](../../packages/dv/api/README.zh.md) 是项目组件面向浏览器的 HTTP 面：`/api/dv/state` 把一个分支（默认是当前分支）的状态返回为一份 JSON 文档，`/api/dv/operations` 列出已注册的操作，`/api/dv/operation` 以用户身份运行一个操作，其记录带 `surface: 'canvas'`、`'timeline'` 或 `'asset_pool'`，`/api/dv/history` 返回历史的一页，`/api/dv/branches/create`、`/api/dv/branches/switch`、`/api/dv/branches/rename`、`/api/dv/undo`、`/api/dv/redo` 和 `/api/dv/stale/accept` 暴露分支、撤销、重做和过期操作，其他路由管理项目、素材导入、画布布局和 Workspace 链接，`/dv/events` 推送每一次记录和分支变化。
 
-界面各包是 web 应用的右侧栏标签类型和中央视图，因此在同一个 profile 里与对话页并存。[`@dv/ui-shell`](../../packages/dv/ui-shell/README.zh.md) 把项目工作区放在中央，把 对话 / Chat 和 轨迹 / Trajectory 标签放在右侧，把 画布 / Canvas 和 时间线 / Timeline 切换按钮放在顶栏，把 [`@dv/ui-kit`](../../packages/dv/ui-kit/README.zh.md) 的当前分支按钮（当前分支 / Current branch）放在底栏，它的列表切换项目的当前分支，并把 Ctrl+Z 和 Shift+Ctrl+Z 绑定到当前分支的撤销和重做。新建分支（新建分支 / New branch）和重命名（重命名 / Rename）放在历史面板的分支切换器里。[`@dv/ui-canvas`](../../packages/dv/ui-canvas/README.zh.md) 把当前分支的当前状态画成按素材流向相连的节点：处于当前版本的角色、场景和风格，导入的素材，处于最新版次的每个分镜计划（写出每个镜头的生成方式，设置了的写出 接上一镜头 / Continues the previous shot），以及带生成方式的版本；过期记录有标记，它的编辑器以用户记录渲染新版本或替换参考图。[`@dv/ui-timeline`](../../packages/dv/ui-timeline/README.zh.md) 把每条时间线画成一条轨道，把插入、移动、移除、拆分和裁剪手势变成按 `ClipId` 指定片段的 `timeline.*` 记录，把导出变成一条 `deliver.timeline_export` 记录。`@dv/ui-asset-pool` 列出当前分支到分支头为止的素材，通过 显示其他分支的素材 / Show assets from other branches 显示其他分支的素材及其分支名称，并导入文件；`@dv/ui-composer` 为对话加上 `@` 和 `+ → 引用` 引用、渲染卡片和面向创作者的工具名。
+界面各包是 web 应用的右侧栏标签类型和中央视图，因此在同一个 profile 里与对话页并存。[`@dv/ui-shell`](../../packages/dv/ui-shell/README.zh.md) 把项目工作区放在中央，把 对话 / Chat 和 轨迹 / Trajectory 标签放在右侧，把 画布 / Canvas 和 时间线 / Timeline 切换按钮放在顶栏，把 [`@dv/ui-kit`](../../packages/dv/ui-kit/README.zh.md) 的分支菜单放在底栏，它是显示当前分支名称的按钮，菜单切换项目的当前分支、新建分支（新建分支 / New branch）并在原位置重命名分支，并把 Ctrl+Z 和 Shift+Ctrl+Z 绑定到当前分支的撤销和重做。历史面板顶部放着同一个分支菜单。[`@dv/ui-canvas`](../../packages/dv/ui-canvas/README.zh.md) 把当前分支的当前状态画成按素材流向相连的节点：处于当前版本的角色、场景和风格，导入的素材，处于最新版次的每个分镜计划（写出每个镜头的生成方式，设置了的写出 接上一镜头 / Continues the previous shot），以及带生成方式的版本；过期记录有标记，它的编辑器以用户记录渲染新版本或替换参考图。[`@dv/ui-timeline`](../../packages/dv/ui-timeline/README.zh.md) 把每条时间线画成一条轨道，把插入、移动、移除、拆分和裁剪手势变成按 `ClipId` 指定片段的 `timeline.*` 记录，把导出变成一条 `deliver.timeline_export` 记录。`@dv/ui-asset-pool` 列出当前分支到分支头为止的素材，通过 显示其他分支的素材 / Show assets from other branches 显示其他分支的素材及其分支名称，并导入文件；`@dv/ui-composer` 为对话加上 `@` 和 `+ → 引用` 引用、渲染卡片和面向创作者的工具名。
 
 ## 历史和轨迹
 
-历史是项目按顺序排列的记录，来自每个发起者、视图和对话；轨迹是智能体在一个对话中的步骤。记录通过它的 `session` 和 `tool_call` 字段把两者连起来。[`@dv/ui-history`](../../packages/dv/ui-history/README.zh.md) 是历史面板（标签类型 `dv-history`）。它的列表视图为当前分支的每一步列一行，最新的在前，显示动作、谁做的（你 / You、智能体 / Agent、自动 / Automatic）、状态、一张输出缩略图，分支头那一步标 当前 / Current，重做能恢复的步骤变暗；批准分镜计划时排定的记录折叠在该批准行之下，回到这一步 / Go back to this step 让分支回到某一步。它的顶部放着分支切换器（当前分支、新建分支 / New branch、重命名 / Rename）。它的树视图 分支树 / Branch tree 把每个分支的每一步画在各自的一列里，每一步显示的信息更少；选中某一步会让它的分支成为当前分支并停在那一步。选中一行会在画布上聚焦该记录的节点（`dv:canvas-focus`）或在时间线上聚焦它的片段（`dv:timeline-focus`）；行内的 在轨迹中查看 / Show in trajectory 链接发出 `dv:trajectory-focus`，`@dv/ui-shell` 随即在那个对话的那次工具调用处打开 轨迹。在对话中，写入记录的工具的每个已结束行都有 在历史中查看 / Show in history 链接，它发出 `dv:history-focus`，让历史面板选中那次工具调用写入的记录。
+历史是项目按顺序排列的记录，来自每个发起者、视图和对话；轨迹是智能体在一个对话中的步骤。记录通过它的 `session` 和 `tool_call` 字段把两者连起来。[`@dv/ui-history`](../../packages/dv/ui-history/README.zh.md) 是历史面板（标签类型 `dv-history`）。它的列表视图为当前分支的每一步列一行，最新的在前，显示动作、谁做的（你 / You、智能体 / Agent、自动 / Automatic）、状态、一张输出缩略图，分支头那一步标 当前 / Current，重做能恢复的步骤变暗；批准分镜计划时排定的记录折叠在该批准行之下，回到这一步 / Go back to this step 让分支回到某一步。它的顶部放着与底栏相同的分支菜单、分支树 / Branch tree 开关以及撤销和重做。它的树视图 分支树 / Branch tree 把每个分支的每一步画在各自的一列里，每一步显示的信息更少，在每个分支的泳道开始处标出分支名称，并用 当前 / Current 标出 head 步骤；点击某一步会选中它，它的 回到这一步 / Go back to this step 会让它的分支成为当前分支并停在那一步。选中一行会在画布上聚焦该记录的节点（`dv:canvas-focus`）或在时间线上聚焦它的片段（`dv:timeline-focus`）；行内的 在轨迹中查看 / Show in trajectory 链接发出 `dv:trajectory-focus`，`@dv/ui-shell` 随即在那个对话的那次工具调用处打开 轨迹。在对话中，写入记录的工具的每个已结束行都有 在历史中查看 / Show in history 链接，它发出 `dv:history-focus`，让历史面板选中那次工具调用写入的记录。
 
 ## 过期
 
@@ -265,13 +265,12 @@ DreamVerse 的新行为挂在某个包已拥有的扩展点上，就像 DeepSeek
 | 场景和风格                            | Locations and styles                                           | 设定库中 角色 / Characters 之后的部分。                                |
 | 新建时间线 / 修改时间线                    | Create timeline / Update timeline                              | 添加时间线或替换其片段的时间线操作。                                         |
 | 插入片段 / 移动片段 / 移除片段 / 拆分片段 / 裁剪片段 | Insert clip / Move clip / Remove clip / Split clip / Trim clip | 片段操作；文案中片段显示为 片段 N / Clip N。                               |
-| 分支 / 主线 / 分支 {n}                 | Branch / Main / Branch {n}                                     | 分支切换器和分支的默认名称。                                             |
-| 当前分支：{branch}                    | Current branch: {branch}                                       | 底栏的当前分支按钮。                                                 |
-| 新建分支 / 重命名                       | New branch / Rename                                            | 历史面板分支切换器的按钮。                                              |
+| 分支 / 主线 / 分支 {n}                 | Branch / Main / Branch {n}                                     | 分支菜单和分支的默认名称。                                              |
+| 当前分支                             | Current branch                                                 | 分支菜单按钮的提示。                                                 |
+| 新建分支 / 重命名                       | New branch / Rename                                            | 分支菜单的新建分支行和重命名（✎）按钮。                                       |
 | 仍然保留                             | Keep anyway                                                    | `proj.stale_accept` 唯一的标签。                                 |
 | 分镜计划版次 / v{version}              | Plan versions / v{version}                                     | 画布上分镜计划各版次间的切换。                                            |
 | 你 / 智能体 / 自动                     | You / Agent / Automatic                                        | 历史面板中的发起者。                                                 |
 | 渲染 {n} 个镜头                       | Render {n} shots                                               | 批准时排定的渲染的折叠开关。                                             |
 | 当前 / 分支树                         | Current / Branch tree                                          | 历史面板中分支头那一步的标记，以及它的树视图。                                    |
-| 发起者 / 操作类型                       | Actor / Operation kind                                         | 历史筛选。                                                      |
 | 在历史中查看 / 在轨迹中查看                  | Show in history / Show in trajectory                           | 对话和历史面板之间的链接。                                              |

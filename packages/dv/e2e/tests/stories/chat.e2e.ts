@@ -326,7 +326,7 @@ describe('chat with the agent', () => {
     // Nothing waits for the user: the workspace offers no accept and names the current branch in its bottom bar.
     const workspace = page.locator('[data-dv-workspace]')
     expect(await workspace.getByRole('button', { name: '接受', exact: true }).count()).toBe(0)
-    expect(await workspace.locator('[data-testid="dv-kit-branch-status"]').first().getAttribute('data-branch')).toBe('main')
+    expect(await workspace.locator('[data-testid="dv-kit-branch-menu"]').first().getAttribute('data-branch')).toBe('main')
     expect(errors).toEqual([])
   })
 
@@ -442,7 +442,7 @@ describe('chat with the agent', () => {
     const main = await stateOf('main')
     expect(main.head).toBe(tip)
     expect(main.components.proj.records.some(record => record.operation === 'bible.character_create')).toBe(false)
-    const status = page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-status"]').first()
+    const status = page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-menu"]').first()
     await waitFor(async () => await status.getAttribute('data-branch') === 'b2', 'the bottom bar on 分支 2', 10_000)
     await send(page, '只回复九')
     await waitChat(page, '收到九')

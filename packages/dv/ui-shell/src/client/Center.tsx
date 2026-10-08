@@ -1,9 +1,9 @@
 /**
  * The center of the DreamVerse shell, shadowing DSH's `main.conversation`. Without an open project it is the entry
  * page: a DreamVerse headline, the DSH composer, and recent project cards, and the chat itself once it starts. With a
- * project open it is the workspace: a top bar (breadcrumb, 画布 | 时间线 toggle, branch switcher, panel control) above the
- * canvas or the timeline editor. Every view shows the project's current branch, so a switch in the top bar changes what
- * the canvas, the timeline, the asset pool panel and the History panel show.
+ * project open it is the workspace: a top bar (breadcrumb, 画布 | 时间线 toggle, panel control) above the canvas or the
+ * timeline editor, and a bottom bar with the branch menu. Every view shows the project's current branch, so a switch in
+ * the branch menu changes what the canvas, the timeline, the asset pool panel and the History panel show.
  *
  * The center also keeps the shell's open project and the DSH main session together: once the client lists are ready
  * it restores the location the URL names, and afterwards it adopts the project of a main session that moves to
@@ -20,8 +20,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DV_CURRENT_TIMELINE_EVENT, getTimelineOf, publishCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
 import { pickText, useText } from '@dv/ui-kit/locale.ts'
-import { branchActions } from '@dv/ui-kit/BranchSwitcher.tsx'
-import { BranchStatus } from '@dv/ui-kit/BranchStatus.tsx'
+import { BranchMenu, branchActions } from '@dv/ui-kit/BranchMenu.tsx'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
   DV_CANVAS_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT, DV_TIMELINE_INSERT_EVENT, type DvWorkspaceEventMap,
@@ -267,7 +266,7 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
   // The chat session the workspace sits beside, recorded as the `session` of the views' edits; none until the main
   // session belongs to this project.
   const session = sessionInProject ? sessionId ?? null : null
-  // A branch switch from the bottom bar refetches the state; a refused one leaves the page as it was and shows the
+  // A branch change from the bottom bar refetches the state; a refused one leaves the page as it was and shows the
   // server's reason.
   const branches = branchActions(client, projectId, view === 'timeline' ? 'timeline' : 'canvas', work => work().then(
     () => { state.reload() }, (error: unknown) => { window.alert(error instanceof Error ? error.message : String(error)) },
@@ -412,7 +411,7 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
           : <TimelineView projectId={projectId} client={client} session={session} />}
       </div>
       <footer className={css.statusBar}>
-        <BranchStatus state={state.value} onSwitch={branches.onSwitch} />
+        <BranchMenu state={state.value} side="top" {...branches} />
       </footer>
     </div>
   )

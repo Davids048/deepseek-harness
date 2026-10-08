@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to turn the DSH web app into DreamVerse. With no project open, the center shows the entry page: the chat composer and recent projects. With a project open, it shows the canvas or the timeline editor, switched by 画布 | 时间线 / Canvas | Timeline in the top bar. A bottom bar under the view holds the current-branch button (`BranchStatus` of `@dv/ui-kit`), 当前分支：<name> / Current branch: <name>; a click opens the list of every branch, and choosing one switches the project's current branch, which every view shows. Forking and renaming branches live in the History panel. The left sidebar shows the navigator: 新建项目 / Create project, 首页 / Home, and the project → chat session tree. The right panel gets the 对话 / Chat and 轨迹 / Trajectory tabs. Outside text fields, Ctrl+Z and Shift+Ctrl+Z (Cmd on macOS) undo and redo the project's current branch.
+Use this package to turn the DSH web app into DreamVerse. With no project open, the center shows the entry page: the chat composer and recent projects. With a project open, it shows the canvas or the timeline editor, switched by 画布 | 时间线 / Canvas | Timeline in the top bar. A bottom bar under the view holds the branch menu (`BranchMenu` of `@dv/ui-kit`), a button with the current branch's name whose menu switches the current branch, which every view shows, and forks and renames branches. The left sidebar shows the navigator: 新建项目 / Create project, 首页 / Home, and the project → chat session tree. The right panel gets the 对话 / Chat and 轨迹 / Trajectory tabs. Outside text fields, Ctrl+Z and Shift+Ctrl+Z (Cmd on macOS) undo and redo the project's current branch.
 
 ## Table of Contents
 
@@ -68,7 +68,7 @@ The workspace sends the chat session to the canvas and the timeline editor only 
 | [`src/client/index.ts`](src/client/index.ts) | Registrations, the New Session and first-use default Workspace overrides, the links poll, and the `dv:trajectory-focus` listener |
 | [`src/client/actions.ts`](src/client/actions.ts) | `ShellActions`: create, open, rename, and delete projects and chat sessions, the entry page, and the right-panel tabs |
 | [`src/client/store.ts`](src/client/store.ts) | The shared state (open project, view, timeline, main session, links), the URL hash mirror, and the session → project lookup |
-| [`src/client/Center.tsx`](src/client/Center.tsx) | The center: URL restore, the entry page, recent projects, the workspace top bar, the views, the bottom bar with the current-branch button, and the window event listeners |
+| [`src/client/Center.tsx`](src/client/Center.tsx) | The center: URL restore, the entry page, recent projects, the workspace top bar, the views, the bottom bar with the branch menu, and the window event listeners |
 | [`src/client/Navigator.tsx`](src/client/Navigator.tsx) | The left navigator and the brand name |
 | [`src/client/tabs.tsx`](src/client/tabs.tsx) | The 对话 and 轨迹 tab types and bodies |
 | [`src/client/undo-keys.ts`](src/client/undo-keys.ts) | The Ctrl+Z / Shift+Ctrl+Z window listener that calls `/api/dv/undo` and `/api/dv/redo` |

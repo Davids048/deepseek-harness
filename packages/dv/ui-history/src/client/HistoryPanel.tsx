@@ -9,11 +9,11 @@
  * and for an agent action the intent the agent gave for the call. The renders a plan approval scheduled fold under the
  * approval's row. The current step carries 当前; every step before it offers 回到这一步, which jumps the branch back to
  * just after that step. Selecting a row plays its output under the row and focuses the record on the canvas or its clip
- * on the timeline. The header holds the filters (actor, operation kind, timeline), undo, and redo.
+ * on the timeline. The header holds undo and redo.
  *
  * The tree view (分支树) shows every step of every branch as a lane graph (`branchTree`): one lane per branch, one row
- * per step with only its label and a small thumbnail. Clicking a step makes its branch current and moves the branch's
- * head there.
+ * per step with only its label and a small thumbnail; the current branch's head step is highlighted and carries 当前.
+ * Clicking a step makes its branch current and moves the branch's head there.
  *
  * @module @dv/ui-history/HistoryPanel
  */
@@ -26,9 +26,8 @@ import { DvClient, assetUrl } from '@dv/ui-kit/api.ts'
 import { useCurrentProject } from '@dv/ui-kit/current-project.ts'
 import { useText } from '@dv/ui-kit/locale.ts'
 import type { PickText } from '@dv/ui-kit/locale.ts'
-import { BranchSwitcher, branchActions } from '@dv/ui-kit/BranchSwitcher.tsx'
+import { BranchMenu, branchActions } from '@dv/ui-kit/BranchMenu.tsx'
 import { branchLabel, entryBranch } from '@dv/ui-kit/state.ts'
-import { timelineName } from '@dv/ui-kit/timeline.ts'
 import type { Actor, Asset, Branch, HistoryEntry, HistoryQuery, ProjectRecord, RecordStatus, WireHistory } from '@dv/ui-kit/types.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
@@ -36,7 +35,7 @@ import {
 } from '@dv/ui-kit/workspace-events.ts'
 import {
   actionLabel, actionRows, branchTree, centerFocus, clipTimelines, relativeTime, stepPlace, thumbnailOf,
-  timelineRecords, branchSteps, type ActionRow, type Thumbnail, type TreeRow, type BranchSteps,
+  branchSteps, type ActionRow, type Thumbnail, type TreeRow, type BranchSteps,
 } from './rows.ts'
 
 /** Props of {@link HistoryPanel}. */
@@ -47,15 +46,6 @@ export interface HistoryPanelProps {
   /** The API client; defaults to one over the page's fetch. */
   client?: DvClient
 }
-
-/** The three filters of the list view; an empty value means all. */
-interface Filters {
-  actor: '' | Actor
-  component: string
-  timeline: string
-}
-
-const NO_FILTERS: Filters = { actor: '', component: '', timeline: '' }
 
 /** The two views of the panel: the current branch's steps, or every branch as a lane graph. */
 type HistoryView = 'list' | 'tree'
@@ -79,10 +69,6 @@ const STATUSES: Record<RecordStatus, [string, string]> = {
   pending: ['等待中', 'Pending'], running: ['运行中', 'Running'], done: ['完成', 'Done'], failed: ['失败', 'Failed'],
   cancelled: ['已取消', 'Cancelled'],
 }
-const COMPONENTS: Array<[string, string, string]> = [
-  ['proj', '项目', 'Project'], ['asset', '素材库', 'Asset pool'], ['bible', '设定库', 'Story bible'], ['plan', '分镜', 'Shot plan'],
-  ['shot', '镜头渲染', 'Shot render'], ['timeline', '时间线', 'Timeline'], ['deliver', '交付', 'Deliver'], ['inspect', '检查器', 'Inspector'],
-]
 
 const line = 'var(--dv-line, rgba(127, 127, 127, 0.25))'
 const muted = 'var(--dv-muted, rgba(127, 127, 127, 0.95))'
@@ -96,11 +82,15 @@ const STATUS_COLORS: Record<RecordStatus, string> = { pending: muted, running: a
 const button: CSSProperties = {
   border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '2px 8px', fontSize: 12, cursor: 'pointer',
 }
-const select: CSSProperties = { border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, fontSize: 12, padding: '2px 4px' }
+/** A 28px icon-only button of the header. */
+const icon: CSSProperties = {
+  width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 6,
+  padding: 0, background: 'transparent', color: 'inherit', cursor: 'pointer',
+}
 const link: CSSProperties = { border: 'none', background: 'transparent', color: accent, fontSize: 11, padding: 0, cursor: 'pointer' }
 /** The color of each lane of the branch tree, by lane index modulo the list. */
 const LANE_COLORS = [accent, success, '#f5a524', '#0090ff', danger, '#8e4ec6']
-/** The width of one lane and the height of one row of the branch tree, in pixels. */
+/** The width of one column and the height of one row of the branch tree, in pixels. */
 const LANE = 14
 const TREE_ROW = 34
 
@@ -218,7 +208,6 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   const t = useText()
   const current = useProjectState(client, projectId)
   const [view, setView] = useState<HistoryView>('list')
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   const [selected, setSelected] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [focusRecord, setFocusRecord] = useState<string | null>(null)
@@ -235,38 +224,30 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   const owner = useMemo(() => clipTimelines(records ?? []), [records])
   const redoSteps = current.value?.redo_steps
   const steps = useMemo(() => branchSteps(records ?? [], redoSteps ?? []), [records, redoSteps])
-  const timelines = current.value?.components.timeline.timelines ?? []
-  // A timeline filter applies only while the current branch has that timeline, so a branch switch cannot leave a hidden
-  // filter active.
-  const timeline = timelines.find(item => item.id === filters.timeline)
-  const shownFilters = timeline === undefined ? { ...filters, timeline: '' } : filters
-  const timelineSet = useMemo(() => {
-    if (timeline === undefined || current.value === null) return null
-    const { records: branchRecords, created_by: createdBy } = current.value.components.proj
-    return timelineRecords(branchRecords, createdBy, timeline.id, timeline.clips.flatMap(clip => clip.asset === null ? [] : [clip.asset]))
-  }, [timeline, current.value])
-  // The list view reads the current branch's line with the filters; the tree view reads every branch line.
-  const query = useMemo((): HistoryQuery | null => {
-    if (view === 'tree') return { project: projectId, marks: ['current', 'redo', 'branch'] }
-    if (timelineSet !== null && timelineSet.length === 0) return null
-    return {
-      project: projectId, marks: ['current', 'redo'],
-      ...filters.actor === '' ? {} : { actor: filters.actor },
-      ...filters.component === '' ? {} : { component: filters.component },
-      ...timelineSet === null ? {} : { records: timelineSet },
-    }
-  }, [projectId, view, filters.actor, filters.component, timelineSet])
+  // The list view reads the current branch's line; the tree view reads every branch line.
+  const query = useMemo((): HistoryQuery => (
+    { project: projectId, marks: view === 'tree' ? ['current', 'redo', 'branch'] : ['current', 'redo'] }
+  ), [projectId, view])
   const { loaded, error, loadMore } = useHistory(client, query)
   const rows = useMemo(() => actionRows(loaded?.entries ?? []), [loaded])
   const branches = current.value?.branches
   const tree = useMemo(() => branchTree(loaded?.entries ?? [], branches ?? []), [loaded, branches])
   const recordsById = useMemo(() => new Map((loaded?.entries ?? []).map(entry => [entry.record.id, entry.record])), [loaded])
+  // The tree scrolls the current branch's head step into view when it opens and whenever the head moves.
+  const scrolledTo = useRef<string | null>(null)
+  useEffect(() => {
+    if (view !== 'tree') { scrolledTo.current = null; return }
+    const head = steps.current
+    const element = head === null ? undefined : rowRefs.current.get(head)
+    if (head === null || element === undefined || scrolledTo.current === head) return
+    scrolledTo.current = head
+    requestAnimationFrame(() => { element.scrollIntoView({ block: 'center' }) })
+  }, [view, steps, tree])
 
-  // A `dv:history-focus` request: show the list without filters, find the record the tool call wrote, then select it once loaded.
+  // A `dv:history-focus` request: show the list, find the record the tool call wrote, then select it once loaded.
   const takeFocus = useCallback((focus: DvWorkspaceEventMap['dv:history-focus']) => {
     pendingFocus = null
     setView('list')
-    setFilters(NO_FILTERS)
     setNotice(null)
     client.listHistory({ project: projectId, session: focus.session, tool_call: focus.toolCall, limit: 1 }).then((page) => {
       const found = page.entries[0]
@@ -280,7 +261,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     return () => { focusListeners.delete(takeFocus) }
   }, [takeFocus])
   useEffect(() => {
-    if (focusRecord === null || loaded === null || query === null || view !== 'list' || JSON.stringify(filters) !== JSON.stringify(NO_FILTERS)) return
+    if (focusRecord === null || loaded === null || view !== 'list') return
     if (loaded.entries.some(entry => entry.record.id === focusRecord)) {
       // A record folded under an approval shows once its approval's row is expanded.
       const parent = rows.find(row => row.children.some(child => child.record.id === focusRecord))
@@ -290,7 +271,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
       requestAnimationFrame(() => { rowRefs.current.get(focusRecord)?.scrollIntoView({ block: 'nearest' }) })
     } else if (loaded.more) void loadMore()
     else setFocusRecord(null)
-  }, [focusRecord, loaded, rows, query, view, filters, loadMore])
+  }, [focusRecord, loaded, rows, view, loadMore])
 
   const choose = (entry: HistoryEntry): void => {
     setSelected(entry.record.id)
@@ -306,7 +287,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     })
   }
   const report = (failure: unknown): void => { setNotice(failure instanceof Error ? failure.message : String(failure)) }
-  // The branch switcher of the panel header: switch, fork and rename branches; a refused change shows its reason.
+  // The branch menu of the panel header: switch, fork and rename branches; a refused change shows its reason.
   const branchGestures = branchActions(client, projectId, 'history', (work) => {
     setNotice(null)
     return work().then(() => { current.reload() }, report)
@@ -316,7 +297,8 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     setNotice(null)
     client.undo(projectId, 'history', session, record).catch(report)
   }
-  // A step of the tree: stay on the current branch when its line holds the step, else switch to the step's owner.
+  // 回到这一步 on a step of the tree: stay on the current branch when its line holds the step, else switch to the step's
+  // owner.
   const moveTo = (entry: HistoryEntry): void => {
     const lane = entryBranch(entry, current.value?.current ?? null)
     if (lane === null) return
@@ -328,7 +310,6 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     else rowRefs.current.set(record, element)
   }
 
-  const filtered = view === 'list' && JSON.stringify(filters) !== JSON.stringify(NO_FILTERS)
   let body: ReactNode
   if (error !== null) body = <p style={{ color: danger, fontSize: 12 }}>{t(`读取失败：${error}`, `Failed to load: ${error}`)}</p>
   else if (loaded === null) body = <p style={{ color: muted, fontSize: 12 }}>{t('正在读取…', 'Loading…')}</p>
@@ -336,15 +317,14 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     // Every project starts with its `proj.create` record, so a project without other operation records counts as empty;
     // its creation row stays listed below the notice.
     const changes = loaded.entries.filter(entry => entry.record.operation !== 'proj.create')
-    const empty = filtered ? rows.length === 0 : changes.length === 0
     const shared = {
       assets: loaded.assets, records: recordsById, now, selected, onChoose: choose, rowRef, steps, onJump: jump,
     }
     const tail = view === 'tree'
       ? (
         <TreeView
-          rows={tree} lanes={branches ?? []} assets={loaded.assets} records={recordsById} current={current.value?.current ?? null}
-          head={steps.current} onMove={moveTo}
+          rows={tree} branches={branches ?? []} current={current.value?.current ?? null} assets={loaded.assets} records={recordsById}
+          head={steps.current} selected={selected} onSelect={choose} onMove={moveTo} rowRef={rowRef}
         />
       )
       : rows.map(row => (
@@ -355,12 +335,10 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
       ))
     body = (
       <>
-        {empty
+        {changes.length === 0
           ? (
             <p data-testid="dv-history-empty" style={{ color: muted, fontSize: 12 }}>
-              {filtered
-                ? t('没有符合筛选条件的记录', 'No records match the filters')
-                : t('还没有记录。在画布、时间线或对话里做的每一步都会出现在这里。', 'No records yet. Every change made in the canvas, the timeline, or the chat appears here.')}
+              {t('还没有记录。在画布、时间线或对话里做的每一步都会出现在这里。', 'No records yet. Every change made in the canvas, the timeline, or the chat appears here.')}
             </p>
           )
           : null}
@@ -370,10 +348,10 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   }
   return (
     <div data-testid="dv-history-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: '8px 8px 0', gap: 6 }}>
-      <BranchSwitcher state={current.value} {...branchGestures} />
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        <ViewToggle view={view} onChange={setView} t={t} />
-        {view === 'list' ? <FilterBar filters={shownFilters} onChange={setFilters} timelines={timelines} t={t} /> : null}
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <BranchMenu state={current.value} side="bottom" {...branchGestures} />
+        {/* A project with one branch has no tree to show. */}
+        {(branches?.length ?? 0) > 1 || view === 'tree' ? <ViewToggle view={view} onChange={setView} t={t} /> : null}
         <Actions client={client} projectId={projectId} session={session} canRedo={steps.after.size > 0} />
       </div>
       {notice === null ? null : <p style={{ color: muted, fontSize: 12, margin: 0 }}>{notice}</p>}
@@ -392,25 +370,24 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
 }
 
 /**
- * The toggle between the list view and the branch tree.
+ * The icon button that switches between the list view and the branch tree; pressed while the tree shows.
  * @param props - the shown view, the change callback, and the string picker.
- * @returns the two buttons.
+ * @returns the button.
  */
 function ViewToggle(props: { view: HistoryView; onChange: (view: HistoryView) => void; t: PickText }): ReactNode {
   const { view, t } = props
-  const choices: Array<[HistoryView, string]> = [['list', t('列表', 'List')], ['tree', t('分支树', 'Branch tree')]]
+  const tree = view === 'tree'
   return (
-    <div data-testid="dv-history-view-toggle" role="group" aria-label={t('视图', 'View')} style={{ display: 'inline-flex', gap: 2 }}>
-      {choices.map(([value, label]) => (
-        <button
-          key={value} type="button" data-view={value} aria-pressed={view === value}
-          style={{ ...button, ...view === value ? { background: accent, borderColor: accent, color: '#fff' } : {} }}
-          onClick={() => { props.onChange(value) }}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+    <button
+      type="button" data-testid="dv-history-view-toggle" aria-pressed={tree} aria-label={t('分支树', 'Branch tree')}
+      title={tree ? t('显示列表', 'Show the list') : t('显示分支树', 'Show the branch tree')}
+      style={{ ...icon, ...tree ? { background: 'rgba(124, 92, 255, 0.18)', color: accent } : {} }}
+      onClick={() => { props.onChange(tree ? 'list' : 'tree') }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="12" r="2" /><path d="M6 7v10" /><path d="M16 12h-4a6 6 0 0 1-6-5" />
+      </svg>
+    </button>
   )
 }
 
@@ -429,61 +406,26 @@ function Actions(props: { client: DvClient; projectId: string; session: string |
   }
   return (
     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginLeft: 'auto' }}>
-      <button type="button" data-testid="dv-history-undo" style={button} onClick={() => { run(() => client.undo(projectId, 'history', session)) }}>
-        {t('撤销', 'Undo')}
+      <button
+        type="button" data-testid="dv-history-undo" aria-label={t('撤销', 'Undo')} title={t('撤销（Ctrl+Z / ⌘Z）', 'Undo (Ctrl+Z / ⌘Z)')}
+        style={icon} onClick={() => { run(() => client.undo(projectId, 'history', session)) }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" />
+        </svg>
       </button>
       <button
-        type="button" data-testid="dv-history-redo" disabled={!props.canRedo}
-        style={{ ...button, ...props.canRedo ? {} : { opacity: 0.4, cursor: 'default' } }}
+        type="button" data-testid="dv-history-redo" disabled={!props.canRedo} aria-label={t('重做', 'Redo')}
+        title={t('重做（Shift+Ctrl+Z / ⇧⌘Z）', 'Redo (Shift+Ctrl+Z / ⇧⌘Z)')}
+        style={{ ...icon, ...props.canRedo ? {} : { opacity: 0.35, cursor: 'default' } }}
         onClick={() => { run(() => client.redo(projectId, 'history', session)) }}
       >
-        {t('重做', 'Redo')}
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" />
+        </svg>
       </button>
       {failure === null ? null : <span style={{ color: danger, fontSize: 12 }}>{failure}</span>}
     </div>
-  )
-}
-
-/**
- * The three filter selects of the list view. Each names its filter in its empty option, so the bar needs no separate
- * labels.
- * @param props - the filters, the change callback, the current branch's timelines, and the string picker.
- * @returns the selects.
- */
-function FilterBar(props: {
-  filters: Filters
-  onChange: (filters: Filters) => void
-  timelines: Array<{ id: string; name: string }>
-  t: PickText
-}): ReactNode {
-  const { filters, onChange, t } = props
-  const styled = (value: string): CSSProperties => ({ ...select, color: value === '' ? muted : 'inherit', maxWidth: 110 })
-  return (
-    <>
-      <select
-        data-testid="dv-history-filter-actor" aria-label={t('发起者', 'Actor')} style={styled(filters.actor)} value={filters.actor}
-        onChange={(event) => { onChange({ ...filters, actor: event.currentTarget.value as Filters['actor'] }) }}
-      >
-        <option value="">{t('发起者', 'Actor')}</option>
-        {(Object.keys(ACTORS) as Actor[]).map(actor => <option key={actor} value={actor}>{t(...ACTORS[actor])}</option>)}
-      </select>
-      <select
-        data-testid="dv-history-filter-component" aria-label={t('操作类型', 'Operation kind')} style={styled(filters.component)}
-        value={filters.component} onChange={(event) => { onChange({ ...filters, component: event.currentTarget.value }) }}
-      >
-        <option value="">{t('操作类型', 'Operation kind')}</option>
-        {COMPONENTS.map(([key, zh, en]) => <option key={key} value={key}>{t(zh, en)}</option>)}
-      </select>
-      <select
-        data-testid="dv-history-filter-timeline" aria-label={t('时间线', 'Timeline')} style={styled(filters.timeline)}
-        value={filters.timeline} onChange={(event) => { onChange({ ...filters, timeline: event.currentTarget.value }) }}
-      >
-        <option value="">{t('时间线', 'Timeline')}</option>
-        {props.timelines.map(timeline => (
-          <option key={timeline.id} value={timeline.id}>{timelineName(timeline, n => t(`时间线 ${String(n)}`, `Timeline ${String(n)}`))}</option>
-        ))}
-      </select>
-    </>
   )
 }
 
@@ -634,39 +576,58 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
 }
 
 /**
- * The branch tree: a legend of the lanes (each branch's label, the current branch marked), then one row per step with
- * the lane graph on the left and the step's label and small thumbnail on the right.
- * @param props - the laid-out tree, the known assets and records, the current branch, the current branch's head step,
- *   and the gesture that moves the head to a step.
+ * The branch tree: one row per step with the lane graph on the left and the step's labels, small thumbnail and name on
+ * the right.
+ * @param props - the laid-out tree, the branches in lane order, the current branch, the known assets and records, the
+ *   current branch's head step, the selected record, the select and 回到这一步 gestures, and the row ref callback.
  * @returns the tree.
  */
 function TreeView(props: {
   rows: TreeRow[]
-  /** The branch of each lane, in `WireState.branches` order. */
-  lanes: readonly Branch[]
+  branches: readonly Branch[]
+  current: string | null
   assets: ReadonlyMap<string, Asset>
   records: ReadonlyMap<string, ProjectRecord>
-  current: string | null
   head: string | null
+  selected: string | null
+  onSelect: (entry: HistoryEntry) => void
   onMove: (entry: HistoryEntry) => void
+  rowRef: (record: string) => (element: HTMLElement | null) => void
 }): ReactNode {
   const t = useText()
-  const { lanes, rows } = props
+  const { rows, branches } = props
+  const used = rows.flatMap(row => [row.column, ...row.lines.map(item => item.column), ...row.forks.map(item => item.column)])
+  const columns = Math.max(1, ...used.map(column => column + 1))
+  const laneOf = new Map(branches.map((branch, lane) => [branch.name, lane]))
+  // The branch labels of a row: every lane that starts there, except the current branch, which labels its head step.
+  const labelsOf = (row: TreeRow): BranchTag[] => {
+    const names = row.refs.filter(name => name !== props.current)
+    if (row.entry.record.id === props.head && props.current !== null) names.unshift(props.current)
+    return names.flatMap((name) => {
+      const branch = branches.find(item => item.name === name)
+      if (branch === undefined) return []
+      return [{ name, label: branchLabel(branch, t), color: laneColor(laneOf.get(name) ?? 0), current: name === props.current }]
+    })
+  }
   return (
     <div data-testid="dv-history-tree" style={{ fontSize: 12 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '6px 8px', borderBottom: `1px solid ${line}` }}>
-        {lanes.map((branch, lane) => (
-          <TreeLane key={branch.name} branch={branch} color={laneColor(lane)} current={branch.name === props.current} t={t} />
-        ))}
-      </div>
       {rows.map(row => (
         <TreeNode
-          key={row.entry.record.id} row={row} lanes={lanes.length} assets={props.assets} records={props.records}
-          head={row.entry.record.id === props.head} onMove={props.onMove}
+          key={row.entry.record.id} row={row} columns={columns} labels={labelsOf(row)} assets={props.assets} records={props.records}
+          head={row.entry.record.id === props.head} selected={row.entry.record.id === props.selected}
+          onSelect={props.onSelect} onMove={props.onMove} rowRef={props.rowRef}
         />
       ))}
     </div>
   )
+}
+
+/** A branch label of a tree row: filled for the current branch, outlined in the lane's color for the others. */
+interface BranchTag {
+  name: string
+  label: string
+  color: string
+  current: boolean
 }
 
 /** @returns the color of a lane of the branch tree. */
@@ -674,78 +635,108 @@ function laneColor(lane: number): string {
   return LANE_COLORS[lane % LANE_COLORS.length] ?? accent
 }
 
-/** One entry of the lane legend: the lane's color, the branch label, and 当前 on the current branch. */
-function TreeLane(props: { branch: Branch; color: string; current: boolean; t: PickText }): ReactNode {
-  const { branch, t } = props
-  return (
-    <span
-      data-testid="dv-history-tree-lane" data-branch={branch.name} data-current={props.current}
-      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: props.current ? 600 : 400 }}
-    >
-      <span style={{ width: 8, height: 8, borderRadius: 4, background: props.color, display: 'inline-block' }} />
-      {branchLabel(branch, t)}
-      {props.current ? <span style={{ color: muted, fontWeight: 400 }}>{t('（当前）', ' (current)')}</span> : null}
-    </span>
-  )
-}
-
 /**
- * One step of the branch tree: the lane lines through the row, the forks that bend into it, the step's dot (ringed on
- * the current branch's head step), the step's small thumbnail and its label. Clicking it moves the head there.
- * @param props - the laid-out row, the lane count, the known assets and records, whether the step is the head, and the
- *   move gesture.
+ * One step of the branch tree: the lane lines through the row, the forks that bend into it, the step's dot, its branch
+ * labels, small thumbnail and label. The current branch's head step has a tinted row with an accent edge and the 当前
+ * badge. Clicking a step selects it; 回到这一步, shown on the hovered or selected step, moves the head there.
+ * @param props - the laid-out row, the column count, the row's branch labels, the known assets and records, whether
+ *   the step is the head and whether it is selected, the select and move gestures, and the row ref callback.
  * @returns the row.
  */
 function TreeNode(props: {
   row: TreeRow
-  lanes: number
+  columns: number
+  labels: BranchTag[]
   assets: ReadonlyMap<string, Asset>
   records: ReadonlyMap<string, ProjectRecord>
   head: boolean
+  selected: boolean
+  onSelect: (entry: HistoryEntry) => void
   onMove: (entry: HistoryEntry) => void
+  rowRef: (record: string) => (element: HTMLElement | null) => void
 }): ReactNode {
   const { row } = props
   const { record } = row.entry
   const t = useText()
-  const x = (lane: number): number => lane * LANE + LANE / 2 + 2
+  const [hovered, setHovered] = useState(false)
+  const x = (column: number): number => column * LANE + LANE / 2 + 2
   const middle = TREE_ROW / 2
-  const width = Math.max(props.lanes, 1) * LANE + 4
-  const dot = x(row.lane)
+  const width = props.columns * LANE + 4
+  const dot = x(row.column)
+  let background = 'transparent'
+  if (props.head) background = 'rgba(124, 92, 255, 0.16)'
+  else if (props.selected || hovered) background = 'var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12))'
   return (
     <div
-      role="option" tabIndex={0} aria-selected={props.head} title={record.intent}
-      data-testid="dv-history-tree-node" data-record={record.id} data-lane={row.lane} data-mark={row.entry.mark} data-head={props.head}
-      onClick={() => { props.onMove(row.entry) }}
-      onKeyDown={(event) => { if (event.key === 'Enter') props.onMove(row.entry) }}
-      style={{ display: 'flex', alignItems: 'center', gap: 6, height: TREE_ROW, padding: '0 8px 0 4px', cursor: 'pointer', opacity: row.entry.mark === 'redo' ? 0.55 : 1 }}
+      ref={props.rowRef(record.id)} role="option" tabIndex={0} aria-selected={props.selected} title={record.intent}
+      data-testid="dv-history-tree-node" data-record={record.id} data-lane={row.lane} data-column={row.column}
+      data-mark={row.entry.mark} data-head={props.head}
+      onClick={() => { props.onSelect(row.entry) }}
+      onKeyDown={(event) => { if (event.key === 'Enter') props.onSelect(row.entry) }}
+      onMouseEnter={() => { setHovered(true) }} onMouseLeave={() => { setHovered(false) }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6, height: TREE_ROW, padding: '0 8px 0 2px', cursor: 'pointer', background,
+        boxShadow: props.head ? `inset 2px 0 0 ${accent}` : 'none', opacity: row.entry.mark === 'redo' ? 0.55 : 1,
+      }}
     >
       <svg width={width} height={TREE_ROW} style={{ flex: 'none', overflow: 'visible' }} aria-hidden="true">
-        {row.lines.map(lane => (
-          <g key={`l${String(lane.lane)}`} style={{ stroke: laneColor(lane.lane) }} strokeWidth={2}>
-            {lane.up ? <line x1={x(lane.lane)} y1={0} x2={x(lane.lane)} y2={middle} /> : null}
-            {lane.down ? <line x1={x(lane.lane)} y1={middle} x2={x(lane.lane)} y2={TREE_ROW} /> : null}
+        {row.lines.map(item => (
+          <g key={`l${String(item.lane)}`} style={{ stroke: laneColor(item.lane) }} strokeWidth={2}>
+            {item.up ? <line x1={x(item.column)} y1={0} x2={x(item.column)} y2={middle} /> : null}
+            {item.down ? <line x1={x(item.column)} y1={middle} x2={x(item.column)} y2={TREE_ROW} /> : null}
           </g>
         ))}
         {row.forks.map(fork => fork.empty
           ? (
             <g key={`f${String(fork.lane)}`} style={{ stroke: laneColor(fork.lane) }} strokeWidth={2}>
-              <line x1={dot} y1={middle} x2={x(fork.lane)} y2={middle} />
-              <circle cx={x(fork.lane)} cy={middle} r={3.5} style={{ fill: 'var(--dsw-alias-bg-primary, #fff)' }} />
+              <line x1={dot} y1={middle} x2={x(fork.column)} y2={middle} />
+              <circle cx={x(fork.column)} cy={middle} r={3.5} style={{ fill: 'var(--dsw-alias-bg-primary, #fff)' }} />
             </g>
           )
           : (
             <path
-              key={`f${String(fork.lane)}`} d={`M ${String(x(fork.lane))} 0 Q ${String(x(fork.lane))} ${String(middle)} ${String(dot)} ${String(middle)}`}
+              key={`f${String(fork.lane)}`} d={`M ${String(x(fork.column))} 0 Q ${String(x(fork.column))} ${String(middle)} ${String(dot)} ${String(middle)}`}
               style={{ stroke: laneColor(fork.lane), fill: 'none' }} strokeWidth={2}
             />
           ))}
-        {props.head ? <circle cx={dot} cy={middle} r={7} style={{ fill: 'none', stroke: laneColor(row.lane) }} strokeWidth={2} /> : null}
         <circle cx={dot} cy={middle} r={4} style={{ fill: laneColor(row.lane) }} />
       </svg>
       <Thumb thumbnail={thumbnailOf(record, props.assets, props.records)} size={24} />
+      {props.head
+        ? (
+          <span
+            data-testid="dv-history-tree-current"
+            style={{ flex: 'none', background: accent, color: '#fff', borderRadius: 3, padding: '0 4px', fontSize: 11, lineHeight: '16px' }}
+          >
+            {t('当前', 'Current')}
+          </span>
+        )
+        : null}
+      {props.labels.map(tag => (
+        <span
+          key={tag.name} data-testid="dv-history-tree-branch" data-branch={tag.name}
+          style={{
+            flex: 'none', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', boxSizing: 'border-box',
+            border: `1px solid ${tag.color}`, borderRadius: 9, padding: '0 6px', fontSize: 11, lineHeight: '16px',
+            ...tag.current ? { background: tag.color, color: '#fff' } : { color: tag.color },
+          }}
+        >
+          {tag.label}
+        </span>
+      ))}
       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: props.head ? 600 : 400 }}>
         {t(...actionLabel(record))}
       </span>
+      {!props.head && (props.selected || hovered)
+        ? (
+          <button
+            type="button" data-testid="dv-history-tree-move" style={{ ...link, flex: 'none' }}
+            onClick={(event) => { event.stopPropagation(); props.onMove(row.entry) }}
+          >
+            {t('回到这一步', 'Go back to this step')}
+          </button>
+        )
+        : null}
     </div>
   )
 }

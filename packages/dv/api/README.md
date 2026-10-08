@@ -53,7 +53,7 @@ The Fetch routes list, create, rename and delete projects, read the state of a b
 | `/api/dv/assets/import` | POST | raw file body; query `project`, `name`, `mime`, `surface` (`canvas \| asset_pool`, anything else answers `400` `invalid_params`), `session?` | `{asset, record}`: the `AssetId` and the `asset.import` record |
 | `/api/dv/branches/create` | POST | `{project, title?, session?, surface}`: fork a branch from the current branch at its head's position and make it current | `{branch, heads}` with the new branch |
 | `/api/dv/branches/switch` | POST | `{project, branch, to?, session?, surface}`: make a branch current and, with `to`, return it to that step of its line | `{branch, heads}` |
-| `/api/dv/branches/rename` | POST | `{project, branch, title}`; an empty title returns to the default label | `{branch, heads}` |
+| `/api/dv/branches/rename` | POST | `{project, branch, title}`; an empty title returns to the default label; a title over 40 characters is refused with 400 `invalid_params`, and a title another branch has with 409 `branch_exists` | `{branch, heads}` |
 | `/api/dv/undo` | POST | `{project, session?, surface, to?}`: one step back on the current branch, or back to the record `to` (a jump forward to a redo step writes `proj.redo`) | `{record, heads}` with the `proj.undo` record |
 | `/api/dv/redo` | POST | `{project, session?, surface}`: one step forward on the current branch | `{record, heads}` with the `proj.redo` record |
 | `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}` with the `proj.stale_accept` record |

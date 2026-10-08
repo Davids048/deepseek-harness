@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse 各视图共用的浏览器代码：/api/dv 客户端、wire 类型、参数表单模型、轨道几何、窗口事件、视图会话 hook、分支切换器、当前分支按钮和分支栏。"
+description: "DreamVerse 各视图共用的浏览器代码：/api/dv 客户端、wire 类型、参数表单模型、轨道几何、窗口事件、视图会话 hook、分支菜单和分支栏。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 DreamVerse 的浏览器插件里使用本包与 `@dv/api` 通信，并读取它发来的状态。`DvClient` 封装每条 `/api/dv` 路由并跟随 `/dv/events`；`fieldsOf` 和 `paramsOf` 把操作的参数 schema 变成表单字段再变回参数；`useViewSession` 让视图的项目、项目当前分支的状态和操作与宿主同步；`BranchStatus` 是工作区底栏里的小按钮，显示当前分支，展开的列表可以切换分支；`BranchSwitcher` 在历史面板里显示当前分支，并切换、新建和重命名分支；`BranchBar` 是侧栏视图的项目和撤销栏；事件模块拥有各面板之间交换的 `dv:*` 窗口事件和页面全局变量。本包是一个库：它不注册任何东西，会被打进每个消费者的 bundle。
+在 DreamVerse 的浏览器插件里使用本包与 `@dv/api` 通信，并读取它发来的状态。`DvClient` 封装每条 `/api/dv` 路由并跟随 `/dv/events`；`fieldsOf` 和 `paramsOf` 把操作的参数 schema 变成表单字段再变回参数；`useViewSession` 让视图的项目、项目当前分支的状态和操作与宿主同步；`BranchMenu` 是工作区底栏和历史面板顶部的当前分支小按钮，展开的菜单可以切换、新建和重命名分支；`BranchBar` 是侧栏视图的项目和撤销栏；事件模块拥有各面板之间交换的 `dv:*` 窗口事件和页面全局变量。本包是一个库：它不注册任何东西，会被打进每个消费者的 bundle。
 
 ## 目录
 
@@ -43,8 +43,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | `useProject.ts` | `useProjects`、`useOperations`、`useProjectState`：每次项目事件都重新拉取的加载器 |
 | `useView.ts` | `useViewSession(client, surface, session?)`：项目选择、项目当前分支的状态、操作、最近一次失败和分支栏回调；`sessionFromLocation` 从页面地址的 `?session=` 读对话，让视图打开该对话的项目 |
 | `BranchBar.tsx` | 侧栏的栏：项目选择器、新建项目按钮和撤销；文案以 `labels` 传入，由所属插件先本地化 |
-| `BranchStatus.tsx` | `BranchStatus`：工作区底栏的 当前分支：<名称> / Current branch: <name> 按钮；点击后展开所有分支的列表（测试 ID `dv-kit-branch-status`、`dv-kit-branch-option`），选择另一个分支时调用 `onSwitch`；按 Escape 或点击外面关闭列表 |
-| `BranchSwitcher.tsx` | `BranchSwitcher`：在所有分支的列表里显示当前分支，选择即切换项目的当前分支，另有 新建分支 / New branch 和 重命名 / Rename 按钮（测试 ID `dv-kit-branch-switcher`，属性 `data-branch`）；`branchActions(client, project, surface, run)` 把它们绑定到分支路由 |
+| `BranchMenu.tsx` | `BranchMenu`：带 `BranchIcon` 和当前分支名称的按钮，以及它的菜单（测试 ID `dv-kit-branch-menu`（带 `data-branch`）、`dv-kit-branch-option`、`dv-kit-branch-rename`、`dv-kit-branch-name`、`dv-kit-branch-create`），菜单在调用方传入的 `side` 一侧展开（底栏用 `top`，面板顶部用 `bottom`）。菜单把当前分支排在第一并标 ✓，分支达到八个时显示搜索框，选择另一个分支时调用 `onSwitch`，在原位置重命名分支（✎ 或 F2；回车或离开输入框保存，Escape 保留原名；最多 40 个字符；与其他分支显示的名称相同时拒绝，并提示 已有同名分支 / Name already used），新建分支 / New branch 调用 `onCreate`，然后打开新分支的默认名称供可选的重命名；↑ 和 ↓ 在各行之间移动，按 Escape 或点击外面关闭菜单。`branchActions(client, project, surface, run)` 把 `BranchActions` 绑定到分支路由；其 `onCreate` 返回新分支的名称 |
 | `compose.ts`、`workspace-events.ts` | 窗口事件 `dv:compose`、`dv:timeline-insert`、`dv:canvas-focus`、`dv:history-focus`、`dv:trajectory-focus`、`dv:timeline-focus`（`DV_*_EVENT`）和素材拖拽类型 `application/x-dv-asset` |
 | `tool-labels.ts` | `DV_TOOL_LABELS`：每个 `dv_*` 工具的中英文标签，由输入框的工具卡片和历史面板显示 |
 | `current-project.ts`、`current-timeline.ts` | 打开的项目和选中的时间线，存在 `window.__dvCurrentProject` 和 `window.__dvCurrentTimeline` 上，用 `dv:current-project` 和 `dv:current-timeline` 通知 |
@@ -70,7 +69,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | [`src/client/references.ts`](src/client/references.ts) | 镜头参考图和 `Picture N` 标记 |
 | [`src/client/useProject.ts`](src/client/useProject.ts)、[`src/client/useView.ts`](src/client/useView.ts) | hook |
 | [`src/client/BranchBar.tsx`](src/client/BranchBar.tsx) | 共用的栏 |
-| [`src/client/BranchSwitcher.tsx`](src/client/BranchSwitcher.tsx)、[`src/client/BranchStatus.tsx`](src/client/BranchStatus.tsx) | 分支切换器及其 API 绑定，以及当前分支按钮 |
+| [`src/client/BranchMenu.tsx`](src/client/BranchMenu.tsx) | 分支菜单及其 API 绑定 |
 
 </details>
 

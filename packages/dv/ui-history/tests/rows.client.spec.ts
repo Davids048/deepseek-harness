@@ -8,7 +8,7 @@ import { entryBranch } from '@dv/ui-kit/state.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
 import {
   actionLabel, actionRows, branchSteps, branchTree, centerFocus, clipTimelines, operationLabel, relativeTime, stepPlace,
-  thumbnailOf, timelineRecords,
+  thumbnailOf,
 } from '../src/client/rows.ts'
 
 /** An entry of a record with a mark and the branch lines that hold it. */
@@ -105,11 +105,6 @@ describe('timelines and focus', () => {
     expect(Object.fromEntries(clipTimelines(records))).toEqual({ cl1: 't1', cl2: 't1', cl3: 't2', cl4: 't1' })
   })
 
-  it('collects a timeline\'s records and the records that made its clips\' assets', () => {
-    expect(timelineRecords(records, { 'a.mp4': 'g1' }, 't1', ['a.mp4', 'b.mp4']).sort()).toEqual(['c', 'e', 'g1', 'm', 's'])
-    expect(timelineRecords(records, {}, 't2', ['z.mp4'])).toEqual(['c2', 'm2'])
-  })
-
   it('focuses a clip record on the timeline, a render on the canvas, and nothing for proj records or records off the current state', () => {
     const owner = clipTimelines(records)
     expect(centerFocus({ record: records[3] as ProjectRecord, mark: 'current', branches: ['main'] }, owner))
@@ -151,18 +146,34 @@ describe('branchTree', () => {
 
   it('puts each step in its owner\'s lane, runs a forked lane down to its fork point, and marks a branch without steps', () => {
     const tree = branchTree(entries, [branch('main', null), branch('b2', 'a'), branch('b3', 'm2')])
-    expect(tree.map(row => [row.entry.record.id, row.lane, row.lines, row.forks])).toEqual([
-      ['x2', 1, [{ lane: 1, up: false, down: true }], []],
-      ['x1', 1, [{ lane: 1, up: true, down: true }], []],
-      ['m2', 0, [{ lane: 0, up: false, down: true }, { lane: 1, up: true, down: true }], [{ lane: 2, empty: true }]],
-      ['a', 0, [{ lane: 0, up: true, down: true }], [{ lane: 1, empty: false }]],
-      ['c', 0, [{ lane: 0, up: true, down: false }], []],
+    expect(tree.map(row => [row.entry.record.id, row.lane, row.column, row.lines, row.forks, row.refs])).toEqual([
+      ['x2', 1, 1, [{ lane: 1, column: 1, up: false, down: true }], [], ['b2']],
+      ['x1', 1, 1, [{ lane: 1, column: 1, up: true, down: true }], [], []],
+      ['m2', 0, 0, [{ lane: 0, column: 0, up: false, down: true }, { lane: 1, column: 1, up: true, down: true }], [{ lane: 2, column: 2, empty: true }], ['main', 'b3']],
+      ['a', 0, 0, [{ lane: 0, column: 0, up: true, down: true }], [{ lane: 1, column: 1, empty: false }], []],
+      ['c', 0, 0, [{ lane: 0, column: 0, up: true, down: false }], [], []],
     ])
+  })
+
+  it('gives a lane the column of a lane that ended above it, and shares the last of six columns', () => {
+    // Newest first: b2 forked at m3 and wrote x1; b3 forked at m1, below b2's fork, and wrote y1.
+    const reused = branchTree([
+      entry({ id: 'x1', branch: 'b2' }, 'branch', ['b2']),
+      entry({ id: 'm3' }, 'current', ['main', 'b2']),
+      entry({ id: 'y1', branch: 'b3' }, 'branch', ['b3']),
+      entry({ id: 'm1' }, 'current', ['main', 'b2', 'b3']),
+    ], [branch('main', null), branch('b2', 'm3'), branch('b3', 'm1')])
+    expect(reused.map(row => [row.entry.record.id, row.column])).toEqual([['x1', 1], ['m3', 0], ['y1', 1], ['m1', 0]])
+    // Seven branches without steps fork at one row: they take columns 1 to 5, and the last three share column 5.
+    const forks = branchTree([entry({ id: 'm' }, 'current', ['main'])], [branch('main', null), ...[2, 3, 4, 5, 6, 7, 8].map(n => branch(`b${String(n)}`, 'm'))])
+    expect(forks[0]?.forks.map(fork => fork.column)).toEqual([1, 2, 3, 4, 5, 5, 5])
   })
 
   it('runs a lane to the bottom when its fork point is not loaded, and owns a step by the first line when its branch lost it', () => {
     const tree = branchTree(entries.slice(0, 2), [branch('main', null), branch('b2', 'a')])
-    expect(tree.map(row => row.lines)).toEqual([[{ lane: 1, up: false, down: true }], [{ lane: 1, up: true, down: true }]])
+    expect(tree.map(row => row.lines)).toEqual([
+      [{ lane: 1, column: 1, up: false, down: true }], [{ lane: 1, column: 1, up: true, down: true }],
+    ])
     expect(entryBranch(entry({ id: 'r', branch: 'b9' }, 'current', ['main', 'b2']), null)).toBe('main')
     expect(entryBranch(entry({ id: 'r', branch: 'b2' }, 'branch', ['main', 'b2']), null)).toBe('b2')
     expect(entryBranch(entry({ id: 'r', branch: 'b2' }, 'branch', ['main', 'b2']), 'main')).toBe('main')

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DreamVerse History panel as a right-Sidebar tab: the steps of the project's current branch, newest first, with filters, output previews, and focus of a record on the canvas or the timeline, and a branch tree of every branch.",
+  "description": "DreamVerse History panel as a right-Sidebar tab: the steps of the project's current branch, newest first, with output previews, and focus of a record on the canvas or the timeline, and a branch tree of every branch.",
   "exports": {
     ".": "./src/index.ts",
     "./client": {

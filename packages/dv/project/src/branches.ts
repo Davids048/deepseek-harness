@@ -24,6 +24,8 @@ import type { Branch, ProjectId, RecordId } from './types.ts'
 
 /** The name pattern of forked branches; the number is one more than the highest one in use, starting at 2. */
 const FORKED_BRANCH = /^b(\d+)$/
+/** The most characters a branch title holds. */
+const TITLE_MAX = 40
 
 /** Branch pointers and the current branch of every project. */
 export class Branches {
@@ -65,11 +67,12 @@ export class Branches {
   /**
    * Fork a branch from the current branch at its head's position and make it current. The caller holds the project lock.
    * @param project - the project.
-   * @param title - the name the human gave it; null for the view's default label.
-   * @returns the new branch.
+   * @param title - the name the human gave it; null or empty for the view's default label.
+   * @returns the new branch. Throws `invalid_params` for a title over 40 characters, `branch_exists` for a title another
+   *   branch has.
    */
   create(project: ProjectId, title: string | null): Branch {
-    return this.fork(project, this.current(project), title)
+    return this.fork(project, this.current(project), this.titleFor(project, null, title))
   }
 
   /**
@@ -94,11 +97,12 @@ export class Branches {
    * @param project - the project.
    * @param name - the branch; throws `unknown_branch`.
    * @param title - the title; an empty string returns to the default label.
-   * @returns the branch after the change.
+   * @returns the branch after the change. Throws `invalid_params` for a title over 40 characters, `branch_exists` for a
+   *   title another branch has.
    */
   rename(project: ProjectId, name: string, title: string): Branch {
     const branch = this.require(project, name)
-    this.store.setBranch(project, { ...branch, title: title.trim() === '' ? null : title.trim() })
+    this.store.setBranch(project, { ...branch, title: this.titleFor(project, name, title) })
     return this.withTip(project, this.require(project, name))
   }
 
@@ -130,6 +134,23 @@ export class Branches {
       if (match !== null) highest = Math.max(highest, Number(match[1]))
     }
     return highest + 1
+  }
+
+  /**
+   * @param project - the project.
+   * @param name - the branch being named, or null for a new one.
+   * @param title - the requested title.
+   * @returns the trimmed title, or null for an empty one. Throws `invalid_params` over 40 characters and
+   *   `branch_exists` when another branch has the title.
+   */
+  private titleFor(project: ProjectId, name: string | null, title: string | null): string | null {
+    const trimmed = title?.trim() ?? ''
+    if (trimmed === '') return null
+    if (trimmed.length > TITLE_MAX) throw new ProjectError('invalid_params', `A branch name has at most ${String(TITLE_MAX)} characters.`)
+    if (this.store.listBranches(project).some(branch => branch.name !== name && branch.title === trimmed)) {
+      throw new ProjectError('branch_exists', `Another branch is already named ${trimmed}.`)
+    }
+    return trimmed
   }
 
   /**

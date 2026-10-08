@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包把 DSH web 应用变成 DreamVerse。没有打开项目时，中间区域显示首页：对话输入框和最近项目。打开项目后，它显示画布或时间线编辑器，用顶栏的 画布 | 时间线 切换。视图下方的底栏放着当前分支按钮（`@dv/ui-kit` 的 `BranchStatus`），显示 当前分支：<名称>；点击后展开所有分支的列表，选择一个就切换项目的当前分支，每个视图都显示当前分支。新建和重命名分支放在历史面板里。左侧栏显示导航：新建项目、首页，以及 项目 → 对话 树。右侧面板多出 对话 和 轨迹 标签。在文本框以外，Ctrl+Z 和 Shift+Ctrl+Z（macOS 上用 Cmd）撤销和重做项目的当前分支。
+使用本包把 DSH web 应用变成 DreamVerse。没有打开项目时，中间区域显示首页：对话输入框和最近项目。打开项目后，它显示画布或时间线编辑器，用顶栏的 画布 | 时间线 切换。视图下方的底栏放着分支菜单（`@dv/ui-kit` 的 `BranchMenu`），是显示当前分支名称的按钮，它的菜单切换当前分支（每个视图都显示当前分支），并新建和重命名分支。左侧栏显示导航：新建项目、首页，以及 项目 → 对话 树。右侧面板多出 对话 和 轨迹 标签。在文本框以外，Ctrl+Z 和 Shift+Ctrl+Z（macOS 上用 Cmd）撤销和重做项目的当前分支。
 
 ## 目录
 
@@ -68,7 +68,7 @@ Host 半边不注册任何东西。浏览器半边以优先级 -1 注册中间�
 | [`src/client/index.ts`](src/client/index.ts) | 注册、新会话和首次使用默认 Workspace 的覆盖、关联轮询，以及 `dv:trajectory-focus` 监听 |
 | [`src/client/actions.ts`](src/client/actions.ts) | `ShellActions`：新建、打开、重命名和删除项目与对话，首页，以及右侧面板标签 |
 | [`src/client/store.ts`](src/client/store.ts) | 共享状态（打开的项目、视图、时间线、主会话、关联）、URL hash 同步，以及会话 → 项目查找 |
-| [`src/client/Center.tsx`](src/client/Center.tsx) | 中间区域：URL 恢复、首页、最近项目、工作区顶栏、视图、带当前分支按钮的底栏，以及窗口事件监听 |
+| [`src/client/Center.tsx`](src/client/Center.tsx) | 中间区域：URL 恢复、首页、最近项目、工作区顶栏、视图、带分支菜单的底栏，以及窗口事件监听 |
 | [`src/client/Navigator.tsx`](src/client/Navigator.tsx) | 左侧导航和品牌名 |
 | [`src/client/tabs.tsx`](src/client/tabs.tsx) | 对话 和 轨迹 的标签类型与主体 |
 | [`src/client/undo-keys.ts`](src/client/undo-keys.ts) | 调用 `/api/dv/undo` 和 `/api/dv/redo` 的 Ctrl+Z / Shift+Ctrl+Z 窗口监听 |

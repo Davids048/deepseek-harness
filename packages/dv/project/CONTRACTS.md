@@ -174,10 +174,10 @@ Owner: agent C. A project starts with `main`; every other branch is `b<n>`. The 
 
 - `current`, `list`: the stored branches with `tip = history.tipOf(head)`.
 - `forWrite`: called by the runner under the lock for every write of every actor. When `position(head)` differs from the tip, it forks first and returns the new branch.
-- `create(title)`: forks the current branch at its head's position.
+- `create(title)`: forks the current branch at its head's position. The title follows the rules of `rename`.
 - Fork: moves the old branch's head to its tip when they differ, adds `b<n>` (n = one more than the highest number in use, at least 2) with `head = forked_at = position`, `base` = the old branch, and makes it current. Appends no record.
 - `switch(name, origin, to?)`: makes `name` current; with `to` different from the branch's position, calls `history.undo` on that branch.
-- `rename(name, title)`: trims the title; an empty title stores null.
+- `rename(name, title)`: trims the title; an empty title stores null. A title over 40 characters is refused with `invalid_params`, and a title another branch has with `branch_exists`.
 
 Invariants: branches are never merged or removed; a fork never changes a record; the old branch's line after a fork holds every step it held before.
 
@@ -303,7 +303,7 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - `does not fork after a redo that returned the branch to its tip`.
 - `forks a named branch on request at the current position without writing a record` (R): `b2` with the title; after a switch and an undo, `b3` forks at the undo target and `main` returns to its tip.
 - `switches branches, and returns a branch to a step when asked`: no jump record when the branch already stands at `to`; a `proj.undo` on the switched-to branch otherwise; `unknown_branch` for an unknown name.
-- `renames a branch and returns to the default label for an empty title`.
+- `renames a branch and returns to the default label for an empty title`: a title over 40 characters or one another branch has is refused, for a rename and for a new branch.
 
 **`tests/runner.spec.ts` (B)**
 

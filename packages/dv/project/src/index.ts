@@ -259,7 +259,8 @@ export default class DvProject extends Service {
    * tip (after an undo), the old branch returns to its tip. Changes `branches.json` only.
    * @param project - the project.
    * @param title - the name the human gave the branch; null for the view's default label of `b<n>`.
-   * @returns the new branch.
+   * @returns the new branch. Throws `invalid_params` for a title over 40 characters, `branch_exists` for a title another
+   *   branch has.
    */
   createBranch(project: ProjectId, title: string | null): Promise<Branch> {
     return this.store.lock(project, () => this.branches.create(project, title))
@@ -283,7 +284,8 @@ export default class DvProject extends Service {
    * @param project - the project.
    * @param branch - the branch name.
    * @param title - the title; an empty string returns to the default label.
-   * @returns the branch after the change. Throws `unknown_branch`.
+   * @returns the branch after the change. Throws `unknown_branch`, `invalid_params` for a title over 40 characters, and
+   *   `branch_exists` for a title another branch has.
    */
   renameBranch(project: ProjectId, branch: string, title: string): Promise<Branch> {
     return this.store.lock(project, () => this.branches.rename(project, branch, title))

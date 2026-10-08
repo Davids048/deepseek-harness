@@ -1195,14 +1195,14 @@ describe('timeline stories', () => {
   })
 })
 
-/** The current-branch button of the workspace's bottom bar. */
+/** The branch menu of the workspace's bottom bar. */
 function branchStatus(page: Page): Locator {
-  return page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-status"]').first()
+  return page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-menu"]').first()
 }
 
-/** The branch switcher in the History panel header; a replaced panel can linger for a moment, so only the visible one counts. */
+/** The branch menu in the History panel header; a replaced panel can linger for a moment, so only the visible one counts. */
 function switcher(page: Page): Locator {
-  return page.locator('[data-testid="dv-history-panel"]:visible [data-testid="dv-kit-branch-switcher"]').first()
+  return page.locator('[data-testid="dv-history-panel"]:visible [data-testid="dv-kit-branch-menu"]').first()
 }
 
 /**
@@ -1220,7 +1220,7 @@ async function openHistory(page: Page): Promise<void> {
   await expect.poll(() => switcher(page).count(), { timeout: 15_000 }).toBe(1)
 }
 
-/** @returns the labels of the branches the bottom bar's list offers, in branch order; the list is closed again after. */
+/** @returns the labels of the branches the bottom bar's menu offers, the current branch first; the menu is closed again after. */
 async function branchOptions(page: Page): Promise<string[]> {
   await branchStatus(page).getByRole('button').first().click()
   const options = branchStatus(page).locator('[data-testid="dv-kit-branch-option"]')
@@ -1231,24 +1231,30 @@ async function branchOptions(page: Page): Promise<string[]> {
 }
 
 describe('branches and keep anyway', () => {
-  it('the bottom bar names the current branch; History forks and names branches, and switching shows each branch on the canvas and the timeline', async () => {
+  it('the bottom bar\'s branch menu names, forks and names branches, History shows the same branch, and switching shows each branch on the canvas and the timeline', async () => {
     const project = await seedProject('branch-switch', 1)
     const page = await openPage()
     await gotoProject(page, project.id)
     await expect.poll(() => branchStatus(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
-    expect(await branchStatus(page).innerText()).toContain('当前分支：主线')
+    expect(await branchStatus(page).innerText()).toBe('主线')
     expect(await branchOptions(page)).toEqual(['主线'])
-    // The top bar has no branch controls; forking and renaming live in the History panel.
-    expect(await page.locator('[data-dv-workspace] header [data-testid="dv-kit-branch-switcher"]').count()).toBe(0)
+    // The top bar has no branch controls.
+    expect(await page.locator('[data-dv-workspace] header [data-testid="dv-kit-branch-menu"]').count()).toBe(0)
     const takes = page.locator('[data-node-kind="take"]')
     await expect.poll(() => takes.count()).toBe(1)
-    await openHistory(page)
-    await switcher(page).getByRole('button', { name: '新建分支', exact: true }).click()
+    // 新建分支 forks 分支 2 at once and opens its name in place, without a browser dialog.
+    await branchStatus(page).getByRole('button').first().click()
+    await branchStatus(page).locator('[data-testid="dv-kit-branch-create"]').click()
     await expect.poll(() => branchStatus(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('b2')
-    expect(await branchOptions(page)).toEqual(['主线', '分支 2'])
-    page.once('dialog', (dialog) => { void dialog.accept('夜景') })
-    await switcher(page).getByRole('button', { name: '重命名', exact: true }).click()
-    await expect.poll(() => branchOptions(page)).toEqual(['主线', '夜景'])
+    const name = branchStatus(page).locator('[data-testid="dv-kit-branch-name"]')
+    await expect.poll(() => name.inputValue()).toBe('分支 2')
+    await name.fill('夜景')
+    await name.press('Enter')
+    await expect.poll(() => branchOptions(page)).toEqual(['夜景', '主线'])
+    // The History panel's header holds the same menu on the same branch.
+    await openHistory(page)
+    await expect.poll(() => switcher(page).getAttribute('data-branch')).toBe('b2')
+    expect(await switcher(page).innerText()).toBe('夜景')
     // Edits on the new branch: one more take on the canvas and a second timeline.
     const take = await runOperation(project.id, RENDER_OPERATION, { prompt: 'branch-switch b2 shot', duration_sec: 1 }, [{ role: 'reference', ref: 'c1@1' }])
     expect(take.branch).toBe('b2')

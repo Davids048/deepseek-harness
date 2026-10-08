@@ -1,9 +1,10 @@
 // User stories of the History panel (历史), walked in Chromium against the shipped profile with a fake video backend that
 // renders playable VP9 videos and a scripted agent model. Projects are seeded through the `/api/dv` routes; agent turns
 // go through the chat. Every story checks the action rows the creator sees: their order, labels, who, thumbnails, marks,
-// the renders folded under a plan approval, filters, the focus a selected row gives the canvas or the timeline, live
-// updates, the steps of the current branch (回到这一步, Ctrl+Z and Shift+Ctrl+Z, and the greyed steps redo brings back),
-// the branch a write after an undo forks, and the 分支树 view that switches between branches.
+// the renders folded under a plan approval, the focus a selected row gives the canvas or the timeline, live updates,
+// the steps of the current branch (回到这一步, Ctrl+Z and Shift+Ctrl+Z, and the greyed steps redo brings back), the branch
+// a write after an undo forks, the 分支树 view that switches between branches, and the branch menu that forks and names
+// a branch in place.
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
@@ -150,11 +151,6 @@ async function shownRecords(page: Page): Promise<string[]> {
   return await rows(page).evaluateAll(elements => elements.map(element => element.getAttribute('data-record') ?? ''))
 }
 
-/** @returns one attribute of every shown row, top to bottom. */
-async function rowAttributes(page: Page, name: string): Promise<string[]> {
-  return await rows(page).evaluateAll((elements, attribute) => elements.map(element => element.getAttribute(attribute) ?? ''), name)
-}
-
 /**
  * Open the 历史 tab of the right panel and wait for the panel.
  * @param page - a page showing a project.
@@ -199,9 +195,9 @@ async function agentRename(page: Page, project: string, word: string): Promise<P
   return record
 }
 
-/** The branch switcher in the History panel header. */
+/** The branch menu in the History panel header. */
 function switcher(page: Page): Locator {
-  return historyPanel(page).locator('[data-testid="dv-kit-branch-switcher"]').first()
+  return historyPanel(page).locator('[data-testid="dv-kit-branch-menu"]').first()
 }
 
 /**
@@ -210,9 +206,10 @@ function switcher(page: Page): Locator {
  * @param view - `list` or `tree`.
  */
 async function showView(page: Page, view: 'list' | 'tree'): Promise<void> {
-  const button = historyPanel(page).locator(`[data-testid="dv-history-view-toggle"] [data-view="${view}"]`)
-  await button.click()
-  await expect.poll(() => button.getAttribute('aria-pressed')).toBe('true')
+  const button = historyPanel(page).locator('[data-testid="dv-history-view-toggle"]')
+  const pressed = view === 'tree' ? 'true' : 'false'
+  if (await button.getAttribute('aria-pressed') !== pressed) await button.click()
+  await expect.poll(() => button.getAttribute('aria-pressed')).toBe(pressed)
 }
 
 /** A node of the 分支树 view. */
@@ -305,7 +302,7 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
-  it('undo greys the undone step; a write after it forks 分支 2, and 分支树 switches back to 主线', async () => {
+  it('undo greys the undone step; a write after it forks 分支 2, 分支树 switches back to 主线, and the menu forks and names 分支 3', async () => {
     const project = await seedProject('history-marks')
     const page = await openPage()
     await gotoProject(page, project.id)
@@ -325,17 +322,30 @@ describe('History panel', () => {
     await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('b2')
     await expect.poll(() => rowOf(page, project.timeline.id).count()).toBe(0)
     expect((await stateOf(project.id, 'main')).head).toBe(project.timeline.id)
-    // The tree shows both lanes; selecting 主线's last step switches back to 主线.
+    // The tree labels each lane where it starts: 分支 2 on its head step, which carries 当前, and 主线 on its last step.
     await showView(page, 'tree')
-    const lanes = historyPanel(page).locator('[data-testid="dv-history-tree-lane"]')
-    await expect.poll(() => lanes.evaluateAll(elements => elements.map(element => element.getAttribute('data-branch')))).toEqual(['main', 'b2'])
-    expect(await lanes.nth(1).innerText()).toContain('分支 2')
-    expect(await lanes.nth(1).getAttribute('data-current')).toBe('true')
+    const label = (record: string): Locator => treeNode(page, record).locator('[data-testid="dv-history-tree-branch"]')
     await expect.poll(() => treeNode(page, fork.id).getAttribute('data-head')).toBe('true')
+    expect(await treeNode(page, fork.id).locator('[data-testid="dv-history-tree-current"]').innerText()).toBe('当前')
+    expect(await label(fork.id).innerText()).toBe('分支 2')
+    await expect.poll(() => label(project.timeline.id).innerText()).toBe('主线')
+    // A click selects 主线's last step and writes nothing; 回到这一步 switches back to 主线.
     await treeNode(page, project.timeline.id).click()
+    await expect.poll(() => treeNode(page, project.timeline.id).getAttribute('aria-selected')).toBe('true')
+    expect((await stateOf(project.id)).current).toBe('b2')
+    await treeNode(page, project.timeline.id).locator('[data-testid="dv-history-tree-move"]').click()
     await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
     await expect.poll(() => treeNode(page, project.timeline.id).getAttribute('data-head')).toBe('true')
     expect((await stateOf(project.id)).current).toBe('main')
+    // 新建分支 in the header's branch menu forks 分支 3 at once and opens its name in place.
+    await switcher(page).locator('button').first().click()
+    await switcher(page).locator('[data-testid="dv-kit-branch-create"]').click()
+    const name = switcher(page).locator('[data-testid="dv-kit-branch-name"]')
+    await expect.poll(() => name.inputValue(), { timeout: 15_000 }).toBe('分支 3')
+    await name.fill('夜景')
+    await name.press('Enter')
+    await expect.poll(async () => (await stateOf(project.id)).branches.find(branch => branch.name === 'b3')?.title).toBe('夜景')
+    await expect.poll(() => switcher(page).locator('button').first().innerText()).toBe('夜景')
     expect(page.errors).toEqual([])
   })
 
@@ -370,40 +380,6 @@ describe('History panel', () => {
     // The approval's thumbnail is its first render's still.
     const thumb = approvalRow.locator('[data-testid="dv-history-thumb"]')
     await expect.poll(() => thumb.evaluate(element => element instanceof HTMLImageElement && element.naturalWidth > 0)).toBe(true)
-    expect(page.errors).toEqual([])
-  })
-
-  it('the actor, operation kind and timeline filters each narrow the rows', async () => {
-    const project = await seedProject('history-filters')
-    const t2 = await runOperation(project.id, 'timeline.create', { timeline: 't2', assets: [project.renders[0]?.outputs[0] ?? ''] })
-    const page = await openPage()
-    await gotoProject(page, project.id)
-    await openHistory(page)
-    await agentRename(page, project.id, 'history-filters-request')
-    await expect.poll(() => rowAttributes(page, 'data-actor'), { timeout: 30_000 }).toContain('agent')
-    const all = (await shownRecords(page)).length
-    const filter = (name: string): Locator => historyPanel(page).locator(`[data-testid="dv-history-filter-${name}"]`)
-    // Each filter's empty option names the filter and shows every row.
-    const reset = async (name: string): Promise<void> => { await filter(name).selectOption('') }
-    // Actor.
-    await filter('actor').selectOption({ label: '智能体' })
-    await expect.poll(() => rowAttributes(page, 'data-actor')).toEqual(['agent'])
-    await filter('actor').selectOption({ label: '你' })
-    await expect.poll(async () => new Set(await rowAttributes(page, 'data-actor'))).toEqual(new Set(['user']))
-    await reset('actor')
-    // Operation kind: the timeline component's records only.
-    await filter('component').selectOption({ label: '时间线' })
-    const timelineRecords = new Set((await stateOf(project.id)).components.proj.records
-      .filter(record => record.operation?.startsWith('timeline.') === true).map(record => record.id))
-    await expect.poll(async () => (await shownRecords(page)).length).toBeLessThan(all)
-    expect((await shownRecords(page)).every(record => timelineRecords.has(record))).toBe(true)
-    await reset('component')
-    // Timeline: t2's records hold its create record and not t1's.
-    await filter('timeline').selectOption({ label: '时间线 2' })
-    await expect.poll(() => shownRecords(page)).toContain(t2.id)
-    expect(await shownRecords(page)).not.toContain(project.timeline.id)
-    await reset('timeline')
-    await expect.poll(async () => (await shownRecords(page)).length).toBe(all)
     expect(page.errors).toEqual([])
   })
 

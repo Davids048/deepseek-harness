@@ -53,7 +53,7 @@ kind: "package-reference"
 | `/api/dv/assets/import` | POST | 原始文件作为请求体；查询参数 `project`、`name`、`mime`、`surface`（`canvas \| asset_pool`，其他值回 `400` `invalid_params`）、`session?` | `{asset, record}`：`AssetId` 和 `asset.import` 记录 |
 | `/api/dv/branches/create` | POST | `{project, title?, session?, surface}`：从当前分支 head 所在的位置分出一个分支，并让它成为当前分支 | `{branch, heads}`，带新分支 |
 | `/api/dv/branches/switch` | POST | `{project, branch, to?, session?, surface}`：让一个分支成为当前分支；带 `to` 时让该分支回到它线上的这一步 | `{branch, heads}` |
-| `/api/dv/branches/rename` | POST | `{project, branch, title}`；空标题恢复默认名称 | `{branch, heads}` |
+| `/api/dv/branches/rename` | POST | `{project, branch, title}`；空标题恢复默认名称；超过 40 个字符的标题返回 400 `invalid_params`，与其他分支相同的标题返回 409 `branch_exists` | `{branch, heads}` |
 | `/api/dv/undo` | POST | `{project, session?, surface, to?}`：在当前分支上后退一步，或回到记录 `to`（向前跳到可重做的步骤时写 `proj.redo`） | `{record, heads}`，带 `proj.undo` 记录 |
 | `/api/dv/redo` | POST | `{project, session?, surface}`：在当前分支上前进一步 | `{record, heads}`，带 `proj.redo` 记录 |
 | `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}`，带 `proj.stale_accept` 记录 |

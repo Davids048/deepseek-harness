@@ -231,31 +231,6 @@ function timelineOf(record: ProjectRecord, owner: ReadonlyMap<string, string>): 
   return record.operation === 'timeline.create' ? 't1' : null
 }
 
-/**
- * The records of one timeline on a branch, for the timeline filter: Timeline records and exports that name the
- * timeline or one of its clips, and the records that created the assets of its clips.
- * @param records - the branch's records, oldest first.
- * @param createdBy - asset ID → the record that created it (`components.proj.created_by`).
- * @param timeline - the timeline ID.
- * @param clipAssets - the assets of the timeline's clips.
- * @returns the record IDs.
- */
-export function timelineRecords(
-  records: readonly ProjectRecord[], createdBy: Readonly<Record<string, string>>, timeline: string, clipAssets: readonly string[],
-): string[] {
-  const owner = clipTimelines(records)
-  const set = new Set<string>()
-  for (const record of records) {
-    const timelineRecord = record.component === 'timeline' || record.operation === 'deliver.timeline_export'
-    if (timelineRecord && timelineOf(record, owner) === timeline) set.add(record.id)
-  }
-  for (const asset of clipAssets) {
-    const maker = createdBy[asset]
-    if (maker !== undefined) set.add(maker)
-  }
-  return [...set]
-}
-
 /** Where selecting a record moves the center: a canvas node, a timeline clip, or nowhere. */
 export type CenterFocus =
   | { event: 'dv:canvas-focus'; detail: DvWorkspaceEventMap['dv:canvas-focus'] }
@@ -318,29 +293,47 @@ export function stepPlace(record: string, steps: BranchSteps): StepPlace | null 
   return steps.after.has(record) ? 'after' : null
 }
 
+/** The most columns the branch tree draws; a branch that finds no free column shares the last one. */
+export const TREE_COLUMNS = 6
+
 /** A lane line that passes through one row of the branch tree: whether it reaches the row's top and bottom edges. */
 export interface TreeLine {
-  /** The lane index, in branch order. */
+  /** The lane index, in branch order; it picks the line's color. */
   lane: number
+  /** The column the line is drawn in. */
+  column: number
   up: boolean
   down: boolean
 }
 
 /** A branch that forks at one row of the branch tree: its lane bends into the row's dot. */
 export interface TreeFork {
-  /** The lane index of the forked branch. */
+  /** The lane index of the forked branch; it picks the color. */
   lane: number
+  /** The column the forked branch's lane is drawn in. */
+  column: number
   /** True when the branch has no step of its own yet; its lane then ends in a hollow marker at this row. */
   empty: boolean
 }
 
-/** One row of the branch tree: one step, its dot, and the lane lines and forks drawn beside it. */
+/** One row of the branch tree: one step, its dot, the lane lines and forks drawn beside it, and its branch labels. */
 export interface TreeRow {
   entry: HistoryEntry
-  /** The lane of the branch that owns the step, where its dot sits. */
+  /** The lane of the branch that owns the step; it picks the dot's color. */
   lane: number
+  /** The column the dot sits in. */
+  column: number
   lines: TreeLine[]
   forks: TreeFork[]
+  /** The branches whose lane starts at this row (their newest loaded step, or the fork row of a branch without steps). */
+  refs: string[]
+}
+
+/** The rows one branch's lane covers, top (newest) to end. */
+interface LaneSpan {
+  lane: number
+  top: number
+  end: number
 }
 
 /**
@@ -349,6 +342,8 @@ export interface TreeRow {
  * from its newest step down to the row of its `forked_at` record, where it bends into that row's dot; a branch without
  * steps of its own yet shows a marker at its fork row. `main` runs from its newest to its oldest step. When the fork
  * row is not loaded, the lane runs to the bottom. Undo and redo records and records on no branch line are not rows.
+ * Lanes take columns: `main` the first, every other lane the leftmost column no other lane covers in its rows, so a column
+ * frees up below a branch's fork row; at most {@link TREE_COLUMNS} columns.
  * @param entries - history entries, newest first.
  * @param branches - the project's branches, in lane order.
  * @returns the rows; lane i is `branches[i]`.
@@ -356,8 +351,13 @@ export interface TreeRow {
 export function branchTree(entries: readonly HistoryEntry[], branches: readonly Branch[]): TreeRow[] {
   const steps = entries.filter(entry => !MOVES.has(entry.record.operation ?? '') && entryBranch(entry, null) !== null)
   const laneOf = new Map(branches.map((branch, index) => [branch.name, index]))
-  const rows: TreeRow[] = steps.map(entry => ({ entry, lane: laneOf.get(entryBranch(entry, null) ?? '') ?? 0, lines: [], forks: [] }))
+  const rows: TreeRow[] = steps.map(entry => ({
+    entry, lane: laneOf.get(entryBranch(entry, null) ?? '') ?? 0, column: 0, lines: [], forks: [], refs: [],
+  }))
   const rowOf = new Map(rows.map((row, index) => [row.entry.record.id, index]))
+  const spans: LaneSpan[] = []
+  const forkRows = new Map<number, number>()
+  const empty = new Set<number>()
   branches.forEach((branch, lane) => {
     const owned = rows.flatMap((row, index) => row.lane === lane ? [index] : [])
     const forked = branch.forked_at !== null
@@ -365,13 +365,32 @@ export function branchTree(entries: readonly HistoryEntry[], branches: readonly 
     // A branch with nothing to draw: no step of its own and its fork row is not loaded.
     if (owned.length === 0 && forkRow < 0) return
     const top = owned.length === 0 ? forkRow : Math.min(...owned)
-    const end = !forked ? Math.max(...owned) : forkRow >= 0 ? forkRow : rows.length - 1
+    const end = !forked ? Math.max(...owned) : forkRow >= 0 ? forkRow : rows.length
+    spans.push({ lane, top, end })
+    forkRows.set(lane, forkRow)
+    if (owned.length === 0) empty.add(lane)
+    rows[top]?.refs.push(branch.name)
+  })
+  // `main` keeps the first column, loaded or not; the other lanes, newest first, take the leftmost column whose last lane
+  // ended above.
+  const columnOf = new Map<number, number>([[0, 0]])
+  const busyUntil: number[] = [rows.length]
+  for (const span of spans.filter(item => item.lane !== 0).sort((a, b) => a.top - b.top)) {
+    const free = busyUntil.findIndex(end => end < span.top)
+    const column = free >= 0 ? free : Math.min(busyUntil.length, TREE_COLUMNS - 1)
+    busyUntil[column] = Math.max(busyUntil[column] ?? -1, span.end)
+    columnOf.set(span.lane, column)
+  }
+  for (const row of rows) row.column = columnOf.get(row.lane) ?? 0
+  for (const { lane, top, end } of spans) {
+    const column = columnOf.get(lane) ?? 0
+    const forkRow = forkRows.get(lane) ?? -1
     for (let index = top; index <= end; index += 1) {
       const row = rows[index]
       if (row === undefined) continue
-      if (index === forkRow) row.forks.push({ lane, empty: owned.length === 0 })
-      else row.lines.push({ lane, up: index > top, down: index < end || (forked && forkRow < 0) })
+      if (index === forkRow) row.forks.push({ lane, column, empty: empty.has(lane) })
+      else row.lines.push({ lane, column, up: index > top, down: index < end })
     }
-  })
+  }
   return rows
 }
