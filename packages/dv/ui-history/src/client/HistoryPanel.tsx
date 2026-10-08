@@ -297,6 +297,13 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     setNotice(null)
     client.undo(projectId, 'history', session, record).catch(report)
   }
+  // 从这里新建分支: fork a branch at the step, from the branch whose line holds it; the new branch becomes current.
+  const forkAt = (entry: HistoryEntry): void => {
+    const lane = entryBranch(entry, current.value?.current ?? null)
+    if (lane === null) return
+    setNotice(null)
+    client.createBranch(projectId, 'history', { branch: lane, to: entry.record.id }).then(() => { current.reload() }, report)
+  }
   // 回到这一步 on a step of the tree: stay on the current branch when its line holds the step, else switch to the step's
   // owner.
   const moveTo = (entry: HistoryEntry): void => {
@@ -318,13 +325,13 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     // its creation row stays listed below the notice.
     const changes = loaded.entries.filter(entry => entry.record.operation !== 'proj.create')
     const shared = {
-      assets: loaded.assets, records: recordsById, now, selected, onChoose: choose, rowRef, steps, onJump: jump,
+      assets: loaded.assets, records: recordsById, now, selected, onChoose: choose, rowRef, steps, onJump: jump, onFork: forkAt,
     }
     const tail = view === 'tree'
       ? (
         <TreeView
           rows={tree} branches={branches ?? []} current={current.value?.current ?? null} assets={loaded.assets} records={recordsById}
-          head={steps.current} selected={selected} onSelect={choose} onMove={moveTo} rowRef={rowRef}
+          head={steps.current} selected={selected} onSelect={choose} onMove={moveTo} onFork={forkAt} rowRef={rowRef}
         />
       )
       : rows.map(row => (
@@ -370,24 +377,33 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
 }
 
 /**
- * The icon button that switches between the list view and the branch tree; pressed while the tree shows.
+ * The 列表 | 分支树 switch between the list view and the branch tree, styled like the workspace's 画布 | 时间线 toggle.
  * @param props - the shown view, the change callback, and the string picker.
- * @returns the button.
+ * @returns the switch.
  */
 function ViewToggle(props: { view: HistoryView; onChange: (view: HistoryView) => void; t: PickText }): ReactNode {
   const { view, t } = props
-  const tree = view === 'tree'
+  const choices: Array<[HistoryView, string]> = [['list', t('列表', 'List')], ['tree', t('分支树', 'Branch tree')]]
   return (
-    <button
-      type="button" data-testid="dv-history-view-toggle" aria-pressed={tree} aria-label={t('分支树', 'Branch tree')}
-      title={tree ? t('显示列表', 'Show the list') : t('显示分支树', 'Show the branch tree')}
-      style={{ ...icon, ...tree ? { background: 'rgba(124, 92, 255, 0.18)', color: accent } : {} }}
-      onClick={() => { props.onChange(tree ? 'list' : 'tree') }}
+    <div
+      data-testid="dv-history-view-toggle" role="tablist" aria-label={t('视图', 'View')}
+      style={{ display: 'inline-flex', padding: 2, borderRadius: 8, background: 'var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12))' }}
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <circle cx="6" cy="5" r="2" /><circle cx="6" cy="19" r="2" /><circle cx="18" cy="12" r="2" /><path d="M6 7v10" /><path d="M16 12h-4a6 6 0 0 1-6-5" />
-      </svg>
-    </button>
+      {choices.map(([value, label]) => (
+        <button
+          key={value} type="button" role="tab" data-view={value} aria-selected={view === value}
+          style={{
+            border: 'none', borderRadius: 6, padding: '2px 10px', font: 'inherit', fontSize: 12, cursor: 'pointer',
+            ...view === value
+              ? { background: 'var(--dsw-alias-bg-base, #ffffff)', color: 'var(--dsw-alias-label-primary, inherit)', fontWeight: 500, boxShadow: '0 1px 3px rgba(0, 0, 0, 0.12)' }
+              : { background: 'transparent', color: 'var(--dsw-alias-label-tertiary, inherit)' },
+          }}
+          onClick={() => { props.onChange(value) }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -429,6 +445,66 @@ function Actions(props: { client: DvClient; projectId: string; session: string |
   )
 }
 
+/**
+ * The ⋮ button at the end of a step's row and its menu: 回到这一步 when the step can be returned to, and 从这里新建分支.
+ * Escape or a click outside closes the menu; its clicks and keys never reach the row.
+ * @param props - the 回到这一步 gesture, or null when it does not apply, and the 从这里新建分支 gesture.
+ * @returns the button and, while open, the menu.
+ */
+function StepActions(props: { onBack: (() => void) | null; onFork: () => void }): ReactNode {
+  const t = useText()
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLSpanElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    const outside = (event: PointerEvent): void => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
+    document.addEventListener('pointerdown', outside)
+    return () => { document.removeEventListener('pointerdown', outside) }
+  }, [open])
+  const items: Array<[string, string, () => void]> = [
+    ...props.onBack === null ? [] : [['dv-history-step-back', t('回到这一步', 'Go back to this step'), props.onBack] as [string, string, () => void]],
+    ['dv-history-step-fork', t('从这里新建分支', 'New branch from here'), props.onFork],
+  ]
+  return (
+    <span
+      ref={root} style={{ position: 'relative', flex: 'none', display: 'inline-flex' }}
+      onClick={(event) => { event.stopPropagation() }}
+      onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Escape') setOpen(false) }}
+    >
+      <button
+        type="button" data-testid="dv-history-step-actions" aria-label={t('更多操作', 'More actions')} aria-haspopup="menu" aria-expanded={open}
+        style={{ ...icon, width: 24, height: 24, color: muted }} onClick={() => { setOpen(value => !value) }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" />
+        </svg>
+      </button>
+      {open
+        ? (
+          <div
+            role="menu"
+            style={{
+              position: 'absolute', right: 0, top: '100%', marginTop: 2, zIndex: 20, minWidth: 140, padding: 4, display: 'flex',
+              flexDirection: 'column', border: '0.5px solid var(--dsw-alias-border-l3, #d0d3da)', borderRadius: 8,
+              background: 'var(--dsw-alias-bg-base, #ffffff)', boxShadow: '0 6px 24px rgba(0, 0, 0, 0.18)',
+            }}
+          >
+            {items.map(([id, label, action]) => (
+              <button
+                key={id} type="button" role="menuitem" data-testid={id}
+                style={{ ...button, border: 'none', textAlign: 'left', padding: '6px 10px', whiteSpace: 'nowrap' }}
+                onClick={() => { setOpen(false); action() }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )
+        : null}
+    </span>
+  )
+}
+
 /** The 在轨迹中查看 link: asks the shell to open 轨迹 on the chat session and show the tool call. */
 function TrajectoryLink(props: { session: string; toolCall: string }): ReactNode {
   const t = useText()
@@ -457,6 +533,8 @@ interface RowContext {
   steps: BranchSteps
   /** 回到这一步 on a step before the current one. */
   onJump: (record: string) => void
+  /** 从这里新建分支 on a step. */
+  onFork: (entry: HistoryEntry) => void
 }
 
 /**
@@ -525,7 +603,7 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
         opacity: dimmed ? 0.55 : 1,
       }}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: `${String(size)}px minmax(0, 1fr)`, columnGap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `${String(size)}px minmax(0, 1fr) auto`, columnGap: 8, alignItems: 'center' }}>
         <Thumb thumbnail={thumbnail} size={size} />
         <div style={{ minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
@@ -557,18 +635,9 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
               )
               : null}
             {words === '' ? null : <span title={words} style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>“{words}”</span>}
-            {step === 'before'
-              ? (
-                <button
-                  type="button" data-testid="dv-history-jump" style={{ ...link, marginLeft: 'auto', flex: 'none' }}
-                  onClick={(event) => { event.stopPropagation(); props.onJump(record.id) }}
-                >
-                  {t('回到这一步', 'Go back to this step')}
-                </button>
-              )
-              : null}
           </div>
         </div>
+        <StepActions onBack={step === 'before' ? () => { props.onJump(record.id) } : null} onFork={() => { props.onFork(entry) }} />
       </div>
       {selected ? <Details record={record} assets={assets} words={words} /> : null}
     </div>
@@ -579,7 +648,8 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
  * The branch tree: one row per step with the lane graph on the left and the step's labels, small thumbnail and name on
  * the right.
  * @param props - the laid-out tree, the branches in lane order, the current branch, the known assets and records, the
- *   current branch's head step, the selected record, the select and 回到这一步 gestures, and the row ref callback.
+ *   current branch's head step, the selected record, the select, 回到这一步 and 从这里新建分支 gestures, and the row ref
+ *   callback.
  * @returns the tree.
  */
 function TreeView(props: {
@@ -592,6 +662,7 @@ function TreeView(props: {
   selected: string | null
   onSelect: (entry: HistoryEntry) => void
   onMove: (entry: HistoryEntry) => void
+  onFork: (entry: HistoryEntry) => void
   rowRef: (record: string) => (element: HTMLElement | null) => void
 }): ReactNode {
   const t = useText()
@@ -615,7 +686,7 @@ function TreeView(props: {
         <TreeNode
           key={row.entry.record.id} row={row} columns={columns} labels={labelsOf(row)} assets={props.assets} records={props.records}
           head={row.entry.record.id === props.head} selected={row.entry.record.id === props.selected}
-          onSelect={props.onSelect} onMove={props.onMove} rowRef={props.rowRef}
+          onSelect={props.onSelect} onMove={props.onMove} onFork={props.onFork} rowRef={props.rowRef}
         />
       ))}
     </div>
@@ -637,10 +708,10 @@ function laneColor(lane: number): string {
 
 /**
  * One step of the branch tree: the lane lines through the row, the forks that bend into it, the step's dot, its branch
- * labels, small thumbnail and label. The current branch's head step has a tinted row with an accent edge and the 当前
- * badge. Clicking a step selects it; 回到这一步, shown on the hovered or selected step, moves the head there.
+ * labels, small thumbnail and label, and its ⋮ menu. The current branch's head step has a tinted row with an accent edge
+ * and the 当前 badge. Clicking a step selects it; the ⋮ menu's 回到这一步 moves the head there.
  * @param props - the laid-out row, the column count, the row's branch labels, the known assets and records, whether
- *   the step is the head and whether it is selected, the select and move gestures, and the row ref callback.
+ *   the step is the head and whether it is selected, the select, move and fork gestures, and the row ref callback.
  * @returns the row.
  */
 function TreeNode(props: {
@@ -653,6 +724,7 @@ function TreeNode(props: {
   selected: boolean
   onSelect: (entry: HistoryEntry) => void
   onMove: (entry: HistoryEntry) => void
+  onFork: (entry: HistoryEntry) => void
   rowRef: (record: string) => (element: HTMLElement | null) => void
 }): ReactNode {
   const { row } = props
@@ -727,16 +799,7 @@ function TreeNode(props: {
       <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: props.head ? 600 : 400 }}>
         {t(...actionLabel(record))}
       </span>
-      {!props.head && (props.selected || hovered)
-        ? (
-          <button
-            type="button" data-testid="dv-history-tree-move" style={{ ...link, flex: 'none' }}
-            onClick={(event) => { event.stopPropagation(); props.onMove(row.entry) }}
-          >
-            {t('回到这一步', 'Go back to this step')}
-          </button>
-        )
-        : null}
+      <StepActions onBack={props.head ? null : () => { props.onMove(row.entry) }} onFork={() => { props.onFork(row.entry) }} />
     </div>
   )
 }

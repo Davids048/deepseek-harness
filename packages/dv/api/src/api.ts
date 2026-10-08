@@ -360,15 +360,24 @@ export class ApiHandlers {
   }
 
   /**
-   * Fork a branch from the current branch at its head's position and make it current.
-   * @param raw - `{project, title?, session?, surface}`; an empty or missing title keeps the default label.
+   * Fork a branch from the current branch at its head's position, or with `branch` and `to` at that step of that branch's
+   * line, and make it current.
+   * @param raw - `{project, title?, branch?, to?, session?, surface}`; an empty or missing title keeps the default label.
    * @returns the new branch and the heads afterwards.
+   * @throws ApiRequestError (400 `invalid_params` when only one of `branch` and `to` is given or `to` is no step of the
+   *   branch, 404 `unknown_branch` or `unknown_record`).
    */
   async createBranch(raw: unknown): Promise<BranchChange> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
     const title = typeof body['title'] === 'string' && body['title'].trim().length > 0 ? body['title'].trim() : null
-    const branch = await refused(() => this.services.project.createBranch(projectId, title))
+    if ((body['branch'] === undefined) !== (body['to'] === undefined)) {
+      throw new ApiRequestError(400, "'branch' and 'to' go together.", 'invalid_params')
+    }
+    const from = body['branch'] === undefined
+      ? undefined
+      : { branch: stringOf(body['branch'], 'branch'), record: brandString<RecordId>(stringOf(body['to'], 'to')) }
+    const branch = await refused(() => this.services.project.createBranch(projectId, title, from))
     return { branch, heads: this.heads(projectId) }
   }
 

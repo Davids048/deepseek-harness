@@ -151,6 +151,26 @@ describe('branches', () => {
     expect(values(m, project)).toEqual([1])
   })
 
+  it('forks a branch at a chosen step of a branch\'s line, a redo step too, and leaves the source branch where it was', async () => {
+    const m = startWithValues()
+    const project = await createTestProject(m)
+    const first = await write(m, project, userOrigin(), 1)
+    const second = await write(m, project, userOrigin(), 2)
+    await write(m, project, userOrigin(), 3)
+    await undoTo(m, project, first.id)
+    const head = m.store.getBranch(project, MAIN_BRANCH)?.head
+    const at = { branch: MAIN_BRANCH, record: second.id }
+    expect(await m.store.lock(project, () => m.branches.create(project, null, at))).toMatchObject({ name: 'b2', head: second.id, base: MAIN_BRANCH, forked_at: second.id })
+    expect(m.branches.current(project).name).toBe('b2')
+    expect(values(m, project)).toEqual([1, 2])
+    expect(m.store.getBranch(project, MAIN_BRANCH)?.head).toBe(head)
+    // The record must be a step of the branch's line.
+    const create = m.store.listRecords(project)[0]
+    if (create === undefined) throw new Error('the project has no proj.create record')
+    await expectCode(() => m.store.lock(project, () => m.branches.create(project, null, { branch: 'b2', record: create.id })), 'invalid_params')
+    await expectCode(() => m.store.lock(project, () => m.branches.create(project, null, { branch: 'b9', record: first.id })), 'unknown_branch')
+  })
+
   it('switches branches, and returns a branch to a step when asked', async () => {
     const m = startWithValues()
     const project = await createTestProject(m)

@@ -111,7 +111,7 @@ skill 承载工作流程和模型专属的规则，各由其主人注册：
 
 ## 历史和轨迹
 
-历史是项目按顺序排列的记录，来自每个发起者、视图和对话；轨迹是智能体在一个对话中的步骤。记录通过它的 `session` 和 `tool_call` 字段把两者连起来。[`@dv/ui-history`](../../packages/dv/ui-history/README.zh.md) 是历史面板（标签类型 `dv-history`）。它的列表视图为当前分支的每一步列一行，最新的在前，显示动作、谁做的（你 / You、智能体 / Agent、自动 / Automatic）、状态、一张输出缩略图，分支头那一步标 当前 / Current，重做能恢复的步骤变暗；批准分镜计划时排定的记录折叠在该批准行之下，回到这一步 / Go back to this step 让分支回到某一步。它的顶部放着与底栏相同的分支菜单、分支树 / Branch tree 开关以及撤销和重做。它的树视图 分支树 / Branch tree 把每个分支的每一步画在各自的一列里，每一步显示的信息更少，在每个分支的泳道开始处标出分支名称，并用 当前 / Current 标出 head 步骤；点击某一步会选中它，它的 回到这一步 / Go back to this step 会让它的分支成为当前分支并停在那一步。选中一行会在画布上聚焦该记录的节点（`dv:canvas-focus`）或在时间线上聚焦它的片段（`dv:timeline-focus`）；行内的 在轨迹中查看 / Show in trajectory 链接发出 `dv:trajectory-focus`，`@dv/ui-shell` 随即在那个对话的那次工具调用处打开 轨迹。在对话中，写入记录的工具的每个已结束行都有 在历史中查看 / Show in history 链接，它发出 `dv:history-focus`，让历史面板选中那次工具调用写入的记录。
+历史是项目按顺序排列的记录，来自每个发起者、视图和对话；轨迹是智能体在一个对话中的步骤。记录通过它的 `session` 和 `tool_call` 字段把两者连起来。[`@dv/ui-history`](../../packages/dv/ui-history/README.zh.md) 是历史面板（标签类型 `dv-history`）。它的列表视图为当前分支的每一步列一行，最新的在前，显示动作、谁做的（你 / You、智能体 / Agent、自动 / Automatic）、状态、一张输出缩略图，分支头那一步标 当前 / Current，重做能恢复的步骤变暗；批准分镜计划时排定的记录折叠在该批准行之下，每一行的 ⋮ 菜单提供 回到这一步 / Go back to this step（让分支回到某一步）和 从这里新建分支 / New branch from here（从那一步分出一个分支）。它的顶部放着与底栏相同的分支菜单、列表 | 分支树 / List | Branch tree 切换以及撤销和重做。它的树视图 分支树 / Branch tree 把每个分支的每一步画在各自的一列里，每一步显示的信息更少，在每个分支的泳道开始处标出分支名称，并用 当前 / Current 标出 head 步骤；点击某一步会选中它，它的 ⋮ 菜单里的 回到这一步 / Go back to this step 会让它的分支成为当前分支并停在那一步。选中一行会在画布上聚焦该记录的节点（`dv:canvas-focus`）或在时间线上聚焦它的片段（`dv:timeline-focus`）；行内的 在轨迹中查看 / Show in trajectory 链接发出 `dv:trajectory-focus`，`@dv/ui-shell` 随即在那个对话的那次工具调用处打开 轨迹。在对话中，写入记录的工具的每个已结束行都有 在历史中查看 / Show in history 链接，它发出 `dv:history-focus`，让历史面板选中那次工具调用写入的记录。
 
 ## 过期
 

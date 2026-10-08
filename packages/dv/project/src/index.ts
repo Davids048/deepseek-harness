@@ -256,14 +256,16 @@ export default class DvProject extends Service {
 
   /**
    * Fork a branch from the current branch at its head's position and make it current; when the head stands before the
-   * tip (after an undo), the old branch returns to its tip. Changes `branches.json` only.
+   * tip (after an undo), the old branch returns to its tip. With `from`, the fork starts at that step of that branch's
+   * line instead, and the source branch does not move. Changes `branches.json` only.
    * @param project - the project.
    * @param title - the name the human gave the branch; null for the view's default label of `b<n>`.
-   * @returns the new branch. Throws `invalid_params` for a title over 40 characters, `branch_exists` for a title another
-   *   branch has.
+   * @param from - the branch and the step to fork at.
+   * @returns the new branch. Throws `invalid_params` for a title over 40 characters or a record that is no step of the
+   *   branch's line, `branch_exists` for a title another branch has, `unknown_branch` and `unknown_record`.
    */
-  createBranch(project: ProjectId, title: string | null): Promise<Branch> {
-    return this.store.lock(project, () => this.branches.create(project, title))
+  createBranch(project: ProjectId, title: string | null, from?: { branch: string; record: RecordId }): Promise<Branch> {
+    return this.store.lock(project, () => this.branches.create(project, title, from))
   }
 
   /**

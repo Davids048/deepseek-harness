@@ -174,7 +174,7 @@ Owner: agent C. A project starts with `main`; every other branch is `b<n>`. The 
 
 - `current`, `list`: the stored branches with `tip = history.tipOf(head)`.
 - `forWrite`: called by the runner under the lock for every write of every actor. When `position(head)` differs from the tip, it forks first and returns the new branch.
-- `create(title)`: forks the current branch at its head's position. The title follows the rules of `rename`.
+- `create(title, from?)`: forks the current branch at its head's position. With `from = {branch, record}`, it forks at that step of that branch's line instead (a step of the effective chain of the branch's tip, so a step before the head or one that redo brings back): the new branch's `head = forked_at = record` and `base = branch`, the source branch does not move, and the new branch becomes current; a record that is no step of the line is refused with `invalid_params`. The title follows the rules of `rename`.
 - Fork: moves the old branch's head to its tip when they differ, adds `b<n>` (n = one more than the highest number in use, at least 2) with `head = forked_at = position`, `base` = the old branch, and makes it current. Appends no record.
 - `switch(name, origin, to?)`: makes `name` current; with `to` different from the branch's position, calls `history.undo` on that branch.
 - `rename(name, title)`: trims the title; an empty title stores null. A title over 40 characters is refused with `invalid_params`, and a title another branch has with `branch_exists`.
@@ -302,6 +302,7 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - `forks a new branch for a write after an undo and keeps the undone steps on the old branch` (R): the write lands on `b2` forked at the undo target; `main` returns to its tip; the next write stays on `b2`.
 - `does not fork after a redo that returned the branch to its tip`.
 - `forks a named branch on request at the current position without writing a record` (R): `b2` with the title; after a switch and an undo, `b3` forks at the undo target and `main` returns to its tip.
+- `forks a branch at a chosen step of a branch's line, a redo step too, and leaves the source branch where it was`: `invalid_params` for `proj.create`, `unknown_branch` for an unknown branch.
 - `switches branches, and returns a branch to a step when asked`: no jump record when the branch already stands at `to`; a `proj.undo` on the switched-to branch otherwise; `unknown_branch` for an unknown name.
 - `renames a branch and returns to the default label for an empty title`: a title over 40 characters or one another branch has is refused, for a rename and for a new branch.
 

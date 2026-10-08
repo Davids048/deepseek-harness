@@ -34,7 +34,7 @@ const NOT_A_STEP = new Set([
  * @param record - a record.
  * @returns whether undo and redo count the record as one step.
  */
-function isStep(record: ProjectRecord): boolean {
+export function isStep(record: ProjectRecord): boolean {
   return !NOT_A_STEP.has(record.operation ?? '')
 }
 

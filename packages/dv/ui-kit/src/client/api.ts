@@ -207,13 +207,15 @@ export class DvClient {
   }
 
   /**
-   * Fork a branch from the current branch at its head's position and make it the project's current branch.
+   * Fork a branch from the current branch at its head's position, or with `from` at that step of that branch's line,
+   * and make it the project's current branch.
    * @param project - the project.
    * @param surface - where the gesture came from.
+   * @param from - the branch and the step to fork at.
    * @returns the new branch, with the default label, and the heads afterwards.
    */
-  createBranch(project: string, surface: ViewSurface): Promise<WireBranchResult> {
-    return this.post('/api/dv/branches/create', { project, surface })
+  createBranch(project: string, surface: ViewSurface, from?: { branch: string; to: string }): Promise<WireBranchResult> {
+    return this.post('/api/dv/branches/create', { project, surface, ...from })
   }
 
   /**

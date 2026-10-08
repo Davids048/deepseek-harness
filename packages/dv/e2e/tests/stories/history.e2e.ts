@@ -206,10 +206,18 @@ function switcher(page: Page): Locator {
  * @param view - `list` or `tree`.
  */
 async function showView(page: Page, view: 'list' | 'tree'): Promise<void> {
-  const button = historyPanel(page).locator('[data-testid="dv-history-view-toggle"]')
-  const pressed = view === 'tree' ? 'true' : 'false'
-  if (await button.getAttribute('aria-pressed') !== pressed) await button.click()
-  await expect.poll(() => button.getAttribute('aria-pressed')).toBe(pressed)
+  const button = historyPanel(page).locator(`[data-testid="dv-history-view-toggle"] [data-view="${view}"]`)
+  await button.click()
+  await expect.poll(() => button.getAttribute('aria-selected')).toBe('true')
+}
+
+/**
+ * Choose 回到这一步 in a row's ⋮ menu.
+ * @param row - a list row or a tree node.
+ */
+async function stepBack(row: Locator): Promise<void> {
+  await row.locator('[data-testid="dv-history-step-actions"]').click()
+  await row.locator('[data-testid="dv-history-step-back"]').click()
 }
 
 /** A node of the 分支树 view. */
@@ -333,7 +341,7 @@ describe('History panel', () => {
     await treeNode(page, project.timeline.id).click()
     await expect.poll(() => treeNode(page, project.timeline.id).getAttribute('aria-selected')).toBe('true')
     expect((await stateOf(project.id)).current).toBe('b2')
-    await treeNode(page, project.timeline.id).locator('[data-testid="dv-history-tree-move"]').click()
+    await stepBack(treeNode(page, project.timeline.id))
     await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
     await expect.poll(() => treeNode(page, project.timeline.id).getAttribute('data-head')).toBe('true')
     expect((await stateOf(project.id)).current).toBe('main')
@@ -346,6 +354,13 @@ describe('History panel', () => {
     await name.press('Enter')
     await expect.poll(async () => (await stateOf(project.id)).branches.find(branch => branch.name === 'b3')?.title).toBe('夜景')
     await expect.poll(() => switcher(page).locator('button').first().innerText()).toBe('夜景')
+    // 从这里新建分支 in a step's ⋮ menu forks 分支 4 at that step; 主线 stays where it was.
+    const mainHead = (await stateOf(project.id, 'main')).head
+    await treeNode(page, project.timeline.id).locator('[data-testid="dv-history-step-actions"]').click()
+    await treeNode(page, project.timeline.id).locator('[data-testid="dv-history-step-fork"]').click()
+    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('b4')
+    expect((await stateOf(project.id)).branches.find(branch => branch.name === 'b4')?.forked_at).toBe(project.timeline.id)
+    expect((await stateOf(project.id, 'main')).head).toBe(mainHead)
     expect(page.errors).toEqual([])
   })
 
@@ -459,7 +474,7 @@ describe('History panel', () => {
     expect(await rowOf(page, third?.id ?? '').locator('[data-testid="dv-history-current"]').innerText()).toBe('当前')
     expect(await stepOf(page, first)).toBe('before')
     expect(await historyPanel(page).locator('[data-testid="dv-history-redo"]').isDisabled()).toBe(true)
-    await rowOf(page, first?.id ?? '').locator('[data-testid="dv-history-jump"]').click()
+    await stepBack(rowOf(page, first?.id ?? ''))
     await expect.poll(() => stepOf(page, first)).toBe('current')
     // The rows' marks come from the history list, which refetches shortly after the state changed.
     for (const later of [second, third]) {
@@ -511,7 +526,7 @@ describe('History panel', () => {
     await gotoProject(page, project.id)
     await openHistory(page)
     await expect.poll(() => stepOf(page, third)).toBe('current')
-    await rowOf(page, first?.id ?? '').locator('[data-testid="dv-history-jump"]').click()
+    await stepBack(rowOf(page, first?.id ?? ''))
     await expect.poll(() => stepOf(page, third)).toBe('after')
     const fourth = await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: 'fourth' })
     expect(fourth.branch).toBe('b2')

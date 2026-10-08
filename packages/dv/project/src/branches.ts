@@ -17,7 +17,7 @@
  * @module @dv/project/branches
  */
 import type { History } from './history.ts'
-import { position, tipOf } from './history.ts'
+import { effectiveChain, isStep, position, tipOf } from './history.ts'
 import type { RecordStore, StoredBranch } from './record-store.ts'
 import { ProjectError } from './shared.ts'
 import type { Branch, ProjectId, RecordId } from './types.ts'
@@ -65,14 +65,27 @@ export class Branches {
   }
 
   /**
-   * Fork a branch from the current branch at its head's position and make it current. The caller holds the project lock.
+   * Fork a branch and make it current. The caller holds the project lock. Without `from`, the fork starts at the current
+   * branch's head position. With `from`, it starts at that step of that branch's line, a step before the head or one
+   * that redo brings back, and the source branch does not move.
    * @param project - the project.
    * @param title - the name the human gave it; null or empty for the view's default label.
-   * @returns the new branch. Throws `invalid_params` for a title over 40 characters, `branch_exists` for a title another
-   *   branch has.
+   * @param from - the branch and the step to fork at.
+   * @returns the new branch. Throws `invalid_params` for a title over 40 characters or a record that is no step of the
+   *   branch's line, `branch_exists` for a title another branch has, `unknown_branch` and `unknown_record`.
    */
-  create(project: ProjectId, title: string | null): Branch {
-    return this.fork(project, this.current(project), this.titleFor(project, null, title))
+  create(project: ProjectId, title: string | null, from?: { branch: string; record: RecordId }): Branch {
+    const checked = this.titleFor(project, null, title)
+    if (from === undefined) return this.fork(project, this.current(project), checked)
+    const source = this.withTip(project, this.require(project, from.branch))
+    const record = this.store.getRecord(project, from.record)
+    if (!isStep(record) || !effectiveChain(this.store, project, source.tip).some(entry => entry.id === record.id)) {
+      throw new ProjectError('invalid_params', `Record ${from.record} is not a step of branch ${from.branch}.`)
+    }
+    const name = `b${String(this.nextNumber(project))}`
+    this.store.setBranch(project, { name, title: checked, head: record.id, base: source.name, forked_at: record.id })
+    this.store.setCurrent(project, name)
+    return this.current(project)
   }
 
   /**

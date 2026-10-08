@@ -51,7 +51,7 @@ kind: "package-reference"
 | `/api/dv/operations` | GET | — | `WireOperation[]`：每个不是 `readOnly` 的已注册操作，不含执行器 |
 | `/api/dv/operation` | POST | `OperationRequest` `{project, operation, inputs?, params?, intent?, surface, session?, based_on?, supersedes?}`；`inputs` = `[{role, ref}]`，`ref` 是引用文本 | `ProjectRecord`，已完成或 `pending` |
 | `/api/dv/assets/import` | POST | 原始文件作为请求体；查询参数 `project`、`name`、`mime`、`surface`（`canvas \| asset_pool`，其他值回 `400` `invalid_params`）、`session?` | `{asset, record}`：`AssetId` 和 `asset.import` 记录 |
-| `/api/dv/branches/create` | POST | `{project, title?, session?, surface}`：从当前分支 head 所在的位置分出一个分支，并让它成为当前分支 | `{branch, heads}`，带新分支 |
+| `/api/dv/branches/create` | POST | `{project, title?, branch?, to?, session?, surface}`：从当前分支 head 所在的位置分出一个分支，或带 `branch` 和 `to` 时从该分支的线上的那一步分出，并让它成为当前分支；`branch` 和 `to` 必须同时给出（否则返回 400 `invalid_params`） | `{branch, heads}`，带新分支 |
 | `/api/dv/branches/switch` | POST | `{project, branch, to?, session?, surface}`：让一个分支成为当前分支；带 `to` 时让该分支回到它线上的这一步 | `{branch, heads}` |
 | `/api/dv/branches/rename` | POST | `{project, branch, title}`；空标题恢复默认名称；超过 40 个字符的标题返回 400 `invalid_params`，与其他分支相同的标题返回 409 `branch_exists` | `{branch, heads}` |
 | `/api/dv/undo` | POST | `{project, session?, surface, to?}`：在当前分支上后退一步，或回到记录 `to`（向前跳到可重做的步骤时写 `proj.redo`） | `{record, heads}`，带 `proj.undo` 记录 |

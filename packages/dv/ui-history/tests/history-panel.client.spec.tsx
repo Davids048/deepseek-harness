@@ -8,6 +8,16 @@ import { DV_CANVAS_FOCUS_EVENT, DV_HISTORY_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT 
 import { asset, fixtureState, record, scriptedFetch } from '../../ui-kit/tests/fixture.client.tsx'
 import { HistoryPanel } from '../src/client/HistoryPanel.tsx'
 
+/**
+ * Open a row's ⋮ menu.
+ * @param element - a list row or a tree node.
+ * @returns the labels of the menu's items.
+ */
+function menuOf(element: HTMLElement): string[] {
+  fireEvent.click(within(element).getByTestId('dv-history-step-actions'))
+  return within(element).getAllByRole('menuitem').map(item => item.textContent ?? '')
+}
+
 // jsdom lays nothing out and has no scrollIntoView; the panel's scroll requests are recorded instead.
 const scrolled = vi.fn()
 Element.prototype.scrollIntoView = scrolled
@@ -151,7 +161,7 @@ describe('HistoryPanel', () => {
     })
   })
 
-  it('marks the current step, offers 回到这一步 on the steps before it, and greys the steps redo brings back', async () => {
+  it('marks the current step, offers 回到这一步 on the steps before it and 从这里新建分支 on every step, and greys the steps redo brings back', async () => {
     const current: HistoryEntry = { record: record({ id: 'g3', session: 's5', operation: 'shot.render_ref2va' }), mark: 'current', branches: ['main'] }
     const { writes, row } = mount([current, ...ENTRIES], (state) => {
       state.components.proj.records = state.components.proj.records.filter(item => item.id !== 'p1')
@@ -160,22 +170,24 @@ describe('HistoryPanel', () => {
     await waitFor(() => { row('p1') })
     expect(row('g3').getAttribute('data-step')).toBe('current')
     expect(row('g3').querySelector('[data-testid="dv-history-current"]')?.textContent).toBe('Current')
-    expect(row('g3').querySelector('[data-testid="dv-history-jump"]')).toBeNull()
+    expect(menuOf(row('g3'))).toEqual(['New branch from here'])
     expect(row('p1').getAttribute('data-step')).toBe('after')
     expect(row('p1').style.opacity).toBe('0.55')
-    expect(row('p1').querySelector('[data-testid="dv-history-jump"]')).toBeNull()
+    expect(menuOf(row('p1'))).toEqual(['New branch from here'])
     // A record off the current branch's chain is no step of it.
     expect(row('m1').hasAttribute('data-step')).toBe(false)
     expect(row('g1').getAttribute('data-step')).toBe('before')
-    const jump = row('g1').querySelector('[data-testid="dv-history-jump"]')
-    expect(jump?.textContent).toBe('Go back to this step')
-    fireEvent.click(jump as HTMLElement)
+    expect(menuOf(row('g1'))).toEqual(['Go back to this step', 'New branch from here'])
+    fireEvent.click(within(row('g1')).getByTestId('dv-history-step-back'))
+    fireEvent.click(within(row('g1')).getByTestId('dv-history-step-actions'))
+    fireEvent.click(within(row('g1')).getByTestId('dv-history-step-fork'))
     await waitFor(() => {
       expect(writes.filter(write => write.path !== '/api/dv/history')).toEqual([
         { path: '/api/dv/undo', body: { project: 'p1', surface: 'history', session: 's5', to: 'g1' } },
+        { path: '/api/dv/branches/create', body: { project: 'p1', surface: 'history', branch: 'main', to: 'g1' } },
       ])
     })
-    // The jump does not select the row.
+    // The menu's gestures do not select the row.
     expect(row('g1').getAttribute('aria-selected')).toBe('false')
   })
 
@@ -191,9 +203,9 @@ describe('HistoryPanel', () => {
     const { view, queries, writes } = mount(tree, (state) => { state.components.proj.records.push(record({ id: 'y1', operation: 'timeline.clip_move' })) })
     await waitFor(() => { expect(queries.length).toBeGreaterThan(0) })
     scrolled.mockClear()
-    fireEvent.click(view.getByTestId('dv-history-view-toggle'))
+    fireEvent.click(within(view.getByTestId('dv-history-view-toggle')).getByRole('tab', { name: 'Branch tree' }))
     await waitFor(() => { expect(view.getAllByTestId('dv-history-tree-node')).toHaveLength(3) })
-    expect(view.getByTestId('dv-history-view-toggle').getAttribute('aria-pressed')).toBe('true')
+    expect(within(view.getByTestId('dv-history-view-toggle')).getByRole('tab', { name: 'Branch tree' }).getAttribute('aria-selected')).toBe('true')
     expect(queries.at(-1)).toEqual({ project: 'p1', marks: ['current', 'redo', 'branch'], limit: 50 })
     const node = (id: string): HTMLElement => view.container.querySelector(`[data-testid="dv-history-tree-node"][data-record="${id}"]`) as HTMLElement
     expect([node('r3'), node('y1'), node('x1')].map(element => element.getAttribute('data-lane'))).toEqual(['1', '0', '0'])
@@ -206,20 +218,24 @@ describe('HistoryPanel', () => {
     expect(within(node('y1')).getByTestId('dv-history-tree-current').textContent).toBe('Current')
     expect(within(node('y1')).getByTestId('dv-history-tree-branch').textContent).toBe('Main')
     await waitFor(() => { expect(scrolled).toHaveBeenCalledWith({ block: 'center' }) })
-    // A click selects a step and writes nothing; 回到这一步 on the selected step moves the head there.
+    // A click selects a step and writes nothing; 回到这一步 in a step's ⋮ menu moves the head there, and the head step
+    // offers only 从这里新建分支.
     fireEvent.click(node('r3'))
     expect(node('r3').getAttribute('aria-selected')).toBe('true')
     expect(writes.filter(write => write.path !== '/api/dv/history')).toEqual([])
-    fireEvent.click(within(node('r3')).getByTestId('dv-history-tree-move'))
-    fireEvent.click(node('x1'))
-    fireEvent.click(within(node('x1')).getByTestId('dv-history-tree-move'))
+    expect(menuOf(node('y1'))).toEqual(['New branch from here'])
+    fireEvent.keyDown(within(node('y1')).getByRole('menu'), { key: 'Escape' })
+    expect(menuOf(node('r3'))).toEqual(['Go back to this step', 'New branch from here'])
+    fireEvent.click(within(node('r3')).getByTestId('dv-history-step-back'))
+    menuOf(node('x1'))
+    fireEvent.click(within(node('x1')).getByTestId('dv-history-step-back'))
     await waitFor(() => {
       expect(writes.filter(write => write.path !== '/api/dv/history')).toEqual([
         { path: '/api/dv/branches/switch', body: { project: 'p1', branch: 'b2', surface: 'history', to: 'r3', session: 's5' } },
         { path: '/api/dv/branches/switch', body: { project: 'p1', branch: 'main', surface: 'history', to: 'x1', session: 's5' } },
       ])
     })
-    fireEvent.click(view.getByTestId('dv-history-view-toggle'))
+    fireEvent.click(within(view.getByTestId('dv-history-view-toggle')).getByRole('tab', { name: 'List' }))
     await waitFor(() => { expect(view.queryByTestId('dv-history-tree')).toBeNull() })
   })
 

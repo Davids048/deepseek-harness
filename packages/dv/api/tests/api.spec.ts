@@ -271,6 +271,10 @@ describe('dvApi', () => {
     expect(fixture.handlers.getState(projectId).redo_steps).toEqual([human.id, onBranch])
     expect((await fixture.handlers.renameBranch({ project: projectId, branch: 'b2', title: '' })).branch.title).toBeNull()
     expect((await fixture.handlers.createBranch({ project: projectId })).branch).toMatchObject({ name: 'b3', title: null, head: agent })
+    // With `branch` and `to`, the fork starts at that step of that branch's line; the two fields go together.
+    const atStep = await fixture.handlers.createBranch({ project: projectId, branch: 'main', to: agent, surface: 'history' })
+    expect(atStep.branch).toMatchObject({ name: 'b4', head: agent, base: 'main', forked_at: agent })
+    await expect(fixture.handlers.createBranch({ project: projectId, to: agent })).rejects.toMatchObject({ status: 400, code: 'invalid_params' })
   })
 
   it('undoes and redoes as records, and forks a branch for a write after an undo', async () => {
