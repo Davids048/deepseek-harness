@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在 `@dv/project` 和 `@dv/asset-pool` 之后挂载插件，并且 profile 还要挂载 `dsh-web-app`（提供 `connection` 和 `webServer` 服务）。没有 `connection` 时 Fetch 路由不会注册；没有 `webServer` 时事件流不会注册。
 
-这些 Fetch 路由列出、新建、重命名和删除项目，把一条分支的状态读成 JSON，列出操作声明，以人的身份运行一个操作，把文件导入素材库，接受或丢弃一个对话的草稿，撤销和重做，接受一条过期记录，列出历史，保存画布布局，以及把项目关联到 DSH Workspace。事件流用同一个 Connection cookie 放行浏览器。
+这些 Fetch 路由列出、新建、重命名、删除和汇总项目，把一条分支的状态读成 JSON，列出操作声明，以人的身份运行一个操作，把文件导入素材库，接受或丢弃一个对话的草稿，撤销和重做，接受一条过期记录，列出历史，保存画布布局，以及把项目关联到 DSH Workspace。事件流用同一个 Connection cookie 放行浏览器。
 
 ```yaml
 - id: dv-api
@@ -45,6 +45,7 @@ kind: "package-reference"
 | --- | --- | --- | --- |
 | `/api/dv/projects` | GET | 可选 `session`（对话 ID） | `WireProject[]`（`{id, title, created_at, heads, current}`），最新在前；给出 `session` 时该对话绑定的项目排第一并带 `current: true` |
 | `/api/dv/projects` | POST | `{title, surface}` | 从视图新建的项目：`ProjectInfo` `{id, title, created_at}` |
+| `/api/dv/projects/summary` | GET | 可选 `project` | `WireProjectSummary[]`（`{project, cover, shots, duration_sec, edited_at}`），每个项目一条，或只有指定的项目：`cover` 是第一个完成的 `shot.render_*` 镜头的 `{video, image}`（素材 ID 或 null），否则是第一张导入图片的 `{video: null, image}`，否则为 null；`shots` 和 `duration_sec` 汇总每个计划最新版本的镜头；`edited_at` 是最后一条记录的时间。每条从 `main` 读取，`main` 没有已渲染镜头时从第一个打开的草稿读取。列出所有项目时，读不出状态的项目得到空条目（`cover` 为 null、数值为 0、`edited_at` 为 null），服务器在控制台输出警告；带 `project` 时，该项目的错误就是响应 |
 | `/api/dv/projects/rename` | POST | `{project, title}` | `{title}`，重名时追加 ` 2`、` 3`…… 使其唯一 |
 | `/api/dv/projects/delete` | POST | `{project}` | `{ok, workspace_id}`；项目移进 Project 存储的回收目录，它的画布布局文件被删除 |
 | `/api/dv/state` | GET | `project`，可选 `branch`（默认 `main`） | `WireState`：`{project, branch, head, heads, branches, components, redo_steps, assets}`，每个组件状态切片与 Project 算出的一致，外加该分支上重做能恢复的步骤，以及每个被提到的素材在素材库里的条目 |
@@ -93,6 +94,7 @@ kind: "package-reference"
 | [`src/layout.ts`](src/layout.ts) | `CanvasLayoutStore` 和布局路由 |
 | [`src/workspaces.ts`](src/workspaces.ts) | 项目 → Workspace 关联、对话绑定，以及项目的 DSH 会话 |
 | [`src/projects-admin.ts`](src/projects-admin.ts) | 项目重命名和删除 |
+| [`src/summaries.ts`](src/summaries.ts) | `WireProjectSummary`、`summarizeBranch` 和 `summarizeProject`：项目卡片摘要 |
 | [`src/events.ts`](src/events.ts) | `frameOf` 和 `serveEventStream` |
 | [`src/index.ts`](src/index.ts) | `DvApi`、`Config`、`ROUTES`、`EVENTS_PATH` |
 

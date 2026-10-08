@@ -16,7 +16,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { pickText } from '@dv/ui-kit/locale.ts'
 import type { WireSession } from '@dv/ui-kit/types.ts'
-import { isSidebarCollapsed } from './sidebar.ts'
+import { createSidebarFold } from './sidebar.ts'
 import { getShell, markSessionChoice, refreshLinks, setShell, shellClient } from './store.ts'
 
 /** The right-panel kind of the asset pool tab that `@dv/ui-asset-pool` registers. */
@@ -71,9 +71,12 @@ export interface ShellActions {
   hidePanels(): void
   /** Collapse an expanded right panel, or show the panels. Throws while no session seat is mounted. */
   togglePanels(): void
-  /** Collapse DSH's left sidebar when it is expanded, remembering that the shell collapsed it. */
+  /**
+   * Collapse DSH's left sidebar when it is expanded, remembering that the shell collapsed it. Takes effect at once for
+   * a following collapse or restore, before DSH's frame renders the fold.
+   */
   collapseSidebar(): void
-  /** Expand DSH's left sidebar when the shell collapsed it and it is still collapsed. */
+  /** Expand DSH's left sidebar when the shell collapsed it and the user has not folded or unfolded it from DSH's rail since. */
   restoreSidebar(): void
   /** The session whose right-panel seat is mounted, observed by the center. */
   mountedSeat: { getSnapshot(): SessionId | undefined; subscribe(fn: () => void): () => void }
@@ -287,8 +290,13 @@ export function createActions(ctx: ClientContext): ShellActions {
     await openBlank(workspaceId, () => getShell().projectId === projectId)
   }
 
-  /** Whether the open workspace collapsed the left sidebar, which 首页 then expands again. */
-  let sidebarCollapsedByShell = false
+  // The left sidebar fold: the open workspace collapses it, and 首页 expands it again.
+  const sidebar = createSidebarFold(() => {
+    const layout = ctx.get('layout')
+    layout?.toggleSidebar()
+    return layout !== undefined
+  })
+  ctx.effect(() => () => { sidebar.dispose() }, 'ui-shell: left sidebar fold observer')
 
   const showPanels = (): void => {
     // 对话 opens first so it leads the tab strip, then 素材库 and 历史; reopening 对话 brings it to the front. 轨迹 opens
@@ -370,15 +378,8 @@ export function createActions(ctx: ClientContext): ShellActions {
       if (ctx.sidebarRight.isExpanded()) ctx.sidebarRight.toggleExpanded()
       else showPanels()
     },
-    collapseSidebar() {
-      if (isSidebarCollapsed()) return
-      ctx.get('layout')?.toggleSidebar()
-      sidebarCollapsedByShell = true
-    },
-    restoreSidebar() {
-      if (sidebarCollapsedByShell && isSidebarCollapsed()) ctx.get('layout')?.toggleSidebar()
-      sidebarCollapsedByShell = false
-    },
+    collapseSidebar: () => { sidebar.collapse() },
+    restoreSidebar: () => { sidebar.restore() },
     mountedSeat: ctx.sidebarRight.mounted,
   }
 }

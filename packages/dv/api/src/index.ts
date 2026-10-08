@@ -27,6 +27,7 @@ export { ASSET_IMPORT_ROUTE } from './asset-import.ts'
 export { frameOf, serveEventStream, type EventStreamSources } from './events.ts'
 export { LAYOUT_ROUTE, type CanvasLayout, type CanvasViewport, type NodePosition } from './layout.ts'
 export { PROJECT_ADMIN_ROUTES } from './projects-admin.ts'
+export type { WireProjectCover, WireProjectSummary } from './summaries.ts'
 export { WORKSPACE_ROUTES } from './workspaces.ts'
 export {
   mentionedAssets, projectIdOf, toWireOperation, toWireState, type WireHistory, type WireOperation, type WireState,
@@ -62,6 +63,7 @@ export const EVENTS_PATH = '/dv/events'
 /** The Fetch route paths, below the Connection's `/api` channel. */
 export const ROUTES = {
   projects: '/api/dv/projects',
+  projectSummaries: '/api/dv/projects/summary',
   state: '/api/dv/state',
   operations: '/api/dv/operations',
   operation: '/api/dv/operation',
@@ -130,6 +132,10 @@ export default class DvApi extends Service {
         fetch: request => request.method === 'GET'
           ? answer(() => api.listProjects(query(request, 'session')))
           : withBody(body => api.createProject(body))(request),
+      },
+      {
+        path: ROUTES.projectSummaries, methods: ['GET'], requestBody: 'buffered',
+        fetch: request => answer(() => api.listProjectSummaries(query(request, 'project'))),
       },
       {
         path: ROUTES.state, methods: ['GET'], requestBody: 'buffered',

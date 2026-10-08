@@ -6,8 +6,8 @@
  */
 import type {
   CanvasLayout, DraftCounts, DraftTarget, HistoryQuery, OperationRequest, ProjectEvent,
-  ProjectInfo, ProjectRecord, WireHistory, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
-  WireWorkspaces,
+  ProjectInfo, ProjectRecord, WireHistory, WireOperation, WireProject, WireProjectCover, WireProjectSummary, WireRecordResult,
+  WireSession, WireState, WireWorkspaces,
 } from './types.ts'
 
 /** One `/dv/events` stream shared by every subscriber of a project in this page. */
@@ -111,6 +111,33 @@ async function decode<T>(response: Response): Promise<T> {
   return body as T
 }
 
+/**
+ * @param value - a JSON value.
+ * @returns whether the value is a string or null.
+ */
+const isStringOrNull = (value: unknown): value is string | null => value === null || typeof value === 'string'
+
+/**
+ * @param value - a decoded `cover` field.
+ * @returns whether the value is a cover with a string or null `video` and `image`.
+ */
+function isProjectCover(value: unknown): value is WireProjectCover {
+  if (typeof value !== 'object' || value === null) return false
+  const fields = value as Record<string, unknown>
+  return isStringOrNull(fields['video']) && isStringOrNull(fields['image'])
+}
+
+/**
+ * @param value - one decoded entry of `GET /api/dv/projects/summary`.
+ * @returns whether the entry has every summary field with its JSON type.
+ */
+function isProjectSummary(value: unknown): value is WireProjectSummary {
+  if (typeof value !== 'object' || value === null) return false
+  const fields = value as Record<string, unknown>
+  return typeof fields['project'] === 'string' && (fields['cover'] === null || isProjectCover(fields['cover']))
+    && typeof fields['shots'] === 'number' && typeof fields['duration_sec'] === 'number' && isStringOrNull(fields['edited_at'])
+}
+
 /** Every `/api/dv` call of the browser: project state, operations, history, drafts, undo and redo, layout, workspaces. */
 export class DvClient {
   constructor(private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init)) {}
@@ -122,6 +149,19 @@ export class DvClient {
    */
   listProjects(signal?: AbortSignal, session: string | null = null): Promise<WireProject[]> {
     return this.get('/api/dv/projects', session === null ? {} : { session }, signal)
+  }
+
+  /**
+   * Read the card summary of every project, or of one project, in one request.
+   * @param signal - cancels the request.
+   * @param project - the one project to summarize; null summarizes every project.
+   * @returns per project, the cover, the shot count and total duration of its plans, and the last edit time.
+   * @throws Error when the response is not a list of summaries.
+   */
+  async listProjectSummaries(signal?: AbortSignal, project: string | null = null): Promise<WireProjectSummary[]> {
+    const body = await this.get<unknown>('/api/dv/projects/summary', project === null ? {} : { project }, signal)
+    if (!Array.isArray(body) || !body.every(isProjectSummary)) throw new Error('ui-kit: malformed /api/dv/projects/summary response')
+    return body
   }
 
   /**

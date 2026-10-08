@@ -25,9 +25,10 @@ import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
   DV_CANVAS_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT, DV_TIMELINE_INSERT_EVENT, type DvWorkspaceEventMap,
 } from '@dv/ui-kit/workspace-events.ts'
-import type { WireWorkspaces } from '@dv/ui-kit/types.ts'
+import type { WireProjectSummary, WireWorkspaces } from '@dv/ui-kit/types.ts'
+import { clockText } from '@dv/ui-canvas/src/client/NodeCard.tsx'
 import type { ShellActions } from './actions.ts'
-import { CoverFrame, editedText, summarizeProject, useProjectSummary } from './cover.tsx'
+import { CoverFrame, editedText, useProjectSummaries } from './cover.tsx'
 import { SidebarRightIcon } from './icons.tsx'
 import { SessionSwitcher } from './SessionSwitcher.tsx'
 import type { ShellLocation } from './store.ts'
@@ -260,6 +261,8 @@ function RecentProjects({ shell }: ShellInjected): ReactNode {
   const projects = useShell(s => s.links?.projects ?? NO_PROJECTS)
   const [showAll, setShowAll] = useState(false)
   const sorted = useMemo(() => [...projects].sort((a, b) => b.created_at.localeCompare(a.created_at)), [projects])
+  // One summaries read for every card; a project added to the list reads them again.
+  const summaries = useProjectSummaries(null, sorted.map(project => project.id).join(' '))
   if (sorted.length === 0) return null
   const shown = showAll ? sorted : sorted.slice(0, RECENT_COUNT)
   return (
@@ -274,7 +277,10 @@ function RecentProjects({ shell }: ShellInjected): ReactNode {
       </div>
       <div className={css.cards}>
         {shown.map(project => (
-          <ProjectCard key={project.id} shell={shell} projectId={project.id} title={project.title} createdAt={project.created_at} />
+          <ProjectCard
+            key={project.id} shell={shell} projectId={project.id} title={project.title} createdAt={project.created_at}
+            summary={summaries?.get(project.id) ?? null}
+          />
         ))}
       </div>
     </section>
@@ -282,31 +288,24 @@ function RecentProjects({ shell }: ShellInjected): ReactNode {
 }
 
 /**
- * A duration as minutes and seconds, `0:30`.
- * @param seconds - the duration.
- * @returns the text.
- */
-const clock = (seconds: number): string => `${String(Math.floor(seconds / 60))}:${String(Math.round(seconds % 60)).padStart(2, '0')}`
-
-/**
  * One recent project: its 16:9 cover with the total duration, its title, and its shot count and last edit time.
- * @param props - the shell actions and the project.
+ * @param props - the shell actions, the project, and its summary (null while the summaries load).
  * @returns the card.
  */
 function ProjectCard(
-  { shell, projectId, title, createdAt }: ShellInjected & { projectId: string; title: string; createdAt: string },
+  { shell, projectId, title, createdAt, summary }:
+    ShellInjected & { projectId: string; title: string; createdAt: string; summary: WireProjectSummary | null },
 ): ReactNode {
   const t = useText()
-  const summary = useProjectSummary(projectId)
   const shots = summary?.shots ?? 0
   const meta = [
     shots > 0 ? t(`${String(shots)} 个镜头`, `${String(shots)} ${shots === 1 ? 'shot' : 'shots'}`) : null,
-    editedText(summary?.editedAt ?? createdAt, t),
+    editedText(summary?.edited_at ?? createdAt, t),
   ].filter(part => part !== null).join(' · ')
   return (
     <button type="button" className={css.card} onClick={() => { run(() => shell.openProject(projectId)) }}>
       <CoverFrame cover={summary?.cover ?? null} className={css.cardCover}>
-        {summary !== null && summary.durationSec > 0 && <span className={css.cardDuration}>{clock(summary.durationSec)}</span>}
+        {summary !== null && summary.duration_sec > 0 && <span className={css.cardDuration}>{clockText(summary.duration_sec)}</span>}
       </CoverFrame>
       <span className={css.cardText}>
         <span className={css.cardTitle}>{title}</span>
@@ -338,9 +337,8 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
   const draft = state.value === null ? null : sessionDraft(state.value, session)
   // The state of the session's working branch (its open draft, else `main`), where 插入片段 picks and writes the timeline.
   const working = useProjectState(client, projectId, draft?.branch ?? 'main')
-  // The switcher's cover: the first rendered take of the working branch, else of `main`.
-  const cover = useMemo(() => (working.value === null ? null : summarizeProject(working.value).cover)
-    ?? (state.value === null ? null : summarizeProject(state.value).cover), [working.value, state.value])
+  // The switcher's cover, read again whenever the working branch's state is refetched after a project change.
+  const cover = useProjectSummaries(projectId, working.value)?.get(projectId)?.cover ?? null
   const mounted = useSyncExternalStore(shell.mountedSeat.subscribe, shell.mountedSeat.getSnapshot)
   const opened = useRef(new Set<string>())
   useEffect(() => {

@@ -35,7 +35,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | 模块 | 内容 |
 | --- | --- |
 | `types.ts` | `WireState`、`ProjectRecord`、`Branch`、`Asset`、`Timeline`、`Clip`、`WireOperation`、`WireProject`、`ProjectEvent`、`OperationRequest`、`HistoryQuery`、`HistoryEntry`、`WireHistory`、`PlanVersion`、`Shot`（带生成方式 `mode`，即 `ref2va` 或 `t2va`，以及 `continue_previous`）：`@dv/api` 收发的 JSON 的结构类型 |
-| `api.ts` | `DvClient`（`listProjects`、`getState`、`listOperations`、`runOperation`、`importAsset`、`acceptDraft`、`discardDraft`、`undo`、`redo`、`acceptStale`、`listHistory`，项目、布局、工作区和对话调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
+| `api.ts` | `DvClient`（`listProjects`、`listProjectSummaries`、`getState`、`listOperations`、`runOperation`、`importAsset`、`acceptDraft`、`discardDraft`、`undo`、`redo`、`acceptStale`、`listHistory`，项目、布局、工作区和对话调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`、`paramsOf(fields)`、`FieldParseError`：每个 schema 属性一个控件，带类型转换 |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`、`timelineName(timeline, numbered)`、`formatSeconds` |
 | `references.ts` | `shotReferences(version, shot)`、`referenceImages(state, references)`、`pictureParts(prompt)`：一个镜头发给视频模型的参考图，按提示词里 `Picture 1`、`Picture 2`…… 的编号顺序排列，以及在这些标记处切开的提示词；`t2va` 镜头没有参考图 |
@@ -60,7 +60,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 <details>
 <summary>实现内部——点击展开</summary>
 
-`DvClient` 把每个错误响应体解码成 `DvApiError`，保留 HTTP 状态、`ProjectError` 代码和响应体其余字段，例如已变化草稿的 `counts`。`useLoader` 在重新加载期间保留上一个值，并忽略输入已变化的响应；`useProjectState` 把一阵项目事件合成一次重新拉取。`types.ts` 里的类型手工照抄 `@dv/project` 和各组件的类型，因为宿主包不能被导入进浏览器 bundle；记录以 `ProjectRecord` 到达，输入的 `ref` 是存储时的对象。
+`DvClient` 把每个错误响应体解码成 `DvApiError`，保留 HTTP 状态、`ProjectError` 代码和响应体其余字段，例如已变化草稿的 `counts`；`listProjectSummaries` 还检查摘要每个字段的类型，响应格式不对时抛出 `Error`。`useLoader` 在重新加载期间保留上一个值，并忽略输入已变化的响应；`useProjectState` 把一阵项目事件合成一次重新拉取。`types.ts` 里的类型手工照抄 `@dv/project` 和各组件的类型，因为宿主包不能被导入进浏览器 bundle；记录以 `ProjectRecord` 到达，输入的 `ref` 是存储时的对象。
 
 | 文件 | 内容 |
 | --- | --- |

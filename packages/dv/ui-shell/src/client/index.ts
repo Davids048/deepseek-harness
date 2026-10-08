@@ -15,6 +15,7 @@ import { createActions } from './actions.ts'
 import { CenterPanel, type ShellInjected } from './Center.tsx'
 import { applyChrome } from './chrome.tsx'
 import { BrandName, Navigator } from './Navigator.tsx'
+import { applyRightPanelWidth } from './right-panel.ts'
 import { getShell, refreshLinks } from './store.ts'
 import { applyTheme } from './theme.ts'
 import { CHAT_ID, ChatTab, chatDefinition, TRAJECTORY_ID, TrajectoryTab, trajectoryDefinition } from './tabs.tsx'
@@ -28,12 +29,6 @@ export const inject = ['slots', 'sidebarRightTabs', 'sidebarRight', 'workspaces'
 
 /** Milliseconds between reads of the project ↔ Workspace links, which pick up projects the agent creates. */
 const LINKS_POLL_MS = 4000
-
-/**
- * Width in px of the right panel until the user drags its edge; 392 fits the 对话, 素材库, and 历史 tabs beside the
- * tab bar buttons.
- */
-const RIGHT_PANEL_WIDTH = 392
 
 /**
  * Register the shell's DSH UI slot entries and tab types. The center and the navigator shadow DSH's entries at priority -1.
@@ -54,11 +49,7 @@ export function apply(ctx: ClientContext): void {
   applyChrome(ctx)
   ctx.inject(['layout'], (scope) => {
     scope.effect(() => {
-      // DSH sizes the right panel at 45% of the frame on its first opening. `ctx.layout` has no width setting, so the
-      // shell sets the width preference once through the layout store's private action set; a drag replaces it.
-      const panels: unknown = Reflect.get(scope.get('layout') as object, 'panels')
-      const setRightbar: unknown = panels !== null && typeof panels === 'object' ? Reflect.get(panels, 'setRightbar') : undefined
-      if (typeof setRightbar === 'function') Reflect.apply(setRightbar, panels, [RIGHT_PANEL_WIDTH])
+      applyRightPanelWidth(scope.get('layout') as object)
       return () => {}
     }, 'ui-shell: right panel default width')
   })

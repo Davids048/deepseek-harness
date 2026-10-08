@@ -79,6 +79,24 @@ describe('DvClient', () => {
     await expect(new DvClient(unknown).listHistory({ project: 'p1', before: 'x' })).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
   })
 
+  it('reads every project summary, or one project\'s, in one request and refuses a malformed answer', async () => {
+    const summaries = [
+      { project: 'p1', cover: { video: 'shot1.mp4', image: 'shot1-last.png' }, shots: 2, duration_sec: 59.5, edited_at: '2026-10-05T00:00:00Z' },
+      { project: 'p2', cover: null, shots: 0, duration_sec: 0, edited_at: null },
+    ]
+    const paths: string[] = []
+    const answering = (body: unknown): typeof fetch => (input) => {
+      paths.push(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
+      return Promise.resolve(new Response(JSON.stringify(body)))
+    }
+    expect(await new DvClient(answering(summaries)).listProjectSummaries()).toEqual(summaries)
+    expect(await new DvClient(answering(summaries.slice(1))).listProjectSummaries(undefined, 'p2')).toEqual(summaries.slice(1))
+    expect(paths).toEqual(['/api/dv/projects/summary', '/api/dv/projects/summary?project=p2'])
+    for (const malformed of [{ projects: summaries }, [{ ...summaries[0], shots: '2' }], [{ ...summaries[1], cover: { video: 1, image: null } }]]) {
+      await expect(new DvClient(answering(malformed)).listProjectSummaries()).rejects.toThrow('malformed /api/dv/projects/summary')
+    }
+  })
+
   it('turns error statuses into DvApiError', async () => {
     const failing: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({ error: 'Unknown project' }), { status: 404 }))
     const client = new DvClient(failing)

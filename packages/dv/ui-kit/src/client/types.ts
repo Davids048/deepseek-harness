@@ -288,6 +288,31 @@ export interface WireProject {
 }
 
 /**
+ * The media a project card shows as its cover: the first frame of `video` when it has one, else `image`. A rendered
+ * take's image is its last frame.
+ */
+export interface WireProjectCover {
+  video: string | null
+  image: string | null
+}
+
+/**
+ * What a project card shows besides the title, as `GET /api/dv/projects/summary` lists it. A project whose state the
+ * server could not read arrives with `cover` null, `shots` and `duration_sec` 0, and `edited_at` null.
+ */
+export interface WireProjectSummary {
+  project: string
+  /** The first finished rendered take, else the first imported image; null when the project has neither. */
+  cover: WireProjectCover | null
+  /** Shots in the latest version of every plan. */
+  shots: number
+  /** Total duration of those shots in seconds; 0 when no shot states one. */
+  duration_sec: number
+  /** When the project's last record was written, ISO-8601; null without records. */
+  edited_at: string | null
+}
+
+/**
  * One project change, as the event stream sends it: an appended record, a record update, or a branch that was created,
  * moved (`branch` set), or removed (`branch` null).
  */

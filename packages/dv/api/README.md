@@ -26,7 +26,7 @@ Use this package to let browser views read and change a DreamVerse project throu
 
 Mount the plugin after `@dv/project` and `@dv/asset-pool`, in a profile that also mounts `dsh-web-app` (for the `connection` and `webServer` services). Without `connection` the Fetch routes stay unregistered; without `webServer` the event stream does.
 
-The Fetch routes list, create, rename and delete projects, read the state of a branch as JSON, list the operation declarations, run an operation as the human, import a file into the asset pool, accept or discard a chat session's draft, undo and redo, accept a stale record, list the history, keep the canvas layout, and link projects to DSH Workspaces. The event stream admits a browser through the same Connection cookie.
+The Fetch routes list, create, rename, delete, and summarize projects, read the state of a branch as JSON, list the operation declarations, run an operation as the human, import a file into the asset pool, accept or discard a chat session's draft, undo and redo, accept a stale record, list the history, keep the canvas layout, and link projects to DSH Workspaces. The event stream admits a browser through the same Connection cookie.
 
 ```yaml
 - id: dv-api
@@ -45,6 +45,7 @@ The Fetch routes list, create, rename and delete projects, read the state of a b
 | --- | --- | --- | --- |
 | `/api/dv/projects` | GET | optional `session` (a chat session ID) | `WireProject[]` (`{id, title, created_at, heads, current}`), newest first; with `session`, the project that session is bound to comes first with `current: true` |
 | `/api/dv/projects` | POST | `{title, surface}` | The project started from a view: `ProjectInfo` `{id, title, created_at}` |
+| `/api/dv/projects/summary` | GET | optional `project` | `WireProjectSummary[]` (`{project, cover, shots, duration_sec, edited_at}`), one per project, or only the named project: `cover` is `{video, image}` (asset IDs or null) of the first finished `shot.render_*` take, else `{video: null, image}` of the first imported image, else null; `shots` and `duration_sec` total the shots of the latest version of every plan; `edited_at` is the time of the last record. Each is read from `main`, or from the first open draft when `main` has no rendered take. In the list of every project, a project whose state cannot be read gets that empty entry (`cover` null, zeros, `edited_at` null) and a server console warning; with `project`, its error is the response |
 | `/api/dv/projects/rename` | POST | `{project, title}` | `{title}`, made unique with ` 2`, ` 3`, … |
 | `/api/dv/projects/delete` | POST | `{project}` | `{ok, workspace_id}`; the project moves into the Project store's trash and its canvas layout file is deleted |
 | `/api/dv/state` | GET | `project`, optional `branch` (default `main`) | `WireState`: `{project, branch, head, heads, branches, components, redo_steps, assets}`, with every component slice as Project computed it, the steps that redo brings back on the branch, and the asset pool entry of every mentioned asset |
@@ -93,6 +94,7 @@ The Fetch routes list, create, rename and delete projects, read the state of a b
 | [`src/layout.ts`](src/layout.ts) | `CanvasLayoutStore` and the layout route |
 | [`src/workspaces.ts`](src/workspaces.ts) | Project → Workspace links, session bindings, and a project's DSH sessions |
 | [`src/projects-admin.ts`](src/projects-admin.ts) | Project rename and delete |
+| [`src/summaries.ts`](src/summaries.ts) | `WireProjectSummary`, `summarizeBranch`, and `summarizeProject`: the project card summaries |
 | [`src/events.ts`](src/events.ts) | `frameOf` and `serveEventStream` |
 | [`src/index.ts`](src/index.ts) | `DvApi`, `Config`, `ROUTES`, `EVENTS_PATH` |
 

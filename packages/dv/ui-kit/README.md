@@ -35,7 +35,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | Module | Content |
 | --- | --- |
 | `types.ts` | `WireState`, `ProjectRecord`, `Branch`, `Asset`, `Timeline`, `Clip`, `WireOperation`, `WireProject`, `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry`, `WireHistory`, `PlanVersion`, `Shot` (with its render `mode`, `ref2va` or `t2va`, and `continue_previous`): the JSON `@dv/api` sends and receives, as structural types |
-| `api.ts` | `DvClient` (`listProjects`, `getState`, `listOperations`, `runOperation`, `importAsset`, `acceptDraft`, `discardDraft`, `undo`, `redo`, `acceptStale`, `listHistory`, project, layout, workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
+| `api.ts` | `DvClient` (`listProjects`, `listProjectSummaries`, `getState`, `listOperations`, `runOperation`, `importAsset`, `acceptDraft`, `discardDraft`, `undo`, `redo`, `acceptStale`, `listHistory`, project, layout, workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`, `paramsOf(fields)`, `FieldParseError`: one control per schema property, typed coercion |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`, `timelineName(timeline, numbered)`, `formatSeconds` |
 | `references.ts` | `shotReferences(version, shot)`, `referenceImages(state, references)`, `pictureParts(prompt)`: the reference images a shot sends to the video model in the order its prompt names them `Picture 1`, `Picture 2`, …, and the prompt split at those tokens; a `t2va` shot has no reference images |
@@ -60,7 +60,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`DvClient` decodes every error body into a `DvApiError` that keeps the HTTP status, the `ProjectError` code, and the rest of the body, such as a changed draft's `counts`. `useLoader` keeps the last value while a reload is in flight and ignores a response whose inputs changed; `useProjectState` folds several project events of one burst into one refetch. The types in `types.ts` copy the `@dv/project` and component types by hand because host packages cannot be imported into a browser bundle; a record arrives as `ProjectRecord` with its inputs' `ref` as the stored object.
+`DvClient` decodes every error body into a `DvApiError` that keeps the HTTP status, the `ProjectError` code, and the rest of the body, such as a changed draft's `counts`; `listProjectSummaries` also checks every field type of the summaries and throws an `Error` for a malformed answer. `useLoader` keeps the last value while a reload is in flight and ignores a response whose inputs changed; `useProjectState` folds several project events of one burst into one refetch. The types in `types.ts` copy the `@dv/project` and component types by hand because host packages cannot be imported into a browser bundle; a record arrives as `ProjectRecord` with its inputs' `ref` as the stored object.
 
 | File | Content |
 | --- | --- |

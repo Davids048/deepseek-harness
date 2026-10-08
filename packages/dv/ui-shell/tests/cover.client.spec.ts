@@ -1,37 +1,45 @@
 // @vitest-environment jsdom
-/** Project card summaries: the cover, the shot count and duration, and the last edit time read from a branch state. */
-import { describe, expect, it } from 'vitest'
-import { fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
-import { summarizeProject } from '../src/client/cover.tsx'
+/** Project card summaries: one `/api/dv/projects/summary` read for every card, and the card duration text. */
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, renderHook, waitFor } from '@testing-library/react'
+import { clockText } from '@dv/ui-canvas/src/client/NodeCard.tsx'
+import { useProjectSummaries } from '../src/client/cover.tsx'
 
-describe('summarizeProject', () => {
-  it('takes the video and last-frame image of the first finished render, the latest plan shots, and the last record time', () => {
-    const state = fixtureState()
-    for (const versions of Object.values(state.components.plan.plans)) {
-      for (const shot of versions.at(-1)?.shots ?? []) shot.duration_sec = 5
-    }
-    expect(summarizeProject(state)).toEqual({
-      cover: { video: 'shot1.mp4', image: 'shot1-last.png' },
-      rendered: true,
-      shots: 2,
-      durationSec: 10,
-      editedAt: '2026-10-05T00:00:00Z',
-    })
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+
+/** Two project summaries as the route answers them. */
+const SUMMARIES = [
+  { project: 'p1', cover: { video: 'shot1.mp4', image: 'shot1-last.png' }, shots: 2, duration_sec: 59.5, edited_at: '2026-10-05T00:00:00Z' },
+  { project: 'p2', cover: null, shots: 0, duration_sec: 0, edited_at: null },
+]
+
+describe('useProjectSummaries', () => {
+  it('reads every summary in one request, and reads again only when the refresh value changes', async () => {
+    const fetchSpy = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify(SUMMARIES))))
+    vi.stubGlobal('fetch', fetchSpy)
+    const { result, rerender } = renderHook(({ refresh }) => useProjectSummaries(null, refresh), { initialProps: { refresh: 'p1 p2' } })
+    await waitFor(() => { expect(result.current?.get('p1')?.cover).toEqual({ video: 'shot1.mp4', image: 'shot1-last.png' }) })
+    expect(result.current?.get('p2')).toEqual(SUMMARIES[1])
+    rerender({ refresh: 'p1 p2' })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    rerender({ refresh: 'p1 p2 p3' })
+    await waitFor(() => { expect(fetchSpy).toHaveBeenCalledTimes(2) })
+    expect(fetchSpy.mock.calls.map(call => call[0])).toEqual(['/api/dv/projects/summary', '/api/dv/projects/summary'])
   })
 
-  it('skips failed renders and reports no cover without a finished render', () => {
-    const state = fixtureState()
-    const records = state.components.proj.records
-    const failed = record({ id: 'f0', operation: 'shot.render_t2va', status: 'failed', outputs: [] })
-    state.components.proj.records = [failed, ...records.filter(entry => !entry.operation?.startsWith('shot.render') || entry.id === 'g2')]
-    expect(summarizeProject(state).cover).toEqual({ video: 'shot2.mp4', image: 'shot2-last.png' })
-    state.components.proj.records = [failed]
-    expect(summarizeProject(state).cover).toBeNull()
+  it('asks for one project\'s summary when it names the project', async () => {
+    const fetchSpy = vi.fn<typeof fetch>(() => Promise.resolve(new Response(JSON.stringify(SUMMARIES.slice(0, 1)))))
+    vi.stubGlobal('fetch', fetchSpy)
+    const { result } = renderHook(() => useProjectSummaries('p1', null))
+    await waitFor(() => { expect(result.current?.get('p1')?.shots).toBe(2) })
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('/api/dv/projects/summary?project=p1')
   })
+})
 
-  it('falls back to the first imported image when no render finished', () => {
-    const state = fixtureState()
-    state.components.proj.records = state.components.proj.records.filter(entry => !entry.operation?.startsWith('shot.render'))
-    expect(summarizeProject(state)).toMatchObject({ cover: { image: 'ref.png', video: null }, rendered: false })
+describe('card duration', () => {
+  it('rounds the total seconds before splitting minutes and seconds', () => {
+    expect(clockText(59.5)).toBe('1:00')
+    expect(clockText(59.4)).toBe('0:59')
+    expect(clockText(125)).toBe('2:05')
   })
 })

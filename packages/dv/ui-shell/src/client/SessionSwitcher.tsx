@@ -8,9 +8,9 @@
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useText } from '@dv/ui-kit/locale.ts'
-import type { WireProjectLink } from '@dv/ui-kit/types.ts'
+import type { WireProjectCover, WireProjectLink } from '@dv/ui-kit/types.ts'
 import type { ShellActions } from './actions.ts'
-import { CoverFrame, type ProjectCover } from './cover.tsx'
+import { CoverFrame } from './cover.tsx'
 import { CheckIcon, ChevronDownIcon, ChevronRightIcon, HomeIcon, PlusIcon } from './icons.tsx'
 import { type SessionListHooks, useProjectSessions } from './sessions.ts'
 import { NO_PROJECTS, useShell } from './store.ts'
@@ -20,8 +20,8 @@ import css from './shell.module.css'
 export interface SessionSwitcherProps extends SessionListHooks {
   shell: ShellActions
   project: WireProjectLink
-  /** The cover of the open project, or null without a rendered take. */
-  cover: ProjectCover | null
+  /** The cover of the open project, or null while it loads or when the project has none. */
+  cover: WireProjectCover | null
   /** The main session's title, or null for a blank or foreign session. */
   sessionTitle: string | null
 }

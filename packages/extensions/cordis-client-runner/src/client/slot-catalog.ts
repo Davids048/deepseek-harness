@@ -176,7 +176,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.assistant-actions\', () => ctx.slots.register(\n      { name: \'conversation.chat.assistant-actions\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:286',
+    source: 'packages/client/ui-chat/src/client/contract/slots.ts:289',
   },
   {
     key: 'conversation.chat.commandview',
@@ -224,7 +224,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.commandview\', () => ctx.slots.register(\n      { name: \'conversation.chat.commandview\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:274',
+    source: 'packages/client/ui-chat/src/client/contract/slots.ts:277',
   },
   {
     key: 'conversation.chat.markdown',
@@ -241,7 +241,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Owner currency of one settled Markdown element offered to the `conversation.chat.markdown` chain. */\nexport interface ChatMarkdownOwnerProps {\n  /** Parsed link, image, or table data; destinations are authored text and unsanitized. */\n  readonly element: MarkdownElement\n}',
+      '/** Owner currency of one settled Markdown element offered to the `conversation.chat.markdown` chain. */\nexport interface ChatMarkdownOwnerProps {\n  /** Parsed link, image, or table data; destinations are authored text and unsanitized. */\n  readonly element: MarkdownElement\n  /** The default rendering of the element, for an elected entry that keeps the element unchanged. */\n  readonly fallback: ReactNode\n}',
     ],
     ownerPropsReferences: [
       'MarkdownElement',
@@ -268,11 +268,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.view\' (client-ui-chat), so it exists while that entry is mounted',
     occupants: [
-      '@dv/ui-composer ChatMediaView',
+      '@dv/ui-composer ChatMediaEntry',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.markdown\', () => ctx.slots.register(\n      { name: \'conversation.chat.markdown\', select: owner => null },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:268',
+    source: 'packages/client/ui-chat/src/client/contract/slots.ts:271',
   },
   {
     key: 'conversation.chat.node',
@@ -342,7 +342,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.node\', () => ctx.slots.register(\n      { name: \'conversation.chat.node\', key: \'<one key the owner dispatches>\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:248',
+    source: 'packages/client/ui-chat/src/client/contract/slots.ts:251',
   },
   {
     key: 'conversation.chat.turnTail',
@@ -403,7 +403,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.turnTail\', () => ctx.slots.register(\n      { name: \'conversation.chat.turnTail\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:280',
+    source: 'packages/client/ui-chat/src/client/contract/slots.ts:283',
   },
   {
     key: 'conversation.composer',
@@ -1219,7 +1219,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.message.images\', () => ctx.slots.register(\n      { name: \'conversation.message.images\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-chat/src/client/contract/slots.ts:261',
+    source: 'packages/client/ui-chat/src/client/contract/slots.ts:264',
   },
   {
     key: 'conversation.plan-review.actions',
@@ -1929,7 +1929,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ownerProps: [
       '/** Owner props of `dreamverse.sidebar`: the project history that the harness lists. */\nexport interface SidebarProps {\n  open?: boolean\n  /** Harness ID of the current project, or null when it has none; the history omits it because the Current entry shows it. */\n  currentProjectId?: ProjectId | null\n  currentProjectLabel?: string\n  hasCurrentProject?: boolean\n  connectionClosed?: boolean\n  projectResetPending?: boolean\n  /** The harness project list, newest update first. */\n  projects?: ProjectSummary[]\n  /** The failure of the last history action, such as a deletion that the harness refused. */\n  notice?: string\n  onClose?: () => void\n  /** Opens a listed project by its harness ID. */\n  onSelectProject?: (projectId: ProjectId) => void\n  onDeleteProject?: (projectId: ProjectId) => void\n  onNewProject?: () => void\n  onOpenAssets?: () => void\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'ProjectSummary',
+    ],
     standardProps: [
       'useResource: UseResource',
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
