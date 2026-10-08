@@ -111,14 +111,14 @@
   text-overflow: ellipsis;
 }
 
-/* The workspace measures its own width so a narrow center gives the breadcrumb the space the centering would waste. */
+/* The workspace measures its own width so a narrow center tightens the top bar; the view toggle stays centered and the
+   breadcrumb truncates. */
 .workspace {
   container-type: inline-size;
 }
 
 @container (max-width: 560px) {
   .topbar {
-    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 8px;
     padding-inline-end: 10px;
   }
