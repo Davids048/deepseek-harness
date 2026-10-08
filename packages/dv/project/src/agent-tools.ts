@@ -41,8 +41,8 @@ export interface AgentToolDeps {
   confirmGpuSecondsThreshold: number
   /** Every registered operation, for the GPU estimate of the turn's unfinished records. */
   listOperations(): OperationSpec[]
-  /** The service's working-branch state read: the state of the branch `session` writes to. */
-  workingState(project: ProjectId, session: SessionId): ProjectState
+  /** The service's state read of the project's current branch, which every write goes to. */
+  currentState(project: ProjectId): ProjectState
   /** The record that created a character, location or style version, or null for an unknown version. */
   versionCreatedBy(state: ProjectState, ref: RecordInputRef): RecordId | null
   run(request: RunRequest): Promise<RunResult>
@@ -346,8 +346,8 @@ export class AgentTools {
   }
 
   /**
-   * Run one tool call: wait for the session's held work, resolve the project and the inputs against the session's
-   * working branch, let the operation prepare the call, refuse it when it needs the user's agreement, run it as the
+   * Run one tool call: wait for the session's held work, resolve the project and the inputs against the project's
+   * current branch, let the operation prepare the call, refuse it when it needs the user's agreement, run it as the
    * agent, and describe the record.
    */
   private async call(spec: OperationSpec, args: Record<string, unknown>, exec: ToolRunContext): Promise<OperationToolValue> {
@@ -359,7 +359,7 @@ export class AgentTools {
       actor: 'agent', surface: 'chat', session, turn: turnOf(this.ctx, exec), tool_call: exec.callId,
       intent: optionalString(args['reason']) ?? spec.name,
     }
-    const state = this.deps.workingState(project, session)
+    const state = this.deps.currentState(project)
     const toolOnly = new Set<string>([...SHARED_ARGS, ...Object.keys(spec.toolParams ?? {}), ...Object.keys(CONFIRM_PARAMS[spec.confirm])])
     const params = Object.fromEntries(Object.entries(args).filter(([key]) => !toolOnly.has(key)))
     const basedOn = optionalString(args['based_on'])

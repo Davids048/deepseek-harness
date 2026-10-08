@@ -1,6 +1,6 @@
 # @dv/project module contracts
 
-This file specifies the internal modules of the `dvProject` service: what each one does, its rules and errors, and the unit tests that pin it. The public types are in `src/types.ts`, the errors and branch constants in `src/shared.ts`, and the service surface with its JSDoc (working-branch rules, lock scope, every method) in `src/index.ts`.
+This file specifies the internal modules of the `dvProject` service: what each one does, its rules and errors, and the unit tests that pin it. The public types are in `src/types.ts`, the errors and branch constants in `src/shared.ts`, and the service surface with its JSDoc (current-branch rules, lock scope, every method) in `src/index.ts`.
 
 ## Contents
 
@@ -11,7 +11,7 @@ This file specifies the internal modules of the `dvProject` service: what each o
 5. [Subscriptions](#5-subscriptions-subscriptionsts)
 6. [Reducer registry and state](#6-reducer-registry-and-state-reducersts)
 7. [History](#7-history-historyts)
-8. [Drafts and branches](#8-drafts-and-branches-draftsts)
+8. [Branches](#8-branches-branchests)
 9. [Runner](#9-runner-runnerts)
 10. [Scheduler](#10-scheduler-schedulerts)
 11. [Chat sessions, agent tools and agent context](#11-chat-sessions-agent-tools-and-agent-context-sessionsts-agent-toolsts-proj-toolsts-agent-contextts)
@@ -23,11 +23,11 @@ This file specifies the internal modules of the `dvProject` service: what each o
 | ------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
 | Record store and subscriptions  | `src/record-store.ts`, `src/subscriptions.ts`                                        | `tests/record-store.spec.ts`, `tests/subscriptions.spec.ts` |
 | Runner and scheduler            | `src/runner.ts`, `src/scheduler.ts`                                                  | `tests/runner.spec.ts`, `tests/scheduler.spec.ts`           |
-| Drafts, working branches        | `src/drafts.ts`                                                                      | `tests/drafts.spec.ts`                                      |
+| Branches, current branch        | `src/branches.ts`                                                                    | `tests/branches.spec.ts`                                    |
 | History and reducer registry    | `src/history.ts`, `src/reducers.ts`                                                  | `tests/history.spec.ts`, `tests/reducers.spec.ts`           |
 | Sessions, tools, agent context  | `src/sessions.ts`, `src/agent-tools.ts`, `src/proj-tools.ts`, `src/agent-context.ts` | `tests/agent-tools.spec.ts`, `tests/proj-tools.spec.ts`     |
 
-The runner, drafts and history call the record store; the runner and drafts call the reducer registry and `effectiveChain`; the runner calls `drafts.branchForWrite`. Tests use the real modules (`tests/support.ts` `startModules()`), not mocks of other modules. Run them from `packages/dv`: `../../node_modules/.bin/vitest run --config vitest.config.ts project/tests`.
+The runner, branches and history call the record store; the runner calls the reducer registry; branches call `history.position`, `history.tipOf` and `history.undo`; the runner calls `branches.forWrite`. Tests use the real modules (`tests/support.ts` `startModules()`), not mocks of other modules. Run them from `packages/dv`: `../../node_modules/.bin/vitest run --config vitest.config.ts project/tests`.
 
 ## 2. Module calls
 
@@ -40,8 +40,8 @@ The runner, drafts and history call the record store; the runner and drafts call
         |  getRecord                                       -> record-store     |
         |  run acceptStale registerOperation listOperations                    |
         |                                                  -> runner           |
-        |  acceptDraft discardDraft                                            |
-        |  workingBranch listBranches                      -> drafts           |
+        |  createBranch switchBranch renameBranch                              |
+        |  currentBranch listBranches                      -> branches         |
         |  undo redo listHistory                           -> history          |
         |  getState registerReducer                        -> reducers         |
         |  wait                                            -> scheduler        |
@@ -53,14 +53,14 @@ The runner, drafts and history call the record store; the runner and drafts call
         |  dv:project section (systemPrompt mounted)       -> agent-context    |
         |  registerAssetStore: the store the runner and agent-tools read       |
         v                                                                      |
-  runner ----> drafts.branchForWrite / workingBranch                           |
+  runner ----> branches.forWrite / current                                     |
     |    ----> reducers.stateAt / getState / assetsOf                          |
     |    ----> scheduler.enqueue          scheduler ----> runner.execute       |
     |    ----> asset store                                                     |
     v                                                                          |
-  drafts ----> reducers.getState / apply / conflict, history.effectiveChain    |
+  branches --> history.position / tipOf / undo                                 |
   reducers --> history.effectiveChain                                          |
-  history, drafts, reducers, runner, scheduler ----> record-store             |
+  history, branches, reducers, runner, scheduler ----> record-store           |
                                                          |                     |
                                                          v  onChange(event)    |
                                          subscriptions.emit, scheduler.recordFinished
@@ -73,11 +73,11 @@ Only `record-store.ts` imports `node:fs` or knows a file path under the root. Th
 **Lock.** `RecordStore.lock(project, fn)` serializes work per project. Who holds it:
 
 - `run`: while it checks the request and appends the operation record; again for each update line (`running`, the final status). Never while `execute` runs.
-- `acceptDraft`, `discardDraft`, `undo`, `redo`, `renameProject`, `deleteProject`, the `proj.create` append of `createProject`, and `acceptStale`: for the whole call (`index.ts` takes it for all but `acceptStale`, which the runner takes).
-- Reads (`getState`, `getRecord`, `listHistory`, `listBranches`, `workingBranch`, `openProject`, `listProjects`) take no lock. Read-only operations take no lock.
+- `createBranch`, `switchBranch`, `renameBranch`, `undo`, `redo`, `renameProject`, `deleteProject`, the `proj.create` append of `createProject`, and `acceptStale`: for the whole call (`index.ts` takes it for all but `acceptStale`, which the runner takes).
+- Reads (`getState`, `getRecord`, `listHistory`, `listBranches`, `currentBranch`, `openProject`, `listProjects`) take no lock. Read-only operations take no lock.
 - The lock is not reentrant: a function that runs under the lock never calls `lock` for the same project. Module functions documented "the caller holds the project lock" never take it themselves.
 
-**Errors.** Throw `ProjectError(code, message)` from `src/shared.ts` with one of the approved codes, and `DraftConflictError` for accept conflicts. Messages are in words a creator can read and name the project, record or branch. A refused call changes nothing on disk and emits no event. Failures of an operation call after its record exists never throw: they end the record with a `RecordFailure` (`operation_failed`, `input_failed`, `stopped`).
+**Errors.** Throw `ProjectError(code, message)` from `src/shared.ts` with one of the approved codes. Messages are in words a creator can read and name the project, record or branch. A refused call changes nothing on disk and emits no event. Failures of an operation call after its record exists never throw: they end the record with a `RecordFailure` (`operation_failed`, `input_failed`, `stopped`).
 
 **IDs and times.** Record IDs and project IDs are `randomUUID()` values. Times are `new Date().toISOString()`.
 
@@ -86,15 +86,13 @@ Only `record-store.ts` imports `node:fs` or knows a file path under the root. Th
 | Record               | `kind`      | `component` | `operation`, `operation_version` | `params`                                                         |
 | -------------------- | ----------- | ----------- | -------------------------------- | ---------------------------------------------------------------- |
 | `proj.create`        | `operation` | `proj`      | `proj.create`, `1`               | `{title}`                                                        |
-| `proj.draft_accept`  | `operation` | `proj`      | `proj.draft_accept`, `1`         | `{draft, base, replayed: [[original, copy], …]}`                 |
-| `proj.draft_discard` | `operation` | `proj`      | `proj.draft_discard`, `1`        | `{draft, base, agent_changes, human_edits}`                      |
 | `proj.undo`          | `operation` | `proj`      | `proj.undo`, `1`                 | `{to}`                                                           |
 | `proj.redo`          | `operation` | `proj`      | `proj.redo`, `1`                 | `{to}`                                                           |
 | `proj.stale_accept`  | `operation` | `proj`      | `proj.stale_accept`, `1`         | `{record}`                                                       |
 
 All of them have `inputs: []`, `outputs: []`, `based_on: null`, `supersedes: []`, `deterministic: true`.
 
-**Draft identity.** Draft names are reused per session: after `draft/<S>` is accepted or discarded, the next agent write of S opens a new draft with the same name. Anything that identifies one specific draft (history marks, the records of a discarded draft, undo of an accepted draft) uses its fork record (`forked_at`, `params.base`), never the branch name alone.
+**Older projects.** Projects written before branches replaced drafts hold `proj.draft_accept` and `proj.draft_discard` records and `draft/<session>` branches. No module writes those records any more; history counts them as no step, and a `draft/<session>` branch loads as an ordinary branch with `title: null`.
 
 **Current form.** Every module reads records in their current form from the record store: the record line, with each update line applied in order, and with the `resolved_asset` of each `{record, output}` input filled from the producer's `outputs[output]` once the producer is `done` (a derived value, never written to disk).
 
@@ -105,18 +103,18 @@ Owner: agent A. Files: `<root>/<ProjectId>/project.json` (`ProjectInfo`, pretty-
 | Function                                  | Behavior                                                                                                                                                                                                |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `constructor(root, onChange)`             | Stores both; `mkdirSync(root, {recursive: true})` happens in `load`.                                                                                                                                    |
-| `load()`                                  | Reads every `<root>/*/project.json` (skips directories without it and `.trash`), replays `records.jsonl` (record lines, then update lines applied in file order), reads `branches.json`. Emits nothing. |
+| `load()`                                  | Reads every `<root>/*/project.json` (skips directories without it and `.trash`), replays `records.jsonl` (record lines, then update lines applied in file order), reads `branches.json` (a missing `current` reads as `main`, a missing `title` as null, other fields are dropped). Emits nothing. |
 | `lock(project, fn)`                       | A per-project promise chain: `fn` starts after every earlier `fn` for that project settled, whether it resolved or threw. Different projects run concurrently. Returns `fn`'s result or rejection.      |
-| `createProject(info)`                     | Writes `project.json`, an empty `records.jsonl`, and `{"branches":{}}` to `branches.json`. Refuses an existing ID with `invalid_params`.                                                                |
+| `createProject(info)`                     | Writes `project.json`, an empty `records.jsonl`, and `{"branches":{},"current":"main"}` to `branches.json`. Refuses an existing ID with `invalid_params`.                                             |
 | `listProjects()` / `getProject(id)`       | Oldest first by `created_at`, then ID. `getProject` throws `unknown_project`.                                                                                                                           |
 | `renameProject(id, title)`                | Rewrites `project.json` atomically (write `<file>.tmp`, rename). Returns the new info.                                                                                                                  |
 | `deleteProject(id)`                       | Renames the directory to `<root>/.trash/<id>-<Date.now()>`; forgets the project, its listeners stay.                                                                                                    |
-| `append(project, line)`                   | Rules in the JSDoc. Assigns `id` and `created_at`, appends one line, moves the branch pointer, rewrites `branches.json`, then emits `{kind: 'record'}` and `{kind: 'branch'}`.                          |
+| `append(project, line)`                   | Rules in the JSDoc. Assigns `id` and `created_at`, appends one line, moves the branch pointer, rewrites `branches.json`, then emits `{kind: 'record'}` and `{kind: 'branch', name, head, current}`.         |
 | `update(project, update)`                 | Rules in the JSDoc. Appends one `{"update": id, …}` line, applies it in memory, emits `{kind: 'update', record}` with the current form.                                                                 |
 | `getRecord` / `listRecords` / `ancestors` | Current forms. `ancestors` follows `parents[0]` only (the raw chain).                                                                                                                                   |
 | `getBranch` / `listBranches`              | `StoredBranch` values; `listBranches` returns `main` first, then by name.                                                                                                                               |
-| `setBranch(project, branch)`              | Creates or replaces the entry, rewrites `branches.json` atomically, emits `{kind: 'branch', name, branch: {...branch, counts: null}}`.                                                                  |
-| `removeBranch(project, name)`             | Deletes the entry (refuses `main` with `invalid_params`, unknown name with `unknown_branch`), rewrites, emits `{kind: 'branch', name, branch: null}`.                                                   |
+| `setBranch(project, branch)`              | Creates or replaces the entry, rewrites `branches.json` atomically, emits `{kind: 'branch', name, head, current}`.                                                                                       |
+| `currentBranch(project)` / `setCurrent(project, name)` | The project's current branch; `setCurrent` refuses an unknown name with `unknown_branch`, rewrites `branches.json` atomically, emits `{kind: 'branch', name, head, current: name}`.          |
 
 Invariants:
 
@@ -124,7 +122,7 @@ Invariants:
 - A record line is written exactly once; it carries no `started_at`, `finished_at`, `error`, `cost` or `report`.
 - Status order: `pending` → `running` | `done` | `failed` | `cancelled`; `running` → `done` | `failed` | `cancelled`. Moving to the same status or backwards throws `status_backwards`; any update of a `done`, `failed` or `cancelled` record throws `record_finished`.
 - The store emits an event only after the line or file is written; a refused call emits nothing.
-- The store writes `branches.json` with each `setBranch`, `removeBranch` and `append`.
+- The store writes `branches.json` with each `setBranch`, `setCurrent` and `append`. No function removes a branch.
 - `getRecord` and `listRecords` return copies, so a caller that mutates a result cannot change the store.
 
 ## 5. Subscriptions (`subscriptions.ts`)
@@ -137,12 +135,11 @@ Owner: agent D.
 
 | Function                             | Behavior                                                                                                                                               |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `register(key, reducer)`             | One reducer per key (`reducer_exists`); at most one reducer defines `createdBy` and `assetsOf` (`invalid_params`). Registration order is the call order of `reduce` and `conflict`. Returns a remover. |
+| `register(key, reducer)`             | One reducer per key (`reducer_exists`); at most one reducer defines `createdBy` and `assetsOf` (`invalid_params`). Registration order is the call order of `reduce`. Returns a remover.               |
 | `getState(project, branch)`          | `stateAt(project, branch, head of branch)`; `unknown_branch` for a missing branch.                                                                     |
 | `stateAt(project, branch, head)`     | `reduceChain(info, branch, effectiveChain(store, project, head))`.                                                                                     |
 | `reduceChain(info, branch, records)` | Starts each registered reducer at `initial()`, calls `reduce` for every record in order, returns `{project: info, branch, head: last.id, components}`. |
 | `apply(state, record)`               | One more `reduce` per reducer on a copy of `state.components`; `head` becomes `record.id`.                                                             |
-| `conflict(state, record)`            | The first non-null `conflict` result, in registration order, else null.                                                                                |
 | `assetsOf(state, ref)`               | `assetsOf` of the reducer that defines it, on that reducer's slice (Story bible in a deployment); null when no reducer defines it.                    |
 | `createdBy` (private)                | `createdBy` of the reducer that defines it, on its slice before the record; the `proj` slice reads it while it reduces that record.                   |
 | `agentSummaries(state, assets)`      | The `agentSummary(slice, assets, state)` fields of every reducer that defines it, in the component key order of `COMPONENT_KEYS` (other keys after, in registration order). |
@@ -165,24 +162,26 @@ Invariants: reducers are pure; `getState` on the same records always gives equal
 Owner: agent D. The module comment defines the effective chain, steps and the redo line; the JSDoc of `undo`, `redo`, `redoSteps` and `list` defines their behavior.
 
 - `effectiveChain(store, project, head)`: iterative (no recursion depth limit): walk back from `head`; at a `proj.undo` or `proj.redo` record U, keep U and continue from `U.params.to` instead of `U.parents[0]`. Return the kept records oldest first.
-- `undo(project, branch, origin, to?)`: acts on the caller's working branch (the service passes `drafts.workingBranch(project, origin.session).name`). Without `to`, the target X is the effective-chain record just before the branch's last step; every step is one record, including each record of an accepted draft. With `to`, X is `to` when it is on the effective chain, or its redo target when it is a redo step (written as `proj.redo`). The record is appended on the branch with `parents: [branch head]` and `params.to = X`.
+- `undo(project, branch, origin, to?)`: acts on the project's current branch (the service passes `branches.current(project).name`; `branches.switch` passes the branch it switched to). Without `to`, the target X is the effective-chain record just before the branch's last step; every step is one record. With `to`, X is `to` when it is on the effective chain, or its redo target when it is a redo step (written as `proj.redo`). The record is appended on the branch with `parents: [branch head]` and `params.to = X`.
 - `redo(project, branch, origin)`: one step forward on the redo line; `params.to` is the record just before the redo step after the next one, or the end of the redo line.
 - `redoSteps(project, branch)`: the steps after the head's `params.to` on the redo line; `dvProject.getState` puts them in `ProjectState.redo_steps`.
-- `list(query)`: filters combine with AND; `before` keeps records written before that record (file order); `tool_call` keeps the records one tool call wrote; `marks` keeps the entries whose mark is listed; `limit` applies after every filter, `marks` included. Marks follow the JSDoc order: `main`, `draft`, `discarded`, `replayed`, `undone`; a record that matches none of the earlier marks is `undone`.
+- `position(store, project, head)` and `tipOf(store, project, head)`: where a head stands (jump targets followed to a record that is no jump) and the end of its redo line.
+- `list(query)`: filters combine with AND; `before` keeps records written before that record (file order); `tool_call` keeps the records one tool call wrote; `marks` keeps the entries whose mark is listed; `limit` applies after every filter, `marks` included. Marks follow the JSDoc order: `current`, `redo`, `branch`, `undone`; a record on no branch line is `undone`. Each entry's `branches` lists the branches whose line (the effective chain of the tip) holds the record.
 
-Invariants: undo and redo move only the working branch's pointer and never rewrite a record; undo after undo walks further back; any other record on the branch after an undo removes its redo steps; a record left off the effective chain keeps running and finishes into an undone record.
+Invariants: undo and redo move only the current branch's pointer and never rewrite a record; undo after undo walks further back; a write after an undo goes to a forked branch, so the redo steps stay on the old branch; a record left off the effective chain keeps running and finishes on the old branch's line.
 
-## 8. Drafts and branches (`drafts.ts`)
+## 8. Branches (`branches.ts`)
 
-Owner: agent C. A project has the branch `main` and one draft `draft/<session>` per chat session with an open draft. The module comment defines the working branch (the session's draft, else `main`) and the branch for a write (an agent write without an open draft opens the draft, forked from `main`); the JSDoc of each function gives its steps.
+Owner: agent C. A project starts with `main`; every other branch is `b<n>`. The module comment defines the current branch and the two fork conditions; the JSDoc of each function gives its steps.
 
-- `workingBranch`, `listBranches`: add `counts` (via `counts`) for branches whose `session` is set, else `null`.
-- `branchForWrite`: called by the runner under the lock. Agent write without session → `main` (no draft).
-- `accept` and `discard` refuse with `draft_busy` while any draft record after `forked_at` is `pending` or `running`. A scheduled record waiting in the scheduler is `pending`, so a plan whose shots are still rendering keeps its draft busy.
-- Replay copies keep every field of the original's current form except `id`, `parents`, `created_at`; the copy's `branch` is the draft name. The update line after the copy repeats the original's final fields, so copies have the same `outputs`, `cost` and `report`. Timeline relies on it: the clip IDs a record assigned are in its `report.clips`.
-- Generic conflict (besides reducer conflicts): a draft record that supersedes a record which the new base already marks superseded by a record outside the draft.
+- `current`, `list`: the stored branches with `tip = history.tipOf(head)`.
+- `forWrite`: called by the runner under the lock for every write of every actor. When `position(head)` differs from the tip, it forks first and returns the new branch.
+- `create(title)`: forks the current branch at its head's position.
+- Fork: moves the old branch's head to its tip when they differ, adds `b<n>` (n = one more than the highest number in use, at least 2) with `head = forked_at = position`, `base` = the old branch, and makes it current. Appends no record.
+- `switch(name, origin, to?)`: makes `name` current; with `to` different from the branch's position, calls `history.undo` on that branch.
+- `rename(name, title)`: trims the title; an empty title stores null.
 
-Invariants: at most one open draft per session per project; a draft's `base` and `forked_at` are set when it opens and change only during replay; removing a draft never removes records; a conflict writes nothing.
+Invariants: branches are never merged or removed; a fork never changes a record; the old branch's line after a fork holds every step it held before.
 
 ## 9. Runner (`runner.ts`)
 
@@ -194,10 +193,10 @@ Owner: agent B.
 
 1. Look up the operation (`unknown_operation`) and the project (`unknown_project`).
 2. Validate `params` with `validateArgs(spec.params, params)` from `@deepseek-ai/dsh-tools`; any message → `invalid_params` with the messages joined. Every input role must be a key of `spec.inputs` (`invalid_inputs`).
-3. Read-only operation (`spec.readOnly`): branch = `drafts.workingBranch(project, session).name`, state = `reducers.getState`, resolve inputs (step 5 rules), await `spec.precondition?.(request, state)` (a throw rejects `run` with that error), call `execute` with `record: null` and a scratch directory, and resolve `{record: null, outputs, report: report ?? null}`. No lock, no record. A throw from `execute` rejects `run` with that error.
-4. Take the lock. `branch = drafts.branchForWrite(project, request)`; `parent = head of branch`.
-5. Resolve inputs against `reducers.stateAt(project, branch, parent)`: `{asset}` must exist in the registered asset store (`unknown_asset`); `{record, output}` must name an existing record (`unknown_record`) and a non-negative integer `output`; when the producer is `done`, `resolved_asset` is its `outputs[output]` (missing → `invalid_inputs`); `failed` or `cancelled` → `invalid_inputs`; `pending` or `running` → `resolved_asset: null`, allowed only when `request.after` is set, else `input_not_ready`. An input whose role is in `spec.pendingInputRoles` resolves to `resolved_asset: null` for a producer in any status other than `done`, without `request.after`. A `{character}`, `{location}` or `{style}` ref becomes one input per asset of `reducers.assetsOf` (null → `invalid_inputs`), each with the same role and ref. Then await `spec.precondition?.(request, state of the working branch)` under the lock: a throw rejects `run` with that error unchanged, before anything is written.
-6. Append the operation record: `status: 'pending'`, `component`, `operation`, `operation_version`, `deterministic` from the spec, `based_on ?? null`, `outputs: []`, and `supersedes`: `request.supersedes ?? []` followed by `spec.supersedes?.(params, state of the working branch)`, without repeats. Release the lock.
+3. Read-only operation (`spec.readOnly`): branch = `branches.current(project).name`, state = `reducers.getState`, resolve inputs (step 5 rules), await `spec.precondition?.(request, state)` (a throw rejects `run` with that error), call `execute` with `record: null` and a scratch directory, and resolve `{record: null, outputs, report: report ?? null}`. No lock, no record. A throw from `execute` rejects `run` with that error.
+4. Take the lock. `branch = branches.forWrite(project)`; `parent = head of branch`.
+5. Resolve inputs against `reducers.stateAt(project, branch, parent)`: `{asset}` must exist in the registered asset store (`unknown_asset`); `{record, output}` must name an existing record (`unknown_record`) and a non-negative integer `output`; when the producer is `done`, `resolved_asset` is its `outputs[output]` (missing → `invalid_inputs`); `failed` or `cancelled` → `invalid_inputs`; `pending` or `running` → `resolved_asset: null`, allowed only when `request.after` is set, else `input_not_ready`. An input whose role is in `spec.pendingInputRoles` resolves to `resolved_asset: null` for a producer in any status other than `done`, without `request.after`. A `{character}`, `{location}` or `{style}` ref becomes one input per asset of `reducers.assetsOf` (null → `invalid_inputs`), each with the same role and ref. Then await `spec.precondition?.(request, state of the current branch)` under the lock: a throw rejects `run` with that error unchanged, before anything is written.
+6. Append the operation record: `status: 'pending'`, `component`, `operation`, `operation_version`, `deterministic` from the spec, `based_on ?? null`, `outputs: []`, and `supersedes`: `request.supersedes ?? []` followed by `spec.supersedes?.(params, state of the current branch)`, without repeats. Release the lock.
 7. `request.after` set → `scheduler.enqueue(project, id, spec.resource, after, spec.pendingInputRoles ?? [])`; resolve with the `pending` record, `outputs: []`, `report: null`. Otherwise `final = await execute(project, id, request.signal)`; resolve with `{record: final, outputs: final.outputs, report: final.report ?? null}`. Immediate runs do not count against the scheduler's limits.
 
 **Runner: execute.** `execute(project, record, signal?)`:
@@ -210,7 +209,7 @@ Owner: agent B.
 
 **Confirmation.** The runner holds no call for confirmation and treats every caller alike. An agent's confirmation (`OperationSpec.confirm`) is checked earlier, in the agent tool call (section 11), before `run` is called.
 
-**`acceptStale`.** Under the lock: the record must exist (`unknown_record`); append `proj.stale_accept` on `drafts.branchForWrite(project, origin)`.
+**`acceptStale`.** Under the lock: the record must exist (`unknown_record`); append `proj.stale_accept` on `branches.forWrite(project)`.
 
 **`recover`.** At start: under each project's lock, every `pending` or `running` operation record gets `{status: 'cancelled', finished_at, error: {code: 'stopped', message: 'The server stopped before the call finished.'}}`.
 
@@ -241,7 +240,7 @@ Invariants: never more than `limits.gpu` scheduled `gpu` records and `limits.cpu
 1. waits for `sessions.ready(session)`; `session` is the calling agent's ID, else `anonymous`;
 2. takes `project_id`, else the session's project, else fails with "No project selected";
 3. builds the origin: actor `agent`, surface `chat`, the session, `turnOf(ctx, exec)`, the call ID, and the `reason` (empty → the operation name) as the intent;
-4. reads the state of the session's working branch and parses `inputs` with `parseInputs`;
+4. reads the state of the project's current branch and parses `inputs` with `parseInputs`;
 5. builds the run request: params are the arguments without the shared, tool-only and confirmation ones (so `user_approved` and `user_requested` never reach the record's params); `based_on` and `supersedes` from the arguments;
 6. calls `spec.prepareToolCall` with `{args, request, state, exec}`, which may refuse the call before any record or change the request's params and inputs;
 7. applies the confirmation rule (below); a refusal is a tool error and writes nothing;
@@ -252,9 +251,9 @@ Invariants: never more than `limits.gpu` scheduled `gpu` records and `limits.cpu
 
 **Input references.** `parseInputs(spec, raw, state, versionCreatedBy, callerName)`: `raw` is an object of role → reference text or a list of them. `<record>#<output>` → `{record, output}`; `<id>@<version>` → the first of `{character}`, `{location}`, `{style}` whose version `createdBy` of the reducer that defines it knows, else "Unknown character, location, or style version"; anything else → `{asset}`. An unknown role, a list on a single role, a non-string reference and a missing required role throw an error that names the role and `callerName`: the agent tool passes the tool name (`dv_shot_render_ref2va`), and `dvProject.parseInputs(operation, raw, state, callerName?)` passes the operation name unless its caller names another, so `@dv/api` names the operation. `formatInputRef(ref)` writes a reference as the text this parser reads back.
 
-**Project tools.** While the registry is mounted, the service also registers the `dv_proj_*` tools of `proj-tools.ts` and removes them with the registry. Each resolves the project from `project_id`, else the session's project (else "No project selected"), and writes its records with the agent origin of the call. `dv_proj_create` and `dv_proj_open` bind the session and refuse ("This conversation belongs to project …") when the session is bound to another project; `dv_proj_draft_discard` passes the working branch's counts and refuses without an open draft. `dv_proj_history_list` returns `listHistory` entries (default limit 20). Every other tool returns the project summary of the session's working branch (`dv_proj_state` takes `branch`): `record` (only after a tool that writes records: the newest record of the call, by `listHistory({tool_call})`; the tool's `presentationMeta` is `{record}`, and the read tools `dv_proj_open dv_proj_state dv_proj_history_list dv_proj_wait` have none), `project_id head branch draft branches records`, then `agentSummaries` in order, then `stale` and `recent` (the last twelve records with their summaries and output URLs). A field name used twice throws `invalid_params`. `projectSummary` is exported to the agent context.
+**Project tools.** While the registry is mounted, the service also registers the `dv_proj_*` tools of `proj-tools.ts` and removes them with the registry. Each resolves the project from `project_id`, else the session's project (else "No project selected"), and writes its records with the agent origin of the call. `dv_proj_create` and `dv_proj_open` bind the session and refuse ("This conversation belongs to project …") when the session is bound to another project; `dv_proj_branch_create` forks a branch with the optional `title` and returns the summary of the new current branch. `dv_proj_history_list` returns `listHistory` entries (default limit 20). Every other tool returns the project summary of the project's current branch (`dv_proj_state` takes `branch`): `record` (only after a tool that writes records: the newest record of the call, by `listHistory({tool_call})`; the tool's `presentationMeta` is `{record}`, and the tools `dv_proj_open dv_proj_state dv_proj_history_list dv_proj_branch_create dv_proj_wait`, which write no record, have none), `project_id head branch branches records` (`branches` as `{name, title}`), then `agentSummaries` in order, then `stale` and `recent` (the last twelve records with their summaries and output URLs). A field name used twice throws `invalid_params`. `projectSummary` is exported to the agent context.
 
-**Agent context.** While the DSH `systemPrompt` service is mounted, the service registers the system-prompt section `dv:project` (order `promptSectionOrder`, Config, default 4900; `interpolate: false`) and removes it with the service. `projectContext(project, deps, sessionId)` builds its text from the assembly's agent ID: Project's rules first (drafts and "草稿待确认", `dv_proj_undo` and `dv_proj_redo`, naming things by record ID, `<record>#<n>`, `<id>@<version>`, asset ID and clip ID with the user pointing through + → 引用 or `dv:` mentions and ambiguous references asked about, confirmation in the conversation with the question in bold, stale records). For a session bound to a project, the rules are followed by "This conversation belongs to project <ProjectId>: do all work in it and never call dv_proj_create or dv_proj_open.", a line naming the working branch, and `projectSummary` of the session's working branch as indented JSON. Without an agent or a bound project, the rules are followed by "No project is bound to this conversation yet: start the work with dv_proj_create.". The text names no selection and no preference the user cannot see.
+**Agent context.** While the DSH `systemPrompt` service is mounted, the service registers the system-prompt section `dv:project` (order `promptSectionOrder`, Config, default 4900; `interpolate: false`) and removes it with the service. `projectContext(project, deps, sessionId)` builds its text from the assembly's agent ID: Project's rules first (every write lands on the current branch at once, `dv_proj_undo` and `dv_proj_redo` with the fork after a roll back, `dv_proj_branch_create` only on the user's request, naming things by record ID, `<record>#<n>`, `<id>@<version>`, asset ID and clip ID with the user pointing through + → 引用 or `dv:` mentions and ambiguous references asked about, confirmation in the conversation with the question in bold, stale records). For a session bound to a project, the rules are followed by "This conversation belongs to project <ProjectId>: do all work in it and never call dv_proj_create or dv_proj_open.", a line naming the current branch, and `projectSummary` of the current branch as indented JSON. Without an agent or a bound project, the rules are followed by "No project is bound to this conversation yet: start the work with dv_proj_create.". The text names no selection and no preference the user cannot see.
 
 ## 12. Test plan
 
@@ -266,7 +265,8 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - `refuses an append whose parent is not the branch head`: `parent_not_head`, nothing written, no event.
 - `refuses a backward or repeated status`: `done` → `running` and `running` → `running` throw `status_backwards`.
 - `refuses an update of a finished record`: `record_finished` after `done`, `failed`, `cancelled`.
-- `reloads records, updates and branches from disk`: a second `RecordStore` on the same root after `load()` returns equal records and branches.
+- `reloads records, updates and branches from disk`: a second `RecordStore` on the same root after `load()` returns equal records, branches and current branch.
+- `creates and lists branches, and keeps the current branch`: `setBranch` events carry the head and the current branch; `setCurrent` refuses an unknown branch.
 - `fills resolved_asset of an output input once the producer is done`: record B with `{record: A, output: 0}`; null before A is done, A's output after; the file still has `null`.
 - `serializes work under the project lock`: two `lock` calls with awaited delays run one after the other; another project's lock runs concurrently.
 - `renames and deletes a project`: `project.json` title changes; the directory moves under `.trash`; `getProject` then throws `unknown_project`.
@@ -290,32 +290,30 @@ Each test file builds modules with `startModules()` and projects with `createTes
 **`tests/history.spec.ts` (D)**
 
 - `writes undo and redo as records` (R): two human edits on `main`; `undo` appends `proj.undo` with `params.to` = the first edit; state equals the state at the first edit; `redo` appends `proj.redo` with `params.to` = the second edit; state equals the state after both edits; the file contains every record.
-- `undoes the records of an accepted draft one step at a time`: accept a draft of two records; each `undo` removes one record.
 - `jumps back to any step, redoes one step at a time, and jumps forward to a redo step`: `to` = the first of four edits; `redo_steps` lists the other three; `redo` brings back one; `to` = the last writes `proj.redo`.
-- `drops the redo steps on any other write after an undo`: a write after a jump empties `redo_steps`; `to` = a dropped record is `invalid_params`.
-- `undoes and redoes inside a draft, and accepts the draft as undone`: undo and redo write on the draft; counts and marks leave the undone record out; replay copies only the effective steps.
-- `refuses to replay a draft that jumped back to a step before it opened`: `draft_conflict` after `main` moved.
-- `finishes a render whose approval a jump undid into an undone record, and reuses its take later`: the running render ends `done`, marked `undone`; an identical render later reuses its outputs.
+- `keeps the redo steps on the old branch when a write after an undo forks a new one`: the write lands on `b2`; `main` keeps its steps, marked `branch`.
+- `finishes a render whose approval a jump undid into an undone record, and reuses its take later`: the running render ends `done`, marked `redo`; an identical render later reuses its outputs.
 - `refuses undo with nothing to undo and redo with nothing to redo`: `nothing_to_undo` on a new project; `nothing_to_redo` after a fresh edit that followed an undo.
 - `lists history newest first with filters` (R): records from two actors and two branches; default order is reverse write order; `actor`, `branch`, `operation`, `session`, `before` and `limit` each narrow the list as specified.
-- `marks main, draft, undone, discarded and replayed records`: one scenario that produces each mark and asserts it.
-- `filters by tool call, and by mark before the limit`: `tool_call` selects one agent record; `marks` selects `main` + `undone` and `draft` entries; with `limit` 1 the mark filter still finds the older undone record.
+- `marks current, redo, branch and undone records, and lists the branch lines of each one`: one scenario with two branches asserts each mark and each `branches` list.
+- `marks the records no branch line holds as undone`: a record left off every line by a write after an undo on the same branch.
+- `filters by tool call, and by mark before the limit`: `tool_call` selects one agent record; `marks` selects `current` and `branch` entries; with `limit` 1 the mark filter keeps the newest matching entry.
 
-**`tests/drafts.spec.ts` (C)**
+**`tests/branches.spec.ts` (C)**
 
-- `opens one draft on the first agent write and keeps it across turns` (R): agent writes in turn 1 and turn 2 of the same session land on `draft/<session>` with one `forked_at`; `main` does not move.
-- `puts a human edit with a session on that session's draft` (R): with the draft open, a `user` write with the session goes to the draft; without a draft it goes to `main`; a `user` write never opens a draft; a write without a session goes to `main`.
-- `accepts by fast-forward when main did not move` (R, accept without conflict): `proj.draft_accept` with `replayed: []`; `main` points at it; the draft branch is gone.
-- `replays the draft on a main that moved` (R, accept replay without conflict): another session's edit lands on `main` first; accept appends copies after the new `main` head, the accept record lists `[original, copy]` pairs, and the state of `main` contains both changes.
-- `stops with DraftConflictError and writes nothing on a conflict` (R, accept replay with conflict): a test reducer whose `conflict` returns a reason; the error names the record and reason; `records.jsonl`, `branches.json` and both pointers are unchanged.
-- `counts and discards a draft` (R, discard counts): two agent records, one human edit → counts `{agent_changes: 2, human_edits: 1}`; discard with matching counts writes `proj.draft_discard` with `base`; mismatching counts throw `draft_changed`; afterwards `workingBranch` is `main`.
-- `refuses accept and discard while a draft record runs`: `draft_busy`.
+- `puts every write of every actor and chat session on the current branch at once` (R): agent, human, other-session and session-less writes all land on `main`; no branch is forked.
+- `forks a new branch for a write after an undo and keeps the undone steps on the old branch` (R): the write lands on `b2` forked at the undo target; `main` returns to its tip; the next write stays on `b2`.
+- `does not fork after a redo that returned the branch to its tip`.
+- `forks a named branch on request at the current position without writing a record` (R): `b2` with the title; after a switch and an undo, `b3` forks at the undo target and `main` returns to its tip.
+- `switches branches, and returns a branch to a step when asked`: no jump record when the branch already stands at `to`; a `proj.undo` on the switched-to branch otherwise; `unknown_branch` for an unknown name.
+- `renames a branch and returns to the default label for an empty title`.
+- `reads a branches.json without titles or a current branch, and drops the draft session field`.
 
 **`tests/runner.spec.ts` (B)**
 
 - `runs an operation and records its outputs`: `done` record with outputs, `cost.reused: false`, measured `wall_seconds`, report.
 - `refuses invalid params, unknown inputs and unfinished inputs before writing`: `invalid_params`, `unknown_asset`, `input_not_ready`; the file is unchanged.
-- `adds the records an operation replaces to the record's supersedes`: `spec.supersedes` receives the params and the working branch's state; its records follow `request.supersedes` without repeats.
+- `adds the records an operation replaces to the record's supersedes`: `spec.supersedes` receives the params and the current branch's state; its records follow `request.supersedes` without repeats.
 - `fails the record when execute throws`: `failed` / `operation_failed` with the message; `run` resolves.
 - `reuses outputs of an identical deterministic call`: second call `done` with `cost.reused: true`, execute not called.
 - `writes no record for a read-only operation`: the file is unchanged; `report` is returned.
@@ -342,7 +340,7 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - `refuses an always call without user_approved before any record, and runs it with the argument kept out of params` (R, confirmation): the tool has `user_approved` and no `user_requested`; the refusal is a tool error with the exact text (the tool, the `confirmSummary` text, the GPU estimate, the bold question) and writes no record; the same call with `user_approved: true` ends `done` with params without the argument; a `user` call through `run` is never refused.
 - `refuses an over_gpu_budget call past the turn's budget, counting the turn's finished cost and unfinished estimates` (R, confirmation): the tool has `user_requested`; a 40 s call runs under the 60 s budget; the next 40 s call of the same turn is refused with the turn's total and the budget; with `user_requested: true` it runs and its params leave the argument out; a new turn starts from zero; a running render of the turn counts with its `estimate`.
 - `refuses to register an operation that asks for confirmation without a confirmSummary`: `invalid_params`; nothing is registered.
-- `gives the agent the dv:project prompt section: Project's rules, and the summary of the bound session's working branch` (R): with a `systemPrompt` service mounted, an unbound session's section holds the rules and ends with "No project is bound to this conversation yet: start the work with dv_proj_create."; a bound session's section holds "This conversation belongs to project <ProjectId>" and the project summary `dv_proj_state` returns for the working branch, and no selection.
+- `gives the agent the dv:project prompt section: Project's rules, and the summary of the bound project's current branch` (R): with a `systemPrompt` service mounted, an unbound session's section holds the rules (no draft rule; the current-branch, roll-back fork and `dv_proj_branch_create` rules) and ends with "No project is bound to this conversation yet: start the work with dv_proj_create."; a bound session's section holds "This conversation belongs to project <ProjectId>" and the project summary `dv_proj_state` returns for the current branch, and no selection.
 - Held work delays a session's calls until it settles, even when it fails.
 
 **`tests/proj-tools.spec.ts`**
@@ -351,7 +349,7 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - Create and open bind the session; a bound session refuses another project; a call without a project fails.
 - Each reducer's `agentSummary` fields sit between `records` and `stale`; a field used twice refuses the summary.
 - `recent` lists summaries, failure messages, output URLs and pending statuses; history lists entries with marks.
-- Accept, discard, undo, redo, stale accept and wait behave as their methods do.
-- `reads another branch than the one the session writes to`: `dv_proj_state` with `branch: main` reads `main` while the session writes to its draft; an unknown branch is a tool error.
+- Undo, redo, the fork of a write after an undo, `dv_proj_branch_create`, stale accept and wait behave as their methods do.
+- `reads another branch than the current one`: `dv_proj_state` with `branch: main` reads `main` while `b2` is current; an unknown branch is a tool error.
 - `parseInputs` for every reference form and every refusal.
 - A binding survives a restart and a broken binding file throws; a run without an asset store fails.

@@ -1,8 +1,8 @@
-/** The asset pool panel's listing over synthetic branch states: names, media-type groups, render stills, and draft assets. */
+/** The asset pool panel's listing over synthetic branch states: names, media-type groups, render stills, and assets of other branches. */
 import { describe, expect, it } from 'vitest'
-import type { Asset, ProjectRecord, WireState } from '../../ui-kit/src/client/types.ts'
+import type { Asset, HistoryEntry, ProjectRecord, WireState } from '../../ui-kit/src/client/types.ts'
 import { fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
-import { assetLibrary } from '../src/client/library.ts'
+import { assetLibrary, otherBranchAssets } from '../src/client/library.ts'
 
 describe('assetLibrary over a synthetic state', () => {
   /** A done record with one output. */
@@ -69,13 +69,26 @@ describe('assetLibrary over a synthetic state', () => {
     expect(library.images.map(row => row.id)).toContain('ref.png')
   })
 
-  it('lists the assets only an open draft has and flags them as drafts', () => {
-    const draft = stateOf(
-      [...records, done('o3', 'shot.render_ref2va', 'draft-vid', {}, '2026-10-05T09:02:00.000Z')],
-      [...assets, asset('draft-vid', 'video/mp4', 'draft.mp4')],
-    )
-    const library = assetLibrary(state, [{ branch: 'draft/s1', state: draft }])
-    expect(library.videos.map(row => row.id).sort()).toEqual(['draft-vid', 'out', 'vid'])
-    expect([...library.draft]).toEqual(['draft-vid'])
+  it('adds the assets of other branches and redo steps once, with the branch each comes from', () => {
+    const entry = (record: ProjectRecord, mark: HistoryEntry['mark'], branches: string[]): HistoryEntry => ({ record, mark, branches })
+    const history = {
+      entries: [
+        entry(done('o7', 'shot.render_ref2va', 'other-vid', {}, '2026-10-05T09:07:00.000Z'), 'branch', ['b2']),
+        entry(done('o8', 'asset.import', 'redo-img', { name: 'later.png' }, '2026-10-05T09:08:00.000Z'), 'redo', ['main', 'b3']),
+        // An output the current state already lists and an entry on no branch line add nothing.
+        entry(done('o9', 'asset.import', 'img', { name: 'again.png' }, '2026-10-05T09:09:00.000Z'), 'branch', ['b2']),
+        entry(done('o10', 'asset.import', 'lost', {}, '2026-10-05T09:10:00.000Z'), 'branch', []),
+      ],
+      assets: [asset('other-vid', 'video/mp4', 'other.mp4'), asset('redo-img', 'image/png', 'redo.png'), asset('img', 'image/png', 'ref.png'), asset('lost', 'image/png', 'lost.png')],
+    }
+    const others = otherBranchAssets(history, state)
+    expect([...others.branchOf]).toEqual([['other-vid', 'b2'], ['redo-img', 'main']])
+    const library = assetLibrary(state, others)
+    expect(library.videos.map(row => row.id).sort()).toEqual(['other-vid', 'out', 'vid'])
+    expect(library.images).toEqual([
+      expect.objectContaining({ id: 'redo-img', name: 'later.png' }), expect.objectContaining({ id: 'img', name: 'dropped.png' }),
+    ])
+    expect([...library.elsewhere]).toEqual([['other-vid', 'b2'], ['redo-img', 'main']])
+    expect([...assetLibrary(state).elsewhere]).toEqual([])
   })
 })

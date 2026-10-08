@@ -46,7 +46,7 @@ export function formatMention(label: string, uri: string): string {
 
 /** What expansion reads from the Project service. */
 export interface ExpansionSources {
-  /** The state of the session's working branch of a project. */
+  /** The state of the current branch of a project. */
   getState(projectId: ProjectId): ProjectState
   /** A record, or undefined when the project has no such record. */
   getRecord(projectId: ProjectId, record: RecordId): ProjectRecord | undefined
@@ -90,7 +90,7 @@ export function describeMention(mention: Mention, projectId: ProjectId, sources:
 }
 
 /**
- * A clip of a timeline on the working branch: its timeline (with its name when it has one), its 1-based position, its
+ * A clip of a timeline on the current branch: its timeline (with its name when it has one), its 1-based position, its
  * asset, and the record that produced the asset. A placeholder clip names the render record it waits for, whose
  * status tells whether the render is still running or failed.
  */

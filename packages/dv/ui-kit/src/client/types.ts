@@ -90,24 +90,20 @@ export interface ProjectInfo {
   created_at: string
 }
 
-/** How many records a draft holds, as a discard confirmation shows them. */
-export interface DraftCounts {
-  agent_changes: number
-  human_edits: number
-}
-
-/** One branch of a project. */
+/** One branch of a project. Branches are never merged; they share only the asset pool. */
 export interface Branch {
-  /** `main` or `draft/<session>`. */
+  /** `main`, or `b<n>` for a forked branch; never changes. */
   name: string
+  /** The name the human gave the branch; null shows the default label of `name` (`branchLabel`). */
+  title: string | null
+  /** The branch's last step, or the step an undo returned it to. */
   head: string
-  /** The branch an accept merges into; null for `main`. */
+  /** The branch this one was forked from; null for `main`. */
   base: string | null
+  /** The record of `base` this branch was forked at; null for `main`. */
   forked_at: string | null
-  /** The chat session that owns the draft; null for `main`. */
-  session: string | null
-  /** The draft's counts; null for branches that are not open drafts. */
-  counts: DraftCounts | null
+  /** The branch's last step, which redo can bring back when `head` stands before it. */
+  tip: string
 }
 
 /** One stored asset of the asset pool. */
@@ -243,8 +239,10 @@ export interface WireState {
   branch: string
   head: string
   heads: Record<string, string>
-  /** Every branch of the project; an open draft has `counts`. */
+  /** Every branch of the project; `main` first, then by name. */
   branches: Branch[]
+  /** The project's current branch, which every view shows and every write goes to. */
+  current: string
   components: ComponentStates
   /** The steps that redo brings back on the branch, oldest first; empty when nothing can be redone. */
   redo_steps: string[]
@@ -289,21 +287,23 @@ export interface WireProject {
 
 /**
  * One project change, as the event stream sends it: an appended record, a record update, or a branch that was created,
- * moved (`branch` set), or removed (`branch` null).
+ * renamed or moved, or that became the project's current branch (`current`).
  */
 export type ProjectEvent =
   | { kind: 'record'; record: ProjectRecord }
   | { kind: 'update'; record: ProjectRecord }
-  | { kind: 'branch'; name: string; branch: Branch | null }
+  | { kind: 'branch'; name: string; head: string; current: string }
 
 /** One entry of the history list: a record in its current form and where it stands. */
 export interface HistoryEntry {
   record: ProjectRecord
   /**
-   * `main` (on the effective chain of `main`), `draft` (on an open draft), `undone` (left behind by an undo),
-   * `discarded` (on a discarded draft), or `replayed` (a draft record that accept copied onto `main`).
+   * `current` (on the effective chain of the current branch's head), `redo` (a step redo brings back on the current
+   * branch), `branch` (on the line of another branch only), or `undone` (on no branch line).
    */
-  mark: 'main' | 'draft' | 'undone' | 'discarded' | 'replayed'
+  mark: 'current' | 'redo' | 'branch' | 'undone'
+  /** The branches whose line holds the record, `main` first; the steps before a fork are on both branches. */
+  branches: string[]
 }
 
 /** What `POST /api/dv/history` selects (the JSON body). Every filter is optional; filters combine with AND. */
@@ -348,20 +348,23 @@ export interface OperationRequest {
   params?: Record<string, unknown>
   intent?: string
   surface: 'canvas' | 'timeline' | 'asset_pool'
-  /** The chat session the view sits beside; the record goes to that session's working branch (its open draft). */
+  /** The chat session the view sits beside, recorded as the record's `session`. */
   session?: string
   based_on?: string
   supersedes?: string[]
 }
 
-/** The record a project-level route wrote (accept, undo, redo, stale accept), with the branch heads afterwards. */
+/** The record a project-level route wrote (undo, redo, stale accept), with the branch heads afterwards. */
 export interface WireRecordResult {
   record: ProjectRecord
   heads: Record<string, string>
 }
 
-/** Which draft an accept or discard addresses: the draft of a chat session, or a draft branch by name. */
-export type DraftTarget = { session: string } | { branch: string }
+/** A branch that a branch route created, switched to, or renamed, with the branch heads afterwards. */
+export interface WireBranchResult {
+  branch: Branch
+  heads: Record<string, string>
+}
 
 /** Where a canvas node sits, in canvas units. */
 export interface NodePosition {

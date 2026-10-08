@@ -45,12 +45,12 @@ The `bible` slice of `ProjectState` is `StoryBibleState`: `characters`, `locatio
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The reducer reads only finished `bible.*` records. A version's reference images are the resolved assets of the record's `reference` inputs, so the runner checks that they exist and the record lists them as what it read. Project calls three optional reducer members of the `bible` key: `assetsOf` resolves an `<id>@<version>` input to its reference images, `createdBy` names the record that wrote a version (Project treats it as the input's producer for stale marks and for parsing `<id>@<version>`), and `conflict` stops accept replay when `main` already has the ID a draft creates or lacks the ID a draft updates. Two drafts that update the same version meet Project's general check: both supersede the same record.
+The reducer reads only finished `bible.*` records. A version's reference images are the resolved assets of the record's `reference` inputs, so the runner checks that they exist and the record lists them as what it read. Project calls two optional reducer members of the `bible` key: `assetsOf` resolves an `<id>@<version>` input to its reference images, and `createdBy` names the record that wrote a version (Project treats it as the input's producer for stale marks and for parsing `<id>@<version>`). Each branch has its own versions: a version written on one branch does not exist on the branch it was forked from.
 
 | File | Content |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | `dvStoryBible`: the six operations and their ID checks |
-| [`src/reducer.ts`](src/reducer.ts) | The `bible` reducer with `assetsOf`, `createdBy` and `conflict` |
+| [`src/reducer.ts`](src/reducer.ts) | The `bible` reducer with `assetsOf` and `createdBy` |
 | [`src/types.ts`](src/types.ts) | `Character`, `Location`, `Style`, `StoryBibleState` and the `ComponentStates` declaration |
 
 -----
@@ -58,7 +58,7 @@ The reducer reads only finished `bible.*` records. A version's reference images 
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`@dv/project`](../project/README.md): operations, reducers, stale marks and accept replay.
+- [`@dv/project`](../project/README.md): operations, reducers, stale marks and branches.
 - [`COMPONENT-TEMPLATE.md`](../COMPONENT-TEMPLATE.md): the layout this package follows.
 
 -----

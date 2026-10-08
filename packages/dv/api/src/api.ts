@@ -1,21 +1,20 @@
 /**
  * The handlers behind the browser routes, independent of transport: list and create projects, read a branch state,
- * list operations, run an operation as the human, accept or discard a chat session's draft, undo and redo, accept a
- * stale record, and list the history. The Fetch routes and the tests call these methods directly.
+ * list operations, run an operation as the human, create, switch and rename branches, undo and redo, accept a stale
+ * record, and list the history. The Fetch routes and the tests call these methods directly.
  *
  * Every write goes through `dvProject` with actor `user`, the surface the request names, and the chat session the view
- * sits beside (`session`, when the request names one), so a human edit lands on that session's working branch: its open
- * draft, else `main`.
+ * sits beside (`session`, when the request names one); it lands on the project's current branch.
  *
  * @module @dv/api/api
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type DvAssetPool from '@dv/asset-pool'
-import { draftBranch, MAIN_BRANCH, ProjectError } from '@dv/project'
+import { ProjectError } from '@dv/project'
 import type DvProject from '@dv/project'
 import type {
-  AssetId, Branch, DraftCounts, HistoryEntry, HistoryQuery, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordOrigin, RunRequest,
-  SessionId, Surface,
+  AssetId, Branch, HistoryEntry, HistoryQuery, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordOrigin, RunRequest, SessionId,
+  Surface,
 } from '@dv/project'
 import {
   projectIdOf, toWireOperation, toWireState, type WireHistory, type WireOperation, type WireState,
@@ -45,7 +44,7 @@ export interface OperationRequest {
   params?: Record<string, unknown>
   intent?: string
   surface: 'canvas' | 'timeline' | 'asset_pool'
-  /** The chat session the view sits beside; the record goes to that session's working branch. */
+  /** The chat session the view sits beside, recorded as the record's `session`. */
   session?: string
   based_on?: string
   supersedes?: string[]
@@ -175,7 +174,7 @@ const HISTORY_ENUMS = {
   actor: ['user', 'agent', 'system'],
   kind: ['operation'],
   status: ['pending', 'running', 'done', 'failed', 'cancelled'],
-  marks: ['main', 'draft', 'undone', 'discarded', 'replayed'],
+  marks: ['current', 'redo', 'branch', 'undone'],
 } as const
 
 /** The history filters that take one free-form string, copied to the query as they are. */
@@ -246,21 +245,10 @@ function humanOrigin(body: Record<string, unknown>, intent: string): RecordOrigi
   return { actor: 'user', surface: surfaceOf(body['surface']), session: sessionOf(body['session']), turn: null, tool_call: null, intent }
 }
 
-/**
- * The draft counts of a discard request.
- * @param value - the raw `counts`.
- * @returns the counts, or null when the request sends none (a dry read).
- * @throws ApiRequestError when `counts` is present but malformed.
- */
-function countsOf(value: unknown): DraftCounts | null {
-  if (value === undefined || value === null) return null
-  const counts = objectOf(value)
-  const agent = counts['agent_changes']
-  const human = counts['human_edits']
-  if (typeof agent !== 'number' || typeof human !== 'number') {
-    throw new ApiRequestError(400, "'counts' must hold numbers 'agent_changes' and 'human_edits'.", 'invalid_params')
-  }
-  return { agent_changes: agent, human_edits: human }
+/** A branch write's answer: the branch after the change and every branch head. */
+export interface BranchChange {
+  branch: Branch
+  heads: Record<string, RecordId>
 }
 
 /** Reads and writes a project on behalf of the canvas, the timeline, and the asset pool panel. */
@@ -312,21 +300,21 @@ export class ApiHandlers {
   /**
    * The state of a branch at its head.
    * @param project - the raw project ID.
-   * @param branch - a branch name; anything but a non-empty string reads `main`.
-   * @returns the wire state, with every branch and the counts of each open draft.
+   * @param branch - a branch name; anything but a non-empty string reads the project's current branch.
+   * @returns the wire state, with every branch and the current branch.
    * @throws ApiRequestError when the project or the branch is unknown.
    */
-  getState(project: unknown, branch: unknown = MAIN_BRANCH): WireState {
+  getState(project: unknown, branch?: unknown): WireState {
     const projectId = this.requireProject(project)
-    const name = typeof branch === 'string' && branch.length > 0 ? branch : MAIN_BRANCH
     let state
     try {
-      state = this.services.project.getState(projectId, name)
+      state = this.services.project.getState(projectId, typeof branch === 'string' && branch.length > 0 ? branch : undefined)
     } catch (error) {
       if (!(error instanceof ProjectError)) throw error
       throw new ApiRequestError(404, error.message, error.code)
     }
-    return toWireState(state, this.services.project.listBranches(projectId), id => this.assetOrNull(id))
+    const { project: service } = this.services
+    return toWireState(state, service.listBranches(projectId), service.currentBranch(projectId).name, id => this.assetOrNull(id))
   }
 
   /** @returns the declaration of every registered operation that a view can run: every operation that is not `readOnly`. */
@@ -335,8 +323,8 @@ export class ApiHandlers {
   }
 
   /**
-   * Run an operation as the human, from a view. The record goes to the working branch of the request's chat session
-   * (`main` without one). A call whose inputs name an unfinished record is scheduled to run once that record is done.
+   * Run an operation as the human, from a view. The record goes to the project's current branch (forked first after an
+   * undo). A call whose inputs name an unfinished record is scheduled to run once that record is done.
    * @param raw - the {@link OperationRequest}.
    * @returns the record, finished or pending.
    * @throws ApiRequestError when the body or the operation is unknown, or Project refuses the call.
@@ -351,8 +339,7 @@ export class ApiHandlers {
     const surface = surfaceOf(body['surface'])
     const intent = typeof body['intent'] === 'string' && body['intent'].length > 0 ? body['intent'] : `${surface}: ${operation}`
     const origin = humanOrigin(body, intent)
-    const working = this.services.project.workingBranch(projectId, origin.session).name
-    const state = await refused(() => this.services.project.getState(projectId, working))
+    const state = await refused(() => this.services.project.getState(projectId))
     const byRole = this.inputsByRole(body['inputs'])
     let inputs: RunRequest['inputs']
     try {
@@ -373,47 +360,51 @@ export class ApiHandlers {
   }
 
   /**
-   * Accept a chat session's draft into the branch it was forked from.
-   * @param raw - `{project, session | branch, surface}`; `branch` names the draft when the request has no session.
-   * @returns the `proj.draft_accept` record and the heads afterwards.
-   * @throws ApiRequestError when no draft is open, a draft record still runs, or a record conflicts with `main`.
+   * Fork a branch from the current branch at its head's position and make it current.
+   * @param raw - `{project, title?, session?, surface}`; an empty or missing title keeps the default label.
+   * @returns the new branch and the heads afterwards.
    */
-  async acceptDraft(raw: unknown): Promise<{ record: ProjectRecord; heads: Record<string, RecordId> }> {
+  async createBranch(raw: unknown): Promise<BranchChange> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
-    const draft = this.draftOf(projectId, body)
-    const record = await refused(() => this.services.project.acceptDraft(projectId, { ...humanOrigin(body, `accept ${draft.name}`), session: draft.session }))
-    return { record, heads: this.heads(projectId) }
+    const title = typeof body['title'] === 'string' && body['title'].trim().length > 0 ? body['title'].trim() : null
+    const branch = await refused(() => this.services.project.createBranch(projectId, title))
+    return { branch, heads: this.heads(projectId) }
   }
 
   /**
-   * Discard a chat session's draft, including the human's edits on it. Without `counts` the call is a dry read that
-   * returns the counts a confirmation shows; with the counts the human confirmed, it discards the draft, unless the
-   * draft changed meanwhile.
-   * @param raw - `{project, session | branch, surface, counts?}`.
-   * @returns the draft and its counts (dry read), or the discarded counts and the heads afterwards.
-   * @throws ApiRequestError (409, code `draft_changed`, with the current `counts`) when the counts differ.
+   * Make a branch the project's current branch and, with `to`, return it to that step of its line.
+   * @param raw - `{project, branch, to?, session?, surface}`.
+   * @returns the branch and the heads afterwards.
+   * @throws ApiRequestError (404 `unknown_branch` or `unknown_record`, 400 `invalid_params` for a `to` off the line).
    */
-  async discardDraft(raw: unknown): Promise<{ draft: string; counts: DraftCounts; heads?: Record<string, RecordId> }> {
+  async switchBranch(raw: unknown): Promise<BranchChange> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
-    const draft = this.draftOf(projectId, body)
-    const current = draft.counts ?? { agent_changes: 0, human_edits: 0 }
-    const confirmed = countsOf(body['counts'])
-    if (confirmed === null) return { draft: draft.name, counts: current }
-    try {
-      const counts = await this.services.project.discardDraft(projectId, { ...humanOrigin(body, `discard ${draft.name}`), session: draft.session }, confirmed)
-      return { draft: draft.name, counts, heads: this.heads(projectId) }
-    } catch (error) {
-      if (!(error instanceof ProjectError)) throw error
-      // A changed draft answers with its current counts, so the confirmation can show them again.
-      const counts = this.services.project.listBranches(projectId).find(branch => branch.name === draft.name)?.counts ?? current
-      throw new ApiRequestError(STATUS_OF[error.code] ?? 409, error.message, error.code, error.code === 'draft_changed' ? { counts } : {})
-    }
+    const name = stringOf(body['branch'], 'branch')
+    const to = body['to'] === undefined ? undefined : brandString<RecordId>(stringOf(body['to'], 'to'))
+    const branch = await refused(() => this.services.project.switchBranch(projectId, name, humanOrigin(body, `switch to ${name}`), to))
+    return { branch, heads: this.heads(projectId) }
   }
 
   /**
-   * Move the session's working branch back by one step, or jump it to the record `to` (a record on its effective
+   * Give a branch the name the human chose; an empty title returns to the default label.
+   * @param raw - `{project, branch, title}`.
+   * @returns the branch and the heads afterwards.
+   * @throws ApiRequestError (404 `unknown_branch`, 400 `invalid_params` without a string title).
+   */
+  async renameBranch(raw: unknown): Promise<BranchChange> {
+    const body = objectOf(raw)
+    const projectId = this.requireProject(body['project'])
+    const name = stringOf(body['branch'], 'branch')
+    if (typeof body['title'] !== 'string') throw new ApiRequestError(400, "'title' must be a string.", 'invalid_params')
+    const title = body['title']
+    const branch = await refused(() => this.services.project.renameBranch(projectId, name, title))
+    return { branch, heads: this.heads(projectId) }
+  }
+
+  /**
+   * Move the project's current branch back by one step, or jump it to the record `to` (a record on its effective
    * chain, or one of its redo steps).
    * @param raw - `{project, session?, surface, to?}`.
    * @returns the `proj.undo` record (`proj.redo` for a jump forward) and the heads afterwards.
@@ -427,7 +418,7 @@ export class ApiHandlers {
   }
 
   /**
-   * Move the session's working branch forward by one redo step, while nothing else was written on it after the undo.
+   * Move the project's current branch forward by one redo step.
    * @param raw - `{project, session?, surface}`.
    * @returns the `proj.redo` record and the heads afterwards.
    */
@@ -439,8 +430,8 @@ export class ApiHandlers {
   }
 
   /**
-   * Accept a stale record as it is: a `proj.stale_accept` record on the working branch of the request's chat session
-   * (`main` without one) removes its stale mark and the marks of the records made from it.
+   * Accept a stale record as it is: a `proj.stale_accept` record on the project's current branch removes its stale mark
+   * and the marks of the records made from it.
    * @param raw - `{project, record, session?, surface}`.
    * @returns the `proj.stale_accept` record and the heads afterwards.
    * @throws ApiRequestError (404, code `unknown_record`) when the record does not exist.
@@ -485,23 +476,6 @@ export class ApiHandlers {
    */
   private requireProject(value: unknown): ProjectId {
     return requireProject(this.services.project, value)
-  }
-
-  /**
-   * The open draft a request names: the draft of its `session`, else the draft branch `branch`.
-   * @param projectId - the project.
-   * @param body - the request body.
-   * @returns the draft branch, with its session and counts.
-   * @throws ApiRequestError (409, code `no_open_draft`) when that draft is not open.
-   */
-  private draftOf(projectId: ProjectId, body: Record<string, unknown>): Branch & { session: SessionId } {
-    const session = sessionOf(body['session'])
-    const name = session === null ? stringOf(body['branch'], 'branch') : draftBranch(session)
-    const draft = this.services.project.listBranches(projectId).find(branch => branch.name === name)
-    if (draft === undefined || draft.session === null || draft.counts === null) {
-      throw new ApiRequestError(409, `No draft ${name} is open in project ${projectId}.`, 'no_open_draft')
-    }
-    return { ...draft, session: draft.session }
   }
 
   /**

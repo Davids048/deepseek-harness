@@ -95,7 +95,6 @@ The reducer is pure: `initial()`, and `reduce(slice, record)` that ignores recor
 | -------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `createdBy`    | Story bible                      | the record that wrote a character, location or style version; Project uses it for stale marks and for `<id>@<n>` parsing                    |
 | `assetsOf`     | Story bible                      | the reference images a version stands for; the runner resolves version inputs with it                                                       |
-| `conflict`     | Timeline, Story bible            | why a draft record cannot apply on a moved `main` (a clip that `main` removed, a version that `main` superseded); accept replay stops there |
 | `agentSummary` | Story bible, Shot plan, Timeline | the fields of the slice that the agent reads in the project summary of `dv_proj_state`; field names unique across components                |
 
 At most one registered reducer defines `createdBy` and at most one defines `assetsOf`; Project calls the one that does, under whatever key it is registered.
@@ -121,7 +120,7 @@ At most one registered reducer defines `createdBy` and at most one defines `asse
 
 - one Loader composition test (copy `inspector/tests/inspector.spec.ts`): a test-only `cordis.yml` with `system-prompt`, `tools`, the asset pool, `dv-project`, `dv-ffmpeg` when used, and your plugin; fakes only for outside services (model, render mode provider). Assert through the agent tool (`ctx.tools.execute` with an agent) and through `dvProject.run`: the record (actor, component, operation, params, inputs, outputs), the state slice, the tool result, and that disposing your plugin removes its operations and tools;
 - one test per operation for its failures (`execute` throws → record `failed` with the message; invalid params → `invalid_params` before any record);
-- pure reducer tests: every operation's effect on the slice, records of other components ignored, `createdBy`, `assetsOf`, `conflict` and `agentSummary` where present.
+- pure reducer tests: every operation's effect on the slice, records of other components ignored, `createdBy`, `assetsOf` and `agentSummary` where present.
 
 **E2E stories.** Add or update the stories that exercise your component, and run every suite you touched, from the worktree root: `node_modules/.bin/vitest run --config packages/dv/e2e/vitest.e2e.config.ts <story>` (stories: `navigation`, `chat`, `canvas-timeline`, `assets`, `history`). The scripted model in `e2e/tests/scripted-model.ts` and the rules in each story name tools by their `dv_*` names.
 

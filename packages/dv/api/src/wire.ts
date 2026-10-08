@@ -1,6 +1,6 @@
 /**
  * The JSON the browser receives: the state of one branch (`ProjectState` with its component slices sent verbatim) with
- * the asset pool entries it references, the branch heads and branches (with the counts of each open draft), the history
+ * the asset pool entries it references, the branch heads, the branches and the current branch, the history
  * list, and the operation declarations the canvas turns into parameter forms. Records travel as `ProjectRecord`, unchanged.
  *
  * @module @dv/api/wire
@@ -23,8 +23,10 @@ export interface WireState {
   head: RecordId
   /** The head record of every branch, by branch name. */
   heads: Record<string, RecordId>
-  /** Every branch of the project; an open draft has `counts`. */
+  /** Every branch of the project with its tip; `main` first, then by name. */
   branches: Branch[]
+  /** The project's current branch, which every view shows and every write goes to. */
+  current: string
   /** One slice per registered reducer, as Project computed them. */
   components: ComponentStates
   /** The steps that redo brings back on the branch, oldest first (`ProjectState.redo_steps`). */
@@ -82,10 +84,11 @@ export function mentionedAssets(state: ProjectState): AssetId[] {
  * Turn a branch state into the wire form.
  * @param state - the branch state.
  * @param branches - the project's branches.
+ * @param current - the project's current branch.
  * @param asset - looks an asset up; unknown IDs return null and are left out.
  * @returns the wire state.
  */
-export function toWireState(state: ProjectState, branches: Branch[], asset: (id: AssetId) => Asset | null): WireState {
+export function toWireState(state: ProjectState, branches: Branch[], current: string, asset: (id: AssetId) => Asset | null): WireState {
   const assets = mentionedAssets(state).flatMap((id) => {
     const found = asset(id)
     return found === null ? [] : [found]
@@ -96,6 +99,7 @@ export function toWireState(state: ProjectState, branches: Branch[], asset: (id:
     head: state.head,
     heads: Object.fromEntries(branches.map(branch => [branch.name, branch.head])),
     branches,
+    current,
     components: state.components,
     redo_steps: state.redo_steps,
     assets,

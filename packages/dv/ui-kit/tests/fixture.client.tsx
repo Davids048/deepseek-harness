@@ -1,6 +1,6 @@
 /**
  * A branch state the view tests share: one character, one approved plan whose shots were rendered and put on a timeline,
- * a running retake on the open draft of chat session `s5`, a failed export, and an exploration branch. Also a scripted
+ * a running retake on branch `b2` (forked from `main` at `x1`), and a failed export. Also a scripted
  * `fetch` that answers the `/api/dv` routes from such a state and records every write.
  */
 import type { Asset, OperationRequest, ProjectRecord, WireOperation, WireProject, WireState } from '../src/client/types.ts'
@@ -73,7 +73,7 @@ export function fixtureState(): WireState {
       outputs: ['export-last.png'],
     }),
     record({
-      id: 'g3', turn: 't5', session: 's5', branch: 'draft/s5', actor: 'agent', operation: 'shot.render_ref2va', deterministic: false, based_on: 'g1',
+      id: 'g3', turn: 't5', session: 's5', branch: 'b2', actor: 'agent', operation: 'shot.render_ref2va', deterministic: false, based_on: 'g1',
       inputs: [hero], params: { prompt: 'hero walks, wider' }, status: 'running',
     }),
   ]
@@ -81,11 +81,12 @@ export function fixtureState(): WireState {
     project: { id: 'p1', title: 'Demo', created_at: '2026-10-05T00:00:00Z' },
     branch: 'main',
     head: 's1',
-    heads: { main: 's1', 'draft/s5': 'g3' },
+    heads: { main: 's1', b2: 'g3' },
     branches: [
-      { name: 'main', head: 's1', base: null, forked_at: null, session: null, counts: null },
-      { name: 'draft/s5', head: 'g3', base: 'main', forked_at: 'x1', session: 's5', counts: { agent_changes: 1, human_edits: 0 } },
+      { name: 'main', title: null, head: 's1', base: null, forked_at: null, tip: 's1' },
+      { name: 'b2', title: null, head: 'g3', base: 'main', forked_at: 'x1', tip: 'g3' },
     ],
+    current: 'main',
     redo_steps: [],
     components: {
       proj: {

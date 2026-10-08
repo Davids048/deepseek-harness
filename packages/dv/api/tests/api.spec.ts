@@ -1,7 +1,7 @@
 /**
  * The browser API over the real Project service, components, and asset pool: branch state on the wire, human
- * operation calls from the canvas and the timeline, a chat session's draft (accept, discard with confirmed counts), undo and
- * redo, the history, the Fetch routes, and the event stream.
+ * operation calls from the canvas and the timeline, the project's current branch, creating, switching and renaming
+ * branches, undo and redo, the history, the Fetch routes, and the event stream.
  */
 import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
@@ -66,7 +66,7 @@ interface Fixture extends BaseFixture {
   web: FakeWebServer
   /** Create a project as a human outside any chat session; returns its ID. */
   newProject(title: string): Promise<ProjectId>
-  /** Run `asset.import` as the agent of chat session `session`, which opens or extends that session's draft. */
+  /** Run `asset.import` as the agent of chat session `session`; the record lands on the project's current branch. */
   agentImport(projectId: ProjectId, session: string, name: string): Promise<RecordId>
 }
 
@@ -171,7 +171,8 @@ describe('dvApi', () => {
     expect(state.assets.map(asset => asset.id)).toEqual(imported.outputs)
     expect(state.assets[0]?.mime).toBe('image/png')
     expect(state.heads['main']).toBe(state.head)
-    expect(state.branches).toEqual([{ name: 'main', head: imported.id, base: null, forked_at: null, session: null, counts: null }])
+    expect(state.branches).toEqual([{ name: 'main', title: null, head: imported.id, base: null, forked_at: null, tip: imported.id }])
+    expect(state.current).toBe('main')
     expect(state.components.proj.created_by).toEqual({ [imported.outputs[0] ?? '']: imported.id })
 
     const operations = fixture.handlers.listOperations()
@@ -197,8 +198,9 @@ describe('dvApi', () => {
       .rejects.toMatchObject({ status: 400, code: 'invalid_inputs', message: expect.stringMatching(/^Unknown input role "nope" for asset\.import;/) })
     await expect(fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: {} }))
       .rejects.toMatchObject({ status: 400, code: 'invalid_params' })
-    await expect(fixture.handlers.acceptDraft({ project: projectId, session: 'nobody' })).rejects.toMatchObject({ status: 409, code: 'no_open_draft' })
-    await expect(fixture.handlers.discardDraft({ project: projectId })).rejects.toThrow(/branch/)
+    await expect(fixture.handlers.switchBranch({ project: projectId, branch: 'b9' })).rejects.toMatchObject({ status: 404, code: 'unknown_branch' })
+    await expect(fixture.handlers.switchBranch({ project: projectId })).rejects.toThrow(/branch/)
+    await expect(fixture.handlers.renameBranch({ project: projectId, branch: 'main' })).rejects.toMatchObject({ status: 400, code: 'invalid_params' })
   })
 
   it('records timeline gestures on main without a turn and schedules calls that wait for a producer', async () => {
@@ -241,47 +243,37 @@ describe('dvApi', () => {
     expect(['done', 'failed']).toContain(fixture.project.getRecord(projectId, waiting.id).status)
   })
 
-  it('puts a chat session\'s edits on its draft, accepts it, and discards only with the confirmed counts', async () => {
+  it('puts every edit of the agent and the human on the current branch, and forks, switches and renames branches', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')
-    const mainBefore = fixture.handlers.getState(projectId).head
-    await fixture.agentImport(projectId, 's1', 'one.png')
-    await fixture.agentImport(projectId, 's1', 'two.png')
-    // A human edit beside the chat of s1 lands on that session's draft; one without a session lands on main.
+    const agent = await fixture.agentImport(projectId, 's1', 'one.png')
+    // A human edit beside the chat lands on the same branch at once.
     const human = await fixture.handlers.runOperation({
       project: projectId, operation: 'asset.import', surface: 'canvas', session: 's1', params: { path: fixture.writeFile('h.png', 'H'), mime: 'image/png' },
     })
-    expect(human.branch).toBe('draft/s1')
-    const state = fixture.handlers.getState(projectId)
-    expect(state.head).toBe(mainBefore)
-    expect(state.branches.find(branch => branch.name === 'draft/s1')).toMatchObject({ session: 's1', base: 'main', counts: { agent_changes: 2, human_edits: 1 } })
-    const draft = fixture.handlers.getState(projectId, 'draft/s1')
-    const draftRecords = draft.components.proj.records.filter(record => record.branch === 'draft/s1')
-    expect(draftRecords.map(record => [record.kind, record.actor])).toEqual([
-      ['operation', 'agent'], ['operation', 'agent'], ['operation', 'user'],
-    ])
+    expect([fixture.project.getRecord(projectId, agent).branch, human.branch]).toEqual(['main', 'main'])
+    expect(fixture.handlers.getState(projectId).head).toBe(human.id)
 
-    // Discard: a dry read returns the counts; stale counts are refused with the current ones; nothing changes.
-    expect(await fixture.handlers.discardDraft({ project: projectId, branch: 'draft/s1' })).toEqual({ draft: 'draft/s1', counts: { agent_changes: 2, human_edits: 1 } })
-    await expect(fixture.handlers.discardDraft({ project: projectId, session: 's1', counts: { agent_changes: 2, human_edits: 0 } }))
-      .rejects.toMatchObject({ status: 409, code: 'draft_changed', details: { counts: { agent_changes: 2, human_edits: 1 } } })
-    await expect(fixture.handlers.discardDraft({ project: projectId, session: 's1', counts: { agent_changes: 'x' } })).rejects.toThrow(/counts/)
+    const created = await fixture.handlers.createBranch({ project: projectId, title: ' night ', surface: 'history' })
+    expect(created.branch).toMatchObject({ name: 'b2', title: 'night', head: human.id, base: 'main', forked_at: human.id })
+    expect(created.heads).toEqual({ main: human.id, b2: human.id })
+    const onBranch = await fixture.agentImport(projectId, 's2', 'two.png')
+    const branchState = fixture.handlers.getState(projectId)
+    expect(branchState).toMatchObject({ branch: 'b2', current: 'b2', head: onBranch })
+    expect(fixture.handlers.getState(projectId, 'main').head).toBe(human.id)
 
-    const accepted = await fixture.handlers.acceptDraft({ project: projectId, session: 's1', surface: 'timeline' })
-    expect(accepted.record).toMatchObject({ operation: 'proj.draft_accept', actor: 'user', surface: 'timeline' })
-    expect(accepted.heads['draft/s1']).toBeUndefined()
-    const onMain = new Set(fixture.handlers.getState(projectId).components.proj.records.map(record => record.id))
-    expect(draftRecords.every(record => onMain.has(record.id))).toBe(true)
-
-    // A second draft of another session, discarded with the counts the human confirmed.
-    await fixture.agentImport(projectId, 's2', 'three.png')
-    const discarded = await fixture.handlers.discardDraft({ project: projectId, branch: 'draft/s2', surface: 'canvas', counts: { agent_changes: 1, human_edits: 0 } })
-    expect(discarded).toMatchObject({ draft: 'draft/s2', counts: { agent_changes: 1, human_edits: 0 } })
-    expect(discarded.heads?.['draft/s2']).toBeUndefined()
-    expect(fixture.handlers.getState(projectId).branches.map(branch => branch.name)).toEqual(['main'])
+    const switched = await fixture.handlers.switchBranch({ project: projectId, branch: 'main', surface: 'history' })
+    expect(switched.branch).toMatchObject({ name: 'main', head: human.id })
+    expect(fixture.handlers.getState(projectId)).toMatchObject({ branch: 'main', current: 'main' })
+    // Switching with a step returns that branch to the step.
+    const back = await fixture.handlers.switchBranch({ project: projectId, branch: 'b2', to: agent, surface: 'history' })
+    expect(fixture.project.getRecord(projectId, back.branch.head)).toMatchObject({ operation: 'proj.undo', params: { to: agent }, surface: 'history' })
+    expect(fixture.handlers.getState(projectId).redo_steps).toEqual([human.id, onBranch])
+    expect((await fixture.handlers.renameBranch({ project: projectId, branch: 'b2', title: '' })).branch.title).toBeNull()
+    expect((await fixture.handlers.createBranch({ project: projectId })).branch).toMatchObject({ name: 'b3', title: null, head: agent })
   })
 
-  it('undoes and redoes as records, and creates and switches exploration branches', async () => {
+  it('undoes and redoes as records, and forks a branch for a write after an undo', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')
     const first = await fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('u1.png', 'U1'), mime: 'image/png' } })
@@ -301,7 +293,11 @@ describe('dvApi', () => {
     expect(fixture.handlers.getState(projectId).redo_steps).toEqual([])
     await expect(fixture.handlers.undo({ project: projectId, to: 7 })).rejects.toMatchObject({ status: 400, code: 'invalid_params' })
     await expect(fixture.handlers.undo({ project: projectId, to: 'missing' })).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
-
+    // A write after an undo continues on a new branch and keeps the undone step on main.
+    await fixture.handlers.undo({ project: projectId, to: first.id })
+    const third = await fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('u3.png', 'U3'), mime: 'image/png' } })
+    expect(third.branch).toBe('b2')
+    expect(fixture.handlers.getState(projectId, 'main').head).toBe(second.id)
   })
 
   it('serves the Fetch routes under /api/dv with statuses and codes from the operations', async () => {
@@ -333,12 +329,14 @@ describe('dvApi', () => {
     expect(await call(fixture, ROUTES.operation, { method: 'POST', body: { project: projectId, operation: 'no.such', surface: 'canvas' } }))
       .toMatchObject({ status: 404, json: { code: 'unknown_operation' } })
     expect(await call(fixture, ROUTES.state, { query: { project: projectId, branch: 'nowhere' } })).toMatchObject({ status: 404, json: { code: 'unknown_branch' } })
-    const noDraft = await call(fixture, ROUTES.acceptDraft, { method: 'POST', body: { project: projectId, session: 'x' } })
-    expect(noDraft).toMatchObject({ status: 409, json: { code: 'no_open_draft' } })
-    await fixture.agentImport(projectId, 's4', 'four.png')
-    const changed = await call(fixture, ROUTES.discardDraft, { method: 'POST', body: { project: projectId, session: 's4', counts: { agent_changes: 0, human_edits: 0 } } })
-    expect(changed).toMatchObject({ status: 409, json: { code: 'draft_changed', counts: { agent_changes: 1, human_edits: 0 } } })
-    expect((await call(fixture, ROUTES.discardDraft, { method: 'POST', body: { project: projectId, session: 's4', counts: { agent_changes: 1, human_edits: 0 } } })).status).toBe(200)
+    expect(await call(fixture, ROUTES.switchBranch, { method: 'POST', body: { project: projectId, branch: 'b9' } }))
+      .toMatchObject({ status: 404, json: { code: 'unknown_branch' } })
+    const forked = await call(fixture, ROUTES.createBranch, { method: 'POST', body: { project: projectId, title: 'alt' } })
+    expect(forked).toMatchObject({ status: 200, json: { branch: { name: 'b2', title: 'alt' } } })
+    expect(await call(fixture, ROUTES.renameBranch, { method: 'POST', body: { project: projectId, branch: 'b2', title: 'night' } }))
+      .toMatchObject({ status: 200, json: { branch: { name: 'b2', title: 'night' } } })
+    expect(await call(fixture, ROUTES.switchBranch, { method: 'POST', body: { project: projectId, branch: 'main' } }))
+      .toMatchObject({ status: 200, json: { branch: { name: 'main' } } })
     const noBody = await call(fixture, ROUTES.undo, { method: 'POST' })
     expect(noBody.status).toBe(400)
     expect(await call(fixture, ROUTES.redo, { method: 'POST', body: { project: projectId } })).toMatchObject({ status: 409, json: { code: 'nothing_to_redo' } })
@@ -354,9 +352,9 @@ describe('dvApi', () => {
     const fixture = await start()
     // Every route that names a project: GET routes read it from the query, POST routes from the body.
     const named: Array<{ path: string; method: 'GET' | 'POST' }> = [
-      { path: ROUTES.state, method: 'GET' }, { path: ROUTES.operation, method: 'POST' }, { path: ROUTES.acceptDraft, method: 'POST' },
-      { path: ROUTES.discardDraft, method: 'POST' }, { path: ROUTES.undo, method: 'POST' }, { path: ROUTES.redo, method: 'POST' },
-      { path: ROUTES.acceptStale, method: 'POST' }, { path: ROUTES.history, method: 'POST' },
+      { path: ROUTES.state, method: 'GET' }, { path: ROUTES.operation, method: 'POST' }, { path: ROUTES.createBranch, method: 'POST' },
+      { path: ROUTES.switchBranch, method: 'POST' }, { path: ROUTES.renameBranch, method: 'POST' }, { path: ROUTES.undo, method: 'POST' },
+      { path: ROUTES.redo, method: 'POST' }, { path: ROUTES.acceptStale, method: 'POST' }, { path: ROUTES.history, method: 'POST' },
     ]
     for (const { path, method } of named) {
       const send = (project: string | undefined) => method === 'GET'
@@ -383,13 +381,14 @@ describe('dvApi', () => {
     })
     const undo = await fixture.handlers.undo({ project: projectId, surface: 'history' })
     expect(undo.record.surface).toBe('history')
+    // The agent's write after the undo forks b2; main keeps the undone record as its last step.
     const agent = await fixture.agentImport(projectId, 's1', 'a.png')
     const history = async (body: Record<string, unknown>) => {
       const answer = await call(fixture, ROUTES.history, { method: 'POST', body: { project: projectId, ...body } })
       return answer as {
         status: number
         json: {
-          entries: Array<{ record: { id: string }; mark: string }>
+          entries: Array<{ record: { id: string }; mark: string; branches: string[] }>
           assets: Array<{ id: string }>
         }
       }
@@ -398,13 +397,14 @@ describe('dvApi', () => {
 
     const all = await history({ kind: 'operation' })
     expect(all.status).toBe(200)
-    expect(all.json.entries.map(entry => [entry.record.id, entry.mark])).toEqual([
-      [agent, 'draft'], [undo.record.id, 'main'], [undone.id, 'undone'], [human.id, 'main'], [expect.any(String), 'main'],
+    expect(all.json.entries.map(entry => [entry.record.id, entry.mark, entry.branches])).toEqual([
+      [agent, 'current', ['b2']], [undo.record.id, 'undone', []], [undone.id, 'branch', ['main']], [human.id, 'current', ['main', 'b2']],
+      [expect.any(String), 'current', ['main', 'b2']],
     ])
     const named = [...human.outputs, ...undone.outputs, ...fixture.project.getRecord(projectId, agent).outputs]
     expect(all.json.assets.map(asset => asset.id).sort()).toEqual(named.sort())
 
-    expect(ids(await history({ marks: ['main', 'undone'], limit: 2 }))).toEqual([undo.record.id, undone.id])
+    expect(ids(await history({ marks: ['branch', 'undone'], limit: 2 }))).toEqual([undo.record.id, undone.id])
     expect(ids(await history({ tool_call: 'call-1' }))).toEqual([agent])
     expect(ids(await history({ actor: 'user', component: 'asset', before: undone.id }))).toEqual([human.id])
     expect(ids(await history({ records: [human.id, agent] }))).toEqual([agent, human.id])
@@ -414,7 +414,7 @@ describe('dvApi', () => {
     expect(await call(fixture, ROUTES.history, { method: 'POST', body: { project: 'nope' } })).toMatchObject({ status: 404, json: { code: 'unknown_project' } })
     expect(await history({ before: 'missing' })).toMatchObject({ status: 404, json: { code: 'unknown_record' } })
     const refused = [
-      { actor: 'robot' }, { kind: 'request' }, { marks: ['branch'] }, { marks: ['kept'] }, { marks: 'main' }, { limit: 0 }, { limit: 201 },
+      { actor: 'robot' }, { kind: 'request' }, { marks: ['main'] }, { marks: ['kept'] }, { marks: 'current' }, { limit: 0 }, { limit: 201 },
       { limit: 1.5 }, { branch: 3 },
     ]
     for (const bad of refused) {
@@ -466,7 +466,7 @@ describe('dvApi', () => {
   it('frames each project change by its kind, and lists every asset a state mentions', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')
-    const event: ProjectEvent = { kind: 'branch', name: 'main', branch: null }
+    const event: ProjectEvent = { kind: 'branch', name: 'main', head: brandString<RecordId>('r1'), current: 'main' }
     expect(frameOf(event)).toBe(`event: branch\ndata: ${JSON.stringify(event)}\n\n`)
     const imported = await fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('h.png', 'H'), mime: 'image/png' } })
     await fixture.handlers.runOperation({

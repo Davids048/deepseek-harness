@@ -10,7 +10,7 @@ import type { ProjectModules } from './support.ts'
 import { createTestProject, startModules, userOrigin, versionKey } from './support.ts'
 import { MAIN_BRANCH, ProjectError } from '../src/shared.ts'
 import type { RecordLineInput } from '../src/record-store.ts'
-import type { AssetId, CharacterId, ComponentStates, ProjectId, ProjectRecord, RecordId, RecordInput } from '../src/types.ts'
+import type { AssetId, CharacterId, ComponentStates, ProjectId, ProjectRecord, RecordInput } from '../src/types.ts'
 
 declare module '@dv/project' {
   interface ComponentStates {
@@ -77,12 +77,7 @@ describe('reducers', () => {
     expect(state).toMatchObject({ branch: MAIN_BRANCH, head: last.id, project: m.store.getProject(project) })
     expect(state.components.reducers_test?.count).toBe(2)
     expect(state.components.proj.records).toEqual(m.store.ancestors(project, last.id))
-    const next = m.reducers.apply(state, { ...last, id: brandString<RecordId>('next') })
-    expect(next.head).toBe('next')
-    expect(next.components.reducers_test?.count).toBe(3)
-    expect(state.components.reducers_test?.count).toBe(2)
-    expect(m.reducers.conflict(state, last)).toBeNull()
-    expect(() => m.reducers.getState(project, 'draft/missing')).toThrow(ProjectError)
+    expect(() => m.reducers.getState(project, 'b9')).toThrow(ProjectError)
   })
 
   it('refuses a second reducer for a key', () => {

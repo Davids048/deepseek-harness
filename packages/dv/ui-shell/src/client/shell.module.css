@@ -71,7 +71,7 @@
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
   align-items: center;
   flex: none;
   gap: 12px;
@@ -154,42 +154,10 @@
 
 .barEnd {
   display: flex;
-  justify-content: flex-end;
-  min-width: 0;
-}
-
-/* The agent draft strip between the top bar and the timeline view. */
-.draft {
-  display: flex;
-  flex: none;
   align-items: center;
-  gap: 8px;
-  padding: 6px 16px 6px 20px;
-  border-bottom: 1px dashed rgba(230, 140, 40, 0.7);
-  background: rgba(230, 140, 40, 0.08);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.draft > span {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.draftButton {
-  padding: 3px 10px;
-  border: none;
-  border-radius: 7px;
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.draftAccept {
-  background: var(--dsw-alias-state-business-primary);
-  color: #fff;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
 }
 
 .viewArea {

@@ -1,5 +1,6 @@
 /**
- * The right-sidebar tab body: the branch bar for choosing a project and branch, then the timeline editor of that branch.
+ * The right-sidebar tab body: the branch bar for choosing a project and its current branch, then the timeline editor of
+ * that branch.
  */
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
@@ -27,9 +28,8 @@ export type TimelineBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & Timelin
  */
 export function barLabels(t: TimelineBodyProps['t']): BranchBarLabels {
   return {
-    project: t('bar.project'), branch: t('bar.branch'), accept: t('bar.accept'), discard: t('bar.discard'), undo: t('bar.undo'),
-    newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
-    draftTitle: t('bar.draft'), noProject: t('bar.noProject'),
+    project: t('bar.project'), undo: t('bar.undo'), newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
+    noProject: t('bar.noProject'),
   }
 }
 
@@ -49,8 +49,7 @@ export function TimelineBody({ client, t }: TimelineBodyProps): ReactNode {
   else {
     content = (
       <TimelineEditor
-        client={client} t={t} project={view.project} branch={view.branch} session={view.session} state={state}
-        readOnly={view.readOnly} run={view.run}
+        client={client} t={t} project={view.project} session={view.session} state={state} run={view.run}
       />
     )
   }
@@ -59,7 +58,6 @@ export function TimelineBody({ client, t }: TimelineBodyProps): ReactNode {
       <BranchBar {...view.bar} labels={labels} />
       {view.notice !== null ? <p role="alert" style={{ margin: 0, padding: '4px 8px', color: 'var(--dv-accent, #b4432a)' }}>{t('error', { message: view.notice })}</p> : null}
       <div style={{ flex: 1, minHeight: 0 }}>{content}</div>
-      {view.discardDialog}
     </div>
   )
 }

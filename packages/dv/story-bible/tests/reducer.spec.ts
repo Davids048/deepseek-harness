@@ -1,4 +1,4 @@
-/** The pure `bible` reducer: versions from `bible.*` records, the two version lookups, and the accept-replay conflict. */
+/** The pure `bible` reducer: versions from `bible.*` records and the two version lookups. */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AssetId, ProjectRecord, ProjectState, RecordId, RecordInput } from '@dv/project'
 import { describe, expect, it } from 'vitest'
@@ -89,18 +89,6 @@ describe('bibleReducer', () => {
     expect(bibleReducer.createdBy?.(slice, { location: brandString<LocationId>('c1'), version: 1 })).toBeNull()
     expect(bibleReducer.assetsOf?.(slice, { asset: FACE })).toBeNull()
     expect(bibleReducer.createdBy?.(slice, { record: brandString<RecordId>('r1'), output: 0 })).toBeNull()
-  })
-
-  it('reports a conflict for a create of an ID main has and an update of an ID main lacks', () => {
-    const main = reduceAll([record('r1', 'bible.location_create', { location: 'x1', name: 'Cave' })])
-    expect(bibleReducer.conflict?.(main, record('d1', 'bible.character_create', { character: 'x1', name: 'Lead' })))
-      .toBe('main already has a location with the ID x1.')
-    expect(bibleReducer.conflict?.(main, record('d2', 'bible.character_update', { character: 'x1' })))
-      .toBe('main has no character with the ID x1.')
-    expect(bibleReducer.conflict?.(main, record('d3', 'bible.character_create', { character: 'c2', name: 'New' }))).toBeNull()
-    expect(bibleReducer.conflict?.(main, record('d4', 'bible.location_update', { location: 'x1' }))).toBeNull()
-    expect(bibleReducer.conflict?.(main, record('d5', 'bible.character_create', { character: 'x1' }, [], 'failed'))).toBeNull()
-    expect(bibleReducer.conflict?.(main, record('d6', 'timeline.create', {}))).toBeNull()
   })
 
   it('lists the latest version of each character, location and style in the agent summary', () => {

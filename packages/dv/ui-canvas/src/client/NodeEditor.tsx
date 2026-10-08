@@ -25,10 +25,8 @@ export interface NodeEditorProps {
   state: WireState
   client: DvClient
   project: string
-  /** The chat session the canvas sits beside; writes go to its working branch (its open draft, else `main`). */
+  /** The chat session the canvas sits beside, recorded as the `session` of the editor's writes. */
   session: string | null
-  /** True while the viewed branch is a draft: render buttons are disabled. */
-  readOnly: boolean
   t: CanvasTranslate
   onClose: () => void
   /** Run a write and report its failure. */
@@ -149,13 +147,12 @@ export function NodeEditor(props: NodeEditorProps): ReactNode {
         <button type="button" aria-label={t('editor.close')} style={{ ...button, background: 'transparent', color: 'var(--dsw-alias-label-tertiary)', padding: '4px 8px' }} onClick={onClose}>✕</button>
       </div>
       <div style={{ padding: 14 }}>
-        {props.readOnly ? <p style={{ margin: '0 0 8px', color: 'var(--dsw-alias-state-warn-primary)' }}>{t('editor.readOnly')}</p> : null}
         {staleRecord !== null
           ? (
             <p style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 8px', color: 'var(--dsw-alias-state-error-primary)' }}>
               {t('node.stale')}
               <button
-                type="button" disabled={props.readOnly} style={{ ...secondaryButton, padding: '4px 10px', opacity: props.readOnly ? 0.5 : 1 }}
+                type="button" style={{ ...secondaryButton, padding: '4px 10px' }}
                 onClick={() => { void props.run(() => props.client.acceptStale(props.project, staleRecord.id, 'canvas', props.session)) }}
               >
                 {t('editor.keepAnyway')}
@@ -222,7 +219,7 @@ function AssetPanel(
  * @returns the element.
  */
 function TakeForm(
-  { node, state, client, project, session, readOnly, t, onClose, run, title }: NodeEditorProps & { title: string },
+  { node, state, client, project, session, t, onClose, run, title }: NodeEditorProps & { title: string },
 ): ReactNode {
   const record = node.record
   const [prompt, setPrompt] = useState(() => typeof record?.params['prompt'] === 'string' ? record.params['prompt'] : '')
@@ -294,7 +291,7 @@ function TakeForm(
         </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" disabled={readOnly || operation === null} style={{ ...button, background: 'var(--dsw-alias-button-primary-fill)', color: 'var(--dsw-alias-label-primary-inverted)', fontWeight: 600, opacity: readOnly || operation === null ? 0.5 : 1 }} onClick={renderTake}>{t('editor.renderTake')}</button>
+        <button type="button" disabled={operation === null} style={{ ...button, background: 'var(--dsw-alias-button-primary-fill)', color: 'var(--dsw-alias-label-primary-inverted)', fontWeight: 600, opacity: operation === null ? 0.5 : 1 }} onClick={renderTake}>{t('editor.renderTake')}</button>
       </div>
     </div>
   )
@@ -305,7 +302,7 @@ function TakeForm(
  * @param props - editor props.
  * @returns the element.
  */
-function BibleForm({ node, state, client, project, session, readOnly, t, run }: NodeEditorProps): ReactNode {
+function BibleForm({ node, state, client, project, session, t, run }: NodeEditorProps): ReactNode {
   const bibleId = node.bibleId ?? ''
   const kind = node.bibleKind ?? 'character'
   const latest = bibleVersions(state, bibleId)?.at(-1)
@@ -340,13 +337,13 @@ function BibleForm({ node, state, client, project, session, readOnly, t, run }: 
         : null}
       <span style={label}>{t('editor.replaceRef')}</span>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <select aria-label={t('editor.replaceRef')} disabled={readOnly} style={{ ...field, width: 'auto' }} value="" onChange={(event) => { if (event.target.value !== '') replace(event.target.value) }}>
+        <select aria-label={t('editor.replaceRef')} style={{ ...field, width: 'auto' }} value="" onChange={(event) => { if (event.target.value !== '') replace(event.target.value) }}>
           <option value="">{t('editor.replaceRef')}</option>
           {images.map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
         </select>
-        <label style={{ ...secondaryButton, opacity: readOnly ? 0.5 : 1 }}>
+        <label style={secondaryButton}>
           {t('editor.import')}
-          <input type="file" accept="image/*" disabled={readOnly} style={{ display: 'none' }} onChange={importImage} />
+          <input type="file" accept="image/*" style={{ display: 'none' }} onChange={importImage} />
         </label>
       </div>
     </div>

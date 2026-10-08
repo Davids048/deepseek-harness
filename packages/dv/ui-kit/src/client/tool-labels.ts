@@ -10,6 +10,8 @@ export const DV_TOOL_LABELS: Readonly<Record<string, readonly [string, string]>>
   dv_proj_create: ['新建项目', 'Create project'],
   dv_proj_open: ['打开项目', 'Open project'],
   dv_proj_state: ['查看项目', 'Get project state'],
+  dv_proj_branch_create: ['新建分支', 'Create a branch'],
+  // Records of projects written before branches replaced drafts.
   dv_proj_draft_accept: ['接受草稿', 'Accept the draft'],
   dv_proj_draft_discard: ['丢弃草稿', 'Discard the draft'],
   dv_proj_undo: ['撤销', 'Undo'],

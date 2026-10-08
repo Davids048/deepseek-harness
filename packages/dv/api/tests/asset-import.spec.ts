@@ -6,8 +6,7 @@ import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { brandString } from '@deepseek-ai/dsh-brand'
-import type { AssetId, ProjectRecord, SessionId, TurnId } from '@dv/project'
+import type { AssetId, ProjectRecord } from '@dv/project'
 import { encodeClip, startBase, type BaseFixture } from './support.ts'
 import { ASSET_IMPORT_ROUTE, assetImportRoutes } from '../src/asset-import.ts'
 
@@ -39,14 +38,11 @@ it('stores an imported file as an asset.import record with the caller\'s surface
     actor: 'user', surface: 'canvas', operation: 'asset.import', status: 'done', branch: 'main', params: { name: 'ref.png', mime: 'image/png' },
   })
 
-  // With a chat session whose draft is open, the import lands on that draft.
-  await fixture.project.run({
-    project: projectId, operation: 'asset.import', params: { base64: 'QQ==', mime: 'text/plain' }, inputs: [], actor: 'agent', surface: 'chat',
-    session: brandString<SessionId>('s1'), turn: brandString<TurnId>('t1'), tool_call: 'c1', intent: 'open the draft',
-  })
+  // With a forked branch current, the import lands on that branch and records the chat session beside the panel.
+  await fixture.project.createBranch(projectId, null)
   const fromPanel = { project: projectId, name: 'ref.png', mime: 'image/png', surface: 'asset_pool', session: 's1' }
-  const onDraft = await post(fromPanel, new Uint8Array(lastFrame))
-  expect(onDraft.json).toMatchObject({ record: { branch: 'draft/s1', session: 's1', actor: 'user', surface: 'asset_pool' } })
+  const onBranch = await post(fromPanel, new Uint8Array(lastFrame))
+  expect(onBranch.json).toMatchObject({ record: { branch: 'b2', session: 's1', actor: 'user', surface: 'asset_pool' } })
 
   // The surface names the caller, the canvas or the asset pool panel; a missing or other surface is refused.
   for (const surface of [undefined, 'timeline', 'chat']) {

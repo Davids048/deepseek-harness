@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { onTestFinished } from 'vitest'
-import { Drafts } from '../src/drafts.ts'
+import { Branches } from '../src/branches.ts'
 import { History } from '../src/history.ts'
 import { RecordStore } from '../src/record-store.ts'
 import { projReducer, ReducerRegistry } from '../src/reducers.ts'
@@ -143,7 +143,7 @@ export interface ProjectModules {
   store: RecordStore
   subscriptions: Subscriptions
   reducers: ReducerRegistry
-  drafts: Drafts
+  branches: Branches
   history: History
   scheduler: Scheduler
   runner: Runner
@@ -168,20 +168,20 @@ export function startModules(limits = { cpu: 4, gpu: 1 }): ProjectModules {
     if (event.kind === 'update' && ['done', 'failed', 'cancelled'].includes(event.record.status)) holder.scheduler?.recordFinished(project)
   })
   const reducers = new ReducerRegistry(store)
-  const drafts = new Drafts(store, reducers)
   const history = new History(store)
+  const branches = new Branches(store, history)
   const assets = new FakeAssets()
   const scheduler = new Scheduler(store, (project, record) => {
     if (holder.runner === null) throw new Error('runner not built')
     return holder.runner.execute(project, record)
   }, limits)
-  const runner = new Runner({ store, drafts, reducers, scheduler, assets })
+  const runner = new Runner({ store, branches, reducers, scheduler, assets })
   holder.scheduler = scheduler
   holder.runner = runner
   store.load()
   reducers.register('proj', projReducer)
   onTestFinished(() => { scheduler.dispose() })
-  return { root, store, subscriptions, reducers, drafts, history, scheduler, runner, assets, events }
+  return { root, store, subscriptions, reducers, branches, history, scheduler, runner, assets, events }
 }
 
 /**

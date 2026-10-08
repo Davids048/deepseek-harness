@@ -5,8 +5,8 @@
  * @module @dv/ui-kit/api
  */
 import type {
-  CanvasLayout, DraftCounts, DraftTarget, HistoryQuery, OperationRequest, ProjectEvent,
-  ProjectInfo, ProjectRecord, WireHistory, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
+  CanvasLayout, HistoryQuery, OperationRequest, ProjectEvent,
+  ProjectInfo, ProjectRecord, WireBranchResult, WireHistory, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
   WireWorkspaces,
 } from './types.ts'
 
@@ -82,8 +82,8 @@ export class DvApiError extends Error {
   /**
    * @param status - the HTTP status.
    * @param message - the server's explanation.
-   * @param code - the Project error code, such as `draft_changed`, when the server sent one.
-   * @param body - the whole error body, for fields such as a changed draft's `counts`.
+   * @param code - the Project error code, such as `unknown_branch`, when the server sent one.
+   * @param body - the whole error body, for fields beside `error` and `code`.
    */
   constructor(readonly status: number, message: string, readonly code: string | null = null, readonly body: Record<string, unknown> = {}) {
     super(message)
@@ -111,7 +111,7 @@ async function decode<T>(response: Response): Promise<T> {
   return body as T
 }
 
-/** Every `/api/dv` call of the browser: project state, operations, history, drafts, undo and redo, layout, workspaces. */
+/** Every `/api/dv` call of the browser: project state, operations, history, branches, undo and redo, layout, workspaces. */
 export class DvClient {
   constructor(private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init)) {}
 
@@ -155,12 +155,12 @@ export class DvClient {
 
   /**
    * @param project - the project.
-   * @param branch - a branch name.
+   * @param branch - a branch name, or null for the project's current branch.
    * @param signal - cancels the request.
    * @returns the state of the branch.
    */
-  getState(project: string, branch: string, signal?: AbortSignal): Promise<WireState> {
-    return this.get('/api/dv/state', { project, branch }, signal)
+  getState(project: string, branch: string | null, signal?: AbortSignal): Promise<WireState> {
+    return this.get('/api/dv/state', branch === null ? { project } : { project, branch }, signal)
   }
 
   /**
@@ -196,7 +196,7 @@ export class DvClient {
    * @param project - the project.
    * @param file - the file.
    * @param surface - where the file was imported: the canvas or the asset pool panel.
-   * @param session - the chat session the view sits beside; the record goes to that session's working branch.
+   * @param session - the chat session the view sits beside, recorded as the record's `session`.
    * @returns the asset ID and the record.
    */
   async importAsset(
@@ -209,34 +209,46 @@ export class DvClient {
   }
 
   /**
-   * Accept a draft into the branch it was forked from.
+   * Fork a branch from the current branch at its head's position and make it the project's current branch.
    * @param project - the project.
-   * @param target - the chat session whose draft it is, or the draft branch.
-   * @param surface - where the decision was made.
-   * @returns the accept record and the branch heads afterwards.
+   * @param title - the name the human gave it, or null for the default label.
+   * @param surface - where the gesture came from.
+   * @returns the new branch and the heads afterwards.
    */
-  acceptDraft(project: string, target: DraftTarget, surface: ViewSurface): Promise<WireRecordResult> {
-    return this.post('/api/dv/drafts/accept', { project, ...target, surface })
+  createBranch(project: string, title: string | null, surface: ViewSurface): Promise<WireBranchResult> {
+    return this.post('/api/dv/branches/create', { project, surface, ...title === null ? {} : { title } })
   }
 
   /**
-   * Discard a draft, including the human's edits on it. Without `counts` this is a dry read that returns the counts
-   * to confirm; with the counts the human confirmed, the draft is discarded, or the call fails with code
-   * `draft_changed` when the draft changed meanwhile.
+   * Make a branch the project's current branch and, with `to`, return it to that step of its line.
    * @param project - the project.
-   * @param target - the chat session whose draft it is, or the draft branch.
-   * @param surface - where the decision was made.
-   * @param counts - the counts the human confirmed; omitted for the dry read.
-   * @returns the draft's name and its counts.
+   * @param branch - the branch name.
+   * @param surface - where the gesture came from.
+   * @param to - a step on the branch's line; omit to keep the branch where it stands.
+   * @param session - the chat session the view sits beside, recorded on the jump record; null for none.
+   * @returns the branch and the heads afterwards.
    */
-  discardDraft(
-    project: string, target: DraftTarget, surface: ViewSurface, counts?: DraftCounts,
-  ): Promise<{ draft: string; counts: DraftCounts }> {
-    return this.post('/api/dv/drafts/discard', { project, ...target, surface, ...counts === undefined ? {} : { counts } })
+  switchBranch(
+    project: string, branch: string, surface: ViewSurface, to?: string, session: string | null = null,
+  ): Promise<WireBranchResult> {
+    return this.post('/api/dv/branches/switch', {
+      project, branch, surface, ...to === undefined ? {} : { to }, ...session === null ? {} : { session },
+    })
   }
 
   /**
-   * Move the working branch of the session (its draft, else `main`) back by one step, or jump it to a step.
+   * Give a branch the name the human chose; an empty title returns to the default label.
+   * @param project - the project.
+   * @param branch - the branch name.
+   * @param title - the title.
+   * @returns the branch and the heads afterwards.
+   */
+  renameBranch(project: string, branch: string, title: string): Promise<WireBranchResult> {
+    return this.post('/api/dv/branches/rename', { project, branch, title })
+  }
+
+  /**
+   * Move the project's current branch back by one step, or jump it to a step.
    * @param project - the project.
    * @param surface - where the gesture came from.
    * @param session - the chat session the view sits beside, or null.
@@ -248,7 +260,7 @@ export class DvClient {
   }
 
   /**
-   * Move the working branch of the session forward by one step that an undo removed.
+   * Move the project's current branch forward by one step that an undo removed.
    * @param project - the project.
    * @param surface - where the gesture came from.
    * @param session - the chat session the view sits beside, or null.

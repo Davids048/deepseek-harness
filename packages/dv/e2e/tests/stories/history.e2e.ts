@@ -2,10 +2,11 @@
 // renders playable VP9 videos and a scripted agent model. Projects are seeded through the `/api/dv` routes; agent turns
 // go through the chat. Every story checks the action rows the creator sees: their order, labels, who, thumbnails, marks,
 // the renders folded under a plan approval, filters, the focus a selected row gives the canvas or the timeline, live
-// updates, and the steps of the working branch: 回到这一步, Ctrl+Z and Shift+Ctrl+Z, and the greyed steps redo brings back.
+// updates, the steps of the current branch (回到这一步, Ctrl+Z and Shift+Ctrl+Z, and the greyed steps redo brings back),
+// the branch a write after an undo forks, and the 分支树 view that switches between branches.
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import type { Branch, DraftCounts, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
+import type { ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
 import { bootHarness, playwright, waitFor, type BootedHarness } from '../harness.ts'
 import { startScriptedModel, type ScriptedModel } from '../scripted-model.ts'
 
@@ -32,7 +33,7 @@ let projectCount = 0
  * @param operation - the operation name.
  * @param params - the operation params.
  * @param inputs - the input references.
- * @param session - the chat session whose working branch receives the record; none writes to `main`.
+ * @param session - the chat session the record names; the record lands on the project's current branch either way.
  * @returns the record.
  */
 async function runOperation(
@@ -47,9 +48,10 @@ async function runOperation(
   return await harness.api.post('/api/dv/operation', body) as ProjectRecord
 }
 
-/** @returns the folded state of a project branch, `main` by default. */
-async function stateOf(project: string, branch = 'main'): Promise<WireState> {
-  return await harness.api.get(`/api/dv/state?project=${project}&branch=${encodeURIComponent(branch)}`) as WireState
+/** @returns the folded state of a project branch, the project's current branch by default. */
+async function stateOf(project: string, branch?: string): Promise<WireState> {
+  const query = branch === undefined ? '' : `&branch=${encodeURIComponent(branch)}`
+  return await harness.api.get(`/api/dv/state?project=${project}${query}`) as WireState
 }
 
 /** @returns a project created through the API with a unique title. */
@@ -169,49 +171,53 @@ async function openHistory(page: Page): Promise<void> {
   await expect.poll(() => historyPanel(page).count(), { timeout: 15_000 }).toBe(1)
 }
 
-/** @returns the branches of a project. */
-async function branchesOf(project: string): Promise<Branch[]> {
-  return (await stateOf(project)).branches
-}
-
 /**
- * Ask the scripted agent to rename timeline t1 in the chat, which opens the chat session's draft with one agent record
- * whose intent is `改名：<word>`.
+ * Ask the scripted agent to rename timeline t1 in the chat, which writes one agent record whose intent is
+ * `改名：<word>` on the project's current branch, then return to 历史.
  * @param page - a page showing the project.
  * @param project - the project.
  * @param word - the chat message, unique to the story.
- * @returns the open draft.
+ * @returns the agent's record.
  */
-async function openAgentDraft(page: Page, project: string, word: string): Promise<Branch & { session: string }> {
+async function agentRename(page: Page, project: string, word: string): Promise<ProjectRecord> {
   model.rules.push({
     match: word, endText: '改好了',
     steps: [{ calls: [{
       name: 'dv_timeline_rename', args: { reason: `改名：${word}`, project_id: project, timeline: 't1', name: `${word} 改名` },
     }] }],
   })
-  // The composer lives in the 对话 tab; the story returns to 历史 once the draft is open.
+  // The composer lives in the 对话 tab; the story returns to 历史 once the record is written.
   await page.locator('[role="tab"]', { hasText: /^对话$/ }).filter({ visible: true }).first().click()
   const composer = page.locator('[data-dv-chat] [contenteditable="true"]:visible').first()
   await composer.waitFor({ timeout: 30_000 })
   await composer.click()
   await page.keyboard.type(word)
   await page.keyboard.press('Enter')
-  const opened = await waitFor(async () => {
-    const draft = (await branchesOf(project)).find(branch => branch.counts !== null && branch.session !== null)
-    return draft === undefined || draft.session === null ? null : { ...draft, session: draft.session }
-  }, 'the open draft', 60_000)
+  const record = await waitFor(async () => (await stateOf(project)).components.proj.records
+    .find(entry => entry.actor === 'agent' && entry.intent === `改名：${word}`), 'the agent record', 60_000)
   await openHistory(page)
-  return opened
+  return record
+}
+
+/** The branch switcher in the workspace top bar. */
+function switcher(page: Page): Locator {
+  return page.locator('[data-testid="dv-kit-branch-switcher"]:visible').first()
 }
 
 /**
- * Discard a chat session's draft through the API: the dry read for its counts, then the discard with those counts.
- * @param project - the project.
- * @param session - the chat session that owns the draft.
+ * Show one view of the History panel.
+ * @param page - a page showing the History panel.
+ * @param view - `list` or `tree`.
  */
-async function discardDraft(project: string, session: string): Promise<void> {
-  const read = await harness.api.post('/api/dv/drafts/discard', { project, session, surface: 'canvas' }) as { counts: DraftCounts }
-  await harness.api.post('/api/dv/drafts/discard', { project, session, surface: 'canvas', counts: read.counts })
+async function showView(page: Page, view: 'list' | 'tree'): Promise<void> {
+  const button = historyPanel(page).locator(`[data-testid="dv-history-view-toggle"] [data-view="${view}"]`)
+  await button.click()
+  await expect.poll(() => button.getAttribute('aria-pressed')).toBe('true')
+}
+
+/** A node of the 分支树 view. */
+function treeNode(page: Page, record: string): Locator {
+  return historyPanel(page).locator(`[data-testid="dv-history-tree-node"][data-record="${record}"]`)
 }
 
 /** @returns the names of the timeline tabs the timeline editor shows. */
@@ -230,7 +236,7 @@ async function threeRenames(project: string): Promise<ProjectRecord[]> {
   return renames
 }
 
-/** @returns the `data-step` of one record's row, or null when the row is not a step of the working branch. */
+/** @returns the `data-step` of one record's row, or null when the row is not a step of the current branch. */
 async function stepOf(page: Page, record: ProjectRecord | undefined): Promise<string | null> {
   return await rowOf(page, record?.id ?? '').getAttribute('data-step')
 }
@@ -264,7 +270,7 @@ describe('History panel', () => {
     const render = rowOf(page, project.renders[1]?.id ?? '')
     expect(await render.getAttribute('data-actor')).toBe('user')
     expect(await render.getAttribute('data-status')).toBe('done')
-    expect(await render.getAttribute('data-mark')).toBe('main')
+    expect(await render.getAttribute('data-mark')).toBe('current')
     const text = await render.innerText()
     for (const word of ['你', '参考图生成镜头']) expect(text).toContain(word)
     // One thumbnail per row: the take's still, which the browser loads.
@@ -277,30 +283,30 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
-  it('an agent row shows the intent the agent gave for its call; a human edit on the draft shows 草稿, then 已接受 after accept', async () => {
+  it('an agent row shows the intent the agent gave for its call; the agent\'s and the human\'s edits land on the current branch at once', async () => {
     const project = await seedProject('history-turn')
     const page = await openPage()
     await gotoProject(page, project.id)
     await openHistory(page)
-    const draft = await openAgentDraft(page, project.id, 'history-turn-request')
-    const agentRow = historyPanel(page).locator('[data-testid="dv-history-row"][data-actor="agent"]')
-    await expect.poll(() => agentRow.count(), { timeout: 30_000 }).toBe(1)
+    const agent = await agentRename(page, project.id, 'history-turn-request')
+    const agentRow = rowOf(page, agent.id)
     // The quoted words are the agent record's own intent, which the scripted call sets apart from the typed message.
-    await expect.poll(() => agentRow.innerText()).toContain('改名：history-turn-request')
+    await expect.poll(() => agentRow.innerText(), { timeout: 30_000 }).toContain('改名：history-turn-request')
     expect(await agentRow.innerText()).toContain('智能体')
     expect(await agentRow.getAttribute('data-surface')).toBe('chat')
-    expect(await agentRow.getAttribute('data-mark')).toBe('draft')
-    const edit = await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: '人工改名' }, [], draft.session)
-    await expect.poll(() => rowOf(page, edit.id).getAttribute('data-mark')).toBe('draft')
-    expect(await rowOf(page, edit.id).innerText()).toContain('草稿')
-    await harness.api.post('/api/dv/drafts/accept', { project: project.id, session: draft.session, surface: 'canvas' })
-    await expect.poll(() => rowOf(page, edit.id).getAttribute('data-mark')).toBe('main')
-    expect(await rowOf(page, edit.id).innerText()).toContain('已接受')
-    expect(await agentRow.innerText()).toContain('已接受')
+    expect(await agentRow.getAttribute('data-mark')).toBe('current')
+    expect(agent.branch).toBe('main')
+    const edit = await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: '人工改名' }, [], agent.session ?? undefined)
+    await expect.poll(() => stepOf(page, edit)).toBe('current')
+    expect(await rowOf(page, edit.id).getAttribute('data-mark')).toBe('current')
+    expect(await historyPanel(page).innerText()).not.toContain('草稿')
+    const state = await stateOf(project.id)
+    expect(state.current).toBe('main')
+    expect(state.branches.map(branch => branch.name)).toEqual(['main'])
     expect(page.errors).toEqual([])
   })
 
-  it('undo shows the undone record as 已撤销; discard shows the draft records as 已丢弃; nothing is hidden', async () => {
+  it('undo greys the undone step; a write after it forks 分支 2, and 分支树 switches back to 主线', async () => {
     const project = await seedProject('history-marks')
     const page = await openPage()
     await gotoProject(page, project.id)
@@ -309,18 +315,28 @@ describe('History panel', () => {
     await expect.poll(() => rows(page).count()).toBe(records.length)
     const before = await shownRecords(page)
     await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas' })
-    await expect.poll(() => rowOf(page, project.timeline.id).getAttribute('data-mark')).toBe('undone')
-    expect(await rowOf(page, project.timeline.id).innerText()).toContain('已撤销')
-    // The undo record is not a row, and the record it took back stays listed.
+    await expect.poll(() => rowOf(page, project.timeline.id).getAttribute('data-mark')).toBe('redo')
+    expect(await stepOf(page, project.timeline)).toBe('after')
+    // The undo record is not a row, and the step it took back stays listed.
     expect(await shownRecords(page)).toEqual(expect.arrayContaining(before))
     expect(await rows(page).count()).toBe(before.length)
-    await harness.api.post('/api/dv/redo', { project: project.id, surface: 'canvas' })
-    const draft = await openAgentDraft(page, project.id, 'history-marks-request')
-    const agentRows = historyPanel(page).locator('[data-testid="dv-history-row"][data-actor="agent"]')
-    await expect.poll(() => agentRows.count(), { timeout: 30_000 }).toBe(1)
-    await discardDraft(project.id, draft.session)
-    await expect.poll(() => agentRows.getAttribute('data-mark')).toBe('discarded')
-    expect(await agentRows.innerText()).toContain('已丢弃')
+    // A write after the undo continues on 分支 2; 主线 keeps the undone step.
+    const fork = await runOperation(project.id, 'timeline.create', { timeline: 't1', assets: [project.renders[0]?.outputs[0] ?? ''] })
+    expect(fork.branch).toBe('b2')
+    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('b2')
+    await expect.poll(() => rowOf(page, project.timeline.id).count()).toBe(0)
+    expect((await stateOf(project.id, 'main')).head).toBe(project.timeline.id)
+    // The tree shows both lanes; selecting 主线's last step switches back to 主线.
+    await showView(page, 'tree')
+    const lanes = historyPanel(page).locator('[data-testid="dv-history-tree-lane"]')
+    await expect.poll(() => lanes.evaluateAll(elements => elements.map(element => element.getAttribute('data-branch')))).toEqual(['main', 'b2'])
+    expect(await lanes.nth(1).innerText()).toContain('分支 2')
+    expect(await lanes.nth(1).getAttribute('data-current')).toBe('true')
+    await expect.poll(() => treeNode(page, fork.id).getAttribute('data-head')).toBe('true')
+    await treeNode(page, project.timeline.id).click()
+    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
+    await expect.poll(() => treeNode(page, project.timeline.id).getAttribute('data-head')).toBe('true')
+    expect((await stateOf(project.id)).current).toBe('main')
     expect(page.errors).toEqual([])
   })
 
@@ -358,13 +374,13 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
-  it('the actor, branch, operation kind and timeline filters each narrow the rows', async () => {
+  it('the actor, operation kind and timeline filters each narrow the rows', async () => {
     const project = await seedProject('history-filters')
     const t2 = await runOperation(project.id, 'timeline.create', { timeline: 't2', assets: [project.renders[0]?.outputs[0] ?? ''] })
     const page = await openPage()
     await gotoProject(page, project.id)
     await openHistory(page)
-    const draft = await openAgentDraft(page, project.id, 'history-filters-request')
+    await agentRename(page, project.id, 'history-filters-request')
     await expect.poll(() => rowAttributes(page, 'data-actor'), { timeout: 30_000 }).toContain('agent')
     const all = (await shownRecords(page)).length
     const filter = (name: string): Locator => historyPanel(page).locator(`[data-testid="dv-history-filter-${name}"]`)
@@ -376,19 +392,9 @@ describe('History panel', () => {
     await filter('actor').selectOption({ label: '你' })
     await expect.poll(async () => new Set(await rowAttributes(page, 'data-actor'))).toEqual(new Set(['user']))
     await reset('actor')
-    // Branch: `main` leaves the draft out; the draft option shows only its records.
-    await filter('branch').selectOption({ label: 'main' })
-    await expect.poll(async () => (await rowAttributes(page, 'data-mark')).includes('draft')).toBe(false)
-    const draftOption = await filter('branch').locator('option').evaluateAll(options => options
-      .map(option => ({ value: (option as HTMLOptionElement).value, label: option.textContent ?? '' }))
-      .find(option => option.label.startsWith('草稿 · '))?.value ?? '')
-    expect(draftOption).not.toBe('')
-    await filter('branch').selectOption(draftOption)
-    await expect.poll(async () => new Set(await rowAttributes(page, 'data-mark'))).toEqual(new Set(['draft']))
-    await reset('branch')
     // Operation kind: the timeline component's records only.
     await filter('component').selectOption({ label: '时间线' })
-    const timelineRecords = new Set((await stateOf(project.id, draft.name)).components.proj.records
+    const timelineRecords = new Set((await stateOf(project.id)).components.proj.records
       .filter(record => record.operation?.startsWith('timeline.') === true).map(record => record.id))
     await expect.poll(async () => (await shownRecords(page)).length).toBeLessThan(all)
     expect((await shownRecords(page)).every(record => timelineRecords.has(record))).toBe(true)
@@ -454,8 +460,7 @@ describe('History panel', () => {
     const project = await seedProject('history-trajectory')
     const page = await openPage()
     await gotoProject(page, project.id)
-    await openAgentDraft(page, project.id, 'history-trajectory-request')
-    await openHistory(page)
+    await agentRename(page, project.id, 'history-trajectory-request')
     const agentRow = historyPanel(page).locator('[data-testid="dv-history-row"][data-actor="agent"]')
     await expect.poll(() => agentRow.count(), { timeout: 30_000 }).toBe(1)
     // The link sits in the details of the selected row.
@@ -484,8 +489,7 @@ describe('History panel', () => {
     // The rows' marks come from the history list, which refetches shortly after the state changed.
     for (const later of [second, third]) {
       expect(await stepOf(page, later)).toBe('after')
-      await expect.poll(() => rowOf(page, later?.id ?? '').getAttribute('data-mark')).toBe('undone')
-      expect(await rowOf(page, later?.id ?? '').innerText()).toContain('已撤销')
+      await expect.poll(() => rowOf(page, later?.id ?? '').getAttribute('data-mark')).toBe('redo')
     }
     expect(await historyPanel(page).locator('[data-testid="dv-history-redo"]').isDisabled()).toBe(false)
     const state = await stateOf(project.id)
@@ -497,7 +501,7 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
-  it('Ctrl+Z and Shift+Ctrl+Z step the working branch back and forward outside text fields', async () => {
+  it('Ctrl+Z and Shift+Ctrl+Z step the current branch back and forward outside text fields', async () => {
     const project = await seedProject('history-keys')
     const [first, second, third] = await threeRenames(project.id)
     const page = await openPage()
@@ -525,7 +529,7 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
-  it('a new edit after a jump drops the greyed rows from the redo line', async () => {
+  it('a new edit after a jump continues on 分支 2, and the list shows only that branch\'s steps', async () => {
     const project = await seedProject('history-drop')
     const [first, second, third] = await threeRenames(project.id)
     const page = await openPage()
@@ -535,15 +539,15 @@ describe('History panel', () => {
     await rowOf(page, first?.id ?? '').locator('[data-testid="dv-history-jump"]').click()
     await expect.poll(() => stepOf(page, third)).toBe('after')
     const fourth = await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: 'fourth' })
+    expect(fourth.branch).toBe('b2')
     await expect.poll(() => stepOf(page, fourth)).toBe('current')
     expect(await stepOf(page, first)).toBe('before')
-    // The dropped steps stay listed as undone records, struck through, and redo has nothing to bring back.
-    for (const dropped of [second, third]) {
-      expect(await stepOf(page, dropped)).toBeNull()
-      await expect.poll(() => rowOf(page, dropped?.id ?? '').getAttribute('data-mark')).toBe('undone')
-    }
+    // The later steps stay on 主线, so the list of 分支 2 no longer shows them, and redo has nothing to bring back.
+    for (const kept of [second, third]) await expect.poll(() => rowOf(page, kept?.id ?? '').count()).toBe(0)
     expect(await historyPanel(page).locator('[data-testid="dv-history-redo"]').isDisabled()).toBe(true)
     expect((await stateOf(project.id)).redo_steps).toEqual([])
+    expect((await stateOf(project.id, 'main')).components.timeline.timelines[0]?.name).toBe('third')
+    expect((await stateOf(project.id)).components.timeline.timelines[0]?.name).toBe('fourth')
     expect(page.errors).toEqual([])
   })
 
@@ -551,8 +555,8 @@ describe('History panel', () => {
     const project = await seedProject('history-chat-link')
     const page = await openPage()
     await gotoProject(page, project.id)
-    const draft = await openAgentDraft(page, project.id, 'history-chat-link-request')
-    const records = (await stateOf(project.id, draft.name)).components.proj.records
+    await agentRename(page, project.id, 'history-chat-link-request')
+    const records = (await stateOf(project.id)).components.proj.records
     const agentRecord = records.find(record => record.actor === 'agent' && record.operation === 'timeline.rename')
     expect(agentRecord?.tool_call).toBeTruthy()
     // The chat folds a finished turn's tool rows; the link stays in the page, so the event reaches it while folded.

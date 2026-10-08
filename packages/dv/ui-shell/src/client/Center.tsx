@@ -1,8 +1,9 @@
 /**
  * The center of the DreamVerse shell, shadowing DSH's `main.conversation`. Without an open project it is the entry
  * page: a DreamVerse headline, the DSH composer, and recent project cards, and the chat itself once it starts. With a
- * project open it is the workspace: a top bar (breadcrumb, 画布 | 时间线 toggle, panel control) above the canvas or the
- * timeline editor, each of which shows the working-branch bar that accepts or discards the session's draft.
+ * project open it is the workspace: a top bar (breadcrumb, 画布 | 时间线 toggle, branch switcher, panel control) above the
+ * canvas or the timeline editor. Every view shows the project's current branch, so a switch in the top bar changes what
+ * the canvas, the timeline, the asset pool panel and the History panel show.
  *
  * The center also keeps the shell's open project and the DSH main session together: once the client lists are ready
  * it restores the location the URL names, and afterwards it adopts the project of a main session that moves to
@@ -18,7 +19,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DV_CURRENT_TIMELINE_EVENT, getTimelineOf, publishCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
 import { pickText, useText } from '@dv/ui-kit/locale.ts'
-import { sessionDraft } from '@dv/ui-kit/state.ts'
+import { BranchSwitcher, branchActions } from '@dv/ui-kit/BranchSwitcher.tsx'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
   DV_CANVAS_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT, DV_TIMELINE_INSERT_EVENT, type DvWorkspaceEventMap,
@@ -259,13 +260,16 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     return row?.blank === false ? row.displayTitle : undefined
   })
   const [renaming, setRenaming] = useState(false)
-  const state = useProjectState(client, projectId, 'main')
-  // The chat session the workspace sits beside: its draft is the one the views' working-branch bar accepts or discards,
-  // and the views' edits go to its working branch. Until the main session belongs to this project, edits go to `main`.
+  // The state of the project's current branch, which every view shows and every edit goes to.
+  const state = useProjectState(client, projectId, null)
+  // The chat session the workspace sits beside, recorded as the `session` of the views' edits; none until the main
+  // session belongs to this project.
   const session = sessionInProject ? sessionId ?? null : null
-  const draft = state.value === null ? null : sessionDraft(state.value, session)
-  // The state of the session's working branch (its open draft, else `main`), where 插入片段 picks and writes the timeline.
-  const working = useProjectState(client, projectId, draft?.branch ?? 'main')
+  // A branch switch, fork or rename refetches the state; a refused one leaves the page as it was and shows the server's
+  // reason.
+  const branches = branchActions(client, projectId, view === 'timeline' ? 'timeline' : 'canvas', work => work().then(
+    () => { state.reload() }, (error: unknown) => { window.alert(error instanceof Error ? error.message : String(error)) },
+  ))
   const mounted = useSyncExternalStore(shell.mountedSeat.subscribe, shell.mountedSeat.getSnapshot)
   const opened = useRef(new Set<string>())
   useEffect(() => {
@@ -319,10 +323,10 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     window.addEventListener(DV_TIMELINE_FOCUS_EVENT, focus)
     return () => { window.removeEventListener(DV_TIMELINE_FOCUS_EVENT, focus) }
   }, [projectId])
-  // 插入片段 appends the asset to the timeline selected in the timeline editor, else to the working branch's first
-  // timeline; a working branch without timelines gets timeline `t1` holding the clip.
+  // 插入片段 appends the asset to the timeline selected in the timeline editor, else to the current branch's first
+  // timeline; a branch without timelines gets timeline `t1` holding the clip.
   const insertClip = (assetId: string): void => {
-    const timelines = working.value?.components.timeline.timelines ?? []
+    const timelines = state.value?.components.timeline.timelines ?? []
     const timeline = timelines.find(item => item.id === getTimelineOf(projectId)) ?? timelines[0]
     const at = (timeline?.clips.length ?? 0) + 1
     const call = timeline === undefined
@@ -333,7 +337,7 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
       }
     if (timeline === undefined) publishCurrentTimeline(projectId, 't1')
     void client.runOperation({ project: projectId, ...call, surface: 'timeline', ...session === null ? {} : { session } })
-      .then(() => { working.reload() }, (error: unknown) => { console.warn('ui-shell: insert failed', error) })
+      .then(() => { state.reload() }, (error: unknown) => { console.warn('ui-shell: insert failed', error) })
   }
   const insertRef = useRef(insertClip)
   insertRef.current = insertClip
@@ -386,6 +390,7 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
           ))}
         </div>
         <div className={css.barEnd}>
+          <BranchSwitcher state={state.value} {...branches} />
           <button type="button" className={css.panelsButton} title={t('打开对话、素材库和轨迹', 'Open Chat, Asset pool, and Trajectory')} onClick={showPanels}>
             {t('面板', 'Panels')}
           </button>
@@ -393,8 +398,8 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
       </header>
       <div className={css.viewArea}>
         {view === 'canvas'
-          ? <CanvasView projectId={projectId} branch="main" client={client} session={session} />
-          : <TimelineView projectId={projectId} branch="main" client={client} session={session} />}
+          ? <CanvasView projectId={projectId} client={client} session={session} />
+          : <TimelineView projectId={projectId} client={client} session={session} />}
       </div>
     </div>
   )

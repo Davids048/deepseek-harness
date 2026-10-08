@@ -70,7 +70,7 @@ function bibleItems(kind: 'character' | 'location' | 'style', versions: Record<s
  * The project items of a branch state: every clip of every timeline, the characters, locations and styles, and the
  * assets. Labels and group names follow the interface language at call time, so the label a pick inserts is in that
  * language.
- * @param state - the state of `main`.
+ * @param state - the state of the project's current branch.
  * @returns the items in display order.
  */
 export function projectItems(state: WireState): Item[] {
@@ -132,7 +132,7 @@ export function projectMentionSource(): InputTriggerSource {
       // The project the shell has open; the entry page lists nothing.
       const projectId = getCurrentProject()
       if (projectId === null) return []
-      const state = await client.getState(projectId, 'main', signal)
+      const state = await client.getState(projectId, null, signal)
       const needle = query.toLowerCase()
       // The menu shows a candidate name that differs from its label as a trailing alias, so the name is the label
       // (numbered when labels repeat) and the `dv:` address travels in `value`.

@@ -1,5 +1,6 @@
 /**
- * The canvas as a right-Sidebar tab body: the branch bar above a {@link CanvasView} of the selected project and branch.
+ * The canvas as a right-Sidebar tab body: the branch bar above a {@link CanvasView} of the selected project's current
+ * branch.
  * Hosts that place the canvas in the center mount {@link CanvasView} directly.
  */
 import { useMemo } from 'react'
@@ -30,9 +31,8 @@ const root: CSSProperties = { display: 'flex', flexDirection: 'column', height: 
  */
 export function barLabels(t: CanvasBodyProps['t']): BranchBarLabels {
   return {
-    project: t('bar.project'), branch: t('bar.branch'), accept: t('bar.accept'), discard: t('bar.discard'), undo: t('bar.undo'),
-    newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
-    draftTitle: t('bar.draft'), noProject: t('bar.noProject'),
+    project: t('bar.project'), undo: t('bar.undo'), newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
+    noProject: t('bar.noProject'),
   }
 }
 
@@ -50,7 +50,7 @@ export function CanvasBody({ client, t }: CanvasBodyProps): ReactNode {
   else {
     content = (
       <div style={{ flex: 1, minHeight: 0 }}>
-        <CanvasView projectId={view.project} branch={view.branch} client={client} session={view.session} t={t} />
+        <CanvasView projectId={view.project} client={client} session={view.session} t={t} />
       </div>
     )
   }
@@ -58,7 +58,6 @@ export function CanvasBody({ client, t }: CanvasBodyProps): ReactNode {
     <div style={root} data-testid="dv-canvas-body">
       <BranchBar {...view.bar} labels={labels} />
       {content}
-      {view.discardDialog}
     </div>
   )
 }

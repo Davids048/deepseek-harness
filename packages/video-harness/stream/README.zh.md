@@ -53,7 +53,7 @@ kind: "package-reference"
 | 镜头结束 | `{type: 'media_segment_complete', segment_idx, stream_id}` |
 | 镜头失败 | `{type: 'error', stream_id, message}` |
 | 记录写入或更新 | `{type: 'op', change: 'append' 或 'patch', op}`，`op` 是 `ProjectRecord` |
-| 分支移动 | `{type: 'head', branch, to}`，`to` 是分支头，被移除的草稿为 `null` |
+| 分支被创建或移动，或者当前分支改变 | `{type: 'head', branch, to, current}`，`to` 是分支头，`current` 是项目的当前分支 |
 | 错误的消息 | 文本不是 JSON 或不是订阅命令时为 `{type: 'error', message}` |
 
 -----

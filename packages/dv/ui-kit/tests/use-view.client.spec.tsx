@@ -32,7 +32,6 @@ describe('useViewSession', () => {
     await waitFor(() => { expect(writes).toHaveLength(1) })
     expect(writes[0]).toEqual({ path: '/api/dv/projects', body: { title: 'Demo 3', surface: 'timeline' } })
     await waitFor(() => { expect(result.current.project).toBe('p2') })
-    expect(result.current.branch).toBe('main')
   })
 
   it('selects the first project, loads its state and the operations, and binds the bar gestures', async () => {
@@ -43,30 +42,28 @@ describe('useViewSession', () => {
     await waitFor(() => { expect(result.current.state.value).not.toBeNull() })
     expect(result.current.project).toBe('p1')
     expect(result.current.operations.value?.length).toBeGreaterThan(0)
-    expect(result.current.readOnly).toBe(false)
-    act(() => { result.current.bar.onAccept('draft/s5') })
-    act(() => { result.current.bar.onDiscard('draft/s5') })
+    expect(result.current.state.value?.current).toBe('main')
+    act(() => { result.current.bar.branches.onSwitch('b2') })
+    act(() => { result.current.bar.branches.onCreate() })
+    act(() => { result.current.bar.branches.onRename('b2', 'night') })
     act(() => { result.current.bar.onUndo() })
-    await waitFor(() => { expect(writes).toHaveLength(3) })
-    expect(writes.map(write => write.path)).toEqual(['/api/dv/drafts/accept', '/api/dv/drafts/discard', '/api/dv/undo'])
-    expect(writes[0]?.body).toEqual({ project: 'p1', branch: 'draft/s5', surface: 'canvas' })
-    // Discard first reads the counts its confirmation dialog shows.
-    expect(writes[1]?.body).toEqual({ project: 'p1', branch: 'draft/s5', surface: 'canvas' })
-    act(() => { result.current.bar.onBranchSelect('draft/s5') })
-    expect(result.current.readOnly).toBe(true)
+    await waitFor(() => { expect(writes).toHaveLength(4) })
+    expect(writes).toEqual([
+      { path: '/api/dv/branches/switch', body: { project: 'p1', branch: 'b2', surface: 'canvas' } },
+      { path: '/api/dv/branches/create', body: { project: 'p1', surface: 'canvas' } },
+      { path: '/api/dv/branches/rename', body: { project: 'p1', branch: 'b2', title: 'night' } },
+      { path: '/api/dv/undo', body: { project: 'p1', surface: 'canvas' } },
+    ])
     act(() => { result.current.bar.onProject('p2') })
     expect(result.current.project).toBe('p2')
-    expect(result.current.branch).toBe('main')
   })
 
-  it('shows another branch without writing, and undoes on the chat session\'s working branch', async () => {
+  it('undoes on the project\'s current branch on behalf of the chat session beside the view', async () => {
     const { fetch, writes } = scriptedFetch()
     const client = new DvClient(fetch)
     const { result } = renderHook(() => useViewSession(client, 'canvas', 's5'))
     await waitFor(() => { expect(result.current.state.value).not.toBeNull() })
     expect(result.current.session).toBe('s5')
-    act(() => { result.current.bar.onBranchSelect('draft/s5') })
-    act(() => { result.current.bar.onBranchSelect('main') })
     act(() => { result.current.bar.onUndo() })
     await waitFor(() => { expect(writes).toHaveLength(1) })
     expect(writes[0]).toEqual({ path: '/api/dv/undo', body: { project: 'p1', surface: 'canvas', session: 's5' } })
@@ -84,7 +81,7 @@ describe('useViewSession', () => {
     await act(async () => { ok = await result.current.run(() => client.undo('p1', 'timeline')) })
     expect(ok).toBe(false)
     expect(result.current.notice).toBe('nothing to undo')
-    await act(async () => { ok = await result.current.run(() => client.acceptDraft('p1', { session: 's5' }, 'timeline')) })
+    await act(async () => { ok = await result.current.run(() => client.createBranch('p1', null, 'timeline')) })
     expect(ok).toBe(true)
     expect(result.current.notice).toBeNull()
     await act(async () => { ok = await result.current.run(() => Promise.reject(new Error('boom'))) })
@@ -92,10 +89,8 @@ describe('useViewSession', () => {
     const plain = vi.fn<() => Promise<unknown>>().mockRejectedValue('plain')
     await act(async () => { await result.current.run(plain) })
     expect(result.current.notice).toBe('plain')
-    act(() => { result.current.bar.onBranchSelect('draft/s5') })
     act(() => { result.current.bar.onCreate('refused') })
     await waitFor(() => { expect(result.current.notice).toBe('nothing to undo') })
-    expect(result.current.branch).toBe('draft/s5')
     expect(result.current.project).toBe('p1')
   })
 
@@ -106,8 +101,9 @@ describe('useViewSession', () => {
     await waitFor(() => { expect(result.current.projects.value).toEqual([]) })
     await waitFor(() => { expect(result.current.state.error).toBe('no project') })
     act(() => {
-      result.current.bar.onAccept('t')
-      result.current.bar.onDiscard('t')
+      result.current.bar.branches.onSwitch('b2')
+      result.current.bar.branches.onCreate()
+      result.current.bar.branches.onRename('b2', 'x')
       result.current.bar.onUndo()
     })
     expect(writes).toHaveLength(0)
@@ -133,7 +129,7 @@ describe('useProjectState', () => {
     expect(reads).toBe(1)
     expect(result.current.loading).toBe(false)
     vi.useFakeTimers()
-    const fire = (): void => { listeners.get('branch')?.(new MessageEvent('branch', { data: '{"kind":"branch","name":"main","branch":null}' })) }
+    const fire = (): void => { listeners.get('branch')?.(new MessageEvent('branch', { data: '{"kind":"branch","name":"main","head":"s1","current":"main"}' })) }
     act(() => { fire(); fire(); fire() })
     act(() => { vi.advanceTimersByTime(200) })
     vi.useRealTimers()

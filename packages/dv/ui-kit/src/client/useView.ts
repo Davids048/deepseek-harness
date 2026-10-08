@@ -1,15 +1,13 @@
 /**
- * The state one view keeps about the project it shows: which project and branch, the branch state and the operation
- * declarations, the last failure, and the branch-bar gestures (accept, discard, undo, branch to show) as API
- * calls on behalf of the chat session the view sits beside. A discard first opens the confirmation dialog of
- * `DiscardDraftDialog.tsx`.
+ * The state one view keeps about the project it shows: which project, the state of the project's current branch and
+ * the operation declarations, the last failure, and the branch-bar gestures (switch, fork and rename a branch, undo,
+ * new project) as API calls on behalf of the chat session the view sits beside.
  *
  * @module @dv/ui-kit/useView
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { ReactNode } from 'react'
 import type { DvClient, ViewSurface } from './api.ts'
-import { useDiscardDraft } from './DiscardDraftDialog.tsx'
+import { branchActions } from './BranchSwitcher.tsx'
 import type { WireOperation, WireProject, WireState } from './types.ts'
 import { useOperations, useProjectState, useProjects } from './useProject.ts'
 import type { Loading } from './useProject.ts'
@@ -19,18 +17,15 @@ import type { BranchBarProps } from './BranchBar.tsx'
 export interface ViewSession {
   client: DvClient
   surface: ViewSurface
-  /** The chat session the view sits beside; the view's writes go to its working branch. */
+  /** The chat session the view sits beside, recorded as the `session` of the view's writes. */
   session: string | null
   projects: Loading<WireProject[]>
   project: string | null
-  /** The branch name the view shows. */
-  branch: string
+  /** The state of the project's current branch, which the view shows and writes to. */
   state: Loading<WireState>
   operations: Loading<WireOperation[]>
   /** The message of the last failed call, cleared by the next successful one. */
   notice: string | null
-  /** Whether `branch` is a draft, which the view shows without writing to it. */
-  readOnly: boolean
   /**
    * Run one write, refetch the state afterwards, and keep the failure message when it throws.
    * @param work - the API call.
@@ -39,8 +34,6 @@ export interface ViewSession {
   run: (work: () => Promise<unknown>) => Promise<boolean>
   /** The branch bar's data and callbacks, without its copy. */
   bar: Omit<BranchBarProps, 'labels' | 'ask'>
-  /** The confirmation dialog of a discard the bar started, or null; the view body renders it. */
-  discardDialog: ReactNode
 }
 
 /**
@@ -54,7 +47,7 @@ export function sessionFromLocation(search: string = window.location.search): st
 }
 
 /**
- * Keep a view's project, branch, state, and operations, and bind the branch-bar gestures to the API. The first project
+ * Keep a view's project, state, and operations, and bind the branch-bar gestures to the API. The first project
  * shown is the one the beside chat session is bound to when the address names a session, else the newest.
  * @param client - the API client.
  * @param surface - the view's name in the records it writes.
@@ -64,14 +57,13 @@ export function sessionFromLocation(search: string = window.location.search): st
 export function useViewSession(client: DvClient, surface: ViewSurface, session: string | null = sessionFromLocation()): ViewSession {
   const projects = useProjects(client, session)
   const [project, setProject] = useState<string | null>(null)
-  const [branch, setBranch] = useState('main')
   const [notice, setNotice] = useState<string | null>(null)
   const list = projects.value
   const first = list === null ? null : (list.find(row => row.current === true) ?? list[0])?.id ?? null
   useEffect(() => {
     if (project === null && first !== null) setProject(first)
   }, [project, first])
-  const state = useProjectState(client, project, branch)
+  const state = useProjectState(client, project, null)
   const operations = useOperations(client)
   const reload = state.reload
   const run = useCallback(async (work: () => Promise<unknown>): Promise<boolean> => {
@@ -85,29 +77,21 @@ export function useViewSession(client: DvClient, surface: ViewSurface, session: 
       return false
     }
   }, [reload])
-  const onProject = useCallback((next: string) => { setProject(next); setBranch('main') }, [])
-  const discard = useDiscardDraft(client, project, surface, reload)
+  const onProject = useCallback((next: string) => { setProject(next) }, [])
   const bar: ViewSession['bar'] = {
     projects: projects.value ?? [],
     project,
     state: state.value,
-    branch,
     onProject,
-    onBranchSelect: setBranch,
-    onAccept: (draft) => { if (project !== null) void run(() => client.acceptDraft(project, { branch: draft }, surface)) },
-    onDiscard: (draft) => { discard.request({ branch: draft }) },
+    branches: branchActions(client, project, surface, run),
     onUndo: () => { if (project !== null) void run(() => client.undo(project, surface, session)) },
     onCreate: (title) => {
       void run(() => client.createProject(title, surface)).then((ok) => {
         if (!ok) return
         projects.reload()
         setProject(null)
-        setBranch('main')
       })
     },
   }
-  return {
-    client, surface, session, projects, project, branch, state, operations, notice, readOnly: branch.startsWith('draft/'), run, bar,
-    discardDialog: discard.dialog,
-  }
+  return { client, surface, session, projects, project, state, operations, notice, run, bar }
 }

@@ -1,13 +1,13 @@
 /**
  * Pure readings behind the History panel: the action rows of history entries (a plan approval folds the renders it
- * scheduled), the label of an action with its subject, the thumbnail of a record, relative times, the badge of a mark,
- * the query of the branch filter, the record set of a timeline, and where selecting a record focuses the
- * center. Nothing here touches the DOM or the network, so the unit tests cover it directly.
+ * scheduled), the label of an action with its subject, the thumbnail of a record, relative times, the record set of a
+ * timeline, where selecting a record focuses the center, the steps of the current branch, and the lane layout of the
+ * branch tree. Nothing here touches the DOM or the network, so the unit tests cover it directly.
  *
  * @module @dv/ui-history/rows
  */
 import { DV_TOOL_LABELS } from '@dv/ui-kit/tool-labels.ts'
-import type { Asset, HistoryEntry, HistoryQuery, ProjectRecord } from '@dv/ui-kit/types.ts'
+import type { Asset, Branch, HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
 
 /** One row of the panel: an operation entry and, for a plan approval, the entries of the records it scheduled. */
@@ -23,10 +23,13 @@ function scheduledBy(record: ProjectRecord): string[] {
   return Array.isArray(scheduled) ? scheduled.filter((id): id is string => typeof id === 'string') : []
 }
 
-/** Undo and redo records move the working branch between steps, so they are not rows. */
+/** Undo and redo records move a branch between steps, so they are not rows. */
 const MOVES = new Set(['proj.undo', 'proj.redo'])
-/** Records that are not steps: the moves between steps and an accept. Undo steps over them. */
-const NOT_A_STEP = new Set([...MOVES, 'proj.draft_accept'])
+/**
+ * Records that are not steps: the moves between steps, and the draft accept and discard records that projects written
+ * before branches replaced drafts still hold. Undo steps over them.
+ */
+const NOT_A_STEP = new Set([...MOVES, 'proj.draft_accept', 'proj.draft_discard'])
 
 /**
  * Turn history entries into panel rows: one row per operation record, newest first. The undo and redo records are not
@@ -183,42 +186,6 @@ export function relativeTime(iso: string, now: number): readonly [string, string
   return [date, date]
 }
 
-/** What a mark badge says: a fixed word pair. */
-export type MarkBadge = { zh: string; en: string } | null
-
-/**
- * The badge of an entry: 已接受 for an accepted draft record, 草稿, 已撤销, 已丢弃, or 已重放.
- * @param entry - the history entry.
- * @returns the badge, or null for a record made on `main`.
- */
-export function markBadge(entry: HistoryEntry): MarkBadge {
-  switch (entry.mark) {
-    case 'main': return entry.record.branch.startsWith('draft/') ? { zh: '已接受', en: 'Accepted' } : null
-    case 'draft': return { zh: '草稿', en: 'Draft' }
-    case 'undone': return { zh: '已撤销', en: 'Undone' }
-    case 'discarded': return { zh: '已丢弃', en: 'Discarded' }
-    case 'replayed': return { zh: '已重放', en: 'Replayed' }
-  }
-}
-
-/** How a row looks for its mark: undone and discarded rows are dimmed and struck, replayed rows dimmed. */
-export function markStyle(mark: HistoryEntry['mark']): 'normal' | 'struck' | 'dimmed' {
-  if (mark === 'undone' || mark === 'discarded') return 'struck'
-  return mark === 'replayed' ? 'dimmed' : 'normal'
-}
-
-/**
- * The query fields of the branch filter. `main` shows the main line including what undo took back; a draft shows its
- * open records.
- * @param branch - the selected branch name; empty for all branches.
- * @returns the query fields.
- */
-export function branchQuery(branch: string): Pick<HistoryQuery, 'branch' | 'marks'> {
-  if (branch === '') return {}
-  if (branch === 'main') return { marks: ['main', 'undone'] }
-  return { branch, marks: ['draft'] }
-}
-
 /** @returns the text value of a param, or null. */
 function text(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null
@@ -298,15 +265,16 @@ export type CenterFocus =
   | null
 
 /**
- * The center focus of a selected entry. Only `main` and `draft` records are on the shown branch. Timeline records and
- * timeline exports focus their timeline and clip; `proj.*` records focus nothing; every other record focuses its node.
+ * The center focus of a selected entry. Only `current` records are in the state the canvas and the timeline show.
+ * Timeline records and timeline exports focus their timeline and clip; `proj.*` records focus nothing; every other
+ * record focuses its node.
  * @param entry - the selected entry.
- * @param owner - clip ID → timeline ID of the working branch, from {@link clipTimelines}.
+ * @param owner - clip ID → timeline ID of the current branch, from {@link clipTimelines}.
  * @returns the focus, or null.
  */
 export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, string>): CenterFocus {
   const { record } = entry
-  if (entry.mark !== 'main' && entry.mark !== 'draft') return null
+  if (entry.mark !== 'current') return null
   if (record.component === 'proj') return null
   if (record.component === 'timeline' || record.operation === 'deliver.timeline_export') {
     const timelineId = timelineOf(record, owner)
@@ -317,37 +285,112 @@ export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, stri
   return { event: 'dv:canvas-focus', detail: { recordId: record.id } }
 }
 
-/** Where a record stands among the steps of the working branch: the current step, a step before it, or a step redo brings back. */
+/** Where a record stands among the steps of the current branch: the current step, a step before it, or a step redo brings back. */
 export type StepPlace = 'current' | 'before' | 'after'
 
-/** The steps of the working branch: its current step, the steps before it, and the steps after it that redo brings back. */
-export interface WorkingSteps {
+/** The steps of the current branch: its current step, the steps before it, and the steps after it that redo brings back. */
+export interface BranchSteps {
   current: string | null
   before: ReadonlySet<string>
   after: ReadonlySet<string>
 }
 
 /**
- * The steps of the working branch. Every operation record on the branch's effective chain is a step except undo, redo
- * and accept records; the newest is the current step.
- * @param chain - the records of the working branch's effective chain, oldest first (`components.proj.records`).
+ * The steps of the current branch. Every operation record on the branch's effective chain is a step except the records
+ * of `NOT_A_STEP`; the newest is the current step.
+ * @param chain - the records of the current branch's effective chain, oldest first (`components.proj.records`).
  * @param redoSteps - the steps redo brings back (`WireState.redo_steps`).
  * @returns the steps.
  */
-export function workingSteps(chain: readonly ProjectRecord[], redoSteps: readonly string[]): WorkingSteps {
+export function branchSteps(chain: readonly ProjectRecord[], redoSteps: readonly string[]): BranchSteps {
   const steps = chain.filter(record => !NOT_A_STEP.has(record.operation ?? ''))
   const current = steps.at(-1)?.id ?? null
   return { current, before: new Set(steps.slice(0, -1).map(record => record.id)), after: new Set(redoSteps) }
 }
 
 /**
- * Where one record stands among the working branch's steps.
+ * Where one record stands among the current branch's steps.
  * @param record - the record ID.
- * @param steps - the working branch's steps.
- * @returns the place, or null for a record that is not a step of the working branch.
+ * @param steps - the current branch's steps.
+ * @returns the place, or null for a record that is not a step of the current branch.
  */
-export function stepPlace(record: string, steps: WorkingSteps): StepPlace | null {
+export function stepPlace(record: string, steps: BranchSteps): StepPlace | null {
   if (record === steps.current) return 'current'
   if (steps.before.has(record)) return 'before'
   return steps.after.has(record) ? 'after' : null
+}
+
+/** A lane line that passes through one row of the branch tree: whether it reaches the row's top and bottom edges. */
+export interface TreeLine {
+  /** The lane index, in branch order. */
+  lane: number
+  up: boolean
+  down: boolean
+}
+
+/** A branch that forks at one row of the branch tree: its lane bends into the row's dot. */
+export interface TreeFork {
+  /** The lane index of the forked branch. */
+  lane: number
+  /** True when the branch has no step of its own yet; its lane then ends in a hollow marker at this row. */
+  empty: boolean
+}
+
+/** One row of the branch tree: one step, its dot, and the lane lines and forks drawn beside it. */
+export interface TreeRow {
+  entry: HistoryEntry
+  /** The lane of the branch that owns the step, where its dot sits. */
+  lane: number
+  lines: TreeLine[]
+  forks: TreeFork[]
+}
+
+/** The branch tree: one lane per branch, and its rows newest first. */
+export interface BranchTree {
+  /** The branch of each lane, in `WireState.branches` order. */
+  lanes: Branch[]
+  rows: TreeRow[]
+}
+
+/**
+ * The branch that owns a step in the tree: the branch it was written on when that branch's line still holds it, else
+ * the first branch whose line holds it.
+ * @param entry - a history entry.
+ * @returns the branch name, or null for a record on no branch line.
+ */
+export function ownerBranch(entry: HistoryEntry): string | null {
+  return entry.branches.includes(entry.record.branch) ? entry.record.branch : entry.branches[0] ?? null
+}
+
+/**
+ * Lay out the branch tree, `git log --graph` style. Each branch gets a lane; each step is one row, newest first, with
+ * its dot in the lane of its owner ({@link ownerBranch}). A forked branch's lane runs from its newest step down to the
+ * row of its `forked_at` record, where it bends into that row's dot; a branch without steps of its own yet shows a
+ * marker at its fork row. `main` runs from its newest to its oldest step. When the fork row is not loaded, the lane
+ * runs to the bottom. Undo and redo records and records on no branch line are not rows.
+ * @param entries - history entries, newest first.
+ * @param branches - the project's branches, in lane order.
+ * @returns the lanes and the rows.
+ */
+export function branchTree(entries: readonly HistoryEntry[], branches: readonly Branch[]): BranchTree {
+  const steps = entries.filter(entry => !MOVES.has(entry.record.operation ?? '') && ownerBranch(entry) !== null)
+  const laneOf = new Map(branches.map((branch, index) => [branch.name, index]))
+  const rows: TreeRow[] = steps.map(entry => ({ entry, lane: laneOf.get(ownerBranch(entry) ?? '') ?? 0, lines: [], forks: [] }))
+  const rowOf = new Map(rows.map((row, index) => [row.entry.record.id, index]))
+  branches.forEach((branch, lane) => {
+    const owned = rows.flatMap((row, index) => row.lane === lane ? [index] : [])
+    const forked = branch.forked_at !== null
+    const forkRow = forked ? rowOf.get(branch.forked_at ?? '') ?? -1 : -1
+    // A branch with nothing to draw: no step of its own and its fork row is not loaded.
+    if (owned.length === 0 && forkRow < 0) return
+    const top = owned.length === 0 ? forkRow : Math.min(...owned)
+    const end = !forked ? Math.max(...owned) : forkRow >= 0 ? forkRow : rows.length - 1
+    for (let index = top; index <= end; index += 1) {
+      const row = rows[index]
+      if (row === undefined) continue
+      if (index === forkRow) row.forks.push({ lane, empty: owned.length === 0 })
+      else row.lines.push({ lane, up: index > top, down: index < end || (forked && forkRow < 0) })
+    }
+  })
+  return { lanes: [...branches], rows }
 }

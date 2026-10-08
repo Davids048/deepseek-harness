@@ -2,25 +2,22 @@
  * The project canvas as a standalone component: an infinite surface of story bible, asset, plan, and take nodes. Drag
  * empty space to pan, scroll to zoom around the cursor, drag a node to move it, click a node to open its floating
  * editor. A scroll over an overlay marked `data-dv-scroll-island`, such as the floating editor, scrolls that overlay.
- * Node positions and the viewport are stored per project through `/api/dv/layout`. The open draft of the chat
- * session the canvas sits beside is overlaid with dashed nodes; the working-branch bar on top names the branch the
- * canvas's own writes go to (they carry that session, so they land on the draft while it is open) and accepts or
- * discards the draft. Colors come from the DSH theme tokens, so the canvas
- * follows the app's light and dark themes. An imported asset has a node only while it is on the project's canvas list
- * (the layout's `placed`): dropping a 素材 tile or image and video files on the canvas adds the asset to the list with its
- * node under the pointer, and the asset node's "从画布移除" takes it off the list.
+ * Node positions and the viewport are stored per project through `/api/dv/layout`. The canvas draws the project's
+ * current branch at its head and follows it when the current branch changes; its writes land on that branch. Colors
+ * come from the DSH theme tokens, so the canvas follows the app's light and dark themes. An imported asset has a node
+ * only while it is on the project's canvas list (the layout's `placed`): dropping a 素材 tile or image and video files on
+ * the canvas adds the asset to the list with its node under the pointer, and the asset node's "从画布移除" takes it off
+ * the list.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { DvClient } from '@dv/ui-kit/api.ts'
 import { useLanguage } from '@dv/ui-kit/locale.ts'
-import { sessionDraft } from '@dv/ui-kit/state.ts'
 import type { CanvasViewport, NodePosition } from '@dv/ui-kit/types.ts'
 import { DV_ASSET_DRAG_TYPE, DV_CANVAS_FOCUS_EVENT } from '@dv/ui-kit/workspace-events.ts'
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
-import { WorkingBranchBar } from '@dv/ui-kit/WorkingBranchBar.tsx'
-import { buildCanvasGraph, NODE_WIDTH, overlayDraft, ROW, withImportNames } from './graph.ts'
+import { buildCanvasGraph, NODE_WIDTH, ROW, withImportNames } from './graph.ts'
 import type { CanvasEdge, CanvasNode } from './graph.ts'
 import { NodeCard } from './NodeCard.tsx'
 import type { CanvasTranslate } from './NodeCard.tsx'
@@ -31,11 +28,9 @@ import { en, zh } from './locales.ts'
 export interface CanvasViewProps {
   /** The project to draw. */
   projectId: string
-  /** The branch to draw; `main` when omitted. A `draft/*` branch is drawn read-only. */
-  branch?: string
   /** The API client; a same-origin client when omitted. */
   client?: DvClient
-  /** The chat session the canvas sits beside: its draft is overlaid, and the canvas writes go to its working branch. */
+  /** The chat session the canvas sits beside, recorded as the `session` of the canvas's writes. */
   session?: string | null
   /** The `dvCanvas` translate; when omitted, the dictionary of the DSH interface language that `<html lang>` names. */
   t?: CanvasTranslate
@@ -89,15 +84,14 @@ type Gesture =
 
 /**
  * The canvas.
- * @param props - the project, branch, chat session, and optional client and translate.
+ * @param props - the project, chat session, and optional client and translate.
  * @returns the element.
  */
-export function CanvasView({ projectId, branch = 'main', client: given, session = null, t: givenT }: CanvasViewProps): ReactNode {
+export function CanvasView({ projectId, client: given, session = null, t: givenT }: CanvasViewProps): ReactNode {
   const client = useMemo(() => given ?? new DvClient(), [given])
   const language = useLanguage()
   const t = givenT ?? translates[language]
-  const readOnly = branch.startsWith('draft/')
-  const base = useProjectState(client, projectId, branch)
+  const base = useProjectState(client, projectId, null)
   // The project's canvas list, from the stored layout and this view's drops and removals.
   const [placed, setPlaced] = useState<ReadonlySet<string>>(new Set())
   // This view's canvas list changes whose layout write has not settled: asset ID → on the list.
@@ -130,26 +124,11 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     const write = on ? client.placeAssets(projectId, [assetId]) : client.removeFromCanvas(projectId, [assetId])
     return write.finally(() => { placementsInFlight.current.delete(assetId) })
   }
-  const draft = readOnly || base.value === null ? null : sessionDraft(base.value, session)
-  const draftState = useProjectState(client, draft === null ? null : projectId, draft?.branch ?? branch)
   const graph = useMemo(() => {
     if (base.value === null) return null
-    const overlay = draft === null ? null : draftState.value
-    const baseRecords = base.value.components.proj.records
-    const known = new Set(baseRecords.map(record => record.id))
-    // Drawn dashed: the overlaid draft's records, or, when a draft branch itself is drawn, its records after the fork.
-    const forkedAt = base.value.branches.find(entry => entry.name === branch)?.forked_at ?? null
-    const forkIndex = readOnly && forkedAt !== null ? baseRecords.findIndex(record => record.id === forkedAt) : -1
-    const draftRecords = new Set([
-      ...(overlay?.components.proj.records ?? []).filter(record => !known.has(record.id)).map(record => record.id),
-      ...forkIndex === -1 ? [] : baseRecords.slice(forkIndex + 1).map(record => record.id),
-    ])
-    const state = withImportNames(overlayDraft(base.value, overlay))
-    // The draft bar names the intent of the draft's latest record that states one.
-    const draftIntent = state.components.proj.records
-      .filter(record => draftRecords.has(record.id) && record.intent !== '').at(-1)?.intent ?? ''
-    return { state, draftIntent, ...buildCanvasGraph(state, draftRecords, placed) }
-  }, [base.value, branch, readOnly, draft, draftState.value, placed])
+    const state = withImportNames(base.value)
+    return { state, ...buildCanvasGraph(state, placed) }
+  }, [base.value, placed])
 
   const [positions, setPositions] = useState<Record<string, NodePosition>>({})
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 40, y: 40, zoom: 1 })
@@ -426,7 +405,6 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     if (!accepts(event)) return
     event.preventDefault()
     event.stopPropagation()
-    if (readOnly) { setNotice(t('drop.readOnly')); return }
     const rect = container.current?.getBoundingClientRect()
     const view = viewportRef.current
     const point = {
@@ -540,11 +518,7 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
       onDrop={onDrop}
     >
       {content}
-      <WorkingBranchBar
-        client={client} project={projectId} session={session} surface="canvas" state={base.value} intent={graph?.draftIntent ?? ''} run={run}
-        style={{ ...floating, position: 'absolute', top: 12, left: 0, right: 0, width: 'max-content', margin: '0 auto', padding: '6px 6px 6px 12px', borderRadius: 10, fontSize: 13 }}
-      />
-      {notice !== null ? <p role="alert" style={{ position: 'absolute', top: 56, left: '50%', transform: 'translateX(-50%)', margin: 0, padding: '6px 10px', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-3)', border: '1px solid var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)', fontSize: 13, zIndex: 6 }}>{notice}</p> : null}
+      {notice !== null ? <p role="alert" style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', margin: 0, padding: '6px 10px', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-3)', border: '1px solid var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)', fontSize: 13, zIndex: 6 }}>{notice}</p> : null}
       <div style={{ ...floating, position: 'absolute', left: 12, bottom: 12, display: 'flex', alignItems: 'center', gap: 2, padding: 3, borderRadius: 10, fontSize: 13 }} onPointerDown={(event) => { event.stopPropagation() }}>
         <button type="button" aria-label={t('canvas.zoomOut')} style={toolButton} onClick={() => { zoomBy(1 / 1.2) }}>−</button>
         <span style={{ minWidth: 44, textAlign: 'center' }}>{`${String(Math.round(viewport.zoom * 100))}%`}</span>
@@ -560,7 +534,6 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
             client={client}
             project={projectId}
             session={session}
-            readOnly={readOnly}
             t={t}
             onClose={() => { setSelected(null) }}
             run={run}

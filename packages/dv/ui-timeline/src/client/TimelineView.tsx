@@ -1,15 +1,13 @@
 /**
- * The timeline editor for one project and branch, without the branch bar: the center area's 时间线 view. It reads the
- * branch state itself and refetches it after every project change and every write. While the chat session the view sits
- * beside has an open draft, the view shows the draft's state with the draft's clips marked, the way the canvas overlays
- * draft nodes; the view's edits carry that session, so they land on the draft.
+ * The timeline editor for one project, without the branch bar: the center area's 时间线 view. It reads the state of the
+ * project's current branch itself, refetches it after every project change and every write, and follows the current
+ * branch when it changes; the view's edits land on that branch.
  */
 import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { DvClient } from '@dv/ui-kit/api.ts'
 import { useLanguage } from '@dv/ui-kit/locale.ts'
-import { sessionDraft } from '@dv/ui-kit/state.ts'
 import type { DvLanguage } from '@dv/ui-kit/locale.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import { TimelineEditor } from './TimelineEditor.tsx'
@@ -19,9 +17,8 @@ import type { DvTimelineKey } from './locales.ts'
 /** What the center switcher passes; `client` and `t` default to a same-origin client and the copy of the DSH language. */
 export interface TimelineViewProps {
   projectId: string
-  branch: string
   client?: DvClient
-  /** The chat session the view sits beside: its draft is shown, and the view's edits go to its working branch. */
+  /** The chat session the view sits beside, recorded as the `session` of the view's edits. */
   session?: string | null
   t?: Translate<DvTimelineKey>
 }
@@ -40,23 +37,16 @@ export function copyFor(language: DvLanguage): Translate<DvTimelineKey> {
 const sharedClient = new DvClient()
 
 /**
- * The timeline editor of a project branch.
- * @param props - the project, the branch, and optionally the API client and copy.
+ * The timeline editor of a project's current branch.
+ * @param props - the project, and optionally the API client, the chat session, and copy.
  * @returns the element.
  */
-export function TimelineView({ projectId, branch, client = sharedClient, session = null, t: givenCopy }: TimelineViewProps): ReactNode {
+export function TimelineView({ projectId, client = sharedClient, session = null, t: givenCopy }: TimelineViewProps): ReactNode {
   const language = useLanguage()
   const t = useMemo(() => givenCopy ?? copyFor(language), [givenCopy, language])
-  const base = useProjectState(client, projectId, branch)
-  const draft = branch.startsWith('draft/') || base.value === null ? null : sessionDraft(base.value, session)
-  const draftState = useProjectState(client, draft === null ? null : projectId, draft?.branch ?? branch)
-  const showDraft = draft !== null && draftState.value !== null
-  const state = showDraft ? draftState : base
-  const shownBranch = showDraft ? draft.branch : branch
+  const state = useProjectState(client, projectId, null)
   const [notice, setNotice] = useState<string | null>(null)
-  const reloadBase = base.reload
-  const reloadDraft = draftState.reload
-  const reload = useCallback(() => { reloadBase(); reloadDraft() }, [reloadBase, reloadDraft])
+  const reload = state.reload
   const run = useCallback(async (work: () => Promise<unknown>): Promise<boolean> => {
     try {
       await work()
@@ -68,7 +58,6 @@ export function TimelineView({ projectId, branch, client = sharedClient, session
       return false
     }
   }, [reload])
-  const readOnly = branch.startsWith('draft/')
   if (state.value === null) {
     return <p style={{ padding: 12 }} role={state.error === null ? undefined : 'alert'}>{state.error === null ? t('loading') : t('error', { message: state.error })}</p>
   }
@@ -80,11 +69,8 @@ export function TimelineView({ projectId, branch, client = sharedClient, session
           client={client}
           t={t}
           project={projectId}
-          branch={shownBranch}
           session={session}
           state={state.value}
-          baseState={showDraft ? base.value : null}
-          readOnly={readOnly}
           run={run}
         />
       </div>

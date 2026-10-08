@@ -7,7 +7,7 @@
  * while it writes each update line. It releases the lock while `execute` runs, so a long render does not block other
  * edits, and an operation's `execute` may itself call `dvProject.run`.
  *
- * Calls: the record store (lock, append, update, records), drafts (`branchForWrite`, `workingBranch`), the reducer
+ * Calls: the record store (lock, append, update, records), branches (`forWrite`, `current`), the reducer
  * registry (state at a record's parent, character, location and style assets), the scheduler (`enqueue`), and the
  * asset store. Called by the service and by the scheduler (`execute`).
  *
@@ -17,7 +17,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { validateArgs } from '@deepseek-ai/dsh-tools'
-import type { Drafts } from './drafts.ts'
+import type { Branches } from './branches.ts'
 import type { ReducerRegistry } from './reducers.ts'
 import type { RecordStore } from './record-store.ts'
 import type { Scheduler } from './scheduler.ts'
@@ -51,7 +51,7 @@ export interface RunnerAssets {
 /** The modules and services the runner calls. */
 export interface RunnerDeps {
   store: RecordStore
-  drafts: Drafts
+  branches: Branches
   reducers: ReducerRegistry
   assets: RunnerAssets
   scheduler: Scheduler
@@ -147,7 +147,7 @@ export class Runner {
    * @returns the record, its outputs and report.
    */
   async run(request: RunRequest): Promise<RunResult> {
-    const { store, drafts, reducers, scheduler } = this.deps
+    const { store, branches, reducers, scheduler } = this.deps
     const spec = this.operations.get(request.operation)
     if (spec === undefined) throw new ProjectError('unknown_operation', `Operation ${request.operation} is not registered.`)
     store.getProject(request.project)
@@ -156,17 +156,16 @@ export class Runner {
     if (spec.readOnly === true) return await this.runRead(spec, request)
 
     const pending = await store.lock(request.project, async () => {
-      // Inputs resolve before `branchForWrite`, which may open a draft, so that a refused call writes nothing. A newly
-      // opened draft starts at the head of the session's working branch, so the state there is the state at the parent.
+      // Inputs resolve before `forWrite`, which may fork a branch, so that a refused call writes nothing. A forked branch
+      // starts at the position of the current branch's head, so the state there is the state at the parent.
       for (const record of request.after ?? []) store.getRecord(request.project, record)
-      const working = drafts.workingBranch(request.project, request.session)
-      const state = reducers.getState(request.project, working.name)
+      const state = reducers.getState(request.project, branches.current(request.project).name)
       const inputs = this.resolveInputs(spec, request, state, request.after !== undefined)
       // The operation's own rule refuses the call before anything is written; the lock keeps the state it read current.
       await spec.precondition?.(request, state)
       // The operation names the records it replaces itself; the caller may name more.
       const supersedes = [...new Set([...request.supersedes ?? [], ...spec.supersedes?.(request.params, state) ?? []])]
-      const branch = drafts.branchForWrite(request.project, request)
+      const branch = branches.forWrite(request.project)
       const origin = originOf(request)
       return store.append(request.project, {
         parents: [this.headOf(request.project, branch)], branch, kind: 'operation', component: spec.component, operation: spec.name,
@@ -248,18 +247,18 @@ export class Runner {
   }
 
   /**
-   * Accept a stale record's result: append `proj.stale_accept` with `params {record}` on the branch for the origin's
-   * write (`drafts.branchForWrite`). Takes the project lock.
+   * Accept a stale record's result: append `proj.stale_accept` with `params {record}` on the branch for the next
+   * write (`branches.forWrite`). Takes the project lock.
    * @param project - the project.
    * @param record - a record that is stale on that branch.
    * @param origin - who accepts it.
    * @returns the `proj.stale_accept` record.
    */
   acceptStale(project: ProjectId, record: RecordId, origin: RecordOrigin): Promise<ProjectRecord> {
-    const { store, drafts } = this.deps
+    const { store, branches } = this.deps
     return store.lock(project, () => {
       store.getRecord(project, record)
-      const branch = drafts.branchForWrite(project, origin)
+      const branch = branches.forWrite(project)
       return store.append(project, {
         parents: [this.headOf(project, branch)], branch, kind: 'operation', component: 'proj', operation: 'proj.stale_accept',
         operation_version: '1', ...origin, params: { record }, inputs: [], outputs: [], based_on: null, supersedes: [],
@@ -270,7 +269,7 @@ export class Runner {
 
   /**
    * At service start, end the records an earlier process left unfinished: every `pending` or `running` operation
-   * record is updated to `cancelled` with `error {code: 'stopped', message}`, so no draft stays busy forever.
+   * record is updated to `cancelled` with `error {code: 'stopped', message}`, so no record stays unfinished forever.
    */
   async recover(): Promise<void> {
     const { store } = this.deps
@@ -302,14 +301,14 @@ export class Runner {
   }
 
   /**
-   * Run a read-only operation on the head of the session's working branch: no lock, no record, no confirmation.
+   * Run a read-only operation on the head of the project's current branch: no lock, no record, no confirmation.
    * @param spec - a read-only operation.
    * @param request - the call.
    * @returns the outputs and the report; the record is null.
    */
   private async runRead(spec: OperationSpec, request: RunRequest): Promise<RunResult> {
-    const { drafts, reducers, assets } = this.deps
-    const branch = drafts.workingBranch(request.project, request.session).name
+    const { branches, reducers, assets } = this.deps
+    const branch = branches.current(request.project).name
     const state = reducers.getState(request.project, branch)
     const inputs = this.resolveInputs(spec, request, state, false)
     await spec.precondition?.(request, state)

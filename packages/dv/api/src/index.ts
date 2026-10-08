@@ -34,7 +34,7 @@ export {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** The browser API: branch state, operation declarations, human operation calls, drafts, and the history. */
+    /** The browser API: branch state, operation declarations, human operation calls, branches, and the history. */
     dvApi: DvApi
   }
 }
@@ -65,8 +65,9 @@ export const ROUTES = {
   state: '/api/dv/state',
   operations: '/api/dv/operations',
   operation: '/api/dv/operation',
-  acceptDraft: '/api/dv/drafts/accept',
-  discardDraft: '/api/dv/drafts/discard',
+  createBranch: '/api/dv/branches/create',
+  switchBranch: '/api/dv/branches/switch',
+  renameBranch: '/api/dv/branches/rename',
   undo: '/api/dv/undo',
   redo: '/api/dv/redo',
   acceptStale: '/api/dv/stale/accept',
@@ -137,8 +138,9 @@ export default class DvApi extends Service {
       },
       { path: ROUTES.operations, methods: ['GET'], requestBody: 'buffered', fetch: () => answer(() => api.listOperations()) },
       { path: ROUTES.operation, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.runOperation(body)) },
-      { path: ROUTES.acceptDraft, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.acceptDraft(body)) },
-      { path: ROUTES.discardDraft, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.discardDraft(body)) },
+      { path: ROUTES.createBranch, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.createBranch(body)) },
+      { path: ROUTES.switchBranch, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.switchBranch(body)) },
+      { path: ROUTES.renameBranch, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.renameBranch(body)) },
       { path: ROUTES.undo, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.undo(body)) },
       { path: ROUTES.redo, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.redo(body)) },
       { path: ROUTES.acceptStale, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.acceptStale(body)) },

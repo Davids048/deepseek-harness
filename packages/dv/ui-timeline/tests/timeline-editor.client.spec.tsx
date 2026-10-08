@@ -13,10 +13,9 @@ import { placeTimeline } from '../src/client/timelines.ts'
 beforeEach(() => { document.documentElement.lang = 'zh-CN' })
 afterEach(() => { cleanup(); vi.restoreAllMocks(); publishCurrentTimeline('p1', null) })
 
-/** The shared fixture without its open drafts, with a second timeline holding one imported clip. */
+/** The shared fixture with a second timeline holding one imported clip. */
 function twoTimelines(): WireState {
   const state = fixtureState()
-  state.heads = { main: state.heads['main'] ?? 's1' }
   state.assets.push(asset('imported.mp4', 'video/mp4', null, 3))
   state.components.timeline.timelines.push({ id: 't2', name: '片尾', clips: [{ id: 'cl3', asset: 'imported.mp4', source: null, in_sec: null, out_sec: null }] })
   return state
@@ -24,7 +23,7 @@ function twoTimelines(): WireState {
 
 function mount() {
   const { fetch, writes } = scriptedFetch({ state: twoTimelines })
-  const view = render(<TimelineView projectId="p1" branch="main" client={new DvClient(fetch)} />)
+  const view = render(<TimelineView projectId="p1" client={new DvClient(fetch)} />)
   const clip = (position: number): HTMLElement => {
     const element = view.container.querySelector(`[data-clip-position="${String(position)}"]`)
     if (!(element instanceof HTMLElement)) throw new Error(`no clip ${String(position)}`)
@@ -49,10 +48,9 @@ describe('TimelineView', () => {
     expect(view.container.querySelectorAll('[data-clip]')).toHaveLength(1)
   })
 
-  it('shows the working branch, and offers 仍然保留 for a selected stale clip, which accepts the record behind its asset', async () => {
+  it('offers 仍然保留 for a selected stale clip, which accepts the record behind its asset', async () => {
     const { view, clip, writes, track } = mount()
     await track()
-    expect(view.getByTestId('dv-kit-working-branch').getAttribute('data-branch')).toBe('main')
     fireEvent.pointerDown(clip(1), { clientX: 0 })
     fireEvent.pointerUp(clip(1), { clientX: 0 })
     expect(view.queryByRole('button', { name: '仍然保留' })).toBeNull()
@@ -115,7 +113,7 @@ describe('TimelineView', () => {
         return state
       },
     })
-    const view = render(<TimelineView projectId="p1" branch="main" client={new DvClient(fetch)} />)
+    const view = render(<TimelineView projectId="p1" client={new DvClient(fetch)} />)
     await view.findByRole('list', { name: '视频轨道' })
     const frames = (): HTMLVideoElement[] => [...view.getByTestId('dv-timeline-viewer').querySelectorAll('video')]
     expect(frames()[0]?.getAttribute('src')).toBe('/dv/assets/shot1.mp4')
@@ -162,22 +160,21 @@ describe('TimelineView', () => {
     expect(requests()[1]).toMatchObject({ operation: 'timeline.delete', params: { timeline: 't2' } })
   })
 
-  it('shows the open draft of its chat session for editing, and a draft branch it is given read-only with a note', async () => {
-    const heads: string[] = []
-    const { fetch, writes } = scriptedFetch({ state: (branch) => { heads.push(branch); return fixtureState() } })
-    const editing = render(<TimelineView projectId="p1" branch="main" session="s5" client={new DvClient(fetch)} />)
-    await waitFor(() => { expect(heads).toContain('draft/s5') })
+  it('edits the project\'s current branch at once, with the chat session beside it recorded on each edit', async () => {
+    const branches: Array<string | null> = []
+    const { fetch, writes } = scriptedFetch({ state: () => ({ ...fixtureState(), branch: 'b2', current: 'b2' }) })
+    const reading: typeof fetch = (input, init) => {
+      if (typeof input === 'string' && input.startsWith('/api/dv/state')) branches.push(new URL(input, 'http://host').searchParams.get('branch'))
+      return fetch(input, init)
+    }
+    const editing = render(<TimelineView projectId="p1" session="s5" client={new DvClient(reading)} />)
     await waitFor(() => { expect((editing.getByText('拆分') as HTMLButtonElement).disabled).toBe(false) })
-    expect(editing.queryByText('草稿还没确认，虚线框的片段来自草稿。接受或丢弃草稿后才能修改。')).toBeNull()
+    expect(branches.every(branch => branch === null)).toBe(true)
+    expect(editing.queryByTestId('dv-kit-branch-switcher')).toBeNull()
     fireEvent.contextMenu(editing.getAllByRole('tab')[0] as HTMLElement)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     fireEvent.click(editing.getByRole('menuitem', { name: '删除时间线' }))
-    // The edit carries the session, so it lands on the session's draft.
     await waitFor(() => { expect(writes.find(write => write.path === '/api/dv/operation')?.body).toMatchObject({ session: 's5', operation: 'timeline.delete' }) })
-    cleanup()
-    const viewing = render(<TimelineView projectId="p1" branch="draft/s5" client={new DvClient(fetch)} />)
-    await viewing.findByText('草稿还没确认，虚线框的片段来自草稿。接受或丢弃草稿后才能修改。')
-    expect((viewing.getByText('拆分') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('keeps a dropped file from reaching document listeners and explains that the track takes assets only', async () => {
@@ -190,15 +187,6 @@ describe('TimelineView', () => {
     expect(seen).not.toHaveBeenCalled()
     expect(requests()).toHaveLength(0)
     expect(view.getByRole('status').textContent).toBe('时间线轨道只接受素材库里的视频。请先在对话里导入文件，再从素材库拖到轨道上。')
-  })
-
-  it('marks only the clips a shown draft adds, and none on main', () => {
-    const state = twoTimelines()
-    const base = state.components.timeline.timelines[0]?.clips ?? []
-    const added = { id: 'cl9', asset: 'imported.mp4', source: null, in_sec: null, out_sec: null }
-    const timeline = { id: 't1', name: '', clips: [...base, added] }
-    expect(placeTimeline(state, timeline, 'draft/s9', base).clips.map(clip => clip.draft)).toEqual([...base.map(() => false), true])
-    expect(placeTimeline(state, timeline, 'main', base).clips.some(clip => clip.draft)).toBe(false)
   })
 
   it('places a placeholder clip at its render length, marks it rendering or failed, and holds export until it is ready', async () => {
@@ -215,7 +203,7 @@ describe('TimelineView', () => {
     const placed = placeTimeline(state, timeline ?? null).clips.slice(-2)
     expect(placed.map(clip => [clip.status, clip.seconds])).toEqual([['rendering', 2], ['failed', FALLBACK_CLIP_SECONDS]])
     const { fetch } = scriptedFetch({ state: () => state })
-    const view = render(<TimelineView projectId="p1" branch="main" client={new DvClient(fetch)} />)
+    const view = render(<TimelineView projectId="p1" client={new DvClient(fetch)} />)
     await view.findByRole('list', { name: '视频轨道' })
     expect(view.container.querySelector('[data-clip="cl8"]')?.getAttribute('title')).toContain('渲染中…')
     expect(view.container.querySelector('[data-clip="cl9"]')?.getAttribute('title')).toContain('渲染失败')

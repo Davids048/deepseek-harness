@@ -1,8 +1,8 @@
-/** The pure `timeline` reducer: every operation's effect on the slice, the clip and clip ID checks, and replay conflicts. */
+/** The pure `timeline` reducer: every operation's effect on the slice, and the clip and clip ID checks. */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AssetId, ComponentStates, ProjectRecord, ProjectState, RecordId } from '@dv/project'
 import { describe, expect, it } from 'vitest'
-import { FIRST_TIMELINE_ID, timelineReducer } from '../src/reducer.ts'
+import { clipProblem, FIRST_TIMELINE_ID, timelineReducer } from '../src/reducer.ts'
 import type {} from '../src/types.ts'
 
 let counter = 0
@@ -34,7 +34,7 @@ function clipsOf(slice: ComponentStates['timeline'], id = 't1'): string[] {
   return timeline?.clips.map(clip => `${clip.id} ${clip.asset} ${String(clip.in_sec)}-${String(clip.out_sec)}`) ?? []
 }
 
-const conflict = (slice: ComponentStates['timeline'], record: ProjectRecord): string | null => timelineReducer.conflict?.(slice, record) ?? null
+const problem = (slice: ComponentStates['timeline'], record: ProjectRecord): string | null => clipProblem(slice, record)
 
 /** A slice with timeline t1 holding clips cl1, cl2 and cl3 of assets a, b and c. */
 const base = (): ComponentStates['timeline'] => reduceAll([adding('timeline.create', { assets: ['a', 'b', 'c'] }, ['cl1', 'cl2', 'cl3'])])
@@ -77,8 +77,8 @@ describe('timeline reducer', () => {
     const inputs = [{ role: 'clip', ref: { record: brandString<RecordId>('shot'), output: 0 }, resolved_asset: null }]
     const slice = reduceAll([adding('timeline.create', { assets: ['a'] }, ['cl1']), adding('timeline.update', { timeline: 't1' }, ['cl2'], { inputs })])
     const placeholder = reduceAll([adding('timeline.clip_insert', { at: 1, asset: 'a' }, ['cl3'])], slice)
-    expect(conflict(placeholder, edit('timeline.clip_trim', { clip: 'cl2', in_sec: 1 }))).toBe('Clip cl2 is still rendering.')
-    expect(conflict(placeholder, adding('timeline.clip_split', { clip: 'cl2', at_sec: 1 }, ['cl4']))).toBe('Clip cl2 is still rendering.')
+    expect(problem(placeholder, edit('timeline.clip_trim', { clip: 'cl2', in_sec: 1 }))).toBe('Clip cl2 is still rendering.')
+    expect(problem(placeholder, adding('timeline.clip_split', { clip: 'cl2', at_sec: 1 }, ['cl4']))).toBe('Clip cl2 is still rendering.')
     expect(clipsOf(reduceAll([edit('timeline.clip_move', { clip: 'cl2', to: 1 })], placeholder))).toEqual(['cl2 null null-null', 'cl3 a null-null'])
     expect(clipsOf(reduceAll([edit('timeline.clip_remove', { clip: 'cl2' })], placeholder))).toEqual(['cl3 a null-null'])
     const replaced = reduceAll([edit('timeline.clip_replace', { clip: 'cl2', asset: 'z' })], placeholder)
@@ -130,33 +130,32 @@ describe('timeline reducer', () => {
     expect(timelineReducer.reduce(slice, { ...edit('timeline.create', {}), operation: null })).toBe(slice)
   })
 
-  it('reports why a draft record cannot apply to a main that moved', () => {
+  it('reports why a call cannot apply to a slice', () => {
     const main = reduceAll([adding('timeline.create', { assets: ['a', 'b'] }, ['cl1', 'cl2'])])
     const ranged = reduceAll([edit('timeline.clip_trim', { clip: 'cl1', in_sec: 1, out_sec: 2 })], main)
-    expect(conflict(main, edit('timeline.clip_remove', { clip: 'cl2' }))).toBeNull()
-    expect(conflict(main, edit('timeline.clip_remove', { clip: 'cl3' }))).toBe('Clip cl3 does not exist.')
-    expect(conflict(main, edit('timeline.clip_move', { clip: 'cl1', to: 3 }))).toBe('Timeline t1 has 2 clips; position 3 is not between 1 and 2.')
-    expect(conflict(main, adding('timeline.clip_insert', { at: 3, asset: 'c' }, ['cl3']))).toBeNull()
-    expect(conflict(main, adding('timeline.clip_insert', { at: 4, asset: 'c' }, ['cl3']))).toContain('not between 1 and 3')
-    expect(conflict(main, adding('timeline.clip_insert', { at: 1, asset: 'c' }, ['cl2']))).toBe('Clip cl2 already exists.')
-    expect(conflict(main, edit('timeline.clip_insert', { at: 1, asset: 'c' }))).toBe('The record stored 0 clip IDs for the 1 clips it adds.')
-    expect(conflict(main, adding('timeline.clip_insert', { timeline: 't2', at: 2, asset: 'c' }, ['cl3'])))
+    expect(problem(main, edit('timeline.clip_remove', { clip: 'cl2' }))).toBeNull()
+    expect(problem(main, edit('timeline.clip_remove', { clip: 'cl3' }))).toBe('Clip cl3 does not exist.')
+    expect(problem(main, edit('timeline.clip_move', { clip: 'cl1', to: 3 }))).toBe('Timeline t1 has 2 clips; position 3 is not between 1 and 2.')
+    expect(problem(main, adding('timeline.clip_insert', { at: 3, asset: 'c' }, ['cl3']))).toBeNull()
+    expect(problem(main, adding('timeline.clip_insert', { at: 4, asset: 'c' }, ['cl3']))).toContain('not between 1 and 3')
+    // A record whose clip IDs are taken or missing leaves the slice unchanged.
+    expect(reduceAll([adding('timeline.clip_insert', { at: 1, asset: 'c' }, ['cl2'])], main)).toBe(main)
+    expect(reduceAll([edit('timeline.clip_insert', { at: 1, asset: 'c' })], main)).toBe(main)
+    expect(problem(main, adding('timeline.clip_insert', { timeline: 't2', at: 2, asset: 'c' }, ['cl3'])))
       .toBe('Timeline t2 has 0 clips; position 2 is not between 1 and 1.')
-    expect(conflict(main, adding('timeline.create', { assets: [] }, []))).toBe('Timeline t1 exists; call dv_timeline_update to replace its clips.')
-    expect(conflict(main, adding('timeline.update', { timeline: 't2', assets: [] }, []))).toBe('Timeline t2 does not exist.')
-    expect(conflict(main, edit('timeline.rename', { timeline: 't2', name: 'x' }))).toBe('Timeline t2 does not exist.')
-    expect(conflict(timelineReducer.initial(), edit('timeline.rename', { name: 'x' }))).toBe('The project has no timeline.')
-    expect(conflict(timelineReducer.initial(), adding('timeline.create', {}, []))).toBeNull()
-    expect(conflict(main, edit('plan.create', {}))).toBeNull()
-    // A record that did not finish done changes nothing, so it cannot conflict.
-    expect(conflict(main, edit('timeline.clip_remove', { clip: 'cl3' }, { status: 'failed' }))).toBeNull()
-    expect(conflict(ranged, adding('timeline.clip_split', { clip: 'cl1', at_sec: 1.5 }, ['cl3']))).toBeNull()
-    expect(conflict(ranged, adding('timeline.clip_split', { clip: 'cl1', at_sec: 2 }, ['cl3']))).toContain('does not play 2s of its asset')
-    expect(conflict(main, adding('timeline.clip_split', { clip: 'cl1', at_sec: 'x' }, ['cl3']))).toContain('does not play null')
-    expect(conflict(main, edit('timeline.clip_trim', { clip: 'cl1', in_sec: -1 }))).toBe('The in point -1s is before the asset\'s start.')
-    expect(conflict(main, edit('timeline.clip_trim', { clip: 'cl1', in_sec: 2, out_sec: 2 }))).toBe('The out point 2s is not after the in point 2s.')
-    expect(conflict(main, edit('timeline.clip_trim', { clip: 'cl1', out_sec: 0 }))).toBe('The out point 0s is not after the in point 0s.')
-    expect(conflict(main, edit('timeline.clip_trim', { clip: 'cl1', out_sec: 2 }))).toBeNull()
+    expect(problem(main, adding('timeline.create', { assets: [] }, []))).toBe('Timeline t1 exists; call dv_timeline_update to replace its clips.')
+    expect(problem(main, adding('timeline.update', { timeline: 't2', assets: [] }, []))).toBe('Timeline t2 does not exist.')
+    expect(problem(main, edit('timeline.rename', { timeline: 't2', name: 'x' }))).toBe('Timeline t2 does not exist.')
+    expect(problem(timelineReducer.initial(), edit('timeline.rename', { name: 'x' }))).toBe('The project has no timeline.')
+    expect(problem(timelineReducer.initial(), adding('timeline.create', {}, []))).toBeNull()
+    expect(problem(main, edit('plan.create', {}))).toBeNull()
+    expect(problem(ranged, adding('timeline.clip_split', { clip: 'cl1', at_sec: 1.5 }, ['cl3']))).toBeNull()
+    expect(problem(ranged, adding('timeline.clip_split', { clip: 'cl1', at_sec: 2 }, ['cl3']))).toContain('does not play 2s of its asset')
+    expect(problem(main, adding('timeline.clip_split', { clip: 'cl1', at_sec: 'x' }, ['cl3']))).toContain('does not play null')
+    expect(problem(main, edit('timeline.clip_trim', { clip: 'cl1', in_sec: -1 }))).toBe('The in point -1s is before the asset\'s start.')
+    expect(problem(main, edit('timeline.clip_trim', { clip: 'cl1', in_sec: 2, out_sec: 2 }))).toBe('The out point 2s is not after the in point 2s.')
+    expect(problem(main, edit('timeline.clip_trim', { clip: 'cl1', out_sec: 0 }))).toBe('The out point 0s is not after the in point 0s.')
+    expect(problem(main, edit('timeline.clip_trim', { clip: 'cl1', out_sec: 2 }))).toBeNull()
   })
 
   it('lists every timeline with its clips by clip ID, their URLs, and the status of placeholder clips in the agent summary', () => {

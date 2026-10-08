@@ -1,6 +1,6 @@
 /**
  * `dvChatReferences` over the real Project service and components: `dv:` mentions of a step's user messages become a
- * `dv-mentions` context message read from the session's working branch, chat images become `asset.import` records of
+ * `dv-mentions` context message read from the project's current branch, chat images become `asset.import` records of
  * the session's project, and disposal removes both listeners.
  */
 import { agentEvents } from '@deepseek-ai/dsh-agent'
@@ -96,7 +96,7 @@ function textOf(message: UserMessage | undefined): string {
 }
 
 describe('mention expansion', () => {
-  it('appends a dv-mentions message that reads the character from the chat session\'s open draft, not from main', async () => {
+  it('appends a dv-mentions message that reads the character from the project\'s current branch, not from main', async () => {
     const { fixture, preStep } = await start()
     const session = brandString<SessionId>('s1')
     const user: RecordOrigin = { actor: 'user', surface: 'canvas', session: null, turn: null, tool_call: null, intent: 'set up' }
@@ -110,18 +110,19 @@ describe('mention expansion', () => {
     await fixture.project.run({
       ...user, project: info.id, operation: 'bible.character_create', inputs: reference, params: { character: 'c1', name: 'Lead' },
     })
-    // The agent's update opens draft/s1; version 2 of c1 exists only there.
+    // The agent's update lands on the forked branch b2; version 2 of c1 exists only there.
+    await fixture.project.createBranch(info.id, null)
     await fixture.project.run({
       actor: 'agent', surface: 'chat', session, turn: null, tool_call: 'call-update', intent: 'rename the lead',
-      project: info.id, operation: 'bible.character_update', inputs: reference, params: { character: 'c1', name: 'Lead on draft' },
+      project: info.id, operation: 'bible.character_update', inputs: reference, params: { character: 'c1', name: 'Lead on branch' },
     })
-    expect(fixture.project.workingBranch(info.id, session).name).toBe('draft/s1')
-    expect(fixture.project.getState(info.id).components.bible.characters[brandString<CharacterId>('c1')]).toHaveLength(1)
+    expect(fixture.project.currentBranch(info.id).name).toBe('b2')
+    expect(fixture.project.getState(info.id, 'main').components.bible.characters[brandString<CharacterId>('c1')]).toHaveLength(1)
 
     const messages = await preStep('make @[Lead](dv:character/c1) wave')
     expect(messages).toHaveLength(2)
     expect(messages[1]?.source).toMatchObject({ kind: 'dv-mentions' })
-    expect(textOf(messages[1])).toContain('character c1@2 "Lead on draft"')
+    expect(textOf(messages[1])).toContain('character c1@2 "Lead on branch"')
     expect(textOf(messages[1])).toContain('pass it as input c1@2')
     // A message without mentions enters unchanged.
     expect(await preStep('hello')).toHaveLength(1)
@@ -138,7 +139,7 @@ describe('mention expansion', () => {
 })
 
 describe('chat images', () => {
-  it('imports the images a user attached in a bound chat as project assets on the working branch', async () => {
+  it('imports the images a user attached in a bound chat as project assets on the current branch', async () => {
     const { fixture, attachments, emit, callAs } = await start()
     const image = await attachments.saveImage({ data: Buffer.from('chat-image'), mediaType: 'image/png', name: 'cat.png' })
     const message = { source: { kind: 'user' }, content: [{ type: 'image', attachment: image }] }

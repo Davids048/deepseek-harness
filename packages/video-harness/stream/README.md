@@ -53,7 +53,7 @@ The `/vh/ws` route works as follows:
 | The shot ends | `{type: 'media_segment_complete', segment_idx, stream_id}` |
 | The shot fails | `{type: 'error', stream_id, message}` |
 | A record is written or updated | `{type: 'op', change: 'append' or 'patch', op}`, where `op` is the `ProjectRecord` |
-| A branch moves | `{type: 'head', branch, to}`, where `to` is the branch head, or `null` for a removed draft |
+| A branch is created or moves, or the current branch changes | `{type: 'head', branch, to, current}`, where `to` is the branch head and `current` the project's current branch |
 | A bad message | `{type: 'error', message}` for text that is not JSON or not a subscribe command |
 
 -----

@@ -17,7 +17,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import DvAssetPool from '@dv/asset-pool'
 import DvFfmpeg from '@dv/ffmpeg'
-import DvProject, { DraftConflictError, type AssetId, type OperationToolValue, type ProjectId, type RecordOrigin, type SessionId } from '@dv/project'
+import DvProject, { type AssetId, type OperationToolValue, type ProjectId, type RecordOrigin, type SessionId } from '@dv/project'
 import { afterEach, describe, expect, it } from 'vitest'
 import DvStoryBible, { type CharacterId } from '../src/index.ts'
 
@@ -130,7 +130,7 @@ describe('dvStoryBible', () => {
       reason: 'register the lead', character: 'c1', name: 'Lead', description: 'red coat', inputs: { reference: [face] },
     }))
     expect(created).toMatchObject({ status: 'done', summary: 'character Lead created', outputs: [], params: { character: 'c1', name: 'Lead' } })
-    const state = fixture.ctx.dvProject.getState(fixture.project, 'draft/s1')
+    const state = fixture.ctx.dvProject.getState(fixture.project)
     const record = state.components.proj.records.find(entry => entry.operation === 'bible.character_create')
     expect(record).toMatchObject({
       actor: 'agent', surface: 'chat', component: 'bible', params: { character: 'c1', name: 'Lead', description: 'red coat' },
@@ -143,7 +143,7 @@ describe('dvStoryBible', () => {
     expect(fixture.ctx.dvProject.assetsOf(state, ref)).toEqual([face])
     expect(fixture.ctx.dvProject.parseInputs('shot.render', { reference: ['c1@1'] }, state)).toEqual([{ role: 'reference', ref }])
     value(await fixture.call('dv_shot_render', { reason: 'shoot', inputs: { reference: ['c1@1'] } }))
-    const render = fixture.ctx.dvProject.getState(fixture.project, 'draft/s1').components.proj.records.at(-1)
+    const render = fixture.ctx.dvProject.getState(fixture.project).components.proj.records.at(-1)
     expect(render?.inputs).toEqual([{ role: 'reference', ref, resolved_asset: face }])
   })
 
@@ -156,7 +156,7 @@ describe('dvStoryBible', () => {
     const renamed = value(await fixture.call('dv_bible_location_update', { reason: 'rename', location: 'l1', name: 'Shore' }))
     expect(renamed.summary).toBe('location l1 updated')
     const restyled = value(await fixture.call('dv_bible_location_update', { reason: 'new reference image', location: 'l1', inputs: { reference: [coat] } }))
-    const state = fixture.ctx.dvProject.getState(fixture.project, 'draft/s1')
+    const state = fixture.ctx.dvProject.getState(fixture.project)
     expect(state.components.bible.locations['l1' as never]?.map(version => [version.version, version.name, version.references]))
       .toEqual([[1, 'Beach', [face]], [2, 'Shore', [face]], [3, 'Shore', [coat]]])
     const records = state.components.proj.records
@@ -180,22 +180,25 @@ describe('dvStoryBible', () => {
       ...HUMAN, project: fixture.project, operation: 'bible.character_create', params: { character: 'c1' }, inputs: [],
     })).rejects.toMatchObject({ code: 'invalid_params' })
     expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before)
-    const failed = fixture.ctx.dvProject.getState(fixture.project, 'draft/s1').components.proj.records
+    const failed = fixture.ctx.dvProject.getState(fixture.project).components.proj.records
       .filter(record => record.status === 'failed').map(record => record.error?.code)
     expect(failed).toEqual(['operation_failed', 'operation_failed', 'operation_failed'])
-    expect(Object.keys(fixture.ctx.dvProject.getState(fixture.project, 'draft/s1').components.bible.characters)).toEqual([])
+    expect(Object.keys(fixture.ctx.dvProject.getState(fixture.project).components.bible.characters)).toEqual([])
   })
 
-  it('stops accept replay when main created the same ID after the draft did', async () => {
+  it('keeps the versions written on a branch off the branch it was forked from', async () => {
     const fixture = await start()
     const lead = fixture.put('lead')
+    const branch = (await fixture.ctx.dvProject.createBranch(fixture.project, null)).name
     value(await fixture.call('dv_bible_character_create', { reason: 'lead', character: 'c1', name: 'Lead', inputs: { reference: [lead] } }))
+    expect(Object.keys(fixture.ctx.dvProject.getState(fixture.project, branch).components.bible.characters)).toEqual(['c1'])
+    await fixture.ctx.dvProject.switchBranch(fixture.project, 'main', HUMAN)
+    // On main the ID c1 is still free, so a location may take it there.
     await fixture.ctx.dvProject.run({
       ...HUMAN, project: fixture.project, operation: 'bible.location_create', params: { location: 'c1', name: 'Cave' }, inputs: [],
     })
-    const session = { ...HUMAN, session: brandString<SessionId>('s1') }
-    const accept = fixture.ctx.dvProject.acceptDraft(fixture.project, session)
-    await expect(accept).rejects.toBeInstanceOf(DraftConflictError)
-    await expect(accept).rejects.toThrow('main already has a location with the ID c1.')
+    const main = fixture.ctx.dvProject.getState(fixture.project, 'main').components.bible
+    expect([Object.keys(main.characters), Object.keys(main.locations)]).toEqual([[], ['c1']])
+    expect(Object.keys(fixture.ctx.dvProject.getState(fixture.project, branch).components.bible.locations)).toEqual([])
   })
 })

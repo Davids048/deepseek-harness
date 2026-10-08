@@ -3,11 +3,11 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { describe, expect, it } from 'vitest'
 import { MAIN_BRANCH } from '../src/shared.ts'
 import { Subscriptions } from '../src/subscriptions.ts'
-import type { ProjectEvent, ProjectId } from '../src/types.ts'
+import type { ProjectEvent, ProjectId, RecordId } from '../src/types.ts'
 
 const PROJECT = brandString<ProjectId>('project-1')
 const OTHER_PROJECT = brandString<ProjectId>('project-2')
-const EVENT: ProjectEvent = { kind: 'branch', name: MAIN_BRANCH, branch: null }
+const EVENT: ProjectEvent = { kind: 'branch', name: MAIN_BRANCH, head: brandString<RecordId>('record-1'), current: MAIN_BRANCH }
 
 describe('Subscriptions', () => {
   it('delivers events in subscription order and stops after removal', () => {

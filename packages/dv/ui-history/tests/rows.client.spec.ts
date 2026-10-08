@@ -1,17 +1,19 @@
 /**
  * The History panel's pure readings: action rows and approval folds, labels with subjects, thumbnails, relative times,
- * mark badges, the branch filter query, timeline record sets, focus, and the working branch's steps.
+ * timeline record sets, focus, the current branch's steps, and the lane layout of the branch tree.
  */
 import { describe, expect, it } from 'vitest'
-import type { HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
+import type { Branch, HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
 import {
-  actionLabel, actionRows, branchQuery, centerFocus, clipTimelines, markBadge, markStyle, operationLabel, relativeTime, stepPlace,
-  thumbnailOf, timelineRecords, workingSteps,
+  actionLabel, actionRows, branchSteps, branchTree, centerFocus, clipTimelines, operationLabel, ownerBranch, relativeTime, stepPlace,
+  thumbnailOf, timelineRecords,
 } from '../src/client/rows.ts'
 
-/** An entry of a record with a mark. */
-const entry = (fields: Partial<ProjectRecord> & { id: string }, mark: HistoryEntry['mark'] = 'main'): HistoryEntry => ({ record: record(fields), mark })
+/** An entry of a record with a mark and the branch lines that hold it. */
+const entry = (fields: Partial<ProjectRecord> & { id: string }, mark: HistoryEntry['mark'] = 'current', branches: string[] = ['main']): HistoryEntry => (
+  { record: record(fields), mark, branches }
+)
 
 describe('actionRows', () => {
   it('folds the loaded records an approval scheduled under its row, in scheduled order', () => {
@@ -81,23 +83,7 @@ describe('labels, thumbnails and times', () => {
   })
 })
 
-describe('marks', () => {
-  it('badges an accepted draft record, open drafts, undone, discarded and replayed records', () => {
-    expect(markBadge(entry({ id: 'm' }))).toBeNull()
-    expect(markBadge(entry({ id: 'a', branch: 'draft/s1' }))).toEqual({ zh: '已接受', en: 'Accepted' })
-    expect(markBadge(entry({ id: 'd', branch: 'draft/s1' }, 'draft'))).toEqual({ zh: '草稿', en: 'Draft' })
-    expect(markBadge(entry({ id: 'u' }, 'undone'))).toEqual({ zh: '已撤销', en: 'Undone' })
-    expect(markBadge(entry({ id: 'x', branch: 'draft/s1' }, 'discarded'))).toEqual({ zh: '已丢弃', en: 'Discarded' })
-    expect(markBadge(entry({ id: 'p', branch: 'draft/s1' }, 'replayed'))).toEqual({ zh: '已重放', en: 'Replayed' })
-    expect([markStyle('undone'), markStyle('discarded'), markStyle('replayed'), markStyle('draft')]).toEqual(['struck', 'struck', 'dimmed', 'normal'])
-  })
-
-  it('maps the branch filter to marks: main includes undone records, a draft its open records', () => {
-    expect(branchQuery('')).toEqual({})
-    expect(branchQuery('main')).toEqual({ marks: ['main', 'undone'] })
-    expect(branchQuery('draft/s5')).toEqual({ branch: 'draft/s5', marks: ['draft'] })
-  })
-
+describe('operation labels', () => {
   it('labels an operation by its tool label, and an unknown one by its name', () => {
     expect(operationLabel('timeline.clip_move')).toEqual(['移动片段', 'Move clip'])
     expect(operationLabel('other.thing')).toEqual(['other.thing', 'other.thing'])
@@ -123,30 +109,64 @@ describe('timelines and focus', () => {
     expect(timelineRecords(records, {}, 't2', ['z.mp4'])).toEqual(['c2', 'm2'])
   })
 
-  it('focuses a clip record on the timeline, a render on the canvas, and nothing for proj records or other branches', () => {
+  it('focuses a clip record on the timeline, a render on the canvas, and nothing for proj records or records off the current state', () => {
     const owner = clipTimelines(records)
-    expect(centerFocus({ record: records[3] as ProjectRecord, mark: 'main' }, owner))
+    expect(centerFocus({ record: records[3] as ProjectRecord, mark: 'current', branches: ['main'] }, owner))
       .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl4' } })
-    expect(centerFocus({ record: records[0] as ProjectRecord, mark: 'draft' }, owner))
+    expect(centerFocus({ record: records[0] as ProjectRecord, mark: 'current', branches: ['main'] }, owner))
       .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl1' } })
     const render = fixtureState().components.proj.records.find(item => item.id === 'g1') as ProjectRecord
-    expect(centerFocus({ record: render, mark: 'main' }, owner)).toEqual({ event: 'dv:canvas-focus', detail: { recordId: 'g1' } })
-    expect(centerFocus({ record: render, mark: 'undone' }, owner)).toBeNull()
+    expect(centerFocus({ record: render, mark: 'current', branches: ['main'] }, owner)).toEqual({ event: 'dv:canvas-focus', detail: { recordId: 'g1' } })
+    for (const mark of ['redo', 'branch', 'undone'] as const) expect(centerFocus({ record: render, mark, branches: [] }, owner)).toBeNull()
     expect(centerFocus(entry({ id: 'u', operation: 'proj.undo' }), owner)).toBeNull()
   })
 })
 
-describe('workingSteps', () => {
+describe('branchSteps', () => {
   it('makes the newest step of the chain current, the older steps before it, and the redo steps after it', () => {
     const chain = [
       record({ id: 'c', operation: 'proj.create' }), record({ id: 'a', operation: 'timeline.create' }),
       record({ id: 'b', operation: 'timeline.rename' }), record({ id: 'u', operation: 'proj.undo' }),
-      record({ id: 'w', operation: 'proj.draft_accept' }),
+      record({ id: 'w', operation: 'proj.draft_accept' }), record({ id: 'v', operation: 'proj.draft_discard' }),
     ]
-    const steps = workingSteps(chain, ['d', 'e'])
+    const steps = branchSteps(chain, ['d', 'e'])
     expect(steps.current).toBe('b')
-    expect(['c', 'a', 'b', 'u', 'w', 'd', 'x'].map(id => stepPlace(id, steps)))
-      .toEqual(['before', 'before', 'current', null, null, 'after', null])
-    expect(workingSteps([], []).current).toBeNull()
+    expect(['c', 'a', 'b', 'u', 'w', 'v', 'd', 'x'].map(id => stepPlace(id, steps)))
+      .toEqual(['before', 'before', 'current', null, null, null, 'after', null])
+    expect(branchSteps([], []).current).toBeNull()
+  })
+})
+
+describe('branchTree', () => {
+  const branch = (name: string, forkedAt: string | null): Branch => ({ name, title: null, head: '', base: forkedAt === null ? null : 'main', forked_at: forkedAt, tip: '' })
+  // Newest first: b2 forked from main at a and wrote x1 and x2; b3 forked from main at m2 and has no step yet.
+  const entries = [
+    entry({ id: 'x2', branch: 'b2' }, 'branch', ['b2']),
+    entry({ id: 'x1', branch: 'b2' }, 'branch', ['b2']),
+    entry({ id: 'u', operation: 'proj.undo' }, 'current', ['main']),
+    entry({ id: 'z' }, 'undone', []),
+    entry({ id: 'm2' }, 'current', ['main', 'b3']),
+    entry({ id: 'a' }, 'current', ['main', 'b2', 'b3']),
+    entry({ id: 'c', operation: 'proj.create' }, 'current', ['main', 'b2', 'b3']),
+  ]
+
+  it('puts each step in its owner\'s lane, runs a forked lane down to its fork point, and marks a branch without steps', () => {
+    const tree = branchTree(entries, [branch('main', null), branch('b2', 'a'), branch('b3', 'm2')])
+    expect(tree.lanes.map(lane => lane.name)).toEqual(['main', 'b2', 'b3'])
+    expect(tree.rows.map(row => [row.entry.record.id, row.lane, row.lines, row.forks])).toEqual([
+      ['x2', 1, [{ lane: 1, up: false, down: true }], []],
+      ['x1', 1, [{ lane: 1, up: true, down: true }], []],
+      ['m2', 0, [{ lane: 0, up: false, down: true }, { lane: 1, up: true, down: true }], [{ lane: 2, empty: true }]],
+      ['a', 0, [{ lane: 0, up: true, down: true }], [{ lane: 1, empty: false }]],
+      ['c', 0, [{ lane: 0, up: true, down: false }], []],
+    ])
+  })
+
+  it('runs a lane to the bottom when its fork point is not loaded, and owns a step by the first line when its branch lost it', () => {
+    const tree = branchTree(entries.slice(0, 2), [branch('main', null), branch('b2', 'a')])
+    expect(tree.rows.map(row => row.lines)).toEqual([[{ lane: 1, up: false, down: true }], [{ lane: 1, up: true, down: true }]])
+    expect(ownerBranch(entry({ id: 'r', branch: 'draft/s5' }, 'current', ['main', 'b2']))).toBe('main')
+    expect(ownerBranch(entry({ id: 'r', branch: 'b2' }, 'branch', ['main', 'b2']))).toBe('b2')
+    expect(ownerBranch(entry({ id: 'r' }, 'undone', []))).toBeNull()
   })
 })

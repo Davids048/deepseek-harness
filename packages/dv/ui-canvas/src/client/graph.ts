@@ -1,12 +1,12 @@
 /**
- * Canvas nodes and edges derived from a branch state. The canvas shows the current state of the working branch only: a
+ * Canvas nodes and edges derived from a branch state. The canvas shows the state of the project's current branch only: a
  * node is an item a creator works with now: a character, a location or a style at its current version, an imported asset
  * on the project's canvas list (see {@link buildCanvasGraph}), a plan at its latest version, the current take of each
  * shot of that version, a take that is not part of a plan, and a take whose outputs are in use. Deterministic edits
  * (still grabs, timeline records) do not become nodes; a timeline trim shows as a badge on the take it shortened.
  */
 import type {
-  Character, Clip, Location, PlanState, PlanVersion, ProjectRecord, RecordInput, RecordInputRef, StoryBibleState, Style, WireState,
+  Character, Clip, Location, PlanVersion, ProjectRecord, RecordInput, RecordInputRef, StoryBibleState, Style, WireState,
 } from '@dv/ui-kit/types.ts'
 
 /** What a node represents; the canvas colors nodes by it. */
@@ -20,8 +20,6 @@ const BIBLE_SLICES: Record<BibleKind, keyof StoryBibleState> = { character: 'cha
 
 /** Display states of a node. */
 export interface CanvasNodeFlags {
-  /** On an open draft that the user has not accepted yet. */
-  draft: boolean
   stale: boolean
   /** The record is pending or running. */
   rendering: boolean
@@ -258,74 +256,17 @@ export function withImportNames(state: WireState): WireState {
 }
 
 /**
- * The state of the working branch when a chat session has an open draft: the draft's own state, plus the records that
- * reached the base branch after the draft forked (another session's work), with their story bible and plan versions.
- * A record the base holds from before the fork and the draft lacks was undone on the draft, so it stays out.
- * @param base - the state of the viewed branch.
- * @param draft - the state of an open draft branch, or null.
- * @returns the merged state; `base` itself when there is no draft.
- */
-export function overlayDraft(base: WireState, draft: WireState | null): WireState {
-  if (draft === null) return base
-  const proj = base.components.proj
-  const draftProj = draft.components.proj
-  const inDraft = new Set(draftProj.records.map(record => record.id))
-  const forkedAt = draft.branches.find(entry => entry.name === draft.branch)?.forked_at ?? null
-  const forkTime = [...draftProj.records, ...proj.records].find(record => record.id === forkedAt)?.created_at ?? null
-  // Records the base branch appended after the fork; the draft never saw them.
-  const later = proj.records.filter(record => !inDraft.has(record.id) && forkTime !== null && record.created_at > forkTime)
-  const laterIds = new Set(later.map(record => record.id))
-  const fromLater = <T>(entries: Record<string, T>): Record<string, T> =>
-    Object.fromEntries(Object.entries(entries).filter(([id]) => laterIds.has(id)))
-  const bible: StoryBibleState = { ...draft.components.bible }
-  for (const key of Object.values(BIBLE_SLICES)) {
-    const merged = { ...bible[key] }
-    for (const [id, versions] of Object.entries(base.components.bible[key])) {
-      const written = versions.at(-1)?.created_by
-      if (written !== undefined && laterIds.has(written) && (merged[id]?.length ?? 0) < versions.length) merged[id] = versions
-    }
-    bible[key] = merged
-  }
-  const plans: PlanState['plans'] = { ...draft.components.plan.plans }
-  for (const [id, versions] of Object.entries(base.components.plan.plans)) {
-    const written = versions.at(-1)?.created_by
-    if (written !== undefined && laterIds.has(written) && (plans[id]?.length ?? 0) < versions.length) plans[id] = versions
-  }
-  const assets = new Set(draft.assets.map(asset => asset.id))
-  return {
-    ...base,
-    assets: [...draft.assets, ...base.assets.filter(asset => !assets.has(asset.id))],
-    components: {
-      ...draft.components,
-      bible,
-      plan: { plans },
-      proj: {
-        ...draftProj,
-        records: [...draftProj.records, ...later],
-        stale: { ...fromLater(proj.stale), ...draftProj.stale },
-        superseded: { ...fromLater(proj.superseded), ...draftProj.superseded },
-        created_by: {
-          ...Object.fromEntries(Object.entries(proj.created_by).filter(([, producer]) => laterIds.has(producer))),
-          ...draftProj.created_by,
-        },
-      },
-    },
-  }
-}
-
-/**
  * The canvas graph of a branch state, with a default layout: story bible items and assets in column 0, plans in
  * column 1, takes from column 2 rightwards by first-frame chain depth, retakes in their source take's column.
  * An imported image or video gets one node, drawn from its first `asset.import` record, when its asset ID is on the
  * project's canvas list (`placed`) and it is not a reference image of a character, location or style, which that story
  * bible node shows. A take that reads an asset off the list has no edge from it.
- * @param state - a branch state, possibly with a draft overlaid by {@link overlayDraft}.
- * @param draftRecords - IDs of records that belong to an open draft.
+ * @param state - a branch state.
  * @param placed - the project's canvas list: asset IDs from the stored canvas layout.
  * @returns the nodes and edges.
  */
 export function buildCanvasGraph(
-  state: WireState, draftRecords: ReadonlySet<string> = new Set(), placed: ReadonlySet<string> = new Set(),
+  state: WireState, placed: ReadonlySet<string> = new Set(),
 ): CanvasGraph {
   const proj = state.components.proj
   const assets = new Map(state.assets.map(asset => [asset.id, asset]))
@@ -333,7 +274,6 @@ export function buildCanvasGraph(
   const isImage = (id: string | undefined): boolean => id !== undefined && assets.get(id)?.mime.startsWith('image/') === true
   const isVideo = (id: string | undefined): boolean => id !== undefined && assets.get(id)?.mime.startsWith('video/') === true
   const flagsOf = (record: ProjectRecord | null): CanvasNodeFlags => ({
-    draft: record !== null && draftRecords.has(record.id),
     stale: record !== null && proj.stale[record.id] !== undefined,
     rendering: record !== null && (record.status === 'pending' || record.status === 'running'),
     failed: record?.status === 'failed',

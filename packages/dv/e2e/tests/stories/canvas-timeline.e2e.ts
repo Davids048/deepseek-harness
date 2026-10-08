@@ -1,10 +1,10 @@
 // User stories of the canvas (画布) and the timeline editor (时间线), walked in Chromium against the shipped profile with a
 // fake video backend that renders playable VP9 videos and a scripted agent model. Projects are seeded through the
-// `/api/dv` routes, so each story starts from plans, takes, drafts, and several timelines without waiting for an agent. Every story
+// `/api/dv` routes, so each story starts from plans, takes, branches, and several timelines without waiting for an agent. Every story
 // asserts what the creator must see after the action; a story whose expected behavior is not built yet fails.
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import type { Branch, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
+import type { ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
 import { bootHarness, playwright, waitFor, type BootedHarness } from '../harness.ts'
 import { startScriptedModel, type ScriptedModel } from '../scripted-model.ts'
 
@@ -42,9 +42,9 @@ async function runOperation(
   return await harness.api.post('/api/dv/operation', { project, operation, params, inputs, surface: 'canvas', intent: `seed: ${operation}` }) as ProjectRecord
 }
 
-/** @returns the folded `main` state of a project. */
-async function stateOf(project: string): Promise<WireState> {
-  return await harness.api.get(`/api/dv/state?project=${project}&branch=main`) as WireState
+/** @returns the folded state of one branch of a project, `main` by default. */
+async function stateOf(project: string, branch = 'main'): Promise<WireState> {
+  return await harness.api.get(`/api/dv/state?project=${project}&branch=${encodeURIComponent(branch)}`) as WireState
 }
 
 /**
@@ -657,28 +657,28 @@ describe('canvas stories', () => {
     await expect.poll(() => page.locator('[data-node-stale="true"]').count()).toBe(0)
   })
 
-  it('a draft draws dashed nodes with an accept bar; accepting makes them solid', async () => {
-    const project = await seedProject('canvas-draft', 2)
+  it('the agent\'s take joins the canvas at once and is drawn like every other take', async () => {
+    const project = await seedProject('canvas-agent', 2)
     model.rules.push({
-      match: 'draft-shot-please',
+      match: 'agent-shot-please',
       steps: [{ calls: [{ name: 'dv_shot_render_ref2va', args: {
-        reason: 'draft shot', project_id: project.id, prompt: 'canvas-draft extra shot', duration_sec: 1, inputs: { reference: ['c1@1'] },
+        reason: 'agent shot', project_id: project.id, prompt: 'canvas-agent extra shot', duration_sec: 1, inputs: { reference: ['c1@1'] },
       } }] }],
-      endText: '草稿待确认',
+      endText: '拍好了',
     })
     const page = await openPage()
     await gotoProject(page, project.id)
     const composer = page.locator('[data-dv-chat] [contenteditable="true"]').first()
     await composer.waitFor({ timeout: 30_000 })
     await composer.click()
-    await page.keyboard.type('draft-shot-please')
+    await page.keyboard.type('agent-shot-please')
     await page.keyboard.press('Enter')
-    await expect.poll(() => page.locator('[data-node-draft="true"]').count(), { timeout: 60_000 }).toBeGreaterThan(0)
-    const outline = await page.locator('[data-node-draft="true"]').first().evaluate(el => getComputedStyle(el).outlineStyle)
-    expect(outline).toBe('dashed')
-    await page.locator('[data-testid="dv-canvas-view"] button', { hasText: '接受' }).first().click()
-    await expect.poll(() => page.locator('[data-node-draft="true"]').count(), { timeout: 15_000 }).toBe(0)
-    expect(await page.locator('[data-node-kind="take"]').count()).toBe(3)
+    const takes = page.locator('[data-node-kind="take"]')
+    await expect.poll(() => takes.count(), { timeout: 60_000 }).toBe(3)
+    const outlines = await takes.evaluateAll(elements => elements.map(element => getComputedStyle(element).outlineStyle))
+    expect(outlines).not.toContain('dashed')
+    expect(await page.locator('[data-testid="dv-canvas-view"] button', { hasText: '接受' }).count()).toBe(0)
+    expect((await stateOf(project.id)).components.proj.records.filter(record => record.operation === RENDER_OPERATION)).toHaveLength(3)
   })
 
   it('an image imported in 素材库 joins the canvas when dragged there, stays after a reload, and 从画布移除 leaves it in 素材库', async () => {
@@ -1195,87 +1195,47 @@ describe('timeline stories', () => {
   })
 })
 
-/**
- * Ask the scripted agent to rename timeline t1, which opens the chat session's draft with one agent change, and wait
- * until the canvas shows that draft as the working branch.
- * @param page - a page showing the project's canvas.
- * @param project - the project.
- * @param word - the chat message, unique to the story.
- * @returns the draft branch.
- */
-async function openAgentDraft(page: Page, project: string, word: string): Promise<Branch> {
-  model.rules.push({ match: word, steps: [{ calls: [{ name: 'dv_timeline_rename', args: { reason: 'rename', project_id: project, timeline: 't1', name: `${word} 改名` } }] }], endText: '改好了' })
-  const composer = page.locator('[data-dv-chat] [contenteditable="true"]').first()
-  await composer.waitFor({ timeout: 30_000 })
-  await composer.click()
-  await page.keyboard.type(word)
-  await page.keyboard.press('Enter')
-  const bar = page.locator('[data-testid="dv-canvas-view"] [data-testid="dv-kit-working-branch"]')
-  await expect.poll(() => bar.getAttribute('data-branch'), { timeout: 60_000 }).toMatch(/^draft\//)
-  return await waitFor(async () => (await branchesOf(project)).find(branch => branch.counts !== null) ?? null, 'the open draft', 10_000)
+/** The branch switcher in the workspace top bar. */
+function switcher(page: Page): Locator {
+  return page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-switcher"]').first()
 }
 
-/** @returns the branches of a project. */
-async function branchesOf(project: string): Promise<Branch[]> {
-  return (await harness.api.get(`/api/dv/state?project=${project}&branch=main`) as { branches: Branch[] }).branches
+/** @returns the option labels of the branch switcher, in branch order. */
+async function branchOptions(page: Page): Promise<string[]> {
+  return await switcher(page).locator('option').evaluateAll(options => options.map(option => option.textContent ?? ''))
 }
 
-describe('working branch, discard confirmation, and keep anyway', () => {
-  it('the canvas and the timeline name the working branch, and a human edit lands on the open draft it names', async () => {
-    const project = await seedProject('working-branch', 1)
+describe('branches and keep anyway', () => {
+  it('the top bar names the current branch; 新建分支 forks it, renaming names it, and switching shows each branch on the canvas and the timeline', async () => {
+    const project = await seedProject('branch-switch', 1)
     const page = await openPage()
     await gotoProject(page, project.id)
-    const canvasBar = page.locator('[data-testid="dv-canvas-view"] [data-testid="dv-kit-working-branch"]')
-    expect(await canvasBar.getAttribute('data-branch')).toBe('main')
-    expect(await canvasBar.textContent()).toBe('当前分支：main')
+    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
+    expect(await branchOptions(page)).toEqual(['主线'])
+    const takes = page.locator('[data-node-kind="take"]')
+    await expect.poll(() => takes.count()).toBe(1)
+    await switcher(page).getByRole('button', { name: '新建分支', exact: true }).click()
+    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('b2')
+    expect(await branchOptions(page)).toEqual(['主线', '分支 2'])
+    page.once('dialog', (dialog) => { void dialog.accept('夜景') })
+    await switcher(page).getByRole('button', { name: '重命名', exact: true }).click()
+    await expect.poll(() => branchOptions(page)).toEqual(['主线', '夜景'])
+    // Edits on the new branch: one more take on the canvas and a second timeline.
+    const take = await runOperation(project.id, RENDER_OPERATION, { prompt: 'branch-switch b2 shot', duration_sec: 1 }, [{ role: 'reference', ref: 'c1@1' }])
+    expect(take.branch).toBe('b2')
+    await expect.poll(() => takes.count(), { timeout: 30_000 }).toBe(2)
     await viewToggle(page, '时间线').click()
-    const timelineBar = page.locator('[data-testid="dv-timeline-editor"] [data-testid="dv-kit-working-branch"]')
-    await expect.poll(() => timelineBar.getAttribute('data-branch')).toBe('main')
+    await page.locator('[data-testid="dv-timeline-editor"]').getByRole('button', { name: '＋ 新建' }).click()
+    await expect.poll(() => timelineTabs(page)).toHaveLength(2)
+    // Back on 主线 the canvas and the timeline show 主线 as it was.
+    await switcher(page).getByLabel('分支').selectOption('main')
+    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
+    await expect.poll(() => timelineTabs(page)).toHaveLength(1)
     await viewToggle(page, '画布').click()
-    const draft = await openAgentDraft(page, project.id, 'wb-indicator')
-    expect(await canvasBar.getAttribute('data-branch')).toBe(draft.name)
-    expect(await canvasBar.textContent()).toContain('当前分支：草稿')
-    await viewToggle(page, '时间线').click()
-    await expect.poll(() => timelineBar.getAttribute('data-branch')).toBe(draft.name)
-    // The human's new timeline goes to the draft the bar names, not to main.
-    await page.locator('[data-testid="dv-timeline-editor"]').getByRole('button', { name: '＋ 新建' }).click()
-    await expect.poll(async () => (await branchesOf(project.id)).find(branch => branch.name === draft.name)?.counts?.human_edits).toBe(1)
+    await expect.poll(() => takes.count()).toBe(1)
     expect((await stateOf(project.id)).components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1'])
+    expect((await stateOf(project.id, 'b2')).components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1', 't2'])
     expect(page.errors).toEqual([])
-  })
-
-  it('discard asks first with the counts to be lost; cancel keeps the draft, a changed draft is shown again, confirm drops it', async () => {
-    const project = await seedProject('discard-confirm', 1)
-    const page = await openPage()
-    await gotoProject(page, project.id)
-    const draft = await openAgentDraft(page, project.id, 'wb-discard')
-    await viewToggle(page, '时间线').click()
-    await page.locator('[data-testid="dv-timeline-editor"]').getByRole('button', { name: '＋ 新建' }).click()
-    await expect.poll(async () => (await branchesOf(project.id)).find(branch => branch.name === draft.name)?.counts?.human_edits).toBe(1)
-    const agentChanges = (await branchesOf(project.id)).find(branch => branch.name === draft.name)?.counts?.agent_changes ?? -1
-    const lost = (human: number): string => `丢弃后会丢失 ${String(agentChanges)} 处智能体修改和 ${String(human)} 处你自己的修改。`
-    const bar = page.locator('[data-testid="dv-timeline-editor"] [data-testid="dv-kit-working-branch"]')
-    const dialog = page.locator('[data-testid="dv-kit-discard-dialog"]')
-    await bar.getByRole('button', { name: '丢弃', exact: true }).click()
-    await dialog.waitFor()
-    expect(await dialog.locator('p').first().textContent()).toBe(lost(1))
-    await dialog.getByRole('button', { name: '取消', exact: true }).click()
-    await dialog.waitFor({ state: 'detached' })
-    expect((await branchesOf(project.id)).some(branch => branch.name === draft.name)).toBe(true)
-    // An edit lands between the dry read and the confirmation: the server refuses, and the dialog shows the new counts.
-    await bar.getByRole('button', { name: '丢弃', exact: true }).click()
-    await dialog.waitFor()
-    await harness.api.post('/api/dv/operation', {
-      project: project.id, operation: 'timeline.rename', params: { timeline: 't1', name: '人工改名' }, inputs: [], surface: 'canvas', session: draft.session, intent: 'rename',
-    })
-    await dialog.getByRole('button', { name: '丢弃', exact: true }).click()
-    await expect.poll(() => dialog.getByRole('status').textContent()).toContain('草稿在你确认前变了')
-    expect(await dialog.locator('p').first().textContent()).toBe(lost(2))
-    await dialog.getByRole('button', { name: '丢弃', exact: true }).click()
-    await dialog.waitFor({ state: 'detached' })
-    await expect.poll(() => bar.getAttribute('data-branch')).toBe('main')
-    expect((await branchesOf(project.id)).some(branch => branch.name === draft.name)).toBe(false)
-    expect((await stateOf(project.id)).components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1'])
   })
 
   it('仍然保留 on a stale take node and on a stale clip removes that mark', async () => {

@@ -29,9 +29,9 @@ kind: "package-reference"
   name: '@dv/chat-references'
 ```
 
-`@dv/ui-composer` 的输入框把选中的项目对象写成 `@[<label>](dv:<kind>/<id>)`。在 `agent/pre-step`，插件在本步的用户消息里找到这些提及，并追加一条 `dv-mentions` 上下文消息，用具体 ID 描述每个提及，内容读自对话的当前分支（打开的草稿，否则 `main`）。提及 URI：`dv:asset/<AssetId>`、`dv:record/<RecordId>`、`dv:character/<CharacterId>`、`dv:location/<LocationId>`、`dv:style/<StyleId>` 和 `dv:clip/<ClipId>`。
+`@dv/ui-composer` 的输入框把选中的项目对象写成 `@[<label>](dv:<kind>/<id>)`。在 `agent/pre-step`，插件在本步的用户消息里找到这些提及，并追加一条 `dv-mentions` 上下文消息，用具体 ID 描述每个提及，内容读自对话所属项目的当前分支。提及 URI：`dv:asset/<AssetId>`、`dv:record/<RecordId>`、`dv:character/<CharacterId>`、`dv:location/<LocationId>`、`dv:style/<StyleId>` 和 `dv:clip/<ClipId>`。
 
-活着的对话里用户输入的消息带图片时，插件从 `attachments` 读取图片，以用户身份、在来源 `chat` 上、在对话的当前分支上为每张图片执行一次 `asset.import`。对话的下一次工具调用会等导入完成（`dvProject.holdToolCalls`）。没有绑定项目的对话不导入。
+活着的对话里用户输入的消息带图片时，插件从 `attachments` 读取图片，以用户身份、在来源 `chat` 上、在项目的当前分支上为每张图片执行一次 `asset.import`。对话的下一次工具调用会等导入完成（`dvProject.holdToolCalls`）。没有绑定项目的对话不导入。
 
 提及辅助函数 `parseMentions`、`formatMention`、`describeMention` 供其他使用者导出；`dvChatReferences.expansionMessage(sessionId, messages)` 返回某一步的上下文消息。
 

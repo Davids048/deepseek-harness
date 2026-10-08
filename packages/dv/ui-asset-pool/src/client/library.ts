@@ -1,16 +1,20 @@
 /**
  * Grouping of a project's images and videos, with the images that shot renders output apart, read from the state of
- * `main` and the states of the project's open drafts.
+ * the project's current branch and, when the panel shows them, the assets that only other branches or the current
+ * branch's redo steps hold.
  *
  * @module @dv/ui-asset-pool/library
  */
-import type { Asset, WireState } from '@dv/ui-kit/types.ts'
+import type { Asset, ProjectRecord, WireHistory, WireState } from '@dv/ui-kit/types.ts'
 
-/** The state of one open draft branch. */
-export interface DraftState {
-  /** The `draft/<session>` branch name. */
-  branch: string
-  state: WireState
+/** The assets outside the current branch's head: what the history lists for other branches and for redo steps. */
+export interface OtherBranchAssets {
+  /** The assets, each once. */
+  assets: Asset[]
+  /** The records that output them, for import names and render stills; none of them outputs only listed assets. */
+  records: ProjectRecord[]
+  /** Asset ID → the name of the branch the asset comes from. */
+  branchOf: Map<string, string>
 }
 
 /** The shot render operations whose image outputs (the last stills of takes) the panel lists under `extracted`. */
@@ -24,45 +28,64 @@ export interface AssetLibrary {
   videos: Asset[]
   /** Images that a `shot.render_ref2va` or `shot.render_t2va` record outputs. */
   extracted: Asset[]
-  /** IDs of the listed assets that only an open draft mentions. */
-  draft: Set<string>
+  /** Listed asset ID → the branch it comes from, for the assets that the current branch's state does not list. */
+  elsewhere: Map<string, string>
+}
+
+/**
+ * The assets that the history lists outside the current branch's head, without the ones the current state lists. An
+ * asset of a redo step belongs to the current branch; any other asset belongs to the first branch whose line holds the
+ * record that output it.
+ * @param history - the `redo` and `branch` entries of the project's history.
+ * @param current - the state of the current branch.
+ * @returns the assets, their records, and the branch of each asset.
+ */
+export function otherBranchAssets(history: WireHistory, current: WireState): OtherBranchAssets {
+  const shown = new Set(current.assets.map(asset => asset.id))
+  const known = new Map(history.assets.map(asset => [asset.id, asset]))
+  const branchOf = new Map<string, string>()
+  const records: ProjectRecord[] = []
+  for (const entry of history.entries) {
+    const branch = entry.branches.includes(current.current) ? current.current : entry.branches[0]
+    if (branch === undefined) continue
+    const added = entry.record.outputs.filter(id => !shown.has(id) && known.has(id) && !branchOf.has(id))
+    for (const id of added) branchOf.set(id, branch)
+    // Only a record that adds an asset can name it; the current branch's own records name the assets it lists.
+    if (added.length > 0) records.push(entry.record)
+  }
+  return { assets: [...branchOf.keys()].flatMap(id => known.get(id) ?? []), records, branchOf }
 }
 
 /**
  * Group a project's images and videos, with the images of shot renders apart; assets of other media types are left out.
- * @param main - the state of `main`.
- * @param drafts - the states of the project's open drafts; their assets are listed and flagged as drafts.
- * @returns the groups and draft flags.
+ * @param current - the state of the project's current branch.
+ * @param others - the assets of other branches and redo steps, when the panel shows them.
+ * @returns the groups and the branch of each asset outside the current state.
  */
-export function assetLibrary(main: WireState, drafts: readonly DraftState[] = []): AssetLibrary {
-  const states = [main, ...drafts.map(draft => draft.state)]
+export function assetLibrary(current: WireState, others: OtherBranchAssets | null = null): AssetLibrary {
   const byId = new Map<string, Asset>()
-  for (const state of states) {
-    for (const asset of state.assets) if (!byId.has(asset.id)) byId.set(asset.id, asset)
-  }
+  for (const asset of [...current.assets, ...others?.assets ?? []]) if (!byId.has(asset.id)) byId.set(asset.id, asset)
   const renderOutputs = new Set<string>()
-  for (const state of states) {
-    for (const record of state.components.proj.records) {
-      if (record.operation !== null && RENDER_OPERATIONS.has(record.operation)) for (const id of record.outputs) renderOutputs.add(id)
-      // The asset pool keeps the name and time of the first import of identical bytes in any project; show this
-      // project's own import name and time, read from its `asset.import` records.
-      if (record.status !== 'done' || record.operation !== 'asset.import') continue
-      const name = record.params['name']
-      for (const id of record.outputs) {
-        const asset = byId.get(id)
-        if (asset === undefined) continue
-        byId.set(id, { ...asset, created_at: record.created_at, ...(typeof name === 'string' && name.length > 0 ? { name } : {}) })
-      }
+  for (const record of [...current.components.proj.records, ...others?.records ?? []]) {
+    if (record.operation !== null && RENDER_OPERATIONS.has(record.operation)) for (const id of record.outputs) renderOutputs.add(id)
+    // The asset pool keeps the name and time of the first import of identical bytes in any project; show this
+    // project's own import name and time, read from its `asset.import` records.
+    if (record.status !== 'done' || record.operation !== 'asset.import') continue
+    const name = record.params['name']
+    for (const id of record.outputs) {
+      const asset = byId.get(id)
+      if (asset === undefined) continue
+      byId.set(id, { ...asset, created_at: record.created_at, ...(typeof name === 'string' && name.length > 0 ? { name } : {}) })
     }
   }
   const assets = [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at))
-  const onMain = new Set(main.assets.map(asset => asset.id))
   const images = assets.filter(asset => asset.mime.startsWith('image/'))
   const videos = assets.filter(asset => asset.mime.startsWith('video/'))
+  const listed = new Set([...images, ...videos].map(asset => asset.id))
   return {
     images: images.filter(asset => !renderOutputs.has(asset.id)),
     videos,
     extracted: images.filter(asset => renderOutputs.has(asset.id)),
-    draft: new Set([...images, ...videos].map(asset => asset.id).filter(id => !onMain.has(id))),
+    elsewhere: new Map([...others?.branchOf ?? []].filter(([id]) => listed.has(id))),
   }
 }

@@ -368,14 +368,14 @@ describe.skipIf(!existsSync(FFMPEG))('dvShotRender', () => {
     })
   })
 
-  it('runs the agent tools on the session draft, with continue_from as the first frame', async () => {
+  it('runs the agent tools on the project\'s current branch, with continue_from as the first frame', async () => {
     const fixture = await start()
     const image = await withCharacter(fixture)
     const shot = value(await fixture.call('dv_shot_render_ref2va', { reason: 'first shot', prompt: 'Picture 1 waves', duration_sec: 1, inputs: { reference: 'c1@1' } }))
     expect(shot).toMatchObject({ status: 'done', scheduled: [], params: { prompt: 'Picture 1 waves', duration_sec: 1 } })
     expect(shot.outputs.map(output => output.role)).toEqual(['video', 'last_still'])
     const record = fixture.ctx.dvProject.getRecord(fixture.project, brandString<RecordId>(shot.record))
-    expect(record).toMatchObject({ actor: 'agent', surface: 'chat', intent: 'first shot', branch: 'draft/s1', component: 'shot', operation: 'shot.render_ref2va' })
+    expect(record).toMatchObject({ actor: 'agent', surface: 'chat', intent: 'first shot', branch: 'main', component: 'shot', operation: 'shot.render_ref2va' })
     expect(record.inputs).toEqual([{ role: 'reference', ref: { character: 'c1', version: 1 }, resolved_asset: image }])
     const next = value(await fixture.call('dv_shot_render_ref2va', { reason: 'second shot', prompt: 'keeps waving', inputs: { reference: [image] }, continue_from: shot.record }))
     expect(next.params).not.toHaveProperty('continue_from')
@@ -383,7 +383,7 @@ describe.skipIf(!existsSync(FFMPEG))('dvShotRender', () => {
       .toEqual({ role: 'first_frame', ref: { record: shot.record, output: 1 }, resolved_asset: shot.outputs[1]?.asset_id })
     const fromText = value(await fixture.call('dv_shot_render_t2va', { reason: 'establishing shot', prompt: 'A quiet street at dawn', duration_sec: 1 }))
     expect(fixture.ctx.dvProject.getRecord(fixture.project, brandString<RecordId>(fromText.record)))
-      .toMatchObject({ actor: 'agent', branch: 'draft/s1', operation: 'shot.render_t2va', inputs: [] })
+      .toMatchObject({ actor: 'agent', branch: 'main', operation: 'shot.render_t2va', inputs: [] })
   })
 
   it('asks for the user\'s agreement once a turn passes the GPU budget', async () => {

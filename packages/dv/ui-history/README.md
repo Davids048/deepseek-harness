@@ -1,5 +1,5 @@
 ---
-description: "The DreamVerse History panel: the edit history of a project, one row per action, newest first, with marks, approval folds, filters, output previews, and focus of a record on the canvas or the timeline."
+description: "The DreamVerse History panel: the steps of a project's current branch, one row per action, newest first, with approval folds, filters, output previews, and focus of a record on the canvas or the timeline, and a branch tree of every branch."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the web application a History panel beside the chat. `HistoryPanel` lists the actions of the open project from every actor, surface, and chat session, newest first, one row per operation record, with who did it, when, the status, a thumbnail, and the mark (草稿 / Draft, 已接受 / Accepted, 已撤销 / Undone, and others). Filters narrow the rows by actor, branch, operation kind, and timeline. Selecting a row plays its output and focuses the record on the canvas or timeline. The `dv-history` right-Sidebar tab type shows the panel of the project the shell has open.
+Use this package to give the web application a History panel beside the chat. A toggle in the panel's header switches between two views. The list view (列表 / List) shows the steps of the open project's current branch from every actor, surface, and chat session, newest first, one row per operation record, with who did it, when, the status, and a thumbnail; filters narrow the rows by actor, operation kind, and timeline, and selecting a row plays its output and focuses the record on the canvas or timeline. The tree view (分支树 / Branch tree) draws every branch of the project as a lane graph, and clicking a step moves the head there. The `dv-history` right-Sidebar tab type shows the panel of the project the shell has open.
 
 ## Table of Contents
 
@@ -26,24 +26,27 @@ Use this package to give the web application a History panel beside the chat. `H
 
 Mount the plugin in a profile that stacks `dsh-web-app` (which provides the right Sidebar and the client module loader) and `@dv/api` (which serves the routes the panel calls). Build the browser bundle first: `pnpm run build` writes `lib/client.js`.
 
-Each row shows the tool label with its subject (修改分镜计划 p1 → v2, 参考图生成镜头 7 / Render shot from references 7, 新建角色「name」), who did it (你 / You, 智能体 / Agent, 自动 / Automatic), how long ago, the status, and one thumbnail (an image, a take's still for a video, else a video frame; other files have none). An agent row also shows on its second line the record's own `intent`, the reason the agent gave for the call. The renders and the timeline record that a plan approval scheduled (`report.scheduled`) fold under the approval's row behind the toggle 渲染 n 个镜头 / Render n shots. The marks are 草稿 / Draft on an open draft, 已接受 / Accepted after the draft was accepted, 已撤销 / Undone, 已丢弃 / Discarded, 已重放 / Replayed; undone and discarded rows stay listed, dimmed and struck. The undo and redo records themselves are not rows. On the working branch, the current step carries 当前 / Current, every step before it offers 回到这一步 / Go back to this step (`/api/dv/undo` with `to` = that record, so the branch returns to just after it), and the steps redo can bring back (`WireState.redo_steps`) are dimmed without the strike; a write after an undo empties that set, and those rows are then struck. One bar holds the filters and the header actions.
+The list view asks for the entries marked `current` and `redo`: the steps of the current branch up to its head, and the steps after the head that redo brings back. Each row shows the tool label with its subject (修改分镜计划 p1 → v2, 参考图生成镜头 7 / Render shot from references 7, 新建角色「name」), who did it (你 / You, 智能体 / Agent, 自动 / Automatic), how long ago, the status, and one thumbnail (an image, a take's still for a video, else a video frame; other files have none). An agent row also shows on its second line the record's own `intent`, the reason the agent gave for the call. The renders and the timeline record that a plan approval scheduled (`report.scheduled`) fold under the approval's row behind the toggle 渲染 n 个镜头 / Render n shots. The undo and redo records themselves are not rows. The current step carries 当前 / Current, every step before it offers 回到这一步 / Go back to this step (`/api/dv/undo` with `to` = that record, so the branch returns to just after it), and the steps redo can bring back (`WireState.redo_steps`) are dimmed. One bar holds the view toggle, the filters, undo, and redo.
 
 ```yaml
 - id: dv-ui-history
   name: '@dv/ui-history'
 ```
 
+The tree view asks for the entries marked `current`, `redo`, and `branch`: every step on the line of any branch. A legend names each lane with the branch label (主线 / Main, 分支 n / Branch n, or the title the human gave it) and marks the current branch. Each row is one step: a dot in the lane of the branch that owns it, the lines of the branches that pass the row, a small thumbnail, and the tool label with its subject. A forked branch's lane bends into the dot of the step it was forked at; a branch without steps of its own yet ends in a hollow marker there. A ring marks the current branch's head step, and the steps redo brings back are dimmed. Clicking a step makes its branch current and moves that branch's head to the step: the current branch when its line holds the step, else the branch that owns it.
+
 The Host half registers nothing. The browser half registers the `dv-history` tab type (a page the Sidebar's guide offers as "History") and the tab body under its own id `@dv/ui-history`, and opens the tab when a `dv:history-focus` window event arrives.
 
 | Gesture | Request or event |
 | --- | --- |
-| Open the panel, page with "Load more", change a filter | `POST /api/dv/history` with the filters as `HistoryQuery` fields; 50 entries per page, `before` for the next page |
+| Open the panel, switch the view, page with "Load more", change a filter | `POST /api/dv/history` with the view's `marks` and the filters as `HistoryQuery` fields; 50 entries per page, `before` for the next page |
 | Select a render, story bible, plan, or asset row | `dv:canvas-focus` `{recordId}`; the shell shows the canvas and the canvas opens the record's node |
 | Select a Timeline row or a timeline export | `dv:timeline-focus` `{timelineId, clipId}`; the shell shows the timeline and the editor selects the clip |
 | "Show in trajectory" in a selected agent row | `dv:trajectory-focus` `{session, toolCall}`; the shell opens 轨迹 on that chat session |
-| Accept the draft, Discard, Undo, Redo in the header; 回到这一步 on a row | `POST /api/dv/drafts/accept`, `/api/dv/drafts/discard` (through the confirmation dialog), `/api/dv/undo` (with `to` for a row), `/api/dv/redo` with `surface: 'history'` |
+| Undo, Redo in the header; 回到这一步 on a row | `POST /api/dv/undo` (with `to` for a row), `/api/dv/redo` with `surface: 'history'` |
+| Click a step of the branch tree | `POST /api/dv/branches/switch` `{branch, to}` with `surface: 'history'` |
 
-A `dv:history-focus` event `{session, toolCall}` clears the filters, finds the record that tool call wrote, loads pages until its row is loaded, and selects it. Only records marked `main` or `draft` move the center; `proj.*` records are only selected.
+A `dv:history-focus` event `{session, toolCall}` shows the list view, clears the filters, finds the record that tool call wrote, loads pages until its row is loaded, and selects it. Only records marked `current` move the center; `proj.*` records are only selected.
 
 -----
 
@@ -53,14 +56,14 @@ A `dv:history-focus` event `{session, toolCall}` clears the filters, finds the r
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`HistoryPanel` reads the state of `main` with `useProjectState` for the branches and the chat session's open draft, and the state of the session's working branch for its timelines and records. The branch filter `main` asks for marks `main` and `undone`, and a draft for its `draft` records. The timeline filter sends the record set that `timelineRecords` computes from the working branch: Timeline records and exports of the timeline or of its clips (a clip belongs to the timeline of the record whose `report.clips` assigned it), and the records that created the assets of its clips. On `/dv/events`, an `update` event replaces the record in the loaded rows, and any other event refetches the loaded window, debounced by 200 ms.
+`HistoryPanel` reads the state of the project's current branch with `useProjectState` for the branches, the current step, the redo steps, the timelines and the records. The timeline filter sends the record set that `timelineRecords` computes from the current branch: Timeline records and exports of the timeline or of its clips (a clip belongs to the timeline of the record whose `report.clips` assigned it), and the records that created the assets of its clips. `branchTree` lays out the tree view from the loaded entries and the branches: the owner of a step is the branch it was written on when that branch's line still holds it, else the first branch whose line holds it (`HistoryEntry.branches`); a forked branch's lane runs from its newest step down to its `forked_at` row, or to the bottom while that row is not loaded. Each tree row draws its lane lines, forks, and dot as one inline SVG. On `/dv/events`, an `update` event replaces the record in the loaded rows, and any other event refetches the loaded window, debounced by 200 ms.
 
 | File | Content |
 | --- | --- |
 | [`src/client/index.ts`](src/client/index.ts) | Registrations and the tab opening on `dv:history-focus` |
 | [`src/client/definition.ts`](src/client/definition.ts) | The tab type |
-| [`src/client/HistoryPanel.tsx`](src/client/HistoryPanel.tsx) | The panel, its header buttons (accept, discard, undo, redo), filters, rows, preview, and the tab body |
-| [`src/client/rows.ts`](src/client/rows.ts) | Action rows and approval folds, labels with subjects, thumbnails, relative times, mark badges, the branch filter query, timeline record sets, and center focus |
+| [`src/client/HistoryPanel.tsx`](src/client/HistoryPanel.tsx) | The panel, its view toggle, undo and redo buttons, filters, rows, preview, the branch tree, and the tab body |
+| [`src/client/rows.ts`](src/client/rows.ts) | Action rows and approval folds, labels with subjects, thumbnails, relative times, timeline record sets, center focus, the current branch's steps, and the branch tree layout |
 
 </details>
 
@@ -69,8 +72,8 @@ A `dv:history-focus` event `{session, toolCall}` clears the filters, finds the r
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`@dv/api`](../api/README.md) — the history route and the draft, undo, and redo routes.
-- [`@dv/project`](../project/README.md) — the history query and the marks of its entries.
+- [`@dv/api`](../api/README.md) — the history route, the branch switch route, and the undo and redo routes.
+- [`@dv/project`](../project/README.md) — the history query, the marks and branch lines of its entries, and the branches.
 - [`@dv/ui-kit`](../ui-kit/README.md) — the API client, the wire types, the window events, and the tool labels.
 
 -----
@@ -78,7 +81,7 @@ A `dv:history-focus` event `{session, toolCall}` clears the filters, finds the r
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through `@dv/project`; the records the History panel's accept, discard, undo, and redo write reach the model only through the `dv:project` prompt section and the `dv_proj_*` and operation tools of [`@dv/project`](../project/README.md).
+Indirectly, through `@dv/project`; the records the History panel's undo, redo, and branch switches write, and the current branch they choose, reach the model only through the `dv:project` prompt section and the `dv_proj_*` and operation tools of [`@dv/project`](../project/README.md).
 
 #### KV Cache effect
 
@@ -88,5 +91,6 @@ None; the panel sends nothing to a model.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Timeline filter covers the working branch** — the record set of a timeline comes from the chat session's working branch, so records of discarded drafts and other drafts do not match it.
+- **Timeline filter covers the current branch** — the record set of a timeline comes from the project's current branch, so records of other branches do not match it.
 - **Window refetch** — every `record` or `branch` event refetches the loaded window (up to 200 entries); a long history scrolled far back reloads slowly.
+- **Tree view pages like the list** — the tree draws the loaded entries only; a lane whose fork point is on a page not loaded yet runs to the bottom until "Load more" loads it.

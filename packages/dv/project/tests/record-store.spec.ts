@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { RecordStore, type RecordLineInput } from '../src/record-store.ts'
 import { MAIN_BRANCH, ProjectError } from '../src/shared.ts'
 import type { AssetId, ProjectEvent, ProjectId, ProjectRecord, RecordId } from '../src/types.ts'
-import { OTHER_SESSION, readLines, SESSION, tempRoot, userOrigin } from './support.ts'
+import { readLines, tempRoot, userOrigin } from './support.ts'
 
 /** A loaded record store on a temporary root, and the events it emitted. */
 interface OpenStore {
@@ -119,7 +119,7 @@ describe('RecordStore', () => {
 
     expect(errorCode(() => store.append(project, line(first.id)))).toBe('parent_not_head')
     expect(errorCode(() => store.append(project, line(null)))).toBe('parent_not_head')
-    expect(errorCode(() => store.append(project, line(first.id, { branch: 'draft/none' })))).toBe('unknown_branch')
+    expect(errorCode(() => store.append(project, line(first.id, { branch: 'b9' })))).toBe('unknown_branch')
     expect(readFileSync(join(root, project, 'records.jsonl'), 'utf8')).toBe(before)
     expect(events).toHaveLength(eventCount)
   })
@@ -153,13 +153,15 @@ describe('RecordStore', () => {
     const { project, first } = createProject(store)
     const record = store.append(project, line(first.id))
     store.update(project, { update: record.id, status: 'done', outputs: [ASSET_X] })
-    store.setBranch(project, { name: `draft/${SESSION}`, head: record.id, base: MAIN_BRANCH, forked_at: record.id, session: SESSION })
-    store.append(project, line(record.id, { branch: `draft/${SESSION}` }))
+    store.setBranch(project, { name: 'b2', title: 'night', head: record.id, base: MAIN_BRANCH, forked_at: record.id })
+    store.append(project, line(record.id, { branch: 'b2' }))
+    store.setCurrent(project, 'b2')
 
     const reloaded = openStore(root).store
     expect(reloaded.listProjects()).toEqual(store.listProjects())
     expect(reloaded.listRecords(project)).toEqual(store.listRecords(project))
     expect(reloaded.listBranches(project)).toEqual(store.listBranches(project))
+    expect(reloaded.currentBranch(project)).toBe('b2')
   })
 
   it('fills resolved_asset of an output input once the producer is done', () => {
@@ -232,23 +234,21 @@ describe('RecordStore', () => {
     expect(openStore(root).store.listProjects().map(info => info.id)).toEqual([older])
   })
 
-  it('creates, lists and removes branches', () => {
+  it('creates and lists branches, and keeps the current branch', () => {
     const { root, store, events } = openStore()
     const { project, first } = createProject(store)
-    const draft = { name: `draft/${SESSION}`, head: first.id, base: MAIN_BRANCH, forked_at: first.id, session: SESSION }
-    store.setBranch(project, { ...draft, name: `draft/${OTHER_SESSION}`, session: OTHER_SESSION })
-    store.setBranch(project, draft)
-    expect(store.listBranches(project).map(branch => branch.name)).toEqual([MAIN_BRANCH, `draft/${SESSION}`, `draft/${OTHER_SESSION}`])
-    expect(events.at(-1)?.event).toEqual({ kind: 'branch', name: draft.name, branch: { ...draft, counts: null } })
-    expect(errorCode(() => { store.setBranch(project, { ...draft, head: brandString<RecordId>('missing') }) })).toBe('unknown_record')
+    const forked = { name: 'b2', title: null, head: first.id, base: MAIN_BRANCH, forked_at: first.id }
+    store.setBranch(project, { ...forked, name: 'b3', title: 'night' })
+    store.setBranch(project, forked)
+    expect(store.listBranches(project).map(branch => branch.name)).toEqual([MAIN_BRANCH, 'b2', 'b3'])
+    expect(events.at(-1)?.event).toEqual({ kind: 'branch', name: 'b2', head: first.id, current: MAIN_BRANCH })
+    expect(errorCode(() => { store.setBranch(project, { ...forked, head: brandString<RecordId>('missing') }) })).toBe('unknown_record')
 
-    store.removeBranch(project, draft.name)
-    expect(events.at(-1)?.event).toEqual({ kind: 'branch', name: draft.name, branch: null })
-    expect(store.getBranch(project, draft.name)).toBeUndefined()
-    expect(errorCode(() => { store.removeBranch(project, draft.name) })).toBe('unknown_branch')
-    expect(errorCode(() => { store.removeBranch(project, MAIN_BRANCH) })).toBe('invalid_params')
-    expect(Object.keys((JSON.parse(readFileSync(join(root, project, 'branches.json'), 'utf8')) as { branches: object }).branches))
-      .toEqual([MAIN_BRANCH, `draft/${OTHER_SESSION}`])
+    expect(store.currentBranch(project)).toBe(MAIN_BRANCH)
+    store.setCurrent(project, 'b3')
+    expect(events.at(-1)?.event).toEqual({ kind: 'branch', name: 'b3', head: first.id, current: 'b3' })
+    expect(errorCode(() => { store.setCurrent(project, 'b9') })).toBe('unknown_branch')
+    expect(JSON.parse(readFileSync(join(root, project, 'branches.json'), 'utf8'))).toMatchObject({ current: 'b3', branches: { b3: { title: 'night' } } })
   })
 
   it('emits record, update and branch events after the write', () => {
@@ -263,7 +263,7 @@ describe('RecordStore', () => {
       const branches = readFileSync(join(root, eventProject, 'branches.json'), 'utf8')
       if (event.kind === 'record') expect(text).toContain(event.record.id)
       if (event.kind === 'update') expect(text).toContain(`"update":"${event.record.id}","status":"${event.record.status}"`)
-      if (event.kind === 'branch' && event.branch !== null) expect(branches).toContain(event.branch.head)
+      if (event.kind === 'branch') expect(branches).toContain(event.head)
       seen.push(event.kind)
       events.push({ project: eventProject, event })
     })
@@ -273,12 +273,11 @@ describe('RecordStore', () => {
     const done = checked.update(project, { update: record.id, status: 'done', outputs: [ASSET_X] })
 
     expect(seen).toEqual(['record', 'branch', 'record', 'branch', 'update'])
-    const main = { name: MAIN_BRANCH, base: null, forked_at: null, session: null, counts: null }
     expect(events.map(entry => entry.event)).toEqual([
       { kind: 'record', record: first },
-      { kind: 'branch', name: MAIN_BRANCH, branch: { ...main, head: first.id } },
+      { kind: 'branch', name: MAIN_BRANCH, head: first.id, current: MAIN_BRANCH },
       { kind: 'record', record },
-      { kind: 'branch', name: MAIN_BRANCH, branch: { ...main, head: record.id } },
+      { kind: 'branch', name: MAIN_BRANCH, head: record.id, current: MAIN_BRANCH },
       { kind: 'update', record: done },
     ])
     expect(done.outputs).toEqual([ASSET_X])

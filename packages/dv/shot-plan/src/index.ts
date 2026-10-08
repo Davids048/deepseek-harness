@@ -369,7 +369,7 @@ export default class DvShotPlan extends Service {
    * mode that cannot continue (see `shotProblems`), or when a `ref2va` shot's references (its own, else the plan's)
    * name an unknown character, location or style version, so the report's GPU estimate can be computed.
    * @param plan - the plan of the call's params.
-   * @param state - the state of the working branch the call writes to.
+   * @param state - the state of the current branch the call writes to.
    * @throws Error with one sentence per problem, or the error of the unknown reference.
    */
   private checkPlan(plan: Plan, state: ProjectState): void {
@@ -388,7 +388,7 @@ export default class DvShotPlan extends Service {
    * precondition of its render operation (for `shot.render_ref2va`, the reference-image rule): every rendered shot is
    * checked, and one error names all refused shots, so the plan can be fixed at once.
    * @param request - the `plan.approve` call.
-   * @param state - the state of the working branch the call writes to.
+   * @param state - the state of the current branch the call writes to.
    * @throws Error naming the unknown plan or version, the shots and their problems, or the refused shots followed by the
    *   first render refusal; the error of an unknown character, location or style version.
    */
@@ -446,7 +446,7 @@ export default class DvShotPlan extends Service {
   /**
    * The `confirmSummary` of `plan.approve`: the head line and the shot lines of `renderCost`, and its GPU seconds.
    * @param request - the `plan.approve` call.
-   * @param state - the state of the session's working branch.
+   * @param state - the state of the project's current branch.
    * @returns the text and the GPU seconds.
    */
   private approvalSummary(request: RunRequest, state: ProjectState): { text: string; gpu_seconds: number } {

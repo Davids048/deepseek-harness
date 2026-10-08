@@ -1,8 +1,8 @@
 /**
  * The DreamVerse chat references as the `dvChatReferences` Cordis service: what a user points at in a chat message
  * reaches the project. The `dv:` mentions of new user messages expand at `agent/pre-step` into a context message with
- * the concrete record and asset IDs, read from the session's working branch; the images a user attaches to a chat
- * message are imported into the session's project as assets.
+ * the concrete record and asset IDs, read from the current branch of the session's project; the images a user attaches
+ * to a chat message are imported into the session's project as assets.
  *
  * @module @dv/chat-references
  */
@@ -58,7 +58,7 @@ export default class DvChatReferences extends Service {
       .flatMap(message => message.content.flatMap(block => block.type === 'text' ? [block.text] : []))
       .join('\n')
     const session = brandString<SessionId>(sessionId)
-    const block = expansionBlock(text, this.projectFor(session, text), this.expansionSources(session))
+    const block = expansionBlock(text, this.projectFor(session, text), this.expansionSources())
     if (block === null) return null
     return createUserMessage({
       content: [{ type: 'text', text: block }],
@@ -82,11 +82,11 @@ export default class DvChatReferences extends Service {
     return match?.id ?? projects[0]?.id ?? null
   }
 
-  /** The Project reads expansion needs: mentions resolve against the session's working branch. */
-  private expansionSources(session: SessionId): ExpansionSources {
+  /** The Project reads expansion needs: mentions resolve against the project's current branch. */
+  private expansionSources(): ExpansionSources {
     const project = this.ctx.dvProject
     return {
-      getState: projectId => project.getState(projectId, project.workingBranch(projectId, session).name),
+      getState: projectId => project.getState(projectId),
       getRecord: (projectId, record) => {
         try {
           return project.getRecord(projectId, record)
@@ -125,7 +125,7 @@ export default class DvChatReferences extends Service {
 
   /**
    * Import chat images as assets of the session's project: one `asset.import` per image by the user, in the chat, on
-   * the session's working branch. The session's next tool call waits until the import finished
+   * the project's current branch. The session's next tool call waits until the import finished
    * (`dvProject.holdToolCalls`). A session without a project, or a process without an attachment service, imports
    * nothing.
    * @param session - the chat session.

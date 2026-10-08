@@ -1,5 +1,5 @@
 /**
- * The page-wide undo and redo keys of an open project: Ctrl+Z steps the chat session's working branch back one step and
+ * The page-wide undo and redo keys of an open project: Ctrl+Z steps the project's current branch back one step and
  * Shift+Ctrl+Z steps it forward (Cmd instead of Ctrl on macOS). Keys typed into a text field, a select, or an editable
  * element (the chat composer) keep their text-editing meaning.
  *

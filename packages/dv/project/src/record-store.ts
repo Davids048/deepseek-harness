@@ -5,7 +5,7 @@
  * ```
  * <root>/<ProjectId>/project.json    ProjectInfo
  * <root>/<ProjectId>/records.jsonl   record lines and update lines, appended in write order
- * <root>/<ProjectId>/branches.json   BranchesFile: branch pointers
+ * <root>/<ProjectId>/branches.json   BranchesFile: branch pointers and the current branch
  * ```
  *
  * The store keeps every project in memory and mirrors each change to disk before it returns. It enforces the record
@@ -24,13 +24,18 @@ import type {
   Branch, ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordStatus, RecordUpdate,
 } from './types.ts'
 
-/** A branch as `branches.json` stores it: every field of {@link Branch} except the computed `counts`. */
-export type StoredBranch = Omit<Branch, 'counts'>
+/** A branch as `branches.json` stores it: every field of {@link Branch} except the computed `tip`. */
+export type StoredBranch = Omit<Branch, 'tip'>
 
-/** The contents of `branches.json`. */
+/**
+ * The contents of `branches.json`. A file written before branches had titles and before the project had a current
+ * branch reads with `title: null` and `current: main`; its extra fields (a draft's `session`) are dropped on load.
+ */
 export interface BranchesFile {
   /** Branch name → branch. */
   branches: Record<string, StoredBranch>
+  /** The branch every view shows and every write goes to. */
+  current: string
 }
 
 /** A record line as a caller hands it to {@link RecordStore.append}: the store assigns `id` and `created_at`. */
@@ -69,11 +74,22 @@ function writeAtomic(file: string, text: string): void {
 }
 
 /**
- * @param branch - a branch, possibly carrying extra fields such as `counts`.
+ * @param branch - a branch, possibly carrying extra fields such as `tip`, or lacking `title` when read from an older file.
  * @returns exactly the stored fields of the branch.
  */
-function storedBranch(branch: StoredBranch): StoredBranch {
-  return { name: branch.name, head: branch.head, base: branch.base, forked_at: branch.forked_at, session: branch.session }
+function storedBranch(branch: Omit<StoredBranch, 'title'> & { title?: string | null }): StoredBranch {
+  return { name: branch.name, title: branch.title ?? null, head: branch.head, base: branch.base, forked_at: branch.forked_at }
+}
+
+/**
+ * Read `branches.json` (see {@link BranchesFile} for older files).
+ * @param text - the file contents.
+ * @returns the branches and the current branch.
+ */
+function parseBranches(text: string): BranchesFile {
+  const file = JSON.parse(text) as { branches: Record<string, Omit<StoredBranch, 'title'> & { title?: string | null }>; current?: string }
+  const branches = Object.fromEntries(Object.entries(file.branches).map(([name, branch]) => [name, storedBranch(branch)]))
+  return { branches, current: file.current ?? MAIN_BRANCH }
 }
 
 /** Append-only storage of every project's records, branch pointers and metadata. */
@@ -105,7 +121,7 @@ export class RecordStore {
         info,
         records: new Map(),
         order: [],
-        branches: JSON.parse(readFileSync(join(dir, 'branches.json'), 'utf8')) as BranchesFile,
+        branches: parseBranches(readFileSync(join(dir, 'branches.json'), 'utf8')),
       }
       for (const line of readFileSync(join(dir, 'records.jsonl'), 'utf8').split('\n')) {
         if (line === '') continue
@@ -153,7 +169,7 @@ export class RecordStore {
       throw new ProjectError('invalid_params', `A project with ID ${info.id} already exists.`)
     }
     const stored: ProjectInfo = { id: info.id, title: info.title, created_at: info.created_at }
-    const branches: BranchesFile = { branches: {} }
+    const branches: BranchesFile = { branches: {}, current: MAIN_BRANCH }
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'project.json'), `${JSON.stringify(stored, null, 2)}\n`)
     writeFileSync(join(dir, 'records.jsonl'), '')
@@ -236,7 +252,7 @@ export class RecordStore {
     }
     const stored = structuredClone(record)
     const branch: StoredBranch = existing === undefined
-      ? { name: MAIN_BRANCH, head: stored.id, base: null, forked_at: null, session: null }
+      ? { name: MAIN_BRANCH, title: null, head: stored.id, base: null, forked_at: null }
       : { ...existing, head: stored.id }
     appendFileSync(join(this.root, project, 'records.jsonl'), `${JSON.stringify(stored)}\n`)
     loaded.records.set(stored.id, stored)
@@ -244,7 +260,7 @@ export class RecordStore {
     loaded.branches.branches[branch.name] = branch
     this.writeBranches(project, loaded)
     this.onChange(project, { kind: 'record', record: this.currentForm(loaded, stored) })
-    this.onChange(project, { kind: 'branch', name: branch.name, branch: { ...branch, counts: null } })
+    this.onChange(project, { kind: 'branch', name: branch.name, head: branch.head, current: loaded.branches.current })
     return this.currentForm(loaded, stored)
   }
 
@@ -332,13 +348,13 @@ export class RecordStore {
 
   /**
    * @param project - the project.
-   * @returns every branch, `main` first, then by name.
+   * @returns every branch, `main` first, then by name with numbers in numeric order (`b2` before `b10`).
    */
   listBranches(project: ProjectId): StoredBranch[] {
     return Object.values(this.loaded(project).branches.branches).map(branch => ({ ...branch })).sort((a, b) => {
       if (a.name === MAIN_BRANCH) return -1
       if (b.name === MAIN_BRANCH) return 1
-      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0
+      return a.name.localeCompare(b.name, 'en', { numeric: true })
     })
   }
 
@@ -354,23 +370,29 @@ export class RecordStore {
     const stored = storedBranch(branch)
     loaded.branches.branches[stored.name] = stored
     this.writeBranches(project, loaded)
-    this.onChange(project, { kind: 'branch', name: stored.name, branch: { ...stored, counts: null } })
+    this.onChange(project, { kind: 'branch', name: stored.name, head: stored.head, current: loaded.branches.current })
   }
 
   /**
-   * Remove a branch pointer (a closed draft); its records stay in `records.jsonl`. Removing `main` is refused.
    * @param project - the project.
-   * @param name - the branch name.
+   * @returns the name of the project's current branch.
    */
-  removeBranch(project: ProjectId, name: string): void {
+  currentBranch(project: ProjectId): string {
+    return this.loaded(project).branches.current
+  }
+
+  /**
+   * Make a branch the project's current branch, and rewrite `branches.json` atomically.
+   * @param project - the project.
+   * @param name - an existing branch name; throws `unknown_branch`.
+   */
+  setCurrent(project: ProjectId, name: string): void {
     const loaded = this.loaded(project)
-    if (name === MAIN_BRANCH) throw new ProjectError('invalid_params', `The ${MAIN_BRANCH} branch of project ${project} cannot be removed.`)
-    if (loaded.branches.branches[name] === undefined) throw new ProjectError('unknown_branch', `Project ${project} has no branch ${name}.`)
-    const { [name]: removed, ...rest } = loaded.branches.branches
-    void removed
-    loaded.branches.branches = rest
+    const branch = loaded.branches.branches[name]
+    if (branch === undefined) throw new ProjectError('unknown_branch', `Project ${project} has no branch ${name}.`)
+    loaded.branches.current = name
     this.writeBranches(project, loaded)
-    this.onChange(project, { kind: 'branch', name, branch: null })
+    this.onChange(project, { kind: 'branch', name, head: branch.head, current: name })
   }
 
   /**

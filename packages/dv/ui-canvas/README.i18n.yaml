@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/dv/ui-canvas/README.md
-README.md: 475e1496002359f90948d9130c5d622e5fcbe385
-README.zh.md: bdba3542701fa16197be27ea468a628f519c8a53
+README.md: 87ab6326eabdb3497aa3daa7a0ea519f7da27a29
+README.zh.md: b2b33917d25747520addd8eb4ee0204c4f22f62a

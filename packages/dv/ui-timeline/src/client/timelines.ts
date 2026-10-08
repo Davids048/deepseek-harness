@@ -3,7 +3,7 @@
  * and out points, where it starts on the track, and which clip plays at a given time.
  */
 import { FALLBACK_CLIP_SECONDS } from '@dv/ui-kit/timeline.ts'
-import type { Clip, Timeline, WireState } from '@dv/ui-kit/types.ts'
+import type { Timeline, WireState } from '@dv/ui-kit/types.ts'
 
 /**
  * Whether a clip can play: `ready` when it has its asset, `rendering` while the render it waits for is pending or
@@ -37,7 +37,6 @@ export interface TrackClip {
   /** The image the producing record left beside the clip, used as the track thumbnail. */
   thumbnail: string | null
   stale: boolean
-  draft: boolean
 }
 
 /**
@@ -62,27 +61,18 @@ export function nextTimelineId(timelines: Timeline[]): string {
 }
 
 /**
- * Place the clips of one timeline on the track in playback order. A clip is a draft when the shown branch is a draft
- * branch and the clip is new there: the draft produced its asset, or the same timeline on `main` has no matching clip
- * (same asset, in point, and out point). Records of an accepted draft keep their `draft/` branch name but are on
- * `main`, so nothing on `main` is a draft. A placeholder clip (no asset yet) takes its length and its status from the
- * render record it waits for.
+ * Place the clips of one timeline on the track in playback order. A placeholder clip (no asset yet) takes its length and
+ * its status from the render record it waits for.
  * @param state - the branch state, for asset durations, thumbnails, and stale marks.
  * @param timeline - the timeline, or null when the project has none.
- * @param branch - the shown branch: `main` or a `draft/<session>` branch.
- * @param baseClips - the clips of the same timeline on `main`, when a draft is shown.
  * @returns the clips and the total length in seconds.
  */
-export function placeTimeline(state: WireState, timeline: Timeline | null, branch = 'main', baseClips: Clip[] = []): { clips: TrackClip[]; total: number } {
+export function placeTimeline(state: WireState, timeline: Timeline | null): { clips: TrackClip[]; total: number } {
   const assets = new Map(state.assets.map(asset => [asset.id, asset]))
   const proj = state.components.proj
   const records = new Map(proj.records.map(record => [record.id, record]))
   const clips: TrackClip[] = []
   let cursor = 0
-  // Each clip on `main` matches at most one clip of the draft.
-  const unmatched = new Map<string, number>()
-  const keyOf = (clip: Clip): string => `${clip.asset ?? clip.source?.record ?? ''}|${String(clip.in_sec)}|${String(clip.out_sec)}`
-  for (const clip of baseClips) unmatched.set(keyOf(clip), (unmatched.get(keyOf(clip)) ?? 0) + 1)
   for (const [index, clip] of (timeline?.clips ?? []).entries()) {
     const source = clip.source === null ? undefined : records.get(clip.source.record)
     const renderSeconds = source?.params['duration_sec']
@@ -97,12 +87,9 @@ export function placeTimeline(state: WireState, timeline: Timeline | null, branc
     const producerId = (clip.asset === null ? clip.source?.record : proj.created_by[clip.asset]) ?? null
     const producer = producerId === null ? undefined : records.get(producerId)
     const thumbnail = producer?.outputs.find(id => assets.get(id)?.mime.startsWith('image/')) ?? null
-    const left = unmatched.get(keyOf(clip)) ?? 0
-    if (left > 0) unmatched.set(keyOf(clip), left - 1)
     clips.push({
       position: index + 1, clip: clip.id, assetId: clip.asset, status, rawIn: clip.in_sec, rawOut: clip.out_sec, inSec, outSec,
       assetSeconds, seconds, startSec: cursor, thumbnail, stale: producerId !== null && producerId in proj.stale,
-      draft: branch.startsWith('draft/') && (producer?.branch === branch || left === 0),
     })
     cursor += seconds
   }

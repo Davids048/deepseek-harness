@@ -5,8 +5,7 @@
  * `proj` slice.
  *
  * Calls: reads records through the record store and the effective chain through the history module. Called by the
- * service (`getState`), the runner (state at a record's parent, character, location and style resolution), and drafts
- * (accept replay).
+ * service (`getState`) and the runner (state at a record's parent, character, location and style resolution).
  *
  * @module @dv/project/reducers
  */
@@ -226,36 +225,6 @@ export class ReducerRegistry {
       }
     }
     return { project: info, branch, head: last.id, components: componentStates(slices), redo_steps: [] }
-  }
-
-  /**
-   * Apply one more record to a state; accept replay uses it to walk a draft's records on a new `main`.
-   * @param state - the state before the record.
-   * @param record - the record.
-   * @returns the state after it, with `head` set to the record's ID.
-   */
-  apply(state: ProjectState, record: ProjectRecord): ProjectState {
-    const before = new Map<keyof ComponentStates, AnySlice>()
-    for (const [key, reducer] of this.reducers) before.set(key, sliceOf(state, key, reducer))
-    const slices = new Map<keyof ComponentStates, AnySlice>()
-    for (const [key, reducer] of this.reducers) {
-      slices.set(key, this.reduceSlice(reducer, before.get(key) ?? reducer.initial(), record, before))
-    }
-    return { ...state, head: record.id, components: { ...state.components, ...componentStates(slices) } }
-  }
-
-  /**
-   * Ask every reducer that defines `conflict` whether a record can apply on a state, in registration order.
-   * @param state - the state before the record.
-   * @param record - a draft record.
-   * @returns the first reason, or null when no reducer reports a conflict.
-   */
-  conflict(state: ProjectState, record: ProjectRecord): string | null {
-    for (const [key, reducer] of this.reducers) {
-      const reason = reducer.conflict?.(sliceOf(state, key, reducer), record) ?? null
-      if (reason !== null) return reason
-    }
-    return null
   }
 
   /**

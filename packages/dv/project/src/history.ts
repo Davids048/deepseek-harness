@@ -1,5 +1,5 @@
 /**
- * History: undo, redo and jumps as records on a working branch, the effective chain that those records define, and the
+ * History: undo, redo and jumps as records on a branch, the effective chain that those records define, and the
  * history list.
  *
  * Effective chain. The raw chain of a record is its `parents[0]` ancestry. The effective chain differs at `proj.undo`
@@ -7,24 +7,23 @@
  * `effectiveChain(U) = effectiveChain(X) + [U]`, and the records between X and U drop out. Every other record R gives
  * `effectiveChain(R) = effectiveChain(parents[0] of R) + [R]`. State is always computed from the effective chain.
  *
- * Steps. Undo and redo act on one branch, the caller's working branch (an open draft, or `main`). Every record is one
- * step, except `proj.create`, `proj.undo`, `proj.redo`, `proj.draft_accept` and `proj.draft_discard`. An accepted
- * draft's records stay separate steps on `main`: a fast-forward accept keeps them on the effective chain of `main`, and
- * a replay accept copies each one.
+ * Steps. Undo and redo act on one branch, the project's current branch. Every record is one step, except `proj.create`,
+ * `proj.undo`, `proj.redo`, and the `proj.draft_accept` and `proj.draft_discard` records that projects written before
+ * branches replaced drafts still hold.
  *
  * Redo line. The jump run of a branch is the trailing run of `proj.undo` and `proj.redo` records on the raw chain of its
  * head. With H the record just before that run, the redo line is `effectiveChain(H)`, and the redo steps are the steps
- * of the redo line after the head's `params.to`. Any other record appended to the branch ends the jump run, so a write
- * after an undo drops the redo steps.
+ * of the redo line after the head's `params.to`. H is the branch's tip. A write never lands after an undo on the same
+ * branch: the branches module forks a new branch first, so the redo steps stay on the old branch.
  *
  * Calls: reads and appends through the record store. The service calls `undo` and `redo` while it holds the project
- * lock; reducers and drafts call `effectiveChain`.
+ * lock; reducers and branches call `effectiveChain`; branches call `position` and `tipOf`.
  *
  * @module @dv/project/history
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { RecordStore } from './record-store.ts'
-import { MAIN_BRANCH, ProjectError } from './shared.ts'
+import { ProjectError } from './shared.ts'
 import type { HistoryEntry, HistoryQuery, ProjectId, ProjectRecord, RecordId, RecordOrigin } from './types.ts'
 
 /** `proj.*` operations whose records are not steps (see the module comment). */
@@ -70,20 +69,20 @@ function walkEffective(lookup: (id: RecordId) => ProjectRecord, head: RecordId):
 }
 
 /**
- * The IDs on the raw chain (`parents[0]`) from a record back to a stop record.
- * @param byId - the project's records by ID.
- * @param head - the record to start from (included).
- * @param stop - the record to stop at (excluded); null walks to the project's first record.
- * @returns the IDs, newest first.
+ * The end of the redo line of a head: the record just before the trailing run of `proj.undo` and `proj.redo` records
+ * on its raw chain, or the head itself when it is not such a record.
+ * @param lookup - reads a record's current form by ID.
+ * @param head - the head of a branch.
+ * @returns the record ID.
  */
-function rawChainSince(byId: Map<RecordId, ProjectRecord>, head: RecordId, stop: RecordId | null): RecordId[] {
-  const ids: RecordId[] = []
-  let current: RecordId | undefined = head
-  while (current !== undefined && current !== stop) {
-    ids.push(current)
-    current = byId.get(current)?.parents[0]
+function lineEnd(lookup: (id: RecordId) => ProjectRecord, head: RecordId): RecordId {
+  let end = head
+  while (jumpTarget(lookup(end)) !== null) {
+    const parent = lookup(end).parents[0]
+    if (parent === undefined) break
+    end = parent
   }
-  return ids
+  return end
 }
 
 /**
@@ -105,6 +104,35 @@ function originFields(origin: RecordOrigin): RecordOrigin {
  */
 export function effectiveChain(store: RecordStore, project: ProjectId, head: RecordId): ProjectRecord[] {
   return walkEffective(id => store.getRecord(project, id), head)
+}
+
+/**
+ * Where a branch head stands: the record whose state the head shows, following `proj.undo` and `proj.redo` targets
+ * until a record that is neither. A branch forked there starts from the same state without the jump records.
+ * @param store - the record store.
+ * @param project - the project.
+ * @param head - the head of a branch.
+ * @returns the record ID.
+ */
+export function position(store: RecordStore, project: ProjectId, head: RecordId): RecordId {
+  let at = head
+  let target = jumpTarget(store.getRecord(project, at))
+  while (target !== null) {
+    at = target
+    target = jumpTarget(store.getRecord(project, at))
+  }
+  return at
+}
+
+/**
+ * The tip of a branch head: the end of its redo line (see the module comment).
+ * @param store - the record store.
+ * @param project - the project.
+ * @param head - the head of a branch.
+ * @returns the record ID; the head itself when it is not a `proj.undo` or `proj.redo` record.
+ */
+export function tipOf(store: RecordStore, project: ProjectId, head: RecordId): RecordId {
+  return lineEnd(id => store.getRecord(project, id), head)
 }
 
 /** The redo line of a branch: where its jump run started and where its head stands on it. */
@@ -131,7 +159,7 @@ export class History {
    * forward, written as `proj.redo`). Appends a `proj.undo` (or `proj.redo`) record on the branch with
    * `parents: [head]` and `params.to` = the target. The caller holds the project lock.
    * @param project - the project.
-   * @param branch - the working branch of the caller.
+   * @param branch - the branch to move: the project's current branch, or the branch a switch goes to.
    * @param origin - who undoes, from where.
    * @param to - a record to return to, or undefined for one step back.
    * @returns the appended record. Throws `unknown_branch`, `unknown_record`, `nothing_to_undo` (no step to undo, or
@@ -147,7 +175,7 @@ export class History {
       return this.appendJump(project, branch, head, 'proj.undo', target.id, origin)
     }
     const record = this.store.getRecord(project, to)
-    const current = jumpTarget(this.store.getRecord(project, head)) ?? head
+    const current = position(this.store, project, head)
     if (record.id === current || record.id === head) {
       throw new ProjectError('nothing_to_undo', `Branch ${branch} of project ${project} already stands at record ${to}.`)
     }
@@ -165,7 +193,7 @@ export class History {
    * just before the redo step that follows the next one, or the end of the redo line when the next step is the last.
    * The caller holds the project lock.
    * @param project - the project.
-   * @param branch - the working branch of the caller.
+   * @param branch - the branch to move: the project's current branch, or the branch a switch goes to.
    * @param origin - who redoes, from where.
    * @returns the `proj.redo` record. Throws `unknown_branch` or `nothing_to_redo`.
    */
@@ -191,20 +219,17 @@ export class History {
   }
 
   /**
-   * List records with their marks, newest first (reverse write order), after the query's filters. Marks: `main` for
-   * records on the effective chain of `main`; `draft` for records on the effective chain of an open draft that are not
-   * on the effective chain of its `forked_at`; `discarded` for records on the raw chain of a `proj.draft_discard` record
-   * after its `params.base`, including that record; `replayed` for records listed in a `proj.draft_accept` record's
-   * `params.replayed` as originals; `undone` for records on the raw chain of a branch after its `forked_at` that are not
-   * on its effective chain, and for every other record. The first matching mark in that order wins. Draft names
-   * are reused per session, so a specific draft is identified by its fork record (`forked_at`, `params.base`), never
-   * by the branch name alone. The `marks` filter applies after the record filters and before `limit`. Takes no lock.
+   * List records with their marks and branch lines, newest first (reverse write order), after the query's filters.
+   * Marks: `current` for records on the effective chain of the current branch's head; `redo` for the records of the
+   * current branch's line after its head's position (its redo steps and the records between them); `branch` for the
+   * records on the line of another branch only; `undone` for every other record. The line of a branch is the effective
+   * chain of its tip. The `marks` filter applies after the record filters and before `limit`. Takes no lock.
    * @param query - the project and the filters.
    * @returns the entries.
    */
   list(query: HistoryQuery): HistoryEntry[] {
     const records = this.store.listRecords(query.project)
-    const mark = this.marks(query.project, records)
+    const { mark, branches } = this.marks(query.project, records)
     let end = records.length
     if (query.before !== undefined) {
       end = records.findIndex(record => record.id === query.before)
@@ -224,60 +249,45 @@ export class History {
       && (query.tool_call === undefined || record.tool_call === query.tool_call)
       && (only === null || only.has(record.id)))
     const marks = query.marks === undefined ? null : new Set(query.marks)
-    const entries = selected.reverse().map(record => ({ record, mark: mark(record.id) }))
+    const entries = selected.reverse().map(record => ({ record, mark: mark(record.id), branches: branches(record.id) }))
       .filter(entry => marks === null || marks.has(entry.mark))
     return query.limit === undefined ? entries : entries.slice(0, Math.max(0, query.limit))
   }
 
   /**
-   * Compute the mark of every record of a project (rules in {@link History.list}).
+   * Compute the mark and the branch lines of every record of a project (rules in {@link History.list}).
    * @param project - the project.
    * @param records - the project's records in write order.
-   * @returns a function from record ID to mark.
+   * @returns functions from record ID to mark and to the names of the branches whose line holds the record.
    */
-  private marks(project: ProjectId, records: ProjectRecord[]): (id: RecordId) => HistoryEntry['mark'] {
+  private marks(project: ProjectId, records: ProjectRecord[]): {
+    mark: (id: RecordId) => HistoryEntry['mark']
+    branches: (id: RecordId) => string[]
+  } {
     const byId = new Map(records.map(record => [record.id, record]))
     const lookup = (id: RecordId): ProjectRecord => {
       const record = byId.get(id)
       if (record === undefined) throw new ProjectError('unknown_record', `Project ${project} has no record ${id}.`)
       return record
     }
-    const branches = this.store.listBranches(project)
-    const mainHead = branches.find(branch => branch.name === MAIN_BRANCH)?.head
-    const effectiveIds = (head: RecordId | null): Set<RecordId> =>
-      new Set(head === null ? [] : walkEffective(lookup, head).map(record => record.id))
-    const onMain = effectiveIds(mainHead ?? null)
-    const onDraft = new Set<RecordId>()
-    const undone = new Set<RecordId>()
-    for (const branch of branches) {
-      // A branch's undone records are on its raw chain after its fork and off its effective chain.
-      const effective = effectiveIds(branch.head)
-      for (const id of rawChainSince(byId, branch.head, branch.forked_at)) if (!effective.has(id)) undone.add(id)
-      // Open drafts are the branches owned by a chat session; their records are the effective ones after the fork.
-      if (branch.session === null) continue
-      const before = effectiveIds(branch.forked_at)
-      for (const id of effective) if (!before.has(id)) onDraft.add(id)
+    const current = this.store.currentBranch(project)
+    const lines = new Map<RecordId, string[]>()
+    let onCurrent = new Set<RecordId>()
+    let onCurrentLine = new Set<RecordId>()
+    for (const branch of this.store.listBranches(project)) {
+      const line = walkEffective(lookup, lineEnd(lookup, branch.head)).map(record => record.id)
+      for (const id of line) lines.set(id, [...lines.get(id) ?? [], branch.name])
+      if (branch.name !== current) continue
+      onCurrent = new Set(walkEffective(lookup, branch.head).map(record => record.id))
+      onCurrentLine = new Set(line)
     }
-    const discarded = new Set<RecordId>()
-    const replayed = new Set<RecordId>()
-    for (const record of records) {
-      if (record.operation === 'proj.draft_discard') {
-        const base = record.params.base
-        for (const id of rawChainSince(byId, record.id, typeof base === 'string' ? brandString<RecordId>(base) : null)) discarded.add(id)
-      } else if (record.operation === 'proj.draft_accept' && Array.isArray(record.params.replayed)) {
-        // `params.replayed` holds `[original, copy]` pairs.
-        const pairs: unknown[] = record.params.replayed
-        for (const pair of pairs) {
-          if (Array.isArray(pair) && typeof pair[0] === 'string') replayed.add(brandString<RecordId>(pair[0]))
-        }
-      }
-    }
-    return (id) => {
-      if (onMain.has(id)) return 'main'
-      if (onDraft.has(id)) return 'draft'
-      if (discarded.has(id)) return 'discarded'
-      if (replayed.has(id)) return 'replayed'
-      return 'undone'
+    return {
+      mark: (id) => {
+        if (onCurrent.has(id)) return 'current'
+        if (onCurrentLine.has(id)) return 'redo'
+        return lines.has(id) ? 'branch' : 'undone'
+      },
+      branches: id => lines.get(id) ?? [],
     }
   }
 
@@ -290,12 +300,7 @@ export class History {
   private redoLine(project: ProjectId, head: RecordId): RedoLine | null {
     const target = jumpTarget(this.store.getRecord(project, head))
     if (target === null) return null
-    // Walk the raw chain back over the jump run to the record before it.
-    let end: RecordId | undefined = head
-    while (end !== undefined && jumpTarget(this.store.getRecord(project, end)) !== null) {
-      end = this.store.getRecord(project, end).parents[0]
-    }
-    if (end === undefined) return null
+    const end = tipOf(this.store, project, head)
     const line = effectiveChain(this.store, project, end)
     const at = line.findIndex(record => record.id === target)
     return at < 0 ? null : { end, line, at }

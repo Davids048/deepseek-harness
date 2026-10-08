@@ -9,7 +9,8 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { describe, expect, it, vi } from 'vitest'
 import type { ProjectModules } from './support.ts'
 import { agentOrigin, createTestProject, readLines, startModules, userOrigin } from './support.ts'
-import { Drafts } from '../src/drafts.ts'
+import { Branches } from '../src/branches.ts'
+import { History } from '../src/history.ts'
 import { RecordStore } from '../src/record-store.ts'
 import { projReducer, ReducerRegistry } from '../src/reducers.ts'
 import { Runner } from '../src/runner.ts'
@@ -139,7 +140,7 @@ describe('Runner', () => {
     const before = files(m, project)
     const eventCount = m.events.length
 
-    // Agent calls: a refused call must not open the session's draft either.
+    // Agent calls are refused the same way.
     const agent = agentOrigin()
     const refusals: Array<[Partial<RunRequest>, string]> = [
       [{ params: { prompt: 5 } }, 'invalid_params'],
@@ -171,7 +172,7 @@ describe('Runner', () => {
     const before = files(m, project)
     const eventCount = m.events.length
 
-    // An agent call that is refused opens no draft; a read-only call is refused the same way.
+    // An agent call that is refused writes nothing; a read-only call is refused the same way.
     for (const name of ['shot.render', 'inspect.image']) {
       await expect(m.runner.run(request(project, name, agentOrigin(), { params: { prompt: 'refuse' } })))
         .rejects.toThrow('This shot has no reference image.')
@@ -312,7 +313,7 @@ describe('Runner', () => {
     const reducers = new ReducerRegistry(store)
     const holder: { runner: Runner | null } = { runner: null }
     const scheduler = new Scheduler(store, (id, record) => (holder.runner as Runner).execute(id, record), { cpu: 1, gpu: 1 })
-    holder.runner = new Runner({ store, drafts: new Drafts(store, reducers), reducers, scheduler, assets: m.assets })
+    holder.runner = new Runner({ store, branches: new Branches(store, new History(store)), reducers, scheduler, assets: m.assets })
     store.load()
     reducers.register('proj', projReducer)
     await holder.runner.recover()

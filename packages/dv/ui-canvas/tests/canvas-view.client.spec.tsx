@@ -18,25 +18,23 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
 /**
  * Mount the canvas over scripted `/api/dv` routes and a scripted layout route.
  * @param withTranslate - whether the host passes the Chinese translate.
- * @param edit - changes to the fixture state of every branch.
+ * @param edit - changes to the fixture state.
  * @param stored - the canvas list the layout route returns.
  * @returns the rendered view, the recorded writes, and a node lookup.
  */
 function mount(withTranslate = true, edit: (state: WireState) => void = () => undefined, stored: { placed: string[] } = { placed: [] }) {
-  // `main` lacks the retake g3; the draft of chat session s5 adds it with the intent the agent gave for the call.
+  // The project's current branch is b2, which holds the retake g3; the view asks for the current branch by name.
+  const branches: Array<string | null> = []
   const scripted = scriptedFetch({
-    state: (branch) => {
+    state: () => {
       const state = fixtureState()
       edit(state)
-      const records = state.components.proj.records
-      state.components.proj.records = branch === 'main'
-        ? records.filter(entry => entry.id !== 'g3')
-        : records.map(entry => entry.id === 'g3' ? { ...entry, intent: 'retake shot 1' } : entry)
-      return state
+      return { ...state, branch: 'b2', current: 'b2' }
     },
   })
   const layoutWrites: unknown[] = []
   const fetchWithLayout: typeof fetch = (input, init) => {
+    if (typeof input === 'string' && input.startsWith('/api/dv/state')) branches.push(new URL(input, 'http://host').searchParams.get('branch'))
     if (typeof input === 'string' && input.startsWith('/api/dv/layout')) {
       if (init?.method === 'POST') layoutWrites.push(JSON.parse(String(init.body)))
       const layout = { positions: { g1: { x: 10, y: 20 } }, viewport: { x: 0, y: 0, zoom: 1 }, placed: stored.placed }
@@ -52,20 +50,20 @@ function mount(withTranslate = true, edit: (state: WireState) => void = () => un
     if (!(element instanceof HTMLElement)) throw new Error(`no node ${id}`)
     return element
   }
-  return { view, writes: scripted.writes, layoutWrites, node }
+  return { view, writes: scripted.writes, layoutWrites, node, branches }
 }
 
 describe('CanvasView', () => {
-  it('draws nodes at stored positions, overlays the open draft, and stores a dragged position', async () => {
-    const { view, node, layoutWrites } = mount()
+  it('draws the project\'s current branch with nodes at stored positions, and stores a dragged position', async () => {
+    const { view, node, layoutWrites, branches } = mount()
     await waitFor(() => { node('g3') })
+    expect(branches.every(branch => branch === null)).toBe(true)
     expect(node('g1').style.left).toBe('10px')
-    expect(node('g3').getAttribute('data-node-draft')).toBe('true')
+    expect(node('g3').hasAttribute('data-node-draft')).toBe(false)
     expect(node('g2').getAttribute('data-node-stale')).toBe('true')
     expect(view.getByText(zh['badge.trim'])).toBeTruthy()
-    const bar = view.getByTestId('dv-kit-working-branch')
-    expect(bar.getAttribute('data-branch')).toBe('draft/s5')
-    expect(bar.textContent).toContain('retake shot 1')
+    // The center canvas has no branch bar; the shell shows the branch switcher above it.
+    expect(view.queryByTestId('dv-kit-branch-switcher')).toBeNull()
     fireEvent.pointerDown(node('g2'), { button: 0, clientX: 0, clientY: 0, pointerId: 1 })
     fireEvent.pointerMove(view.getByTestId('dv-canvas-view'), { clientX: 50, clientY: 30, pointerId: 1 })
     fireEvent.pointerUp(view.getByTestId('dv-canvas-view'), { pointerId: 1 })
@@ -151,7 +149,7 @@ describe('CanvasView', () => {
     expect(writes.map(write => write.path)).toEqual(['/api/dv/operation'])
   })
 
-  it('offers 仍然保留 on a stale node, which accepts its record on the session\'s working branch', async () => {
+  it('offers 仍然保留 on a stale node, which accepts its record for the chat session beside the canvas', async () => {
     const { view, node, writes } = mount()
     await waitFor(() => { node('g2') })
     fireEvent.pointerDown(node('g2'), { button: 0, clientX: 5, clientY: 5, pointerId: 1 })

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The History panel over a scripted API: action rows, approval folds, marks, filters, selection, actions, and empty states. */
+/** The History panel over a scripted API: action rows, approval folds, filters, selection, actions, the branch tree, and empty states. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { DvClient } from '@dv/ui-kit/api.ts'
@@ -11,16 +11,19 @@ import { HistoryPanel } from '../src/client/HistoryPanel.tsx'
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const ENTRIES: HistoryEntry[] = [
-  { record: record({ id: 'm1', turn: null, surface: 'timeline', operation: 'timeline.clip_move', params: { clip: 'cl1', to: 2 }, intent: 'move clip 1' }), mark: 'main' },
+  {
+    record: record({ id: 'm1', turn: null, surface: 'timeline', operation: 'timeline.clip_move', params: { clip: 'cl1', to: 2 }, intent: 'move clip 1' }),
+    mark: 'current', branches: ['main'],
+  },
   {
     record: record({
-      id: 'g1', turn: 't3', actor: 'agent', session: 's5', tool_call: 'call-g1', branch: 'draft/s5', operation: 'shot.render_ref2va', outputs: ['shot1.mp4'],
+      id: 'g1', turn: 't3', actor: 'agent', session: 's5', tool_call: 'call-g1', operation: 'shot.render_ref2va', outputs: ['shot1.mp4'],
       intent: 'render the hero',
       inputs: [{ role: 'reference', ref: { asset: 'ref.png' }, resolved_asset: 'ref.png' }],
     }),
-    mark: 'main',
+    mark: 'current', branches: ['main'],
   },
-  { record: record({ id: 'p1', turn: 't3', actor: 'agent', session: 's5', tool_call: 'call-p1', operation: 'plan.create' }), mark: 'undone' },
+  { record: record({ id: 'p1', turn: 't3', actor: 'agent', session: 's5', tool_call: 'call-p1', operation: 'plan.create' }), mark: 'redo', branches: ['main'] },
 ]
 
 /**
@@ -62,7 +65,7 @@ function mount(entries: HistoryEntry[] = ENTRIES, adjust: (state: WireState) => 
 }
 
 describe('HistoryPanel', () => {
-  it('shows one row per operation record, newest first, with who, the agent\'s intent, the marks and one thumbnail', async () => {
+  it('shows one row per operation record of the current branch, newest first, with who, the agent\'s intent and one thumbnail', async () => {
     const { view, row } = mount()
     await waitFor(() => { expect(view.container.querySelectorAll('[data-testid="dv-history-row"]').length).toBe(3) })
     const ids = [...view.container.querySelectorAll('[data-testid="dv-history-row"]')].map(element => element.getAttribute('data-record'))
@@ -73,10 +76,10 @@ describe('HistoryPanel', () => {
     expect(row('m1').textContent).toContain('Move clip')
     expect(row('m1').textContent).toContain('You')
     expect(row('m1').textContent).not.toContain('render the hero')
-    expect(row('g1').textContent).toContain('Accepted')
     expect(row('g1').getAttribute('data-actor')).toBe('agent')
-    expect(row('p1').getAttribute('data-mark')).toBe('undone')
-    expect(row('p1').textContent).toContain('Undone')
+    // A step that redo brings back is greyed, without a badge.
+    expect(row('p1').getAttribute('data-mark')).toBe('redo')
+    expect(row('p1').style.opacity).toBe('0.55')
     expect(row('g1').querySelectorAll('[data-testid="dv-history-thumb"]').length).toBe(1)
     // A plan's JSON file has no thumbnail.
     expect(row('p1').querySelector('[data-testid="dv-history-thumb"]')).toBeNull()
@@ -84,9 +87,12 @@ describe('HistoryPanel', () => {
 
   it('folds the renders a plan approval scheduled under its row until the toggle opens them', async () => {
     const approval: HistoryEntry[] = [
-      { record: record({ id: 'g2', actor: 'system', operation: 'shot.render_ref2va', params: { plan: 'p1', shot: 2 }, status: 'running' }), mark: 'main' },
-      { record: record({ id: 'g1', actor: 'system', operation: 'shot.render_ref2va', params: { plan: 'p1', shot: 1 }, outputs: ['shot1.mp4'] }), mark: 'main' },
-      { record: record({ id: 'ap', actor: 'agent', operation: 'plan.approve', params: { plan: 'p1' }, report: { plan: 'p1', version: 1, scheduled: ['g1', 'g2'] } }), mark: 'main' },
+      { record: record({ id: 'g2', actor: 'system', operation: 'shot.render_ref2va', params: { plan: 'p1', shot: 2 }, status: 'running' }), mark: 'current', branches: ['main'] },
+      { record: record({ id: 'g1', actor: 'system', operation: 'shot.render_ref2va', params: { plan: 'p1', shot: 1 }, outputs: ['shot1.mp4'] }), mark: 'current', branches: ['main'] },
+      {
+        record: record({ id: 'ap', actor: 'agent', operation: 'plan.approve', params: { plan: 'p1' }, report: { plan: 'p1', version: 1, scheduled: ['g1', 'g2'] } }),
+        mark: 'current', branches: ['main'],
+      },
     ]
     const { view, row } = mount(approval)
     await waitFor(() => { row('ap') })
@@ -103,14 +109,14 @@ describe('HistoryPanel', () => {
     expect(folded).toEqual(['ap', 'g1', 'g2'])
   })
 
-  it('sends the filters as query fields', async () => {
+  it('asks for the current branch\'s line and sends the filters as query fields', async () => {
     const { view, queries } = mount()
-    await waitFor(() => { expect(queries.length).toBeGreaterThan(0) })
+    await waitFor(() => { expect(queries.at(0)).toEqual({ project: 'p1', marks: ['current', 'redo'], limit: 50 }) })
+    expect(view.queryByTestId('dv-history-filter-branch')).toBeNull()
     fireEvent.change(view.getByTestId('dv-history-filter-actor'), { target: { value: 'agent' } })
-    fireEvent.change(view.getByTestId('dv-history-filter-branch'), { target: { value: 'main' } })
     fireEvent.change(view.getByTestId('dv-history-filter-component'), { target: { value: 'shot' } })
     await waitFor(() => {
-      expect(queries.at(-1)).toEqual({ project: 'p1', actor: 'agent', marks: ['main', 'undone'], component: 'shot', limit: 50 })
+      expect(queries.at(-1)).toEqual({ project: 'p1', marks: ['current', 'redo'], actor: 'agent', component: 'shot', limit: 50 })
     })
   })
 
@@ -132,7 +138,7 @@ describe('HistoryPanel', () => {
     expect(focused).toEqual([{ recordId: 'g1' }, { timelineId: 't1', clipId: 'cl1' }])
   })
 
-  it('undoes, and redoes while the working branch has steps to bring back, with surface history', async () => {
+  it('undoes, and redoes while the current branch has steps to bring back, with surface history', async () => {
     const { view, writes } = mount(ENTRIES, (state) => { state.redo_steps = ['p1'] })
     await waitFor(() => { expect(view.getByTestId('dv-history-redo').hasAttribute('disabled')).toBe(false) })
     fireEvent.click(view.getByTestId('dv-history-undo'))
@@ -146,7 +152,7 @@ describe('HistoryPanel', () => {
   })
 
   it('marks the current step, offers 回到这一步 on the steps before it, and greys the steps redo brings back', async () => {
-    const current: HistoryEntry = { record: record({ id: 'g3', branch: 'draft/s5', session: 's5', operation: 'shot.render_ref2va' }), mark: 'draft' }
+    const current: HistoryEntry = { record: record({ id: 'g3', session: 's5', operation: 'shot.render_ref2va' }), mark: 'current', branches: ['main'] }
     const { writes, row } = mount([current, ...ENTRIES], (state) => {
       state.components.proj.records = state.components.proj.records.filter(item => item.id !== 'p1')
       state.redo_steps = ['p1']
@@ -158,7 +164,7 @@ describe('HistoryPanel', () => {
     expect(row('p1').getAttribute('data-step')).toBe('after')
     expect(row('p1').style.opacity).toBe('0.55')
     expect(row('p1').querySelector('[data-testid="dv-history-jump"]')).toBeNull()
-    // A record off the working branch is no step of it.
+    // A record off the current branch's chain is no step of it.
     expect(row('m1').hasAttribute('data-step')).toBe(false)
     expect(row('g1').getAttribute('data-step')).toBe('before')
     const jump = row('g1').querySelector('[data-testid="dv-history-jump"]')
@@ -171,6 +177,40 @@ describe('HistoryPanel', () => {
     })
     // The jump does not select the row.
     expect(row('g1').getAttribute('aria-selected')).toBe('false')
+  })
+
+  it('draws every branch as a lane in the branch tree, and moves the head to a clicked step', async () => {
+    // The fixture's b2 forked from main at x1 and holds g3.
+    const tree: HistoryEntry[] = [
+      { record: record({ id: 'g3', branch: 'b2', operation: 'shot.render_ref2va' }), mark: 'branch', branches: ['b2'] },
+      { record: record({ id: 'y1', operation: 'timeline.clip_move' }), mark: 'current', branches: ['main'] },
+      { record: record({ id: 'x1', operation: 'asset.grab_still', outputs: ['export-last.png'] }), mark: 'current', branches: ['main', 'b2'] },
+      { record: record({ id: 'u1', operation: 'proj.undo' }), mark: 'current', branches: ['main'] },
+    ]
+    const { view, queries, writes } = mount(tree)
+    await waitFor(() => { expect(queries.length).toBeGreaterThan(0) })
+    fireEvent.click(view.getByTestId('dv-history-view-toggle').querySelector('[data-view="tree"]') as HTMLElement)
+    await waitFor(() => { expect(view.getAllByTestId('dv-history-tree-node')).toHaveLength(3) })
+    expect(queries.at(-1)).toEqual({ project: 'p1', marks: ['current', 'redo', 'branch'], limit: 50 })
+    // The tree view has no filters; its legend names each lane and marks the current branch.
+    expect(view.queryByTestId('dv-history-filter-actor')).toBeNull()
+    expect(view.getAllByTestId('dv-history-tree-lane').map(lane => [lane.getAttribute('data-branch'), lane.getAttribute('data-current'), lane.textContent]))
+      .toEqual([['main', 'true', 'Main (current)'], ['b2', 'false', 'Branch 2']])
+    const node = (id: string): HTMLElement => view.container.querySelector(`[data-testid="dv-history-tree-node"][data-record="${id}"]`) as HTMLElement
+    expect([node('g3'), node('y1'), node('x1')].map(element => element.getAttribute('data-lane'))).toEqual(['1', '0', '0'])
+    expect(node('g3').textContent).toBe('Render shot from references')
+    // b2's lane bends into x1, the step it forked at.
+    expect(node('x1').querySelectorAll('path')).toHaveLength(1)
+    fireEvent.click(node('g3'))
+    fireEvent.click(node('x1'))
+    await waitFor(() => {
+      expect(writes.filter(write => write.path !== '/api/dv/history')).toEqual([
+        { path: '/api/dv/branches/switch', body: { project: 'p1', branch: 'b2', surface: 'history', to: 'g3', session: 's5' } },
+        { path: '/api/dv/branches/switch', body: { project: 'p1', branch: 'main', surface: 'history', to: 'x1', session: 's5' } },
+      ])
+    })
+    fireEvent.click(view.getByTestId('dv-history-view-toggle').querySelector('[data-view="list"]') as HTMLElement)
+    await waitFor(() => { expect(view.queryByTestId('dv-history-tree')).toBeNull() })
   })
 
   it('says what to do when the project has no records, and when the filters match none', async () => {

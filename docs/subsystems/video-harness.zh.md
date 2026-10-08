@@ -2,7 +2,7 @@
 
 [English](video-harness.md) | 中文
 
-DreamVerse 各包是 DeepSeek Harness 内视频制作的项目层。本页定义 `packages/dv/` 下这些包和 [`packages/video-harness/`](../../packages/video-harness/README.zh.md) 包组的词汇和跨包规则：分层及其角色、生成方式、操作记录、视图和智能体如何写入、在对话中确认、项目状态、草稿和撤销、智能体读到什么、过期、[新行为的归属位置](#where-new-behavior-goes)，以及代码、记录、工具和界面文案所用名称的[术语表](#glossary)。各包 README 各自说明配置和服务 API。
+DreamVerse 各包是 DeepSeek Harness 内视频制作的项目层。本页定义 `packages/dv/` 下这些包和 [`packages/video-harness/`](../../packages/video-harness/README.zh.md) 包组的词汇和跨包规则：分层及其角色、生成方式、操作记录、视图和智能体如何写入、在对话中确认、项目状态、分支和撤销、智能体读到什么、过期、[新行为的归属位置](#where-new-behavior-goes)，以及代码、记录、工具和界面文案所用名称的[术语表](#glossary)。各包 README 各自说明配置和服务 API。
 
 ## 分层和角色
 
@@ -13,8 +13,8 @@ views          @dv/ui-shell @dv/ui-canvas @dv/ui-timeline @dv/ui-asset-pool @dv/
 API            @dv/api                    routes that read state and run operations as the user; the event stream
   │ dvProject.run, getState, listHistory
   ▼
-registry       @dv/project                records, branches, drafts, undo and redo, state, agent tools, the dv:project prompt section
-  ▲ registerOperation, registerReducer             ▲ dvProject.run (asset.import), working-branch reads
+registry       @dv/project                records, branches, undo and redo, state, agent tools, the dv:project prompt section
+  ▲ registerOperation, registerReducer             ▲ dvProject.run (asset.import), current-branch reads
   │                                                │
 components     @dv/asset-pool @dv/story-bible      chat references   @dv/chat-references   dv: mentions, chat images
                @dv/shot-plan @dv/shot-render
@@ -41,7 +41,7 @@ bundle         @dv/bundle                 the cordis.patch.yml rows of every pac
 | 视图     | `@dv/ui-*`                                                                                                                                                                                                                                                            | DSH Web 客户端的右侧栏标签类型和中央视图；`@dv/ui-kit` 是它们共用的库。                                                                      |
 | bundle | [`@dv/bundle`](../../packages/bundle/dv/README.zh.md)                                                                                                                                                                                                                 | profile 层：把每一行组成 `video-harness` 和 `video-harness-headless` 两个 profile，并附带 `video-directing` skill。                 |
 
-组件用 `dvProject.registerOperation` 注册操作，用 `dvProject.registerReducer` 注册归约函数。每个操作同时是智能体工具 `dv_<操作名，点换成下划线>`，一次调用成为一条记录。素材库的 `dv_asset_import` 和 `dv_asset_grab_still` 添加素材；设定库的 `dv_bible_*` 工具创建和更新角色、场景和风格的版本；分镜的 `dv_plan_create` 写入一个新分镜计划的版次 1，该计划得到一个 `PlanId`（`p1`、`p2`、…），`dv_plan_update` 写入 `plan` 参数所指计划的下一个版次，`dv_plan_approve` 批准一个版次；镜头渲染的 `dv_shot_render_ref2va` 和 `dv_shot_render_t2va` 按各自的[生成方式](#render-modes)渲染镜头的一个版本，`duration_sec` 是所用模型范围内的整秒数（默认为模型的最小值）；时间线的 `dv_timeline_*` 工具创建、更新、重命名和删除时间线，并插入、移动、移除、拆分、裁剪和替换片段，不创建文件；交付的 `dv_deliver_timeline_export` 把一条时间线写成一个视频；检查器的 `dv_inspect_image` 和 `dv_inspect_asset` 读取素材，不写记录。项目组件自己的 `dv_proj_*` 工具创建和打开项目、读取状态和历史、接受和丢弃草稿、撤销、重做、接受过期记录，以及等待排定的记录。操作声明资源类别（`none`、`cpu`、`gpu`）和确认策略（`never`、`always`、`over_gpu_budget`；见[在对话中确认](#confirmation-in-the-conversation)）；项目组件的调度器按类别并发上限运行排定的记录。
+组件用 `dvProject.registerOperation` 注册操作，用 `dvProject.registerReducer` 注册归约函数。每个操作同时是智能体工具 `dv_<操作名，点换成下划线>`，一次调用成为一条记录。素材库的 `dv_asset_import` 和 `dv_asset_grab_still` 添加素材；设定库的 `dv_bible_*` 工具创建和更新角色、场景和风格的版本；分镜的 `dv_plan_create` 写入一个新分镜计划的版次 1，该计划得到一个 `PlanId`（`p1`、`p2`、…），`dv_plan_update` 写入 `plan` 参数所指计划的下一个版次，`dv_plan_approve` 批准一个版次；镜头渲染的 `dv_shot_render_ref2va` 和 `dv_shot_render_t2va` 按各自的[生成方式](#render-modes)渲染镜头的一个版本，`duration_sec` 是所用模型范围内的整秒数（默认为模型的最小值）；时间线的 `dv_timeline_*` 工具创建、更新、重命名和删除时间线，并插入、移动、移除、拆分、裁剪和替换片段，不创建文件；交付的 `dv_deliver_timeline_export` 把一条时间线写成一个视频；检查器的 `dv_inspect_image` 和 `dv_inspect_asset` 读取素材，不写记录。项目组件自己的 `dv_proj_*` 工具创建和打开项目、读取状态和历史、新建分支、撤销、重做、接受过期记录，以及等待排定的记录。操作声明资源类别（`none`、`cpu`、`gpu`）和确认策略（`never`、`always`、`over_gpu_budget`；见[在对话中确认](#confirmation-in-the-conversation)）；项目组件的调度器按类别并发上限运行排定的记录。
 
 批准分镜计划时，以 `system` 发起者为所批准版次中每个新增或改动的镜头运行一次该镜头的渲染操作（`shot.render_<mode>`），参数为 `plan`、`plan_version` 和 `shot`（镜头从 1 起的位置，镜头在各版次间保持这个编号）。若批准所在分支上同一计划有一条同一渲染操作的 `done` 记录，其参数除 `plan`、`plan_version` 和 `shot` 外相同，参考图输入相同，首帧也相同，则该镜头未改动；批准复用最新的这样一个版本而不渲染。随后它对该计划的时间线（最新的创建或修改记录指向该计划的那条时间线）运行一次 `timeline.update`，按镜头顺序放入每个镜头的版本，计划还没有时间线时则运行一次 `timeline.create`；渲染尚未完成的镜头先显示为占位片段，直到渲染完成。批准在 `report.scheduled` 中列出排定的记录。片段有一个 `ClipId`（`cl1`、`cl2`、…），由插入它的时间线操作分配并存入记录的 `report.clips`；该 ID 在项目内唯一、从不复用，每个片段操作都用 `clip` 参数按它指定片段。
 
@@ -56,7 +56,7 @@ bundle         @dv/bundle                 the cordis.patch.yml rows of every pac
 
 ## 操作记录
 
-项目的每次变化都是项目 `records.jsonl` 文件中的一条记录，只有 `@dv/project` 读写这个文件。每条记录的 `kind` 都是 `'operation'`：它是一次操作调用。一条记录包含：谁（`actor`：`user`、`agent` 或 `system`）、来源（`surface`：`chat`、`canvas`、`timeline`、`asset_pool`、`history` 或 `api`）、原因（`intent`：智能体的 `reason` 参数，或对人的手势的简短描述）、所属组件（`component`）和操作（`operation`）及其版本、参数、各输入及其解析到的素材（`resolved_asset`）、输出、状态、父记录，以及两个链接：`based_on`（本记录带修改地重复那条记录，例如改了提示词的新版本）和 `supersedes`（本记录替代那些记录的输出）。字段 `session`、`turn` 和 `tool_call` 把记录链接到产生它的对话的 DSH 会话日志：对话 ID、该会话的 DSH 轮次编号和工具调用 ID；对话本身留在会话日志中。记录只追加不改写；状态变化、成本和报告以更新行追加，`branches.json` 保存分支指针。项目组件自己的动作也是记录（`proj.create`、`proj.draft_accept`、`proj.draft_discard`、`proj.undo`、`proj.redo`、`proj.stale_accept`），而 `dv_proj_state`、`dv_proj_history_list` 和 `inspect.*` 操作这类读取不写记录。
+项目的每次变化都是项目 `records.jsonl` 文件中的一条记录，只有 `@dv/project` 读写这个文件。每条记录的 `kind` 都是 `'operation'`：它是一次操作调用。一条记录包含：谁（`actor`：`user`、`agent` 或 `system`）、来源（`surface`：`chat`、`canvas`、`timeline`、`asset_pool`、`history` 或 `api`）、原因（`intent`：智能体的 `reason` 参数，或对人的手势的简短描述）、所属组件（`component`）和操作（`operation`）及其版本、参数、各输入及其解析到的素材（`resolved_asset`）、输出、状态、父记录，以及两个链接：`based_on`（本记录带修改地重复那条记录，例如改了提示词的新版本）和 `supersedes`（本记录替代那些记录的输出）。字段 `session`、`turn` 和 `tool_call` 把记录链接到产生它的对话的 DSH 会话日志：对话 ID、该会话的 DSH 轮次编号和工具调用 ID；对话本身留在会话日志中。记录只追加不改写；状态变化、成本和报告以更新行追加，`branches.json` 保存分支指针。项目组件自己的动作也是记录（`proj.create`、`proj.undo`、`proj.redo`、`proj.stale_accept`；分支取代草稿之前写入的项目还带有 `proj.draft_accept` 和 `proj.draft_discard`），而 `dv_proj_state`、`dv_proj_history_list` 和 `inspect.*` 操作这类读取不写记录。
 
 ## 操作如何运行
 
@@ -79,20 +79,20 @@ bundle         @dv/bundle                 the cordis.patch.yml rows of every pac
 
 归约函数读取记录并计算状态；它不写记录。运行器和记录存储是仅有的写入者。分支的状态是把它的有效链交给归约函数折叠的结果：项目组件从分支头往回走，遇到 `proj.undo` 和 `proj.redo` 记录时跳到其 `params.to` 所指的记录，再把保留下来的记录按从旧到新的顺序交给每个已注册的归约函数。每个组件的归约函数把自己的记录变成 `ProjectState.components` 中自己的切片（设定库 `bible`、分镜 `plan`、镜头渲染 `shot`、时间线 `timeline`），项目组件自己的归约函数维护 `proj` 切片：有效链上的记录、过期和被替代的记录，以及创建每个素材的记录。归约函数的 `agentSummary` 把该组件的字段加入 `dv_proj_*` 工具和 `dv:project` 提示词段交给智能体的项目摘要。
 
-视图显示的要么是记录，要么是状态。历史面板列出记录：项目中来自每个发起者、视图和对话的每条记录，并带一个标记说明它所处的位置（在 `main` 上、在草稿上、已撤销、已丢弃或已重放）。画布和时间线编辑器显示状态：当前分支在其分支头的状态，因此撤销或跳回之前的某一步会改变它们画出的内容。没有视图持有项目状态：每个视图获取它所示分支的状态，并在实时事件流的每个事件后重新获取。
+视图显示的要么是记录，要么是状态。历史面板列出记录：列表视图列出当前分支的步骤以及重做能恢复的步骤，树视图列出每个分支的每一步；每条记录带一个标记说明它所处的位置（`current`、`redo`、`branch` 或 `undone`），以及包含它的分支。画布、时间线编辑器和素材库面板显示状态：项目当前分支在其分支头的状态，因此撤销、跳回之前的某一步或切换到另一个分支都会改变它们画出的内容。没有视图持有项目状态：每个视图获取当前分支的状态，并在实时事件流的每个事件后重新获取。
 
-## 草稿和撤销
+## 分支和撤销
 
-一个项目有分支 `main`，即已接受的项目，以及每个对话至多一个打开的草稿，即分支 `draft/<session>`。会话的当前分支是它打开的草稿，否则是 `main`；该会话中智能体的调用和人的编辑都写入当前分支。会话在没有打开的草稿时，智能体的第一次写入在 `main` 的分支头处打开草稿；`user` 和 `system` 的写入从不打开草稿。草稿跨越多个轮次，直到人接受或丢弃它，项目组件从不自行关闭草稿。接受（`proj.draft_accept`）在 `main` 没有移动时把 `main` 移到草稿；若期间另一个会话的草稿已被接受，项目组件把草稿的记录作为副本在移动后的分支头上重放，并在某条记录替代了那里已被替代的记录，或某个组件的归约函数报告冲突时，以 `DraftConflictError` 拒绝且不写入任何东西。丢弃（`proj.draft_discard`）删除该分支并把它的记录留在历史里；当智能体修改数和人的编辑数与确认对话框显示的数目不同时，丢弃被拒绝。草稿中有记录处于 pending 或 running 时，两者都被拒绝。
+一个项目从分支 `main` 开始；其他分支都是从另一个分支分出的 `b<n>`（`b2`、`b3`、…），分支之间从不合并：它们只共用素材库，所以一个分支要用另一个分支渲染出的片段，就把它当作普通素材插入。`branches.json` 保存每个分支指针和项目的当前分支：每个视图和每个对话都读取它，每个执行者（`user`、`agent`、`system`）的每次写入都立即进入它；没有人需要接受修改。只有两种情况会分出分支：人新建分支（在分支切换器里，或者让智能体调用 `dv_proj_branch_create`），或者撤销后当前分支的 head 停在末端之前时有写入到达。新分支从 head 所在的位置开始，旧分支回到末端并保留分叉点之后的步骤，新分支成为当前分支。撤销、重做、切换和读取都不会分出分支。新建、切换和重命名分支只修改 `branches.json`，不写记录；分支可以有标题，没有标题时视图显示 主线 / Main 或 分支 n / Branch n。
 
-撤销和重做作用于调用方的当前分支。不带 `to` 的撤销（`proj.undo`）后退一步，每条记录算一步，被接受草稿中的每条记录也各算一步；带 `to` 时，它把分支恢复到紧接那条记录之后的状态。每次撤销追加一条记录，其 `params.to` 指出分支回到其状态的那条记录。重做（`proj.redo`）沿重做线前进一步，撤销之后分支上的任何其他写入都会移除重做步骤。记录从不被改写或删除。
+撤销和重做作用于项目的当前分支。不带 `to` 的撤销（`proj.undo`）后退一步，每条记录算一步；带 `to` 时，它把分支恢复到紧接那条记录之后的状态。每次撤销追加一条记录，其 `params.to` 指出分支回到其状态的那条记录。重做（`proj.redo`）沿重做线前进一步。撤销之后的写入会分出新分支，所以重做步骤留在旧分支上。切换到另一个分支的某一步，会让那个分支成为当前分支并回到那一步。记录从不被改写或删除。
 
 ## 智能体读到什么
 
 智能体通过三个渠道读取项目，每个渠道归拥有其内容的包所有：
 
 - **工具。** 每个操作的 `description` 说明它的工具怎么用；[`@dv/project`](../../packages/dv/project/README.zh.md) 根据 `OperationSpec` 构建工具。
-- **`dv:project` 提示词段。** `@dv/project` 在 DSH `systemPrompt` 服务挂载时注册它。它先写项目组件的规则（草稿、撤销和重做、如何称呼记录、素材、版本和片段、在对话中确认、过期记录），再写会话当前分支的项目摘要。它不包含用户看不到的任何东西：没有视图中的选中项，也没有偏好。
+- **`dv:project` 提示词段。** `@dv/project` 在 DSH `systemPrompt` 服务挂载时注册它。它先写项目组件的规则（每次写入立即落在当前分支上，撤销和重做以及回滚之后的分叉，只在用户要求时调用 `dv_proj_branch_create`，如何称呼记录、素材、版本和片段，在对话中确认，过期记录），再写当前分支的项目摘要。它不包含用户看不到的任何东西：没有视图中的选中项，也没有偏好。
 - **对话引用。** [`@dv/chat-references`](../../packages/dv/chat-references/README.zh.md) 在 `agent/pre-step` 把输入框为 `@` 和 `+ → 引用` 写下的 `dv:` 提及展开成一条带具体记录和素材 ID 的上下文消息，并以用户身份用 `asset.import` 导入用户在对话中附上的图片；会话的下一次工具调用等待导入完成。
 
 skill 承载工作流程和模型专属的规则，各由其主人注册：
@@ -105,13 +105,13 @@ skill 承载工作流程和模型专属的规则，各由其主人注册：
 
 ## API 和视图
 
-[`@dv/api`](../../packages/dv/api/README.zh.md) 是项目组件面向浏览器的 HTTP 面：`/api/dv/state` 把一个分支的状态返回为一份 JSON 文档，`/api/dv/operations` 列出已注册的操作，`/api/dv/operation` 以用户身份运行一个操作，其记录带 `surface: 'canvas'`、`'timeline'` 或 `'asset_pool'`，`/api/dv/history` 返回历史的一页，`/api/dv/drafts/accept`、`/api/dv/drafts/discard`、`/api/dv/undo`、`/api/dv/redo` 和 `/api/dv/stale/accept` 暴露草稿、撤销、重做和过期操作，其他路由管理项目、素材导入、画布布局和 Workspace 链接，`/dv/events` 推送每一次记录和分支变化。
+[`@dv/api`](../../packages/dv/api/README.zh.md) 是项目组件面向浏览器的 HTTP 面：`/api/dv/state` 把一个分支（默认是当前分支）的状态返回为一份 JSON 文档，`/api/dv/operations` 列出已注册的操作，`/api/dv/operation` 以用户身份运行一个操作，其记录带 `surface: 'canvas'`、`'timeline'` 或 `'asset_pool'`，`/api/dv/history` 返回历史的一页，`/api/dv/branches/create`、`/api/dv/branches/switch`、`/api/dv/branches/rename`、`/api/dv/undo`、`/api/dv/redo` 和 `/api/dv/stale/accept` 暴露分支、撤销、重做和过期操作，其他路由管理项目、素材导入、画布布局和 Workspace 链接，`/dv/events` 推送每一次记录和分支变化。
 
-界面各包是 web 应用的右侧栏标签类型和中央视图，因此在同一个 profile 里与对话页并存。[`@dv/ui-shell`](../../packages/dv/ui-shell/README.zh.md) 把项目工作区放在中央，把 对话 / Chat 和 轨迹 / Trajectory 标签放在右侧，并把 Ctrl+Z 和 Shift+Ctrl+Z 绑定到主对话当前分支的撤销和重做。[`@dv/ui-canvas`](../../packages/dv/ui-canvas/README.zh.md) 把当前分支的当前状态画成按素材流向相连的节点：处于当前版本的角色、场景和风格，导入的素材，处于最新版次的每个分镜计划（写出每个镜头的生成方式，设置了的写出 接上一镜头 / Continues the previous shot），以及带生成方式的版本；打开的草稿用虚线，过期记录有标记，它的编辑器以用户记录渲染新版本或替换参考图。[`@dv/ui-timeline`](../../packages/dv/ui-timeline/README.zh.md) 把每条时间线画成一条轨道，把插入、移动、移除、拆分和裁剪手势变成按 `ClipId` 指定片段的 `timeline.*` 记录，把导出变成一条 `deliver.timeline_export` 记录。`@dv/ui-asset-pool` 列出项目的素材并导入文件，`@dv/ui-composer` 为对话加上 `@` 和 `+ → 引用` 引用、渲染卡片和面向创作者的工具名。画布和时间线编辑器显示 [`@dv/ui-kit`](../../packages/dv/ui-kit/README.zh.md) 的当前分支栏：它写出该视图的编辑写入哪个分支（当前分支：草稿 / Working branch: Draft，否则为 `main`），显示草稿最新记录的 `intent`，并接受或丢弃打开的草稿。每次丢弃都经过同一个确认对话框，它显示服务端报告的智能体修改数和人的编辑数，并带着这些数目发送丢弃；若草稿在此期间有变化，服务端以 `draft_changed` 拒绝，对话框显示当前的数目。
+界面各包是 web 应用的右侧栏标签类型和中央视图，因此在同一个 profile 里与对话页并存。[`@dv/ui-shell`](../../packages/dv/ui-shell/README.zh.md) 把项目工作区放在中央，把 对话 / Chat 和 轨迹 / Trajectory 标签放在右侧，把 [`@dv/ui-kit`](../../packages/dv/ui-kit/README.zh.md) 的分支切换器放在顶栏里 画布 / Canvas 和 时间线 / Timeline 切换按钮旁边，并把 Ctrl+Z 和 Shift+Ctrl+Z 绑定到当前分支的撤销和重做。分支切换器列出每个分支，切换项目的当前分支，新建分支（新建分支 / New branch），并重命名当前分支（重命名 / Rename）；侧栏视图在它们的分支栏里显示它。[`@dv/ui-canvas`](../../packages/dv/ui-canvas/README.zh.md) 把当前分支的当前状态画成按素材流向相连的节点：处于当前版本的角色、场景和风格，导入的素材，处于最新版次的每个分镜计划（写出每个镜头的生成方式，设置了的写出 接上一镜头 / Continues the previous shot），以及带生成方式的版本；过期记录有标记，它的编辑器以用户记录渲染新版本或替换参考图。[`@dv/ui-timeline`](../../packages/dv/ui-timeline/README.zh.md) 把每条时间线画成一条轨道，把插入、移动、移除、拆分和裁剪手势变成按 `ClipId` 指定片段的 `timeline.*` 记录，把导出变成一条 `deliver.timeline_export` 记录。`@dv/ui-asset-pool` 列出当前分支到分支头为止的素材，通过 显示其他分支的素材 / Show assets from other branches 显示其他分支的素材及其分支名称，并导入文件；`@dv/ui-composer` 为对话加上 `@` 和 `+ → 引用` 引用、渲染卡片和面向创作者的工具名。
 
 ## 历史和轨迹
 
-历史是项目按顺序排列的记录，来自每个发起者、视图和对话；轨迹是智能体在一个对话中的步骤。记录通过它的 `session` 和 `tool_call` 字段把两者连起来。[`@dv/ui-history`](../../packages/dv/ui-history/README.zh.md) 是历史面板（标签类型 `dv-history`）：每条操作记录一行，最新的在前，显示动作、谁做的（你 / You、智能体 / Agent、自动 / Automatic）、状态、一张输出缩略图和一个标记（草稿 / Draft、已接受、已撤销、已丢弃或已重放）；批准分镜计划时排定的记录折叠在该批准行之下。选中一行会在画布上聚焦该记录的节点（`dv:canvas-focus`）或在时间线上聚焦它的片段（`dv:timeline-focus`）；行内的 在轨迹中查看 / Show in trajectory 链接发出 `dv:trajectory-focus`，`@dv/ui-shell` 随即在那个对话的那次工具调用处打开 轨迹。在对话中，写入记录的工具的每个已结束行都有 在历史中查看 / Show in history 链接，它发出 `dv:history-focus`，让历史面板选中那次工具调用写入的记录。
+历史是项目按顺序排列的记录，来自每个发起者、视图和对话；轨迹是智能体在一个对话中的步骤。记录通过它的 `session` 和 `tool_call` 字段把两者连起来。[`@dv/ui-history`](../../packages/dv/ui-history/README.zh.md) 是历史面板（标签类型 `dv-history`）。它的列表视图为当前分支的每一步列一行，最新的在前，显示动作、谁做的（你 / You、智能体 / Agent、自动 / Automatic）、状态、一张输出缩略图，分支头那一步标 当前 / Current，重做能恢复的步骤变暗；批准分镜计划时排定的记录折叠在该批准行之下，回到这一步 / Go back to this step 让分支回到某一步。它的树视图 分支树 / Branch tree 把每个分支的每一步画在各自的一列里，每一步显示的信息更少；选中某一步会让它的分支成为当前分支并停在那一步。选中一行会在画布上聚焦该记录的节点（`dv:canvas-focus`）或在时间线上聚焦它的片段（`dv:timeline-focus`）；行内的 在轨迹中查看 / Show in trajectory 链接发出 `dv:trajectory-focus`，`@dv/ui-shell` 随即在那个对话的那次工具调用处打开 轨迹。在对话中，写入记录的工具的每个已结束行都有 在历史中查看 / Show in history 链接，它发出 `dv:history-focus`，让历史面板选中那次工具调用写入的记录。
 
 ## 过期
 
@@ -191,9 +191,8 @@ DreamVerse 的新行为挂在某个包已拥有的扩展点上，就像 DeepSeek
 | render mode     | 生成方式 / Render mode    | 镜头由其输入渲染出来的方式：`ref2va`（参考图生成 / From references：提示词加参考图）或 `t2va`（文字生成 / From text：只有提示词）。每种生成方式是一个能力 seam。                                   |
 | capability seam | —                     | 一项可替换的能力，有三种角色：Service Definition（`@dv/render-modes`）、Service Provider（`@dv/fasth3-ref2va`、`@dv/fasth3-t2va`）和 Consumer（`@dv/shot-render`）。 |
 | turn            | 轮次 / Turn             | 智能体从一条用户消息到它的回复的一次运行；记录用 DSH 轮次编号指出它。                                                                                                       |
-| draft           | 草稿 / Draft            | 一个对话打开的分支；它跨越多个轮次，保存智能体的记录和人的编辑。                                                                                                            |
-| branch          | 分支 / Branch           | 一条有名字的记录线：`main`（已接受的项目）或一个草稿。                                                                                                              |
-| working branch  | 当前分支 / Working branch | 一个对话中的人和智能体写入的分支：它的草稿，否则为 `main`。                                                                                                           |
+| branch          | 分支 / Branch           | 一条有名字的记录线：`main`，或从另一个分支分出的 `b<n>`。分支之间从不合并，只共用素材库。                                                                                         |
+| current branch  | 当前分支 / Current branch | 一个项目的每个视图和对话显示、每次写入进入的分支。                                                                                                                   |
 | history         | 历史 / History          | 项目按顺序排列的记录。                                                                                                                                 |
 | trajectory      | 轨迹 / Trajectory       | 智能体在一个对话中的步骤。                                                                                                                               |
 | surface         | 来源 / Surface          | 记录字段，写出调用来自哪里：`chat`、`canvas`、`timeline`、`asset_pool`、`history` 或 `api`。                                                                    |
@@ -204,7 +203,7 @@ DreamVerse 的新行为挂在某个包已拥有的扩展点上，就像 DeepSeek
 | --------- | -------------------- | --------------------------------- | ---- | ------------------------------------------------- |
 | project   | `Project`            | `ProjectId`                       | 项目   | 项目 / Project                                      |
 | record    | `ProjectRecord`      | `RecordId`                        | 项目   | 记录 / Record                                       |
-| branch    | `Branch`             | 名称：`main`、`draft/<session>`       | 项目   | 分支 / Branch                                       |
+| branch    | `Branch`             | 名称：`main`、`b<n>`                  | 项目   | 分支 / Branch                                       |
 | turn      | —                    | `TurnId`                          | 项目   | 轮次 / Turn                                         |
 | asset     | `Asset`              | `AssetId`                         | 素材库  | 素材 / Asset                                        |
 | still     | `Asset`              | `AssetId`                         | 素材库  | 静帧 / Still                                        |
@@ -223,7 +222,7 @@ DreamVerse 的新行为挂在某个包已拥有的扩展点上，就像 DeepSeek
 
 | 组件               | 键          | 包                 | 服务             | 操作                                                                                                                                                                                                            |
 | ---------------- | ---------- | ----------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Project 项目       | `proj`     | `@dv/project`     | `dvProject`    | `proj.create` `proj.draft_accept` `proj.draft_discard` `proj.undo` `proj.redo` `proj.stale_accept`；读取工具 `dv_proj_open` `dv_proj_state` `dv_proj_history_list` `dv_proj_wait`                                  |
+| Project 项目       | `proj`     | `@dv/project`     | `dvProject`    | `proj.create` `proj.undo` `proj.redo` `proj.stale_accept`；读取工具 `dv_proj_open` `dv_proj_state` `dv_proj_history_list` `dv_proj_wait`；不写记录的 `dv_proj_branch_create`                                             |
 | Asset pool 素材库   | `asset`    | `@dv/asset-pool`  | `dvAssetPool`  | `asset.import` `asset.grab_still`                                                                                                                                                                             |
 | Story bible 设定库  | `bible`    | `@dv/story-bible` | `dvStoryBible` | `bible.character_create` `bible.character_update` `bible.location_create` `bible.location_update` `bible.style_create` `bible.style_update`                                                                   |
 | Shot plan 分镜     | `plan`     | `@dv/shot-plan`   | `dvShotPlan`   | `plan.create` `plan.update` `plan.approve`                                                                                                                                                                    |
@@ -247,8 +246,7 @@ DreamVerse 的新行为挂在某个包已拥有的扩展点上，就像 DeepSeek
 | `export`                                          | 把时间线变成一个视频素材。                                       |
 | `insert` `move` `remove` `split` `trim` `replace` | 片段。                                                 |
 | `approve`                                         | 分镜计划的一个版次。                                          |
-| `accept`                                          | 草稿（`proj.draft_accept`），或过期记录（`proj.stale_accept`）。 |
-| `discard`                                         | 草稿。                                                 |
+| `accept`                                          | 过期记录（`proj.stale_accept`）。                          |
 | `undo` `redo`                                     | 当前分支上的一步。                                           |
 | `inspect`                                         | 对图片或素材的只读分析。                                        |
 | `get` `list`                                      | 按 ID 读取一个；读取多个。                                     |
@@ -267,12 +265,12 @@ DreamVerse 的新行为挂在某个包已拥有的扩展点上，就像 DeepSeek
 | 场景和风格                            | Locations and styles                                           | 设定库中 角色 / Characters 之后的部分。                                |
 | 新建时间线 / 修改时间线                    | Create timeline / Update timeline                              | 添加时间线或替换其片段的时间线操作。                                         |
 | 插入片段 / 移动片段 / 移除片段 / 拆分片段 / 裁剪片段 | Insert clip / Move clip / Remove clip / Split clip / Trim clip | 片段操作；文案中片段显示为 片段 N / Clip N。                               |
-| 当前分支：{branch}                    | Working branch: {branch}                                       | 当前分支栏。                                                     |
-| 丢弃草稿？ / 丢弃                       | Discard the draft? / Discard                                   | 丢弃确认对话框；丢弃 是各处 discard 的 zh 动词。                            |
+| 分支 / 主线 / 分支 {n}                 | Branch / Main / Branch {n}                                     | 分支切换器和分支的默认名称。                                             |
+| 新建分支 / 重命名                       | New branch / Rename                                            | 分支切换器的按钮。                                                  |
 | 仍然保留                             | Keep anyway                                                    | `proj.stale_accept` 唯一的标签。                                 |
 | 分镜计划版次 / v{version}              | Plan versions / v{version}                                     | 画布上分镜计划各版次间的切换。                                            |
 | 你 / 智能体 / 自动                     | You / Agent / Automatic                                        | 历史面板中的发起者。                                                 |
 | 渲染 {n} 个镜头                       | Render {n} shots                                               | 批准时排定的渲染的折叠开关。                                             |
-| 已接受 / 已撤销 / 已丢弃 / 已重放            | Accepted / Undone / Discarded / Replayed                       | 草稿 / Draft 之外的历史标记。                                        |
+| 当前 / 分支树                         | Current / Branch tree                                          | 历史面板中分支头那一步的标记，以及它的树视图。                                    |
 | 发起者 / 操作类型                       | Actor / Operation kind                                         | 历史筛选。                                                      |
 | 在历史中查看 / 在轨迹中查看                  | Show in history / Show in trajectory                           | 对话和历史面板之间的链接。                                              |

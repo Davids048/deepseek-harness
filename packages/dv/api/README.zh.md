@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse 的浏览器 API：经认证的路由读取分支状态、把画布、时间线和素材库面板的操作写成人的记录、接受或丢弃草稿、撤销和重做、接受过期记录，并以事件流推送项目变化。"
+description: "DreamVerse 的浏览器 API：经认证的路由读取分支状态、把画布、时间线和素材库面板的操作写成人的记录、新建、切换和重命名分支、撤销和重做、接受过期记录，并以事件流推送项目变化。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包让浏览器视图通过 HTTP 而不是通过智能体读取和修改 DreamVerse 项目。`dvApi` 在 `/api/dv/` 下注册经认证的 Fetch 路由，涵盖项目、分支状态、以人的身份运行的操作、素材导入、草稿、撤销和重做、过期记录、历史、画布布局和 Workspace 关联。原始路由 `GET /dv/events` 以 server-sent events 推送每一次项目变化。`@dv/ui-*` 各包是它的消费者；浏览器客户端是 `@dv/ui-kit` 的 `DvClient`。
+使用本包让浏览器视图通过 HTTP 而不是通过智能体读取和修改 DreamVerse 项目。`dvApi` 在 `/api/dv/` 下注册经认证的 Fetch 路由，涵盖项目、分支状态、以人的身份运行的操作、素材导入、分支、撤销和重做、过期记录、历史、画布布局和 Workspace 关联。原始路由 `GET /dv/events` 以 server-sent events 推送每一次项目变化。`@dv/ui-*` 各包是它的消费者；浏览器客户端是 `@dv/ui-kit` 的 `DvClient`。
 
 ## 目录
 
@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在 `@dv/project` 和 `@dv/asset-pool` 之后挂载插件，并且 profile 还要挂载 `dsh-web-app`（提供 `connection` 和 `webServer` 服务）。没有 `connection` 时 Fetch 路由不会注册；没有 `webServer` 时事件流不会注册。
 
-这些 Fetch 路由列出、新建、重命名和删除项目，把一条分支的状态读成 JSON，列出操作声明，以人的身份运行一个操作，把文件导入素材库，接受或丢弃一个对话的草稿，撤销和重做，接受一条过期记录，列出历史，保存画布布局，以及把项目关联到 DSH Workspace。事件流用同一个 Connection cookie 放行浏览器。
+这些 Fetch 路由列出、新建、重命名和删除项目，把一条分支的状态读成 JSON，列出操作声明，以人的身份运行一个操作，把文件导入素材库，新建、切换和重命名分支，撤销和重做，接受一条过期记录，列出历史，保存画布布局，以及把项目关联到 DSH Workspace。事件流用同一个 Connection cookie 放行浏览器。
 
 ```yaml
 - id: dv-api
@@ -47,23 +47,24 @@ kind: "package-reference"
 | `/api/dv/projects` | POST | `{title, surface}` | 从视图新建的项目：`ProjectInfo` `{id, title, created_at}` |
 | `/api/dv/projects/rename` | POST | `{project, title}` | `{title}`，重名时追加 ` 2`、` 3`…… 使其唯一 |
 | `/api/dv/projects/delete` | POST | `{project}` | `{ok, workspace_id}`；项目移进 Project 存储的回收目录，它的画布布局文件被删除 |
-| `/api/dv/state` | GET | `project`，可选 `branch`（默认 `main`） | `WireState`：`{project, branch, head, heads, branches, components, redo_steps, assets}`，每个组件状态切片与 Project 算出的一致，外加该分支上重做能恢复的步骤，以及每个被提到的素材在素材库里的条目 |
+| `/api/dv/state` | GET | `project`，可选 `branch`（默认是项目的当前分支） | `WireState`：`{project, branch, head, heads, branches, current, components, redo_steps, assets}`，带每个分支及其 `tip`、当前分支，每个组件状态切片与 Project 算出的一致，外加该分支上重做能恢复的步骤，以及每个被提到的素材在素材库里的条目 |
 | `/api/dv/operations` | GET | — | `WireOperation[]`：每个不是 `readOnly` 的已注册操作，不含执行器 |
 | `/api/dv/operation` | POST | `OperationRequest` `{project, operation, inputs?, params?, intent?, surface, session?, based_on?, supersedes?}`；`inputs` = `[{role, ref}]`，`ref` 是引用文本 | `ProjectRecord`，已完成或 `pending` |
 | `/api/dv/assets/import` | POST | 原始文件作为请求体；查询参数 `project`、`name`、`mime`、`surface`（`canvas \| asset_pool`，其他值回 `400` `invalid_params`）、`session?` | `{asset, record}`：`AssetId` 和 `asset.import` 记录 |
-| `/api/dv/drafts/accept` | POST | `{project, session \| branch, surface}` | `{record, heads}`，带 `proj.draft_accept` 记录 |
-| `/api/dv/drafts/discard` | POST | `{project, session \| branch, surface, counts?}` | 不带 `counts`：`{draft, counts}`；带已确认的计数：`{draft, counts, heads}` |
-| `/api/dv/undo` | POST | `{project, session?, surface, to?}`：在对话的当前分支上后退一步，或回到记录 `to`（向前跳到可重做的步骤时写 `proj.redo`） | `{record, heads}`，带 `proj.undo` 记录 |
-| `/api/dv/redo` | POST | `{project, session?, surface}`：在对话的当前分支上前进一步 | `{record, heads}`，带 `proj.redo` 记录 |
+| `/api/dv/branches/create` | POST | `{project, title?, session?, surface}`：从当前分支 head 所在的位置分出一个分支，并让它成为当前分支 | `{branch, heads}`，带新分支 |
+| `/api/dv/branches/switch` | POST | `{project, branch, to?, session?, surface}`：让一个分支成为当前分支；带 `to` 时让该分支回到它线上的这一步 | `{branch, heads}` |
+| `/api/dv/branches/rename` | POST | `{project, branch, title}`；空标题恢复默认名称 | `{branch, heads}` |
+| `/api/dv/undo` | POST | `{project, session?, surface, to?}`：在当前分支上后退一步，或回到记录 `to`（向前跳到可重做的步骤时写 `proj.redo`） | `{record, heads}`，带 `proj.undo` 记录 |
+| `/api/dv/redo` | POST | `{project, session?, surface}`：在当前分支上前进一步 | `{record, heads}`，带 `proj.redo` 记录 |
 | `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}`，带 `proj.stale_accept` 记录 |
-| `/api/dv/history` | POST | `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`；`marks` 和 `records` 是数组；`limit` 取 1 到 200，默认 50 | `WireHistory` `{entries, assets}`：`dvProject.listHistory` 的条目 `{record, mark}`（最新的在前），以及条目提到的每个素材；这是只读请求，不写记录 |
+| `/api/dv/history` | POST | `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`；`marks` 和 `records` 是数组；`limit` 取 1 到 200，默认 50 | `WireHistory` `{entries, assets}`：`dvProject.listHistory` 的条目 `{record, mark, branches}`（最新的在前），以及条目提到的每个素材；这是只读请求，不写记录 |
 | `/api/dv/layout` | GET / POST | GET：`project`；POST：`{project, positions?, viewport?, placed?, removed?}` | `{positions, viewport, placed}`；POST 合并以画布节点 ID 为键的位置，把 `placed` 中的素材 ID 加入项目的画布列表（有画布节点的导入素材），并把 `removed` 中的素材 ID 移出该列表 |
 | `/api/dv/workspaces` | GET / POST | POST：`{project, workspace_id}` | GET：`{entry_path, projects: [{id, title, created_at, path, workspace_id}], bindings}`；POST：`{ok}` |
 | `/api/dv/workspaces/bind` | POST | `{session, project}` | `{ok}` |
 | `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`，最新在前；`updated_at` 是 ISO-8601 UTC |
 | `/dv/events?project=<id>` | GET | — | `text/event-stream`：先 `ready`，再是 `record`、`update` 和 `branch` 事件，每个事件带一个 `ProjectEvent` |
 
-`surface` 是 `canvas`、`timeline`、`asset_pool` 或 `history`；其他值都按 `canvas` 处理，素材导入除外：它只接受 `canvas` 或 `asset_pool`。一次运行以人的身份调用 `dvProject.run`，写在请求所属对话的当前分支上（没有对话时是 `main`）；当某个输入指向尚未完成的记录时改为排队。每条路由（包括事件流）的每个错误都以 JSON 体 `{error, code, ...details}` 回答：`error` 是消息文本，`code` 是下表中的一个错误码；`details` 携带拒绝的附加字段，例如计数已变化的草稿的当前 `counts`。
+`surface` 是 `canvas`、`timeline`、`asset_pool` 或 `history`；其他值都按 `canvas` 处理，素材导入除外：它只接受 `canvas` 或 `asset_pool`。一次运行以人的身份调用 `dvProject.run`，写在项目的当前分支上（撤销之后会先分出新分支），请求所属的对话记为记录的 `session`；当某个输入指向尚未完成的记录时改为排队。每条路由（包括事件流）的每个错误都以 JSON 体 `{error, code, ...details}` 回答：`error` 是消息文本，`code` 是下表中的一个错误码；`details` 携带拒绝的附加字段。
 
 | 错误码 | 状态 | 含义 |
 | --- | --- | --- |
@@ -72,7 +73,7 @@ kind: "package-reference"
 | `unknown_project` | 404 | 请求指定的项目不存在 |
 | `unknown_branch`、`unknown_record`、`unknown_asset`、`unknown_operation` | 404 | 其他不存在资源的 `ProjectError` 错误码 |
 | `not_found` | 404 | 没有 `ProjectError` 错误码的不存在资源；本包读取的每种资源都有错误码 |
-| 其他 `ProjectError` 错误码 | 400 或 409 | Project 拒绝了变更，例如 `draft_changed`、`no_open_draft` 或 `nothing_to_undo`（409） |
+| 其他 `ProjectError` 错误码 | 400 或 409 | Project 拒绝了变更，例如 `nothing_to_undo` 或 `nothing_to_redo`（409） |
 | `internal_error` | 500 | 意外失败；`error` 是抛出错误的文本 |
 
 -----
@@ -103,8 +104,8 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [DreamVerse 各包](../../../docs/subsystems/video-harness.zh.md) — 记录、草稿、过期标记，以及每个视图遵守的规则。
-- [`@dv/project`](../project/README.zh.md) — 路由背后的记录、草稿、分支、撤销和过期标记，以及把用户记录告诉模型的项目摘要。
+- [DreamVerse 各包](../../../docs/subsystems/video-harness.zh.md) — 记录、分支、过期标记，以及每个视图遵守的规则。
+- [`@dv/project`](../project/README.zh.md) — 路由背后的记录、分支、撤销和过期标记，以及把用户记录告诉模型的项目摘要。
 - [`@dv/ui-canvas`](../ui-canvas/README.zh.md) 与 [`@dv/ui-timeline`](../ui-timeline/README.zh.md) — 其中两个浏览器消费者。
 
 -----
