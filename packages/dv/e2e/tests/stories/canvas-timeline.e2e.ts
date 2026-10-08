@@ -681,7 +681,7 @@ describe('canvas stories', () => {
     expect((await stateOf(project.id)).components.proj.records.filter(record => record.operation === RENDER_OPERATION)).toHaveLength(3)
   })
 
-  it('an image imported in 素材库 joins the canvas when dragged there, stays after a reload, and 从画布移除 leaves it in 素材库', async () => {
+  it('an image imported in 素材库 joins the canvas when dragged there, stays after a reload, and 从画布移除 leaves it in 素材库; both are records', async () => {
     const project = await seedProject('canvas-drop', 2)
     const extra = await harness.api.post('/api/dv/operation', {
       project: project.id, operation: 'asset.import', params: { base64: OTHER_PNG_BASE64, mime: 'image/png', name: 'extra.png' }, inputs: [],
@@ -714,9 +714,8 @@ describe('canvas stories', () => {
       return box !== null && box.x <= point.x && point.x <= box.x + box.width && box.y <= point.y && point.y <= box.y + box.height
     }, { timeout: 5000 }).toBe(true)
     expect(await page.locator('[data-node-id]').count()).toBe(nodes + 1)
-    // The canvas layout stores the placement, so the node is still there after a reload.
-    await expect.poll(async () => (await harness.api.get(`/api/dv/layout?project=${project.id}`) as { placed: string[] }).placed, { timeout: 5000 })
-      .toEqual([extra.outputs[0]])
+    // The placement is an asset.place record of the branch, so the node is still there after a reload.
+    await expect.poll(async () => (await stateOf(project.id)).components.asset.placed, { timeout: 5000 }).toEqual([extra.outputs[0]])
     await gotoProject(page, project.id)
     await node.waitFor({ timeout: 15_000 })
     // 从画布移除 takes the node off the canvas list; the image stays in 素材库.
@@ -727,7 +726,9 @@ describe('canvas stories', () => {
     }, 'the asset editor', 30_000)
     await editor.getByRole('button', { name: '从画布移除', exact: true }).click()
     await expect.poll(() => node.count(), { timeout: 10_000 }).toBe(0)
-    expect((await harness.api.get(`/api/dv/layout?project=${project.id}`) as { placed: string[] }).placed).toEqual([])
+    await expect.poll(async () => (await stateOf(project.id)).components.asset.placed).toEqual([])
+    const placements = (await stateOf(project.id)).components.proj.records.filter(record => record.operation?.startsWith('asset.') === true && record.operation !== 'asset.import')
+    expect(placements.map(record => [record.operation, record.surface])).toEqual([['asset.place', 'canvas'], ['asset.unplace', 'canvas']])
     await openAssets(page)
     expect(await page.locator(`[data-testid="dv-asset-pool-panel"]:visible [data-asset-id="${extra.outputs[0] ?? ''}"]`).count()).toBe(1)
   })

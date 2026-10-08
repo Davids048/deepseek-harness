@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse 的对话引用：用户消息里的 dv: 提及展开为记录和素材 ID，用户在对话里附上的图片成为该对话项目的已导入素材。"
+description: "DreamVerse 的对话引用：用户消息里的 dv: 提及展开为记录和素材 ID，被提及的素材和用户在对话里附上的图片放到该对话项目的画布上，图片成为已导入素材。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概要
 
-用这个包让用户在对话消息里指向的对象到达 DreamVerse 项目。`dvChatReferences` 把新用户消息里的 `dv:` 提及展开为一条带具体记录和素材 ID 的上下文消息，并把用户在对话里附上的图片导入为该对话项目的素材。
+用这个包让用户在对话消息里指向的对象到达 DreamVerse 项目。`dvChatReferences` 把新用户消息里的 `dv:` 提及展开为一条带具体记录和素材 ID 的上下文消息，把用户在对话里附上的图片导入为该对话项目的素材并放到其画布上，并把用户输入的消息提及的素材放到画布上。
 
 ## 目录
 
@@ -31,7 +31,7 @@ kind: "package-reference"
 
 `@dv/ui-composer` 的输入框把选中的项目对象写成 `@[<label>](dv:<kind>/<id>)`。在 `agent/pre-step`，插件在本步的用户消息里找到这些提及，并追加一条 `dv-mentions` 上下文消息，用具体 ID 描述每个提及，内容读自对话所属项目的当前分支。提及 URI：`dv:asset/<AssetId>`、`dv:record/<RecordId>`、`dv:character/<CharacterId>`、`dv:location/<LocationId>`、`dv:style/<StyleId>` 和 `dv:clip/<ClipId>`。
 
-活着的对话里用户输入的消息带图片时，插件从 `attachments` 读取图片，以用户身份、在来源 `chat` 上、在项目的当前分支上为每张图片执行一次 `asset.import`。对话的下一次工具调用会等导入完成（`dvProject.holdToolCalls`）。没有绑定项目的对话不导入。
+活着的对话里用户输入的消息带图片时，插件从 `attachments` 读取图片，以用户身份、在来源 `chat` 上、在项目的当前分支上为每张图片执行一次带 `place: true` 的 `asset.import`，因此每张图片也放到画布上。对话的下一次工具调用会等导入完成（`dvProject.holdToolCalls`）。这样的消息提及素材（`dv:asset/<id>`）时，插件把被提及、由当前分支的记录创建且还不在画布上的素材，以用户身份、在来源 `chat` 上用一次 `asset.place` 放到画布上。没有绑定项目的对话不导入也不放置。
 
 提及辅助函数 `parseMentions`、`formatMention`、`describeMention` 供其他使用者导出；`dvChatReferences.expansionMessage(sessionId, messages)` 返回某一步的上下文消息。
 
@@ -40,7 +40,7 @@ kind: "package-reference"
 
 | 文件 | 作用 |
 | --- | --- |
-| [`src/index.ts`](src/index.ts) | `DvChatReferences`：追加 `dv-mentions` 消息的 `agent/pre-step` 监听、提及所对应的项目（对话绑定的项目，否则产生被提及素材的最新项目，否则最新项目），以及导入对话图片的 `session/event` 监听 |
+| [`src/index.ts`](src/index.ts) | `DvChatReferences`：追加 `dv-mentions` 消息的 `agent/pre-step` 监听、提及所对应的项目（对话绑定的项目，否则产生被提及素材的最新项目，否则最新项目），以及导入对话图片并放置被提及素材的 `session/event` 监听 |
 | [`src/expand.ts`](src/expand.ts) | `parseMentions`、`formatMention` 与 `describeMention`：用具体 ID 和产生它的记录描述每个提及 URI |
 
 片段提及用 `ClipId` 指明片段，`ClipId` 在项目内唯一；占位片段写出它等待的渲染记录。角色、场景或风格的提及写出它在当前分支上的最新版本，并告诉模型把该版本作为输入传入。

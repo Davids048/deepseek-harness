@@ -230,6 +230,8 @@ export interface ComponentStates {
   plan: PlanState
   shot: ShotState
   timeline: TimelineState
+  /** The assets on the branch's canvas, in the order they were placed. */
+  asset: { placed: string[] }
 }
 
 /** The state of one branch at its head, with the branches and assets the views need beside it. */
@@ -379,12 +381,10 @@ export interface CanvasViewport {
   zoom: number
 }
 
-/** A project's stored canvas layout: node positions keyed by canvas node ID, and the assets placed on the canvas. */
+/** A project's stored canvas layout: node positions keyed by canvas node ID, and the viewport. */
 export interface CanvasLayout {
   positions: Record<string, NodePosition>
   viewport: CanvasViewport | null
-  /** The canvas list: the imported assets that have a canvas node. */
-  placed: string[]
 }
 
 /** One project as `GET /api/dv/workspaces` lists it. */

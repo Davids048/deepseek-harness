@@ -1,7 +1,8 @@
 /**
  * `dvChatReferences` over the real Project service and components: `dv:` mentions of a step's user messages become a
  * `dv-mentions` context message read from the project's current branch, chat images become `asset.import` records of
- * the session's project, and disposal removes both listeners.
+ * the session's project that put them on its canvas, mentioned assets go on the canvas, and disposal removes both
+ * listeners.
  */
 import { agentEvents } from '@deepseek-ai/dsh-agent'
 import type { ImageAttachmentRef, SaveImageAttachment } from '@deepseek-ai/dsh-attachment'
@@ -139,7 +140,7 @@ describe('mention expansion', () => {
 })
 
 describe('chat images', () => {
-  it('imports the images a user attached in a bound chat as project assets on the current branch', async () => {
+  it('imports the images a user attached in a bound chat as project assets on the current branch and its canvas', async () => {
     const { fixture, attachments, emit, callAs } = await start()
     const image = await attachments.saveImage({ data: Buffer.from('chat-image'), mediaType: 'image/png', name: 'cat.png' })
     const message = { source: { kind: 'user' }, content: [{ type: 'image', attachment: image }] }
@@ -156,9 +157,30 @@ describe('chat images', () => {
     if (timeline.isError) throw new Error(timeline.error.message)
     const imported = fixture.project.listHistory({ project: projectId, actor: 'user', operation: 'asset.import' }).map(entry => entry.record)
     expect(imported).toEqual([expect.objectContaining({
-      surface: 'chat', turn: null, session: 's1', params: expect.objectContaining({ name: 'cat.png', mime: 'image/png' }),
+      surface: 'chat', turn: null, session: 's1', params: expect.objectContaining({ name: 'cat.png', mime: 'image/png', place: true }),
     })])
     const asset = imported[0]?.outputs[0] as AssetId
     expect(fixture.assets.read(asset).toString()).toBe('chat-image')
+    expect(fixture.project.getState(projectId).components.asset.placed).toEqual([asset])
+  })
+
+  it('puts the assets a user message mentions on the canvas once, with one asset.place by the user in the chat', async () => {
+    const { fixture, emit, callAs } = await start()
+    const created = await callAs('dv_proj_create', { title: 'mentions' })
+    if (created.isError) throw new Error(created.error.message)
+    const projectId = (created.value as { project_id: ProjectId }).project_id
+    const user: RecordOrigin = { actor: 'user', surface: 'asset_pool', session: null, turn: null, tool_call: null, intent: 'import' }
+    const picture = await fixture.project.run({ ...user, project: projectId, operation: 'asset.import', inputs: [], params: { path: fixture.writeFile('face.png'), mime: 'image/png' } })
+    const asset = picture.outputs[0] as AssetId
+    const text = `use @[face.png](dv:asset/${asset}) and @[x](dv:asset/${'0'.repeat(64)})`
+    emit('user/message', { source: { kind: 'user' }, content: [{ type: 'text', text }] })
+    const places = () => fixture.project.listHistory({ project: projectId, operation: 'asset.place' }).map(entry => entry.record)
+    await expect.poll(() => places().length).toBe(1)
+    expect(places()[0]).toMatchObject({ actor: 'user', surface: 'chat', session: 's1', inputs: [expect.objectContaining({ role: 'asset', resolved_asset: asset })] })
+    expect(fixture.project.getState(projectId).components.asset.placed).toEqual([asset])
+    // A second mention of an asset already on the canvas writes nothing.
+    emit('user/message', { source: { kind: 'user' }, content: [{ type: 'text', text }] })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(places()).toHaveLength(1)
   })
 })

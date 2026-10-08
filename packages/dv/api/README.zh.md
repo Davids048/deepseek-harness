@@ -50,7 +50,7 @@ kind: "package-reference"
 | `/api/dv/state` | GET | `project`，可选 `branch`（默认是项目的当前分支） | `WireState`：`{project, branch, head, heads, branches, current, components, redo_steps, assets}`，带每个分支及其 `tip`、当前分支，每个组件状态切片与 Project 算出的一致，外加该分支上重做能恢复的步骤，以及每个被提到的素材在素材库里的条目 |
 | `/api/dv/operations` | GET | — | `WireOperation[]`：每个不是 `readOnly` 的已注册操作，不含执行器 |
 | `/api/dv/operation` | POST | `OperationRequest` `{project, operation, inputs?, params?, intent?, surface, session?, based_on?, supersedes?}`；`inputs` = `[{role, ref}]`，`ref` 是引用文本 | `ProjectRecord`，已完成或 `pending` |
-| `/api/dv/assets/import` | POST | 原始文件作为请求体；查询参数 `project`、`name`、`mime`、`surface`（`canvas \| asset_pool`，其他值回 `400` `invalid_params`）、`session?` | `{asset, record}`：`AssetId` 和 `asset.import` 记录 |
+| `/api/dv/assets/import` | POST | 原始文件作为请求体；查询参数 `project`、`name`、`mime`、`surface`（`canvas \| asset_pool`，其他值回 `400` `invalid_params`）、`session?` | `{asset, record}`：`AssetId` 和 `asset.import` 记录；从画布导入时带 `place: true` 运行，因此素材也会放到画布上 |
 | `/api/dv/branches/create` | POST | `{project, title?, branch?, to?, session?, surface}`：从当前分支 head 所在的位置分出一个分支，或带 `branch` 和 `to` 时从该分支的线上的那一步分出，并让它成为当前分支；`branch` 和 `to` 必须同时给出（否则返回 400 `invalid_params`） | `{branch, heads}`，带新分支 |
 | `/api/dv/branches/switch` | POST | `{project, branch, to?, session?, surface}`：让一个分支成为当前分支；带 `to` 时让该分支回到它线上的这一步 | `{branch, heads}` |
 | `/api/dv/branches/rename` | POST | `{project, branch, title}`；空标题恢复默认名称；超过 40 个字符的标题返回 400 `invalid_params`，与其他分支相同的标题返回 409 `branch_exists` | `{branch, heads}` |
@@ -58,7 +58,7 @@ kind: "package-reference"
 | `/api/dv/redo` | POST | `{project, session?, surface}`：在当前分支上前进一步 | `{record, heads}`，带 `proj.redo` 记录 |
 | `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}`，带 `proj.stale_accept` 记录 |
 | `/api/dv/history` | POST | `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`；`marks` 和 `records` 是数组；`limit` 取 1 到 200，默认 50 | `WireHistory` `{entries, assets}`：`dvProject.listHistory` 的条目 `{record, mark, branches}`（最新的在前），以及条目提到的每个素材；这是只读请求，不写记录 |
-| `/api/dv/layout` | GET / POST | GET：`project`；POST：`{project, positions?, viewport?, placed?, removed?}` | `{positions, viewport, placed}`；POST 合并以画布节点 ID 为键的位置，把 `placed` 中的素材 ID 加入项目的画布列表（有画布节点的导入素材），并把 `removed` 中的素材 ID 移出该列表 |
+| `/api/dv/layout` | GET / POST | GET：`project`；POST：`{project, positions?, viewport?}` | `{positions, viewport}`；POST 合并以画布节点 ID 为键的位置，并替换视口。布局是视图状态，不写记录；画布上有哪些素材是每个分支的 `asset` 切片，由 `asset.place` 和 `asset.unplace` 经 `/api/dv/operation` 写入 |
 | `/api/dv/workspaces` | GET / POST | POST：`{project, workspace_id}` | GET：`{entry_path, projects: [{id, title, created_at, path, workspace_id}], bindings}`；POST：`{ok}` |
 | `/api/dv/workspaces/bind` | POST | `{session, project}` | `{ok}` |
 | `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`，最新在前；`updated_at` 是 ISO-8601 UTC |

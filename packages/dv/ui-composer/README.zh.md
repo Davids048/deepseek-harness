@@ -37,7 +37,7 @@ Host 半边不注册任何东西。浏览器半边注册 `@` 来源 `dv-project`
 | --- | --- |
 | 输入 `@`，或在 ＋ 菜单里选 引用 | 对所打开项目的当前分支调用 `GET /api/dv/state`；入口页不列出任何内容 |
 | 在历史中查看 | `dv:history-focus` `{session, toolCall}`；历史面板选中该工具调用写下的记录 |
-| 发送带 `dv:asset/<id>` 标签或附加图片的消息 | `POST /api/dv/layout`，`placed` 里带这些素材，把它们加入所打开项目的画布列表；附加图片的素材 ID 是其字节的 SHA-256 十六进制值，即 `@dv/chat-references` 导入它时用的 ID |
+| 发送带 `dv:asset/<id>` 标签或附加图片的消息 | 消息原样发出；Host 上的 `@dv/chat-references` 导入这些图片，并把它们和被提及的素材放到画布上 |
 | 来自其他视图的 `dv:compose` | 最新挂载的输入框用其文字替换草稿，并为每个引用追加一个标签；不发送任何内容 |
 
 `@` 列表读项目当前分支的状态：按时间线名字和位置列出的每个片段（未命名的时间线为 时间线 1 · 片段 2），每个角色、场景和风格的最新版本，以及最新的 40 个图片和视频素材；选中一项会插入一个标签，其文字为 `@[<label>](dv:<kind>/<id>)`。引用 行在草稿末尾打开同一个列表。渲染卡片显示工具名称（参考图生成镜头 或 文字生成镜头）、提示词、状态 渲染中…、已渲染 或 未渲染，以及渲染出的视频。其他每个有名称的工具行显示工具名称和状态 进行中…、完成 或 未完成。每张已结束的渲染卡片，以及调用写了记录的每个已结束的行，都有 在历史中查看 链接。`dv:compose` 事件还会把 对话 标签提到前面。本包隐藏 DSH 的文件权限标签。
@@ -57,7 +57,6 @@ Host 半边不注册任何东西。浏览器半边注册 `@` 来源 `dv-project`
 | [`src/index.ts`](src/index.ts) | Host 半边，不注册任何东西 |
 | [`src/client/index.ts`](src/client/index.ts) | 注册：`@` 来源、＋ 菜单行、UI 插槽条目、工具名称和 `dv:compose` 监听 |
 | [`src/client/mention.ts`](src/client/mention.ts) | `@` 来源、其项目内容和引用文字 |
-| [`src/client/attachments.ts`](src/client/attachments.ts) | 对话消息发出的图片在画布上的放置 |
 | [`src/client/compose.ts`](src/client/compose.ts) | 把 `dv:compose` 交给最新挂载的输入框 |
 | [`src/client/views.tsx`](src/client/views.tsx) | 渲染卡片、工具行和历史链接 |
 | [`src/client/tool-labels.ts`](src/client/tool-labels.ts) | 加到 DSH `chat` 字典里的工具名称 |

@@ -27,25 +27,15 @@ describe('layoutRoutes', () => {
   it('stores merged positions and the viewport per project', async () => {
     const { entry, call } = route()
     expect(entry.methods).toEqual(['GET', 'POST'])
-    expect((await call('GET', '?project=p1')).json).toEqual({ positions: {}, viewport: null, placed: [] })
+    expect((await call('GET', '?project=p1')).json).toEqual({ positions: {}, viewport: null })
     await call('POST', '', { project: 'p1', positions: { g1: { x: 1, y: 2 } }, viewport: { x: 0, y: 0, zoom: 1 } })
     await call('POST', '', { project: 'p1', positions: { g2: { x: 3, y: 4 }, bad: { x: 'no', y: 1 } } })
     expect((await call('GET', '?project=p1')).json).toEqual({
-      positions: { g1: { x: 1, y: 2 }, g2: { x: 3, y: 4 } }, viewport: { x: 0, y: 0, zoom: 1 }, placed: [],
+      positions: { g1: { x: 1, y: 2 }, g2: { x: 3, y: 4 } }, viewport: { x: 0, y: 0, zoom: 1 },
     })
-  })
-
-  it('adds placed assets without repeating one, and takes removed ones off the canvas list', async () => {
-    const { call } = route()
-    await call('POST', '', { project: 'p1', placed: ['a1', 'a2'] })
-    await call('POST', '', { project: 'p1', placed: ['a2', 'a3', 7, ''] })
-    await call('POST', '', { project: 'p1', positions: { u1: { x: 5, y: 6 } } })
-    expect((await call('GET', '?project=p1')).json).toEqual({ positions: { u1: { x: 5, y: 6 } }, viewport: null, placed: ['a1', 'a2', 'a3'] })
-    // `removed` takes assets off the canvas list; placing one again puts it at the end.
-    await call('POST', '', { project: 'p1', removed: ['a2', 'a9'] })
-    expect((await call('GET', '?project=p1')).json).toMatchObject({ placed: ['a1', 'a3'] })
-    await call('POST', '', { project: 'p1', placed: ['a2'] })
-    expect((await call('GET', '?project=p1')).json).toMatchObject({ placed: ['a1', 'a3', 'a2'] })
+    // Which assets are on the canvas is project content, so the layout ignores placement fields.
+    await call('POST', '', { project: 'p1', placed: ['a1'], removed: ['a2'] })
+    expect((await call('GET', '?project=p1')).json).not.toHaveProperty('placed')
   })
 
   it('answers 400 invalid_params without a project and 404 unknown_project for an unknown one', async () => {

@@ -65,7 +65,7 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-history` 标签类�
 | [`src/client/index.ts`](src/client/index.ts) | 注册，以及收到 `dv:history-focus` 时打开标签 |
 | [`src/client/definition.ts`](src/client/definition.ts) | 标签类型 |
 | [`src/client/HistoryPanel.tsx`](src/client/HistoryPanel.tsx) | 面板、顶部（分支菜单、视图切换、撤销和重做按钮）、带 ⋮ 菜单的行、预览、分支树和标签主体 |
-| [`src/client/rows.ts`](src/client/rows.ts) | 操作行和批准折叠、带主体的名称、缩略图、相对时间、时间线记录集合、中间区域定位、当前分支的步骤和分支树布局 |
+| [`src/client/rows.ts`](src/client/rows.ts) | 操作行和批准折叠、带主体的名称、缩略图、相对时间、中间区域定位、当前分支的步骤和分支树布局 |
 
 </details>
 

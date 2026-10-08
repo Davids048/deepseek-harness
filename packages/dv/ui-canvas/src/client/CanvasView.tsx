@@ -5,9 +5,9 @@
  * Node positions and the viewport are stored per project through `/api/dv/layout`. The canvas draws the project's
  * current branch at its head and follows it when the current branch changes; its writes land on that branch. Colors
  * come from the DSH theme tokens, so the canvas follows the app's light and dark themes. An imported asset has a node
- * only while it is on the project's canvas list (the layout's `placed`): dropping a 素材 tile or image and video files on
- * the canvas adds the asset to the list with its node under the pointer, and the asset node's "从画布移除" takes it off
- * the list.
+ * only while it is on the branch's canvas (the `asset` slice's `placed`): dropping a 素材 tile on the canvas runs
+ * `asset.place` with its node under the pointer, dropping image and video files imports them with `place`, and the
+ * asset node's "从画布移除" runs `asset.unplace`. Each of these is a record, so History lists it and undo takes it back.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
@@ -83,6 +83,17 @@ type Gesture =
   | { kind: 'node'; id: string; startX: number; startY: number; origin: NodePosition; moved: boolean }
 
 /**
+ * @param map - a map.
+ * @param keys - the keys to drop.
+ * @returns a copy of the map without those keys.
+ */
+function withoutKeys<V>(map: ReadonlyMap<string, V>, keys: readonly string[]): Map<string, V> {
+  const next = new Map(map)
+  for (const key of keys) next.delete(key)
+  return next
+}
+
+/**
  * The canvas.
  * @param props - the project, chat session, and optional client and translate.
  * @returns the element.
@@ -92,37 +103,37 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
   const language = useLanguage()
   const t = givenT ?? translates[language]
   const base = useProjectState(client, projectId)
-  // The project's canvas list, from the stored layout and this view's drops and removals.
-  const [placed, setPlaced] = useState<ReadonlySet<string>>(new Set())
-  // This view's canvas list changes whose layout write has not settled: asset ID → on the list.
-  const placementsInFlight = useRef(new Map<string, boolean>())
-  // The chat composer writes the canvas list too (a sent message places its images), so the list is read again with
-  // every state refetch; this view's changes still in flight stay applied.
+  // This view's placements whose record the branch state does not show yet: asset ID → on the canvas.
+  const [inFlight, setInFlight] = useState<ReadonlyMap<string, boolean>>(new Map())
+  // The branch's canvas, with this view's placements in flight already applied.
+  const placed = useMemo(() => {
+    const next = new Set(base.value?.components.asset.placed ?? [])
+    for (const [assetId, on] of inFlight) {
+      if (on) next.add(assetId)
+      else next.delete(assetId)
+    }
+    return next
+  }, [base.value, inFlight])
+  // A placement leaves the in-flight map once the branch state shows it.
   useEffect(() => {
-    if (base.value === null) return
-    let live = true
-    void client.getLayout(projectId).then((layout) => {
-      if (!live) return
-      const next = new Set(layout.placed)
-      for (const [assetId, on] of placementsInFlight.current) {
-        if (on) next.add(assetId)
-        else next.delete(assetId)
-      }
-      setPlaced(next)
-    }).catch(() => null)
-    return () => { live = false }
-  }, [client, projectId, base.value])
+    if (base.value === null || inFlight.size === 0) return
+    const shown = new Set(base.value.components.asset.placed)
+    const settled = [...inFlight].filter(([assetId, on]) => shown.has(assetId) === on)
+    if (settled.length > 0) setInFlight(current => withoutKeys(current, settled.map(([assetId]) => assetId)))
+  }, [base.value, inFlight])
   /**
-   * Put an asset on the canvas list or take it off, at once in this view and then in the stored layout.
+   * Put an asset on the branch's canvas or take it off: at once in this view, then through an `asset.place` or
+   * `asset.unplace` record.
    * @param assetId - the asset.
    * @param on - true to place it, false to remove it.
-   * @returns settles when the layout write settled.
+   * @returns settles when the record is written; a refused write puts the canvas back as it was.
    */
   const changePlacement = (assetId: string, on: boolean): Promise<unknown> => {
-    placementsInFlight.current.set(assetId, on)
-    setPlaced(current => new Set(on ? [...current, assetId] : [...current].filter(id => id !== assetId)))
-    const write = on ? client.placeAssets(projectId, [assetId]) : client.removeFromCanvas(projectId, [assetId])
-    return write.finally(() => { placementsInFlight.current.delete(assetId) })
+    setInFlight(current => new Map(current).set(assetId, on))
+    return client.placeOnCanvas(projectId, [assetId], on, session).catch((error: unknown) => {
+      setInFlight(current => withoutKeys(current, [assetId]))
+      throw error
+    })
   }
   const graph = useMemo(() => {
     if (base.value === null) return null
@@ -156,10 +167,9 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     let live = true
     setLayoutReady(false)
     // A canvas without stored positions still works with the automatic layout, so a failed read counts as empty.
-    void client.getLayout(projectId).catch(() => ({ positions: {}, viewport: null, placed: [] })).then((layout) => {
+    void client.getLayout(projectId).catch(() => ({ positions: {}, viewport: null })).then((layout) => {
       if (!live) return
       setPositions(layout.positions)
-      setPlaced(new Set(layout.placed))
       if (layout.viewport !== null) setViewport(layout.viewport)
       needsFit.current = layout.viewport === null
       setLayoutReady(true)
@@ -416,7 +426,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     if (assetId !== '') {
       const id = graph?.assetNodes[assetId]
       if (id !== undefined) { placeNode(id, point); return }
-      // An imported asset of this branch that is not on the canvas list joins it, with its node under the pointer.
+      // An imported asset of this branch that is not on the canvas goes on it, with its node under the pointer.
       const imported = graph?.state.components.proj.records.some(record => record.operation === 'asset.import' && record.outputs.includes(assetId))
       if (imported !== true) { setNotice(t('drop.noNode')); return }
       pendingDrops.current.set(assetId, point)
@@ -427,9 +437,9 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
       if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { setNotice(t('drop.notMedia', { name: file.name })); return }
       const position = { x: point.x + index * 32, y: point.y + index * 32 }
       void run(async () => {
+        // An import from the canvas also puts the asset on the canvas.
         const assetId = (await client.importAsset(projectId, file, 'canvas', session)).asset
         pendingDrops.current.set(assetId, position)
-        await changePlacement(assetId, true)
       })
     })
   }

@@ -259,14 +259,14 @@ export function withImportNames(state: WireState): WireState {
  * The canvas graph of a branch state, with a default layout: story bible items and assets in column 0, plans in
  * column 1, takes from column 2 rightwards by first-frame chain depth, retakes in their source take's column.
  * An imported image or video gets one node, drawn from its first `asset.import` record, when its asset ID is on the
- * project's canvas list (`placed`) and it is not a reference image of a character, location or style, which that story
- * bible node shows. A take that reads an asset off the list has no edge from it.
+ * branch's canvas (`placed`) and it is not a reference image of a character, location or style, which that story bible
+ * node shows. A take that reads an asset off the canvas has no edge from it.
  * @param state - a branch state.
- * @param placed - the project's canvas list: asset IDs from the stored canvas layout.
+ * @param placed - the assets on the canvas; defaults to the branch's `asset` slice.
  * @returns the nodes and edges.
  */
 export function buildCanvasGraph(
-  state: WireState, placed: ReadonlySet<string> = new Set(),
+  state: WireState, placed: ReadonlySet<string> = new Set(state.components.asset.placed),
 ): CanvasGraph {
   const proj = state.components.proj
   const assets = new Map(state.assets.map(asset => [asset.id, asset]))
@@ -310,7 +310,7 @@ export function buildCanvasGraph(
   }
   for (const record of proj.records) {
     if (record.operation === 'asset.import') {
-      // An import off the canvas list stays in the asset pool only.
+      // An import off the canvas stays in the asset pool only.
       const imported = record.outputs.find(id => isImage(id) || isVideo(id))
       if (imported === undefined || !placed.has(imported) || bibleOfAsset.has(imported) || importNodes.has(imported)) continue
       importNodes.set(imported, record.id)

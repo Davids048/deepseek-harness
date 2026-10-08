@@ -149,12 +149,13 @@ function videoInput(asset: AssetId): RecordInput {
 }
 
 describe('dvAssetPool', () => {
-  it('registers both operations with their dv_asset_* tools and the asset store, and removes them on disposal', async () => {
+  it('registers its operations with their dv_asset_* tools and the asset store, and removes them on disposal', async () => {
     const fixture = await start()
     const specs = fixture.ctx.dvProject.listOperations().filter(spec => spec.component === 'asset')
-    expect(specs.map(spec => [spec.name, spec.deterministic, spec.resource])).toEqual([['asset.import', true, 'none'], ['asset.grab_still', true, 'cpu']])
-    expect(fixture.ctx.tools.get('dv_asset_import')).toBeDefined()
-    expect(fixture.ctx.tools.get('dv_asset_grab_still')).toBeDefined()
+    expect(specs.map(spec => [spec.name, spec.deterministic, spec.resource])).toEqual([
+      ['asset.import', true, 'none'], ['asset.grab_still', true, 'cpu'], ['asset.place', false, 'none'], ['asset.unplace', false, 'none'],
+    ])
+    for (const tool of ['dv_asset_import', 'dv_asset_grab_still', 'dv_asset_place', 'dv_asset_unplace']) expect(fixture.ctx.tools.get(tool)).toBeDefined()
     expect(fixture.web.routes.has('/dv/assets')).toBe(true)
     const entry = [...fixture.ctx.loader.entries()].find(candidate => candidate.options.name.endsWith('/dv-asset-pool.mjs'))
     await entry?.fiber?.dispose()
@@ -181,6 +182,31 @@ describe('dvAssetPool', () => {
     const spec = fixture.ctx.dvProject.listOperations().find(entry => entry.name === 'asset.import')
     expect(spec?.summarize(inline)).toBe('imported note.txt')
     expect(spec?.summarize(bare)).toBe('imported bytes')
+  })
+
+  it('puts assets on the canvas and takes them off as records of the branch, refuses a call that changes nothing, and undo takes a placement back', async () => {
+    const fixture = await start()
+    const placed = (): AssetId[] => fixture.ctx.dvProject.getState(fixture.project).components.asset.placed
+    const assetInput = (asset: AssetId): RecordInput => ({ role: 'asset', ref: { asset }, resolved_asset: asset })
+    const a = (await fixture.run('asset.import', { base64: Buffer.from('a').toString('base64'), mime: 'image/png' })).outputs[0] as AssetId
+    expect(placed()).toEqual([])
+    // An import with `place` puts its output on the canvas.
+    const b = (await fixture.run('asset.import', { base64: Buffer.from('b').toString('base64'), mime: 'image/png', place: true })).outputs[0] as AssetId
+    expect(placed()).toEqual([b])
+    const put = await fixture.run('asset.place', {}, [assetInput(a), assetInput(b)])
+    expect(put).toMatchObject({ status: 'done', component: 'asset', operation: 'asset.place', outputs: [] })
+    expect(placed()).toEqual([b, a])
+    const before = fixture.ctx.dvProject.listHistory({ project: fixture.project }).length
+    await expect(fixture.run('asset.place', {}, [assetInput(a)])).rejects.toMatchObject({ code: 'invalid_params' })
+    await fixture.run('asset.unplace', {}, [assetInput(b)])
+    expect(placed()).toEqual([a])
+    await expect(fixture.run('asset.unplace', {}, [assetInput(b)])).rejects.toMatchObject({ code: 'invalid_params' })
+    // An asset that no record of the branch created cannot go on the canvas.
+    const outside = fixture.ctx.dvAssetPool.importAsset(Buffer.from('outside'), { mime: 'image/png', name: 'o.png' }, null)
+    await expect(fixture.run('asset.place', {}, [assetInput(outside)])).rejects.toMatchObject({ code: 'invalid_inputs' })
+    expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before + 1)
+    await fixture.ctx.dvProject.undo(fixture.project, { actor: 'user', surface: 'history', session: null, turn: null, tool_call: null, intent: 'undo' })
+    expect(placed()).toEqual([b, a])
   })
 
   it('fails an import without bytes and refuses one without a media type before writing a record', async () => {

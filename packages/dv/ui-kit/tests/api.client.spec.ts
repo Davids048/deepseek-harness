@@ -25,14 +25,14 @@ describe('DvClient', () => {
     await client.renameProject('p1', 'Demo 3')
     await client.deleteProject('p1')
     await client.updateLayout('p1', { positions: { g1: { x: 1, y: 2 } } })
-    await client.placeAssets('p1', ['a1'])
-    await client.removeFromCanvas('p1', ['a1'])
+    await client.placeOnCanvas('p1', ['a1'], true, 's5')
+    await client.placeOnCanvas('p1', ['a1'], false)
     await client.linkWorkspace('p1', 'w1')
     await client.bindSession('s5', 'p1')
     expect(writes.map(write => write.path)).toEqual([
       '/api/dv/projects', '/api/dv/operation', '/api/dv/branches/create', '/api/dv/undo',
       '/api/dv/branches/switch', '/api/dv/branches/rename', '/api/dv/redo', '/api/dv/stale/accept',
-      '/api/dv/projects/rename', '/api/dv/projects/delete', '/api/dv/layout', '/api/dv/layout', '/api/dv/layout', '/api/dv/workspaces',
+      '/api/dv/projects/rename', '/api/dv/projects/delete', '/api/dv/layout', '/api/dv/operation', '/api/dv/operation', '/api/dv/workspaces',
       '/api/dv/workspaces/bind',
     ])
     expect(writes[0]?.body).toEqual({ title: 'Demo 2', surface: 'canvas' })
@@ -43,8 +43,8 @@ describe('DvClient', () => {
     expect(writes[6]?.body).toEqual({ project: 'p1', surface: 'asset_pool', session: 's5' })
     expect(writes[7]?.body).toEqual({ project: 'p1', record: 'g2', surface: 'timeline', session: 's5' })
     expect(writes[10]?.body).toEqual({ project: 'p1', positions: { g1: { x: 1, y: 2 } } })
-    expect(writes[11]?.body).toEqual({ project: 'p1', placed: ['a1'] })
-    expect(writes[12]?.body).toEqual({ project: 'p1', removed: ['a1'] })
+    expect(writes[11]?.body).toEqual({ project: 'p1', operation: 'asset.place', surface: 'canvas', inputs: [{ role: 'asset', ref: 'a1' }], session: 's5' })
+    expect(writes[12]?.body).toEqual({ project: 'p1', operation: 'asset.unplace', surface: 'canvas', inputs: [{ role: 'asset', ref: 'a1' }] })
     expect(writes[13]?.body).toEqual({ project: 'p1', workspace_id: 'w1' })
     expect(writes[14]?.body).toEqual({ session: 's5', project: 'p1' })
     expect(assetUrl('a/b')).toBe('/dv/assets/a%2Fb')

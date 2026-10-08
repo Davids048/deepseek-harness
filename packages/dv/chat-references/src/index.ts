@@ -2,7 +2,8 @@
  * The DreamVerse chat references as the `dvChatReferences` Cordis service: what a user points at in a chat message
  * reaches the project. The `dv:` mentions of new user messages expand at `agent/pre-step` into a context message with
  * the concrete record and asset IDs, read from the current branch of the session's project; the images a user attaches
- * to a chat message are imported into the session's project as assets.
+ * to a chat message are imported into the session's project as assets and put on its canvas, and the `dv:asset`
+ * mentions a user sends put those assets on the canvas.
  *
  * @module @dv/chat-references
  */
@@ -107,6 +108,34 @@ export default class DvChatReferences extends Service {
       if (agent === undefined || agent.session !== session) return
     }
     this.recordChatImages(session.id, event.data)
+    this.placeMentionedAssets(brandString<SessionId>(session.id), event.data)
+  }
+
+  /**
+   * Put the assets a user message mentions (`dv:asset/<id>`) on the canvas of the session's project with one
+   * `asset.place` by the user, in the chat. Only assets created on the current branch and not on the canvas yet count; a
+   * message without such a mention, or a session without a project, places nothing.
+   * @param session - the chat session.
+   * @param message - the appended user message, which the user typed.
+   */
+  private placeMentionedAssets(session: SessionId, message: SessionEventMap['user/message']): void {
+    const project = this.ctx.dvProject
+    const projectId = project.sessionProject(session)
+    if (projectId === null) return
+    const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+    const state = project.getState(projectId)
+    const placed = new Set(state.components.asset.placed)
+    const assets = [...new Set(parseMentions(text).flatMap(mention => mention.uri.startsWith('dv:asset/')
+      ? [brandString<AssetId>(decodeURIComponent(mention.uri.slice('dv:asset/'.length)))]
+      : []))].filter(asset => asset in state.components.proj.created_by && !placed.has(asset))
+    if (assets.length === 0) return
+    project.run({
+      project: projectId, operation: 'asset.place', params: {}, inputs: assets.map(asset => ({ role: 'asset', ref: { asset } })),
+      actor: 'user', surface: 'chat', session, turn: null, tool_call: null, intent: 'place mentioned assets',
+    }).catch((error: unknown) => {
+      const reason = error instanceof Error ? error.message : String(error)
+      this.ctx.logger('dvChatReferences').warn('could not place the mentioned assets of session %s: %s', session, reason)
+    })
   }
 
   /**
@@ -124,8 +153,8 @@ export default class DvChatReferences extends Service {
   }
 
   /**
-   * Import chat images as assets of the session's project: one `asset.import` per image by the user, in the chat, on
-   * the project's current branch. The session's next tool call waits until the import finished
+   * Import chat images as assets of the session's project and put them on its canvas: one `asset.import` with `place`
+   * per image by the user, in the chat, on the project's current branch. The session's next tool call waits until the import finished
    * (`dvProject.holdToolCalls`). A session without a project, or a process without an attachment service, imports
    * nothing.
    * @param session - the chat session.
@@ -145,7 +174,7 @@ export default class DvChatReferences extends Service {
         const name = ref.name ?? `image.${ref.mediaType.slice('image/'.length)}`
         const asset = pool.importAsset(stored.data, { mime: ref.mediaType, name }, null)
         const result = await project.run({
-          project: projectId, operation: 'asset.import', inputs: [], params: { path: pool.path(asset), mime: ref.mediaType, name },
+          project: projectId, operation: 'asset.import', inputs: [], params: { path: pool.path(asset), mime: ref.mediaType, name, place: true },
           actor: 'user', surface: 'chat', session, turn: null, tool_call: null, intent: `import ${name}`,
         })
         ids.push(result.outputs[0] ?? asset)

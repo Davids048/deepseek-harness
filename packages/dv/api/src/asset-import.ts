@@ -3,7 +3,8 @@
  *
  * `POST /api/dv/assets/import?project=<id>&name=<name>&mime=<type>&surface=<surface>[&session=<id>]` takes the raw file
  * bytes as the body, stores them in the asset pool, and runs `asset.import` as the human with the request's surface
- * (`canvas` or `asset_pool`); the record goes to the project's current branch. It
+ * (`canvas` or `asset_pool`); the record goes to the project's current branch, and an import from the canvas also puts
+ * the asset on the canvas (`place`). It
  * answers `{asset, record}` (the `AssetId` and the `asset.import` record). Errors use the body `{error, code}` of every
  * `/api/dv` route: a malformed request (no project, a surface other than `canvas` or `asset_pool`, no MIME type, an empty
  * body) answers 400 `invalid_params`, an unknown project 404 `unknown_project`.
@@ -48,7 +49,7 @@ async function importAsset(services: AssetImportServices, request: Request): Pro
   const stored = services.assets.importAsset(bytes, { mime, name }, null)
   const intent = `import ${name}`
   const { record } = await services.project.run({
-    project: projectId, operation: 'asset.import', inputs: [], params: { path: services.assets.path(stored), mime, name },
+    project: projectId, operation: 'asset.import', inputs: [], params: { path: services.assets.path(stored), mime, name, place: surface === 'canvas' },
     actor: 'user', surface, session: sessionOf(url.searchParams.get('session')), turn: null, tool_call: null, intent,
   })
   if (record === null) throw new Error('asset.import wrote no record.')

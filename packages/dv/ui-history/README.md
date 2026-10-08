@@ -65,7 +65,7 @@ A `dv:history-focus` event `{session, toolCall}` shows the list view, finds the 
 | [`src/client/index.ts`](src/client/index.ts) | Registrations and the tab opening on `dv:history-focus` |
 | [`src/client/definition.ts`](src/client/definition.ts) | The tab type |
 | [`src/client/HistoryPanel.tsx`](src/client/HistoryPanel.tsx) | The panel, its header (branch menu, view switch, undo and redo buttons), rows with their ⋮ menus, preview, the branch tree, and the tab body |
-| [`src/client/rows.ts`](src/client/rows.ts) | Action rows and approval folds, labels with subjects, thumbnails, relative times, timeline record sets, center focus, the current branch's steps, and the branch tree layout |
+| [`src/client/rows.ts`](src/client/rows.ts) | Action rows and approval folds, labels with subjects, thumbnails, relative times, center focus, the current branch's steps, and the branch tree layout |
 
 </details>
 

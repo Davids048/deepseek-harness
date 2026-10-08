@@ -14,7 +14,7 @@ API            @dv/api                    routes that read state and run operati
   │ dvProject.run, getState, listHistory
   ▼
 registry       @dv/project                records, branches, undo and redo, state, agent tools, the dv:project prompt section
-  ▲ registerOperation, registerReducer             ▲ dvProject.run (asset.import), current-branch reads
+  ▲ registerOperation, registerReducer             ▲ dvProject.run (asset.import, asset.place), current-branch reads
   │                                                │
 components     @dv/asset-pool @dv/story-bible      chat references   @dv/chat-references   dv: mentions, chat images
                @dv/shot-plan @dv/shot-render
@@ -41,7 +41,7 @@ bundle         @dv/bundle                 the cordis.patch.yml rows of every pac
 | 视图     | `@dv/ui-*`                                                                                                                                                                                                                                                            | DSH Web 客户端的右侧栏标签类型和中央视图；`@dv/ui-kit` 是它们共用的库。                                                                      |
 | bundle | [`@dv/bundle`](../../packages/bundle/dv/README.zh.md)                                                                                                                                                                                                                 | profile 层：把每一行组成 `video-harness` 和 `video-harness-headless` 两个 profile，并附带 `video-directing` skill。                 |
 
-组件用 `dvProject.registerOperation` 注册操作，用 `dvProject.registerReducer` 注册归约函数。每个操作同时是智能体工具 `dv_<操作名，点换成下划线>`，一次调用成为一条记录。素材库的 `dv_asset_import` 和 `dv_asset_grab_still` 添加素材；设定库的 `dv_bible_*` 工具创建和更新角色、场景和风格的版本；分镜的 `dv_plan_create` 写入一个新分镜计划的版次 1，该计划得到一个 `PlanId`（`p1`、`p2`、…），`dv_plan_update` 写入 `plan` 参数所指计划的下一个版次，`dv_plan_approve` 批准一个版次；镜头渲染的 `dv_shot_render_ref2va` 和 `dv_shot_render_t2va` 按各自的[生成方式](#render-modes)渲染镜头的一个版本，`duration_sec` 是所用模型范围内的整秒数（默认为模型的最小值）；时间线的 `dv_timeline_*` 工具创建、更新、重命名和删除时间线，并插入、移动、移除、拆分、裁剪和替换片段，不创建文件；交付的 `dv_deliver_timeline_export` 把一条时间线写成一个视频；检查器的 `dv_inspect_image` 和 `dv_inspect_asset` 读取素材，不写记录。项目组件自己的 `dv_proj_*` 工具创建和打开项目、读取状态和历史、新建分支、撤销、重做、接受过期记录，以及等待排定的记录。操作声明资源类别（`none`、`cpu`、`gpu`）和确认策略（`never`、`always`、`over_gpu_budget`；见[在对话中确认](#confirmation-in-the-conversation)）；项目组件的调度器按类别并发上限运行排定的记录。
+组件用 `dvProject.registerOperation` 注册操作，用 `dvProject.registerReducer` 注册归约函数。每个操作同时是智能体工具 `dv_<操作名，点换成下划线>`，一次调用成为一条记录。素材库的 `dv_asset_import` 和 `dv_asset_grab_still` 添加素材，`dv_asset_place` 和 `dv_asset_unplace` 把素材放到画布上和从画布移除；设定库的 `dv_bible_*` 工具创建和更新角色、场景和风格的版本；分镜的 `dv_plan_create` 写入一个新分镜计划的版次 1，该计划得到一个 `PlanId`（`p1`、`p2`、…），`dv_plan_update` 写入 `plan` 参数所指计划的下一个版次，`dv_plan_approve` 批准一个版次；镜头渲染的 `dv_shot_render_ref2va` 和 `dv_shot_render_t2va` 按各自的[生成方式](#render-modes)渲染镜头的一个版本，`duration_sec` 是所用模型范围内的整秒数（默认为模型的最小值）；时间线的 `dv_timeline_*` 工具创建、更新、重命名和删除时间线，并插入、移动、移除、拆分、裁剪和替换片段，不创建文件；交付的 `dv_deliver_timeline_export` 把一条时间线写成一个视频；检查器的 `dv_inspect_image` 和 `dv_inspect_asset` 读取素材，不写记录。项目组件自己的 `dv_proj_*` 工具创建和打开项目、读取状态和历史、新建分支、撤销、重做、接受过期记录，以及等待排定的记录。操作声明资源类别（`none`、`cpu`、`gpu`）和确认策略（`never`、`always`、`over_gpu_budget`；见[在对话中确认](#confirmation-in-the-conversation)）；项目组件的调度器按类别并发上限运行排定的记录。
 
 批准分镜计划时，以 `system` 发起者为所批准版次中每个新增或改动的镜头运行一次该镜头的渲染操作（`shot.render_<mode>`），参数为 `plan`、`plan_version` 和 `shot`（镜头从 1 起的位置，镜头在各版次间保持这个编号）。若批准所在分支上同一计划有一条同一渲染操作的 `done` 记录，其参数除 `plan`、`plan_version` 和 `shot` 外相同，参考图输入相同，首帧也相同，则该镜头未改动；批准复用最新的这样一个版本而不渲染。随后它对该计划的时间线（最新的创建或修改记录指向该计划的那条时间线）运行一次 `timeline.update`，按镜头顺序放入每个镜头的版本，计划还没有时间线时则运行一次 `timeline.create`；渲染尚未完成的镜头先显示为占位片段，直到渲染完成。批准在 `report.scheduled` 中列出排定的记录。片段有一个 `ClipId`（`cl1`、`cl2`、…），由插入它的时间线操作分配并存入记录的 `report.clips`；该 ID 在项目内唯一、从不复用，每个片段操作都用 `clip` 参数按它指定片段。
 
@@ -57,6 +57,8 @@ bundle         @dv/bundle                 the cordis.patch.yml rows of every pac
 ## 操作记录
 
 项目的每次变化都是项目 `records.jsonl` 文件中的一条记录，只有 `@dv/project` 读写这个文件。每条记录的 `kind` 都是 `'operation'`：它是一次操作调用。一条记录包含：谁（`actor`：`user`、`agent` 或 `system`）、来源（`surface`：`chat`、`canvas`、`timeline`、`asset_pool`、`history` 或 `api`）、原因（`intent`：智能体的 `reason` 参数，或对人的手势的简短描述）、所属组件（`component`）和操作（`operation`）及其版本、参数、各输入及其解析到的素材（`resolved_asset`）、输出、状态、父记录，以及两个链接：`based_on`（本记录带修改地重复那条记录，例如改了提示词的新版本）和 `supersedes`（本记录替代那些记录的输出）。字段 `session`、`turn` 和 `tool_call` 把记录链接到产生它的对话的 DSH 会话日志：对话 ID、该会话的 DSH 轮次编号和工具调用 ID；对话本身留在会话日志中。记录只追加不改写；状态变化、成本和报告以更新行追加，`branches.json` 保存分支指针。项目组件自己的动作也是记录（`proj.create`、`proj.undo`、`proj.redo`、`proj.stale_accept`），而 `dv_proj_state`、`dv_proj_history_list` 和 `inspect.*` 操作这类读取不写记录。
+
+改变项目里有什么的修改是记录，所以历史会列出它，撤销能退回它，它属于一个分支：导入、画布上有哪些素材（`asset.place`、`asset.unplace` 和带 `place` 的 `asset.import`），以及设定库、分镜、渲染、时间线和导出操作。只改变用户怎么看项目的修改不是记录：画布的平移和缩放、节点位置（`@dv/api` 的画布布局）、选中项、所显示的视图和打开的面板。新建、切换和重命名分支，以及重命名或删除项目，也不写记录；分支树和项目列表显示它们。
 
 ## 操作如何运行
 
@@ -93,7 +95,7 @@ bundle         @dv/bundle                 the cordis.patch.yml rows of every pac
 
 - **工具。** 每个操作的 `description` 说明它的工具怎么用；[`@dv/project`](../../packages/dv/project/README.zh.md) 根据 `OperationSpec` 构建工具。
 - **`dv:project` 提示词段。** `@dv/project` 在 DSH `systemPrompt` 服务挂载时注册它。它先写项目组件的规则（每次写入立即落在当前分支上，撤销和重做以及回滚之后的分叉，只在用户要求时调用 `dv_proj_branch_create`，如何称呼记录、素材、版本和片段，在对话中确认，过期记录），再写当前分支的项目摘要。它不包含用户看不到的任何东西：没有视图中的选中项，也没有偏好。
-- **对话引用。** [`@dv/chat-references`](../../packages/dv/chat-references/README.zh.md) 在 `agent/pre-step` 把输入框为 `@` 和 `+ → 引用` 写下的 `dv:` 提及展开成一条带具体记录和素材 ID 的上下文消息，并以用户身份用 `asset.import` 导入用户在对话中附上的图片；会话的下一次工具调用等待导入完成。
+- **对话引用。** [`@dv/chat-references`](../../packages/dv/chat-references/README.zh.md) 在 `agent/pre-step` 把输入框为 `@` 和 `+ → 引用` 写下的 `dv:` 提及展开成一条带具体记录和素材 ID 的上下文消息，以用户身份用 `asset.import` 导入用户在对话中附上的图片，并把这些图片和消息提及的素材放到画布上；会话的下一次工具调用等待导入完成。
 
 skill 承载工作流程和模型专属的规则，各由其主人注册：
 
@@ -105,7 +107,7 @@ skill 承载工作流程和模型专属的规则，各由其主人注册：
 
 ## API 和视图
 
-[`@dv/api`](../../packages/dv/api/README.zh.md) 是项目组件面向浏览器的 HTTP 面：`/api/dv/state` 把一个分支（默认是当前分支）的状态返回为一份 JSON 文档，`/api/dv/operations` 列出已注册的操作，`/api/dv/operation` 以用户身份运行一个操作，其记录带 `surface: 'canvas'`、`'timeline'` 或 `'asset_pool'`，`/api/dv/history` 返回历史的一页，`/api/dv/branches/create`、`/api/dv/branches/switch`、`/api/dv/branches/rename`、`/api/dv/undo`、`/api/dv/redo` 和 `/api/dv/stale/accept` 暴露分支、撤销、重做和过期操作，其他路由管理项目、素材导入、画布布局和 Workspace 链接，`/dv/events` 推送每一次记录和分支变化。
+[`@dv/api`](../../packages/dv/api/README.zh.md) 是项目组件面向浏览器的 HTTP 面：`/api/dv/state` 把一个分支（默认是当前分支）的状态返回为一份 JSON 文档，`/api/dv/operations` 列出已注册的操作，`/api/dv/operation` 以用户身份运行一个操作，其记录带 `surface: 'canvas'`、`'timeline'` 或 `'asset_pool'`，`/api/dv/history` 返回历史的一页，`/api/dv/branches/create`、`/api/dv/branches/switch`、`/api/dv/branches/rename`、`/api/dv/undo`、`/api/dv/redo` 和 `/api/dv/stale/accept` 暴露分支、撤销、重做和过期操作，其他路由管理项目、素材导入、画布布局（节点位置和视口）和 Workspace 链接，`/dv/events` 推送每一次记录和分支变化。
 
 界面各包是 web 应用的右侧栏标签类型和中央视图，因此在同一个 profile 里与对话页并存。[`@dv/ui-shell`](../../packages/dv/ui-shell/README.zh.md) 把项目工作区放在中央，把 对话 / Chat 和 轨迹 / Trajectory 标签放在右侧，把 画布 / Canvas 和 时间线 / Timeline 切换按钮放在顶栏，把 [`@dv/ui-kit`](../../packages/dv/ui-kit/README.zh.md) 的分支菜单放在底栏，它是显示当前分支名称的按钮，菜单切换项目的当前分支、新建分支（新建分支 / New branch）并在原位置重命名分支，并把 Ctrl+Z 和 Shift+Ctrl+Z 绑定到当前分支的撤销和重做。历史面板顶部放着同一个分支菜单。[`@dv/ui-canvas`](../../packages/dv/ui-canvas/README.zh.md) 把当前分支的当前状态画成按素材流向相连的节点：处于当前版本的角色、场景和风格，导入的素材，处于最新版次的每个分镜计划（写出每个镜头的生成方式，设置了的写出 接上一镜头 / Continues the previous shot），以及带生成方式的版本；过期记录有标记，它的编辑器以用户记录渲染新版本或替换参考图。[`@dv/ui-timeline`](../../packages/dv/ui-timeline/README.zh.md) 把每条时间线画成一条轨道，把插入、移动、移除、拆分和裁剪手势变成按 `ClipId` 指定片段的 `timeline.*` 记录，把导出变成一条 `deliver.timeline_export` 记录。`@dv/ui-asset-pool` 列出当前分支到分支头为止的素材，通过 显示其他分支的素材 / Show assets from other branches 显示其他分支的素材及其分支名称，并导入文件；`@dv/ui-composer` 为对话加上 `@` 和 `+ → 引用` 引用、渲染卡片和面向创作者的工具名。
 
@@ -223,7 +225,7 @@ DreamVerse 的新行为挂在某个包已拥有的扩展点上，就像 DeepSeek
 | 组件               | 键          | 包                 | 服务             | 操作                                                                                                                                                                                                            |
 | ---------------- | ---------- | ----------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Project 项目       | `proj`     | `@dv/project`     | `dvProject`    | `proj.create` `proj.undo` `proj.redo` `proj.stale_accept`；读取工具 `dv_proj_open` `dv_proj_state` `dv_proj_history_list` `dv_proj_wait`；不写记录的 `dv_proj_branch_create`                                             |
-| Asset pool 素材库   | `asset`    | `@dv/asset-pool`  | `dvAssetPool`  | `asset.import` `asset.grab_still`                                                                                                                                                                             |
+| Asset pool 素材库   | `asset`    | `@dv/asset-pool`  | `dvAssetPool`  | `asset.import` `asset.grab_still` `asset.place` `asset.unplace`                                                                                                                                               |
 | Story bible 设定库  | `bible`    | `@dv/story-bible` | `dvStoryBible` | `bible.character_create` `bible.character_update` `bible.location_create` `bible.location_update` `bible.style_create` `bible.style_update`                                                                   |
 | Shot plan 分镜     | `plan`     | `@dv/shot-plan`   | `dvShotPlan`   | `plan.create` `plan.update` `plan.approve`                                                                                                                                                                    |
 | Shot render 镜头渲染 | `shot`     | `@dv/shot-render` | `dvShotRender` | `shot.render_ref2va`（`dvRef2va` 挂载时）`shot.render_t2va`（`dvT2va` 挂载时）                                                                                                                                          |

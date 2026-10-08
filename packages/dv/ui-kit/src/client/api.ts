@@ -287,7 +287,7 @@ export class DvClient {
    */
   async getLayout(project: string): Promise<CanvasLayout> {
     const layout = await this.get<Partial<CanvasLayout>>('/api/dv/layout', { project })
-    return { positions: layout.positions ?? {}, viewport: layout.viewport ?? null, placed: layout.placed ?? [] }
+    return { positions: layout.positions ?? {}, viewport: layout.viewport ?? null }
   }
 
   /**
@@ -301,23 +301,19 @@ export class DvClient {
   }
 
   /**
-   * Add assets to the project's canvas list, so each one gets a canvas node; an asset already on the list stays as it is.
+   * Put assets on the canvas of the project's current branch (`asset.place`), or take them off it (`asset.unplace`);
+   * the assets stay in the asset pool either way.
    * @param project - the project.
-   * @param assetIds - the assets dropped on the canvas or referenced in a chat message.
-   * @returns the stored layout.
+   * @param assetIds - the assets.
+   * @param on - true to put them on the canvas, false to take them off.
+   * @param session - the chat session the view sits beside, recorded as the record's `session`.
+   * @returns the record.
    */
-  placeAssets(project: string, assetIds: string[]): Promise<CanvasLayout> {
-    return this.post('/api/dv/layout', { project, placed: assetIds })
-  }
-
-  /**
-   * Take assets off the project's canvas list; the assets stay in the asset pool.
-   * @param project - the project.
-   * @param assetIds - the assets whose canvas nodes the user removed.
-   * @returns the stored layout.
-   */
-  removeFromCanvas(project: string, assetIds: string[]): Promise<CanvasLayout> {
-    return this.post('/api/dv/layout', { project, removed: assetIds })
+  placeOnCanvas(project: string, assetIds: string[], on: boolean, session: string | null = null): Promise<ProjectRecord> {
+    return this.runOperation({
+      project, operation: on ? 'asset.place' : 'asset.unplace', surface: 'canvas', inputs: assetIds.map(ref => ({ role: 'asset', ref })),
+      ...session === null ? {} : { session },
+    })
   }
 
   /** @returns every project with its directory and Workspace, and the saved chat session bindings. */

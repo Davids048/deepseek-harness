@@ -9,13 +9,14 @@
  * <root>/index.jsonl          one `Asset` line per asset, appended on import, replayed at start
  * ```
  *
- * Two identical files become one asset. The service registers itself as Project's asset store, and two operations:
- * - `asset.import`: a file on this machine, or base64 bytes, becomes an asset;
- * - `asset.grab_still`: one frame of a video becomes a PNG still, through `dvFfmpeg`.
+ * Two identical files become one asset. The service registers itself as Project's asset store, and four operations:
+ * - `asset.import`: a file on this machine, or base64 bytes, becomes an asset; with `place`, it also goes on the canvas;
+ * - `asset.grab_still`: one frame of a video becomes a PNG still, through `dvFfmpeg`;
+ * - `asset.place` and `asset.unplace`: assets go on the canvas or come off it, and stay in the pool either way.
  *
- * `dvProject` turns each operation into its agent tool (`dv_asset_import`, `dv_asset_grab_still`). The component has no
- * reducer: the `proj` slice's `created_by` names the record that created each asset. While the DSH web server is
- * mounted, the service serves `GET /dv/assets/<AssetId>`.
+ * `dvProject` turns each operation into its agent tool (`dv_asset_import`, `dv_asset_grab_still`, `dv_asset_place`,
+ * `dv_asset_unplace`). The `asset` reducer keeps the branch's canvas placements; the `proj` slice's `created_by` names
+ * the record that created each asset. While the DSH web server is mounted, the service serves `GET /dv/assets/<AssetId>`.
  *
  * @module @dv/asset-pool
  */
@@ -30,9 +31,10 @@ import z from '@deepseek-ai/schemastery'
 import { FfmpegError } from '@dv/ffmpeg'
 import type {} from '@dv/ffmpeg'
 import { ProjectError, type AssetId, type OperationContext, type OperationResult, type OperationSpec, type RecordId } from '@dv/project'
+import { assetReducer } from './reducer.ts'
 import type { Asset, StillAt } from './types.ts'
 
-export type { Asset } from './types.ts'
+export type { Asset, AssetState } from './types.ts'
 /** The SHA-256 hex digest of an asset's bytes; defined by `@dv/project`. */
 export type { AssetId } from '@dv/project'
 
@@ -111,7 +113,7 @@ function text(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback
 }
 
-/** The content-addressed asset store, its route, and the two operations. */
+/** The content-addressed asset store, its route, its operations, and the canvas placements. */
 export default class DvAssetPool extends Service {
   static inject = ['dvProject', 'dvFfmpeg']
   static Config = Config
@@ -130,7 +132,8 @@ export default class DvAssetPool extends Service {
       url: asset => this.url(asset),
       importAsset: (source, meta, createdBy) => this.importAsset(source, meta, createdBy),
     }), 'dvAssetPool asset store')
-    for (const spec of [this.importOperation(), this.grabStillOperation()]) {
+    ctx.effect(() => ctx.dvProject.registerReducer('asset', assetReducer), 'dvAssetPool reducer')
+    for (const spec of [this.importOperation(), this.grabStillOperation(), this.placementOperation('asset.place'), this.placementOperation('asset.unplace')]) {
       ctx.effect(() => ctx.dvProject.registerOperation(spec), `dvAssetPool ${spec.name}`)
     }
     ctx.inject(['webServer'], (webCtx) => {
@@ -270,6 +273,7 @@ export default class DvAssetPool extends Service {
         base64: { type: 'string', description: 'The file bytes as base64, when there is no path.' },
         mime: { type: 'string', required: true, description: 'Media type, such as image/png or video/mp4.' },
         name: { type: 'string', description: 'Display name; defaults to the file name.' },
+        place: { type: 'boolean', description: 'Also put the asset on the canvas.' },
       },
       outputs: [{ role: 'asset', type: 'any' }],
       deterministic: true,
@@ -286,6 +290,44 @@ export default class DvAssetPool extends Service {
         })
         return Promise.resolve({ outputs: [asset] })
       },
+    }
+  }
+
+  /**
+   * The `asset.place` or `asset.unplace` operation: put assets created on the branch on the canvas, or take assets off
+   * it. A call that changes nothing (every asset already placed, or none of them placed) is refused before any record.
+   * @param name - which of the two operations.
+   * @returns the operation spec.
+   */
+  private placementOperation(name: 'asset.place' | 'asset.unplace'): OperationSpec {
+    const place = name === 'asset.place'
+    return {
+      name,
+      component: 'asset',
+      version: '1',
+      description: place
+        ? 'Put assets of the project on the canvas, where the user sees each one as a node. The assets must have been created on the current branch.'
+        : 'Take assets off the canvas. The assets stay in the asset pool.',
+      inputs: { asset: { type: 'any', required: true, many: true, description: place ? 'The assets to put on the canvas.' : 'The assets to take off the canvas.' } },
+      params: {},
+      outputs: [],
+      deterministic: false,
+      resource: 'none',
+      confirm: 'never',
+      summarize: record => `${place ? 'placed' : 'took off'} ${String(record.inputs.length)} asset(s) ${place ? 'on' : 'from'} the canvas`,
+      precondition: (request, state): Promise<void> => {
+        const assets = request.inputs.flatMap(input => input.role === 'asset' && 'asset' in input.ref ? [input.ref.asset] : [])
+        const placed = new Set(state.components.asset.placed)
+        if (place) {
+          const missing = assets.filter(asset => !(asset in state.components.proj.created_by))
+          if (missing.length > 0) throw new ProjectError('invalid_inputs', `Asset ${missing.join(', ')} was not created on this branch.`)
+          if (assets.every(asset => placed.has(asset))) throw new ProjectError('invalid_params', 'Every asset is already on the canvas.')
+        } else if (!assets.some(asset => placed.has(asset))) {
+          throw new ProjectError('invalid_params', 'None of the assets is on the canvas.')
+        }
+        return Promise.resolve()
+      },
+      execute: (): Promise<OperationResult> => Promise.resolve({ outputs: [] }),
     }
   }
 
