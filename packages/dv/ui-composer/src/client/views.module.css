@@ -1,0 +1,92 @@
+/* The DreamVerse rows in the chat: the render tool card, the other tool rows, and their 在历史中查看 button. */
+.card {
+  margin: 6px 0;
+  padding: 10px 12px;
+  border-radius: var(--dv-radius-lg);
+  background: var(--dv-surface-2);
+  box-shadow: 0 0 0 1px var(--dv-line);
+  color: var(--dv-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.title {
+  font-weight: 500;
+}
+
+.status {
+  color: var(--dv-text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.status[data-failed] {
+  color: var(--dv-danger);
+}
+
+.prompt {
+  margin-top: 4px;
+  color: var(--dv-text-2);
+}
+
+.video {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--dv-radius-md);
+  background: var(--dv-media-bg);
+}
+
+/* The history button's 8 px side padding hangs left of the card text so the label lines up with it. */
+.cardFooter {
+  margin: 4px 0 -4px -8px;
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  color: var(--dv-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* 在历史中查看: a text-only button. */
+.textButton {
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--dv-radius-sm);
+  background: transparent;
+  color: var(--dv-text-2);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  transition: background-color 120ms var(--dv-ease), color 120ms var(--dv-ease);
+}
+
+.textButton:hover {
+  background: var(--dv-surface-3);
+  color: var(--dv-text);
+}
+
+.textButton:focus-visible {
+  outline: 2px solid var(--dv-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .textButton {
+    transition: none;
+  }
+}

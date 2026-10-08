@@ -10,7 +10,8 @@
  * - 在历史中查看 on every settled row whose tool is not read-only, including failed calls, which dispatches
  *   `dv:history-focus`;
  * - an empty `conversation.input.permission` entry that hides DSH's file-permission chip;
- * - the `dv:compose` prefill from the canvas and asset pool views, which also brings the 对话 tab to the front.
+ * - the `dv:compose` prefill from the canvas and asset pool views, which also brings the 对话 tab to the front;
+ * - a stylesheet that draws the 对话 tab's composer card, ＋ button, and send button with the DreamVerse theme tokens.
  *
  * @module @dv/ui-composer/client
  */
@@ -34,6 +35,8 @@ import { MENTION_SOURCE, projectMentionSource } from './mention.ts'
 import { DV_TOOL_LABELS } from '@dv/ui-kit/tool-labels.ts'
 import { addToolNames } from './tool-labels.ts'
 import { RenderCard, ToolLabelRow } from './views.tsx'
+// The DreamVerse look of the DSH composer card in the 对话 tab; the bundle injects the sheet when the plugin loads.
+import './composer.css'
 
 export { projectItems, referenceText, MENTION_SOURCE } from './mention.ts'
 export { uriOf } from './compose.ts'

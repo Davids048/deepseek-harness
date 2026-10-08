@@ -1,0 +1,301 @@
+/* The History panel, drawn with the DreamVerse theme tokens that `@dv/ui-shell` defines. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  padding: 12px 12px 0;
+  box-sizing: border-box;
+  color: var(--dv-text);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--dv-line);
+}
+
+.note {
+  margin: 8px 0;
+  color: var(--dv-text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.notice {
+  margin: 0;
+  color: var(--dv-text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.error {
+  color: var(--dv-danger);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* A secondary 28 px button. */
+.button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--dv-line-strong);
+  border-radius: var(--dv-radius-md);
+  background: transparent;
+  color: var(--dv-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  transition: background-color 120ms var(--dv-ease);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--dv-surface-3);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 接受草稿: a soft accent button. */
+.softButton {
+  border-color: transparent;
+  background: var(--dv-accent-soft);
+  color: var(--dv-accent-text);
+}
+
+.loadMore {
+  margin: 8px 0;
+}
+
+.select {
+  max-width: 110px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--dv-line-strong);
+  border-radius: var(--dv-radius-md);
+  background: transparent;
+  color: var(--dv-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+  transition: background-color 120ms var(--dv-ease);
+}
+
+.select:hover {
+  background: var(--dv-surface-3);
+}
+
+/* A select that still shows its filter name (no filter chosen). */
+.select[data-empty] {
+  color: var(--dv-text-2);
+}
+
+/* The options render in the browser's own list, which takes the panel's surface. */
+.select option {
+  background: var(--dv-surface-1);
+  color: var(--dv-text);
+}
+
+/* Text-only actions: 在轨迹中查看 and 回到这一步 read as links; the fold toggle reads as metadata. */
+.link {
+  padding: 0;
+  border: 0;
+  border-radius: var(--dv-radius-sm);
+  background: transparent;
+  color: var(--dv-accent-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
+}
+
+.fold {
+  display: block;
+  padding: 0 0 6px 60px;
+  color: var(--dv-text-2);
+}
+
+.group {
+  border-bottom: 1px solid var(--dv-line);
+}
+
+/* One record row: the action label at 13/20, its metadata at 12/16. */
+.row {
+  padding: 8px;
+  cursor: pointer;
+  transition: background-color 120ms var(--dv-ease);
+}
+
+.row[data-nested] {
+  padding: 4px 8px 4px 60px;
+}
+
+.row:hover {
+  background: var(--dv-surface-3);
+}
+
+.row[aria-selected='true'] {
+  background: var(--dv-surface-4);
+}
+
+.rowGrid {
+  display: grid;
+  align-items: center;
+  column-gap: 12px;
+}
+
+.titleLine {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row[data-nested] .label {
+  font-weight: 400;
+}
+
+.time {
+  flex: none;
+  color: var(--dv-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--dv-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+}
+
+.badge {
+  padding: 0 6px;
+  border-radius: var(--dv-radius-sm);
+  background: var(--dv-surface-3);
+  color: var(--dv-text-2);
+}
+
+.currentBadge {
+  padding: 0 6px;
+  border-radius: var(--dv-radius-sm);
+  background: var(--dv-accent-soft);
+  color: var(--dv-accent-text);
+}
+
+.words {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jump {
+  flex: none;
+  margin-left: auto;
+}
+
+.thumb {
+  display: block;
+  border-radius: var(--dv-radius-sm);
+  background: var(--dv-surface-3);
+  object-fit: cover;
+}
+
+.details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.preview {
+  display: block;
+  max-width: 100%;
+  max-height: 220px;
+  border-radius: var(--dv-radius-md);
+  background: var(--dv-media-bg);
+}
+
+.detailWords {
+  color: var(--dv-text-2);
+  font-size: 12px;
+  line-height: 16px;
+  white-space: pre-wrap;
+}
+
+.button:focus-visible,
+.select:focus-visible,
+.link:focus-visible {
+  outline: 2px solid var(--dv-accent);
+  outline-offset: 2px;
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--dv-accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button,
+  .select,
+  .row {
+    transition: none;
+  }
+}

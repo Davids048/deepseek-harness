@@ -58,9 +58,11 @@ The panel lists every image and video that the state of `main` or of an open dra
 | File | Content |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | The Host half, which registers nothing |
+| [`src/css-modules.d.ts`](src/css-modules.d.ts) | The type of the CSS Module imports |
 | [`src/client/index.ts`](src/client/index.ts) | Registrations of the tab type and the tab body |
 | [`src/client/definition.ts`](src/client/definition.ts) | The tab type |
 | [`src/client/AssetsPanel.tsx`](src/client/AssetsPanel.tsx) | The panel, the drop zone, the thumbnail grids by section, the preview, and the tab body |
+| [`src/client/AssetsPanel.module.css`](src/client/AssetsPanel.module.css) | Styles of the panel and the preview |
 | [`src/client/library.ts`](src/client/library.ts) | Grouping of the assets of `main` and the open drafts by media type with the render stills apart, and draft flags |
 
 </details>

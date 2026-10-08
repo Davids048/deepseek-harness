@@ -58,9 +58,11 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-asset-pool` 标签�
 | 文件 | 内容 |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | Host 半边，不注册任何东西 |
+| [`src/css-modules.d.ts`](src/css-modules.d.ts) | CSS Module 导入的类型 |
 | [`src/client/index.ts`](src/client/index.ts) | 标签类型和标签主体的注册 |
 | [`src/client/definition.ts`](src/client/definition.ts) | 标签类型 |
 | [`src/client/AssetsPanel.tsx`](src/client/AssetsPanel.tsx) | 面板、拖放区、按组分的缩略图网格、预览和标签主体 |
+| [`src/client/AssetsPanel.module.css`](src/client/AssetsPanel.module.css) | 面板和预览的样式 |
 | [`src/client/library.ts`](src/client/library.ts) | 把 `main` 和打开的草稿的素材按媒体类型分组、单列渲染静帧，并标出草稿素材 |
 
 </details>

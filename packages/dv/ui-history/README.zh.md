@@ -57,9 +57,11 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-history` 标签类�
 
 | 文件 | 内容 |
 | --- | --- |
+| [`src/css-modules.d.ts`](src/css-modules.d.ts) | CSS Module 导入的类型 |
 | [`src/client/index.ts`](src/client/index.ts) | 注册，以及收到 `dv:history-focus` 时打开标签 |
 | [`src/client/definition.ts`](src/client/definition.ts) | 标签类型 |
 | [`src/client/HistoryPanel.tsx`](src/client/HistoryPanel.tsx) | 面板、顶部的接受、丢弃、撤销、重做按钮、筛选、行、预览和标签主体 |
+| [`src/client/HistoryPanel.module.css`](src/client/HistoryPanel.module.css) | 面板的样式 |
 | [`src/client/rows.ts`](src/client/rows.ts) | 操作行和批准折叠、带主体的名称、缩略图、相对时间、标记徽标、分支筛选的查询、时间线记录集合和中间区域定位 |
 
 </details>

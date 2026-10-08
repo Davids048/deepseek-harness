@@ -57,9 +57,11 @@ A `dv:history-focus` event `{session, toolCall}` clears the filters, finds the r
 
 | File | Content |
 | --- | --- |
+| [`src/css-modules.d.ts`](src/css-modules.d.ts) | The type of the CSS Module imports |
 | [`src/client/index.ts`](src/client/index.ts) | Registrations and the tab opening on `dv:history-focus` |
 | [`src/client/definition.ts`](src/client/definition.ts) | The tab type |
 | [`src/client/HistoryPanel.tsx`](src/client/HistoryPanel.tsx) | The panel, its header buttons (accept, discard, undo, redo), filters, rows, preview, and the tab body |
+| [`src/client/HistoryPanel.module.css`](src/client/HistoryPanel.module.css) | Styles of the panel |
 | [`src/client/rows.ts`](src/client/rows.ts) | Action rows and approval folds, labels with subjects, thumbnails, relative times, mark badges, the branch filter query, timeline record sets, and center focus |
 
 </details>
