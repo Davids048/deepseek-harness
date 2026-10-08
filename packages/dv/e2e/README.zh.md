@@ -57,7 +57,7 @@ DSH_PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome-linux/chrome \
 
 | 文件 | 内容 |
 | --- | --- |
-| [`tests/harness.ts`](tests/harness.ts) | `bootHarness`、`startFakeBackend`、`waitFor` 和 Playwright 导出 |
+| [`tests/harness.ts`](tests/harness.ts) | `bootHarness`、`startFakeBackend`、`waitFor`、`escapeRegExp` 和 Playwright 导出 |
 | [`tests/scripted-model.ts`](tests/scripted-model.ts) | `startScriptedModel`、`textOf`、`assetIdOf` |
 | [`tests/fake-backend-main.ts`](tests/fake-backend-main.ts) | 把假后端作为长期运行的进程启动，供手动浏览器测试使用 |
 | [`vitest.e2e.config.ts`](vitest.e2e.config.ts) | 故事测试配置：一次一个文件，测试超时 180 秒 |

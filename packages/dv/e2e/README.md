@@ -57,7 +57,7 @@ DSH_PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome-linux/chrome \
 
 | File | Content |
 | --- | --- |
-| [`tests/harness.ts`](tests/harness.ts) | `bootHarness`, `startFakeBackend`, `waitFor`, and the Playwright export |
+| [`tests/harness.ts`](tests/harness.ts) | `bootHarness`, `startFakeBackend`, `waitFor`, `escapeRegExp`, and the Playwright export |
 | [`tests/scripted-model.ts`](tests/scripted-model.ts) | `startScriptedModel`, `textOf`, `assetIdOf` |
 | [`tests/fake-backend-main.ts`](tests/fake-backend-main.ts) | Runs the fake backend as a long-lived process for manual browser testing |
 | [`vitest.e2e.config.ts`](vitest.e2e.config.ts) | The story lane: one file at a time, 180-second test timeout |

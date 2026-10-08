@@ -100,4 +100,4 @@ None; the timeline sends nothing to a model.
 <a id="known-limitations-and-deferred-work"></a>
 
 - **One video track** — the 原声 (original audio) track mirrors the video clips and has no edits of its own; subtitles and music have no lane.
-- **Waveforms decode in the browser** — the 原声 track draws each clip's waveform by downloading the clip's whole media file and decoding its audio with the Web Audio API, one asset at a time and cached in memory per page load; a clip keeps a plain block while its audio decodes, when decoding fails, and when the media has no audio track.
+- **Waveforms decode in the browser** — the 原声 track draws each clip's waveform by downloading the clip's whole media file and decoding its audio with the Web Audio API, one asset at a time and cached in memory per page load; a clip keeps a plain block while its audio decodes, when decoding fails, and when the media has no audio track. When the media file cannot be fetched (a network error or a 5xx status), the result is not cached: the clip asks again after 2, 8, and 30 seconds, and a later mount of the clip starts over.

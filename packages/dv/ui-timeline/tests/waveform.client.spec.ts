@@ -1,8 +1,13 @@
-/** The 原声 track's peak computation, the track-area height clamp, and the skip target, as pure functions. */
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+/**
+ * The 原声 track's peak computation and envelope cache, the track-area height clamp, and the skip target. The cache tests
+ * stub `fetch` and `OfflineAudioContext` and run on fake timers, so each retry delay passes on demand.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, renderHook } from '@testing-library/react'
 import { clampTrackHeight } from '../src/client/TimelineEditor.tsx'
 import { skipTarget } from '../src/client/timelines.ts'
-import { clipPeaks, peakEnvelope } from '../src/client/waveform.ts'
+import { clipPeaks, peakEnvelope, useAudioEnvelope } from '../src/client/waveform.ts'
 
 describe('peakEnvelope', () => {
   it('keeps the largest absolute sample of each window across all channels', () => {
@@ -44,6 +49,100 @@ describe('clipPeaks', () => {
     expect(clipPeaks(envelope, 1, 1, 4)).toEqual([])
     expect(clipPeaks(envelope, 0, 1, 0)).toEqual([])
     expect(clipPeaks({ peaks: new Float32Array(10), rate: 10, max: 0 }, 0, 1, 2)).toEqual([0, 0])
+  })
+})
+
+describe('useAudioEnvelope', () => {
+  /** A media file body that the stub decoder rejects, as `decodeAudioData` rejects a file without an audio track. */
+  const NO_AUDIO = 'no audio'
+  /** One answer of the stub `fetch`: a network failure, or a status with a body. */
+  type Answer = 'network' | { status: number; body?: string }
+  let answers: Answer[] = []
+  const fetchStub = vi.fn((url: string) => {
+    void url
+    const answer = answers.length > 1 ? answers.shift() : answers[0]
+    if (answer === undefined || answer === 'network') return Promise.reject(new TypeError('Failed to fetch'))
+    const bytes = new TextEncoder().encode(answer.body ?? 'audio').buffer
+    return Promise.resolve({ ok: answer.status < 300, status: answer.status, arrayBuffer: () => Promise.resolve(bytes) })
+  })
+  /** A stand-in decoder: one second of samples at 0.5, or a rejection for the {@link NO_AUDIO} body. */
+  class StubAudioContext {
+    decodeAudioData(bytes: ArrayBuffer): Promise<unknown> {
+      if (new TextDecoder().decode(bytes) === NO_AUDIO) return Promise.reject(new DOMException('no audio track', 'EncodingError'))
+      const samples = new Float32Array(100).fill(0.5)
+      return Promise.resolve({ numberOfChannels: 1, length: 100, sampleRate: 100, getChannelData: () => samples })
+    }
+  }
+  /**
+   * Let fake time pass, then 1 ms more: a retry waits for idle time on a zero-delay timer, which the fake clock sets
+   * 1 ms ahead when a timer callback schedules it.
+   */
+  const advance = async (ms: number): Promise<void> => {
+    await act(() => vi.advanceTimersByTimeAsync(ms))
+    await act(() => vi.advanceTimersByTimeAsync(1))
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', fetchStub)
+    vi.stubGlobal('OfflineAudioContext', StubAudioContext)
+    fetchStub.mockClear()
+  })
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('asks again after a network failure and after a 5xx answer while the clip stays mounted', async () => {
+    answers = ['network', { status: 503 }, { status: 200 }]
+    const { result } = renderHook(() => useAudioEnvelope('flaky.mp4'))
+    await advance(0)
+    expect(fetchStub).toHaveBeenCalledTimes(1)
+    expect(result.current).toBeNull()
+    await advance(2000)
+    expect(fetchStub).toHaveBeenCalledTimes(2)
+    expect(result.current).toBeNull()
+    await advance(8000)
+    expect(fetchStub).toHaveBeenCalledTimes(3)
+    expect(result.current?.max).toBe(0.5)
+  })
+
+  it('stops asking after the last retry delay, and a later mount fetches the file again', async () => {
+    answers = ['network']
+    const first = renderHook(() => useAudioEnvelope('offline.mp4'))
+    await advance(0)
+    await advance(2000)
+    await advance(8000)
+    await advance(30000)
+    expect(fetchStub).toHaveBeenCalledTimes(4)
+    await advance(60000)
+    expect(fetchStub).toHaveBeenCalledTimes(4)
+    expect(first.result.current).toBeNull()
+    first.unmount()
+    answers = [{ status: 200 }]
+    const second = renderHook(() => useAudioEnvelope('offline.mp4'))
+    await advance(0)
+    expect(fetchStub).toHaveBeenCalledTimes(5)
+    expect(second.result.current?.max).toBe(0.5)
+  })
+
+  it('keeps a file without an audio track and a missing file settled, so neither is fetched again', async () => {
+    answers = [{ status: 200, body: NO_AUDIO }]
+    const silent = renderHook(() => useAudioEnvelope('silent.mp4'))
+    await advance(0)
+    answers = [{ status: 404 }]
+    const missing = renderHook(() => useAudioEnvelope('missing.mp4'))
+    await advance(60000)
+    expect(fetchStub).toHaveBeenCalledTimes(2)
+    expect(silent.result.current).toBeNull()
+    expect(missing.result.current).toBeNull()
+    silent.unmount()
+    missing.unmount()
+    renderHook(() => useAudioEnvelope('silent.mp4'))
+    renderHook(() => useAudioEnvelope('missing.mp4'))
+    await advance(60000)
+    expect(fetchStub).toHaveBeenCalledTimes(2)
   })
 })
 

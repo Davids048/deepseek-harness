@@ -5,7 +5,7 @@
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { Branch, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
-import { bootHarness, playwright, waitFor, type BootedHarness } from '../harness.ts'
+import { bootHarness, escapeRegExp, playwright, waitFor, type BootedHarness } from '../harness.ts'
 import { startScriptedModel, type ScriptedModel } from '../scripted-model.ts'
 
 /** A 2×2 PNG with other bytes than {@link PNG_BASE64}, so its import is a new asset. */
@@ -160,7 +160,7 @@ async function openProjectByTitle(page: Page, title: string): Promise<void> {
   // settled on the wanted project meanwhile, the menu only needs closing.
   const menu = page.getByRole('menu')
   const other = menu.getByRole('menuitem', { name: title, exact: true })
-  const open = menu.getByText(new RegExp(`^${title} · (会话|Chats)$`))
+  const open = menu.getByText(new RegExp(`^${escapeRegExp(title)} · (会话|Chats)$`))
   await expect.poll(async () => await other.count() + await open.count()).toBeGreaterThan(0)
   if (await other.count() > 0) await other.click()
   else await page.keyboard.press('Escape')

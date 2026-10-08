@@ -7,7 +7,7 @@ import { crc32, deflateSync } from 'node:zlib'
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
-import { bootHarness, playwright, waitFor, type BootedHarness } from '../harness.ts'
+import { bootHarness, escapeRegExp, playwright, waitFor, type BootedHarness } from '../harness.ts'
 import { assetIdOf, startScriptedModel, type ScriptedModel, type ScriptedRule } from '../scripted-model.ts'
 
 /**
@@ -111,7 +111,7 @@ describe('The asset pool panel', () => {
   const assetsPanel = (page: Page): Locator => page.locator('[data-testid="dv-asset-pool-panel"]:visible')
   /** The thumbnails of one media-type section of the asset pool panel, found by its heading (图片 · 2). */
   const sectionThumbs = (page: Page, title: string): Locator =>
-    assetsPanel(page).locator('section').filter({ has: page.locator('h3', { hasText: new RegExp(`^${title} · `) }) })
+    assetsPanel(page).locator('section').filter({ has: page.locator('h3', { hasText: new RegExp(`^${escapeRegExp(title)} · `) }) })
       .locator('[data-asset-id]')
   const crumb = (page: Page): Locator => page.locator('[data-dv-workspace] header').first()
 

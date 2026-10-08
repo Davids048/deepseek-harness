@@ -3,7 +3,8 @@
  * decodes its audio with `OfflineAudioContext.decodeAudioData`, and reduces the samples to a peak envelope (the largest
  * absolute sample of each short window). The envelope is cached per asset in memory, so a re-render or a zoom change
  * only regroups the cached peaks into bars for the clip's played range. Decodes run one at a time, each after the
- * browser reports idle time, so they do not compete with the preview for the main thread.
+ * browser reports idle time, so they do not compete with the preview for the main thread. A media file that cannot be
+ * fetched is not cached, so the clip asks for it again.
  */
 import { useEffect, useState } from 'react'
 import { assetUrl } from '@dv/ui-kit/api.ts'
@@ -81,10 +82,17 @@ export function clipPeaks(envelope: AudioEnvelope, inSec: number, outSec: number
 }
 
 // Settled envelopes (null when the asset has no decodable audio), the decode of each asset, and the tail of the queue
-// that runs the decodes one at a time.
+// that runs the decodes one at a time. An asset whose media file could not be fetched stays out of both maps, so a
+// later request decodes it again.
 const settled = new Map<string, AudioEnvelope | null>()
 const decoding = new Map<string, Promise<AudioEnvelope | null>>()
 let decodeQueue: Promise<unknown> = Promise.resolve()
+
+/** Delays, in milliseconds, before a mounted clip asks again for an envelope whose media file could not be fetched. */
+const RETRY_DELAYS_MS = [2000, 8000, 30000]
+
+/** A failure to fetch an asset's media file that a later attempt can overcome: a network error or a 5xx status. */
+class MediaFetchError extends Error {}
 
 /**
  * Whether this browser can decode audio off-screen.
@@ -106,14 +114,31 @@ function idle(): Promise<void> {
 }
 
 /**
+ * Download one asset's whole media file.
+ * @param assetId - the asset.
+ * @returns the file's bytes, or null when the server answers with a 4xx status.
+ * @throws {MediaFetchError} when the request fails on the network or the server answers with a 5xx status.
+ */
+async function fetchMedia(assetId: string): Promise<ArrayBuffer | null> {
+  try {
+    const response = await fetch(assetUrl(assetId))
+    if (response.status >= 500) throw new MediaFetchError(`HTTP ${String(response.status)}`)
+    if (!response.ok) return null
+    return await response.arrayBuffer()
+  } catch (error) {
+    throw error instanceof MediaFetchError ? error : new MediaFetchError(String(error))
+  }
+}
+
+/**
  * Fetch and decode one asset's audio into its envelope.
  * @param assetId - the asset.
- * @returns the envelope, or null when the file cannot be fetched, has no audio track, or fails to decode.
+ * @returns the envelope, or null when the server has no such file or the file has no decodable audio track.
+ * @throws {MediaFetchError} when the media file could not be fetched.
  */
 async function decodeEnvelope(assetId: string): Promise<AudioEnvelope | null> {
-  const response = await fetch(assetUrl(assetId))
-  if (!response.ok) return null
-  const bytes = await response.arrayBuffer()
+  const bytes = await fetchMedia(assetId)
+  if (bytes === null) return null
   // The context only decodes; its own length and channel count do not limit the decoded buffer.
   const context = new OfflineAudioContext(1, 1, DECODE_SAMPLE_RATE)
   const buffer = await context.decodeAudioData(bytes)
@@ -123,9 +148,11 @@ async function decodeEnvelope(assetId: string): Promise<AudioEnvelope | null> {
 }
 
 /**
- * The envelope of an asset, decoding it once behind every decode queued before it.
+ * The envelope of an asset, decoding it once behind every decode queued before it. A fetch failure leaves the asset
+ * unsettled, so the next call fetches it again.
  * @param assetId - the asset.
  * @returns the envelope, or null when the asset has no decodable audio.
+ * @throws {MediaFetchError} when the media file could not be fetched.
  */
 function loadEnvelope(assetId: string): Promise<AudioEnvelope | null> {
   const known = decoding.get(assetId)
@@ -133,20 +160,28 @@ function loadEnvelope(assetId: string): Promise<AudioEnvelope | null> {
   const result = decodeQueue
     .then(idle)
     .then(() => decodeEnvelope(assetId))
-    .catch((error: unknown) => {
-      // A media file without an audio track rejects `decodeAudioData`; the clip keeps its plain block.
-      void error
-      return null
-    })
-    .then((envelope) => { settled.set(assetId, envelope); return envelope })
+    .then(
+      (envelope) => { settled.set(assetId, envelope); return envelope },
+      (error: unknown) => {
+        if (error instanceof MediaFetchError) {
+          decoding.delete(assetId)
+          throw error
+        }
+        // A media file without an audio track rejects `decodeAudioData`; the clip keeps its plain block.
+        settled.set(assetId, null)
+        return null
+      },
+    )
   decoding.set(assetId, result)
-  decodeQueue = result
+  // The next decode waits for this one whether or not it succeeds.
+  decodeQueue = result.catch(() => undefined)
   return result
 }
 
 /**
  * The envelope of a clip's asset for rendering: null while it decodes, when the asset has no decodable audio, or when
- * the browser cannot decode audio.
+ * the browser cannot decode audio. When the media file cannot be fetched, the clip asks again after each delay of
+ * {@link RETRY_DELAYS_MS} while it stays mounted, and a later mount starts over.
  * @param assetId - the clip's asset, or null for a placeholder clip.
  * @returns the envelope, or null.
  */
@@ -156,8 +191,18 @@ export function useAudioEnvelope(assetId: string | null): AudioEnvelope | null {
   useEffect(() => {
     if (assetId === null || settled.has(assetId) || !canDecode()) return
     let alive = true
-    void loadEnvelope(assetId).then((envelope) => { if (alive) setLoaded({ assetId, envelope }) })
-    return () => { alive = false }
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const attempt = (failures: number): void => {
+      void loadEnvelope(assetId).then(
+        (envelope) => { if (alive) setLoaded({ assetId, envelope }) },
+        () => {
+          const delay = RETRY_DELAYS_MS[failures]
+          if (alive && delay !== undefined) retry = setTimeout(() => { attempt(failures + 1) }, delay)
+        },
+      )
+    }
+    attempt(0)
+    return () => { alive = false; clearTimeout(retry) }
   }, [assetId])
   return cached ?? (loaded !== null && loaded.assetId === assetId ? loaded.envelope : null)
 }

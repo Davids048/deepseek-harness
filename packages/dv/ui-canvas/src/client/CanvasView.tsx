@@ -162,6 +162,13 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
       .filter(record => draftRecords.has(record.id) && record.intent !== '').at(-1)?.intent ?? ''
     return { state, draftIntent, ...buildCanvasGraph(state, draftRecords, placed) }
   }, [base.value, branch, readOnly, draft, draftState.value, placed])
+  // Each plan node's latest version and its shots' frames, for the plan card's version label, mini grid, and duration.
+  // Memoized on the graph, because a pan or zoom re-renders the view on every pointer move.
+  const plans = useMemo(() => new Map(graph === null ? [] : graph.nodes.flatMap((node) => {
+    const latest = node.planId === undefined ? undefined : graph.state.components.plan.plans[node.planId]?.at(-1)
+    if (latest === undefined || node.planId === undefined) return []
+    return [[node.id, { latest, frames: planShotFrames(graph.nodes, node.planId, latest.shots.length) }] as const]
+  })), [graph])
 
   const [positions, setPositions] = useState<Record<string, NodePosition>>({})
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 40, y: 40, zoom: 1 })
@@ -508,12 +515,6 @@ export function CanvasView({ projectId, branch = 'main', client: given, session 
     content = <p style={{ ...centered, pointerEvents: 'none' }}>{t('canvas.empty')}</p>
   } else {
     const byId = new Map(graph.nodes.map(node => [node.id, node]))
-    // Each plan node's latest version and its shots' frames, for the plan card's version label, mini grid, and duration.
-    const plans = new Map(graph.nodes.flatMap((node) => {
-      const latest = node.planId === undefined ? undefined : graph.state.components.plan.plans[node.planId]?.at(-1)
-      if (latest === undefined || node.planId === undefined) return []
-      return [[node.id, { latest, frames: planShotFrames(graph.nodes, node.planId, latest.shots.length) }] as const]
-    }))
     const heightOf = (node: CanvasNode): number => nodeHeight(node, plans.get(node.id)?.frames.some(frame => frame !== null) === true)
     // The selected node's edges are drawn last, so they stay on top of the others.
     const touchesSelected = (edge: CanvasEdge): boolean => selected !== null && (edge.from === selected || edge.to === selected)
