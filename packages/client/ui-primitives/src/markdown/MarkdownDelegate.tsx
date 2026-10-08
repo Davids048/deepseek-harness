@@ -1,4 +1,4 @@
-/** Consumer-owned navigation for Markdown links. */
+/** Consumer-owned navigation and element replacement for Markdown. */
 import { createContext, useContext, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import type { ImageLightboxLabels } from '../ImageLightbox.tsx'
@@ -9,7 +9,60 @@ import type { ImageLightboxLabels } from '../ImageLightbox.tsx'
  */
 export type MarkdownExternalLinkHandler = (href: string) => void
 
-/** Navigation capabilities supplied by the nearest Markdown owner. */
+/** A settled Markdown link, inline or by reference. */
+export interface MarkdownLinkElement {
+  readonly kind: 'link'
+  /** Destination exactly as authored, before sanitizing. */
+  readonly href: string
+  readonly title: string | undefined
+  /** Plain text of the link label, with whitespace runs collapsed. */
+  readonly text: string
+}
+
+/** A settled Markdown image outside a link, inline or by reference. */
+export interface MarkdownImageElement {
+  readonly kind: 'image'
+  /** Destination exactly as authored, before sanitizing. */
+  readonly src: string
+  readonly alt: string
+  readonly title: string | undefined
+}
+
+/** One link inside a table cell. */
+export interface MarkdownTableLink {
+  /** Destination exactly as authored, before sanitizing. */
+  readonly href: string
+  /** Plain text of the link label. */
+  readonly text: string
+}
+
+/** One authored table cell. */
+export interface MarkdownTableCell {
+  /** Plain text of the cell, with whitespace runs collapsed. */
+  readonly text: string
+  /** Links of the cell in source order, including links nested in emphasis. */
+  readonly links: readonly MarkdownTableLink[]
+}
+
+/** A settled GFM table: the header row and the body rows with their authored cells. */
+export interface MarkdownTableElement {
+  readonly kind: 'table'
+  readonly header: readonly MarkdownTableCell[]
+  readonly rows: readonly (readonly MarkdownTableCell[])[]
+}
+
+/** Parsed data of one settled element that a {@link MarkdownElementRenderer} may replace. */
+export type MarkdownElement = MarkdownLinkElement | MarkdownImageElement | MarkdownTableElement
+
+/**
+ * Render one settled Markdown element in place of the default rendering.
+ * @param element - Parsed element data.
+ * @param fallback - The default rendering; return it to keep the element unchanged.
+ * @returns The node rendered at the element's position.
+ */
+export type MarkdownElementRenderer = (element: MarkdownElement, fallback: ReactNode) => ReactNode
+
+/** Navigation and element-rendering capabilities supplied by the nearest Markdown owner. */
 export interface MarkdownDelegate {
   /** Image previews for decoded local paths in this owner's workspace. */
   readonly fileImages?: {
@@ -24,6 +77,11 @@ export interface MarkdownDelegate {
    * @param options - First line to reveal when the destination specifies a line or range.
    */
   readonly openFile?: ((path: string, options?: { line?: number }) => void) | undefined
+  /**
+   * Replace settled links, images outside links, and tables; absent renderers keep the default rendering.
+   * Streaming renders never reach the renderer.
+   */
+  readonly renderElement?: MarkdownElementRenderer | undefined
 }
 
 const MarkdownDelegateContext = createContext<MarkdownDelegate>({})
@@ -36,7 +94,7 @@ export interface MarkdownDelegateProviderProps extends MarkdownDelegate {
 /**
  * Scope Markdown navigation without threading callbacks through renderers.
  * Nested providers replace the enclosing capabilities. Handler changes reach cached links.
- * @param props - Child tree and its file and HTTP(S) link handlers.
+ * @param props - Child tree, its file and HTTP(S) link handlers, and its element renderer.
  * @returns the scoped child tree.
  */
 export function MarkdownDelegateProvider({
@@ -44,8 +102,12 @@ export function MarkdownDelegateProvider({
   openExternalLink,
   openFile,
   fileImages,
+  renderElement,
 }: MarkdownDelegateProviderProps): ReactNode {
-  const delegate = useMemo(() => ({ openExternalLink, openFile, fileImages }), [openExternalLink, openFile, fileImages])
+  const delegate = useMemo(
+    () => ({ openExternalLink, openFile, fileImages, renderElement }),
+    [openExternalLink, openFile, fileImages, renderElement],
+  )
   return (
     <MarkdownDelegateContext.Provider value={delegate}>
       {children}

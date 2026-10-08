@@ -161,6 +161,35 @@ describe('Chat inject API', () => {
     }
   })
 
+  it('reports Markdown chain entries and drops them when their plugin unloads', async () => {
+    const b = await bench()
+    try {
+      const { injected } = b.chatViewApi(b.rootReference)
+      const replaced = injected.hooks.markdownReplaced
+      const listener = vi.fn()
+      const off = replaced.subscribe(listener)
+      expect(replaced.getSnapshot()).toBe(false)
+      const plugin = await b.runtime.mount({
+        inject: ['slots'],
+        apply: (ctx) => {
+          ctx.slots.inject('conversation.chat.markdown', () => ctx.slots.register({
+            name: 'conversation.chat.markdown',
+            select: ({ element }) => element.kind === 'table' ? element.rows.length : null,
+          }, () => null))
+        },
+      })
+      expect(replaced.getSnapshot()).toBe(true)
+      await plugin.dispose()
+      await Promise.resolve()
+      expect(replaced.getSnapshot()).toBe(false)
+      expect(b.runtime.slots.entries('conversation.chat.markdown')).toHaveLength(0)
+      expect(listener).toHaveBeenCalled()
+      off()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
   it('loads older history and forks through the Session Controller', async () => {
     const b = await bench()
     const { injected } = b.chatViewApi(b.rootReference)

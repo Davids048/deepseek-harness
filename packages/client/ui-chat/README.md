@@ -35,6 +35,8 @@ Chat supplies file and HTTP(S) navigation through one `MarkdownDelegateProvider`
 
 Standalone Markdown images show contained previews and open the shared image lightbox; local paths resolve against the viewed workspace after settlement. Image file links keep their sidebar activation and show a thumbnail after hover dwell or keyboard focus. Escape dismisses the thumbnail. Failed images retain a localized status and their description; no duplicate-image filtering is applied.
 
+Settled Markdown links, images outside links, and tables in the Chat view can be replaced through the `conversation.chat.markdown` chain slot. Its owner value is `{ element }`, the parsed data that `MarkdownDelegateProvider.renderElement` receives. The first entry whose `select` returns a non-null value renders in the element's place; when every entry declines, the default element renders. While the slot has no entries, Chat passes no renderer, so Markdown renders without slot outlets.
+
 Settings → General → Open chat links in selects the destination for ordinary clicks on Chat HTTP(S) links: In-App Sidebar (default) opens a new right-Sidebar Browser tab, while Default Browser opens an external tab. The setting is shown only while the Sidebar Browser is available. If the Sidebar Browser is not registered, both choices use the external browser; modified clicks retain native behavior. The `ui-chat.linkOpening` preference persists on loopback browsers and stays process-local when settings cannot persist writes. Sent file references and skills confirmed by the message’s logged invocation also open in the right Sidebar. File paths use the viewed Session; skill names resolve through its current input-trigger source. Both use the prose file-link dotted underline on hover or focus. Sessions, directories, and command labels remain non-navigating references.
 
 <a id="system-prompt-row"></a>
@@ -160,6 +162,8 @@ None; Chat presentation does not assemble or mutate provider requests.
 
 - **The transcript reflects the loaded Session window** — older transcript nodes become available only after Session Controller loads the preceding event page. Turn navigation is wider than the window: the rail merges the loaded Turns with the host `turnOutline` projection, so every started Turn gets a fixed-pitch mark (10px apart; a ladder taller than the frame scrolls inside it with gradient fades), and activating an unloaded mark pages history through the Turn's `turn/start` seq before landing on its row. Without the projection (assemblies not mounting `dsh-session-turn-outline`) the rail falls back to loaded Turns only.
 - **Rail previews are card-sized** — one prompt line (50 characters) and up to three response lines (120), on loaded and unloaded Turns alike; an unloaded Turn's response arrives from the outline only once the Turn settled, so an open Turn previews its prompt (or just the Turn number) until then.
+
+- **Replaced Markdown elements sit in a `<div>`** — while `conversation.chat.markdown` has entries, every settled link, image, and table renders inside the slot outlet's `display: contents` `<div>`. A link or image in a paragraph therefore nests a `<div>` in `<p>`, which React development builds report as invalid nesting; layout is unaffected.
 
 
 <a id="dev-note"></a>

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import type {
-  AssistantMessageNode, ChatNode, ChatNodeHookContext, ChatNodeOwnerProps, ChatSnapshot,
+  AssistantMessageNode, ChatMarkdownOwnerProps, ChatNode, ChatNodeHookContext, ChatNodeOwnerProps, ChatSnapshot,
   ChatViewSlotProps, CommandNode, CompactionSummaryNode, ContextMessageNode, ConversationNode,
   LegacyConversationSlice, ModelRetryNode, StartedToolCall, SteeringMessageNode,
   ToolCallBlock, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UseChatNodeTurnData,
@@ -405,6 +405,7 @@ function makeHarness(
   // SessionProvider seat arrives with the session-scope child declaration;
   // ChatView never invokes it (pass-through stub).
   const SessionProviderStub: ChatViewSlotProps['SessionProvider'] = ({ children }) => <>{children}</>
+  const markdownReplaced = createSnapshotStore(false)
   const props: ChatViewSlotProps = {
     usePanelInfo: selector => selector({ activePanelId: null }),
     sessionId: SID,
@@ -439,7 +440,9 @@ function makeHarness(
     useStore: bindSnapshotSelector(chat),
     actions: chat.actions,
     usePresentation: bindSnapshotSelector(derivePresentationPolicy(transcriptView)),
+    useMarkdownReplaced: bindSnapshotSelector(markdownReplaced),
     renderSlot,
+    renderSlotChain: (_key, _owner, opts) => opts?.fallback ?? null,
     SessionProvider: SessionProviderStub,
     inspectCall: (callId: string) => { openView('trajectory', callId) },
     viewRequest: null,
@@ -486,6 +489,7 @@ function makeHarness(
       conversation.set({ ...conversation.getSnapshot() })
     },
     setTranscriptView: (mode: TranscriptViewMode) => { transcriptView.set(mode) },
+    setMarkdownReplaced: (replaced: boolean) => { markdownReplaced.set(replaced) },
     setNodeRenderer: (renderer: React.ComponentProps<typeof ChatNodeSeat>['renderSlot']) => {
       nodeSlotOverride = renderer
     },
@@ -577,6 +581,31 @@ describe('Chat node rendering', () => {
     const view = render(<h.ChatView {...h.props} />)
     fireEvent.click(view.getByRole('button', { name: 'source' }))
     expect(h.openFile).toHaveBeenCalledWith('src/index.ts', { line: 24 })
+  })
+
+  it('offers settled Markdown elements to the markdown chain only while it has entries', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'show'), assistant(2, 'Shot [Play](https://example.com/v1)', 1)],
+      turnEnds: new Map([[1, 2]]),
+    })
+    const owners: ChatMarkdownOwnerProps[] = []
+    h.props.renderSlotChain = ((_key: string, owner: ChatMarkdownOwnerProps, opts?: { fallback?: React.ReactNode }) => {
+      owners.push(owner)
+      return owner.element.kind === 'link' ? <span data-testid="card">{owner.element.text}</span> : opts?.fallback
+    }) as ChatViewSlotProps['renderSlotChain']
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('link', { name: 'Play' })).toBeTruthy()
+    expect(owners).toEqual([])
+
+    act(() => { h.setMarkdownReplaced(true) })
+    expect(view.getByTestId('card').textContent).toBe('Play')
+    expect(view.queryByRole('link', { name: 'Play' })).toBeNull()
+    expect(owners.at(-1)).toEqual({
+      element: { kind: 'link', href: 'https://example.com/v1', title: undefined, text: 'Play' },
+    })
+
+    act(() => { h.setMarkdownReplaced(false) })
+    expect(view.getByRole('link', { name: 'Play' })).toBeTruthy()
   })
 
   it('threads the injected file-mention vocabulary into the closing prose only', () => {

@@ -35,6 +35,8 @@ Chat 在节点列表外通过一个 `MarkdownDelegateProvider` 提供文件及 H
 
 独立的 Markdown 图片以内嵌预览显示，点击打开共享图片浮层；本地路径在消息落定后基于当前查看的工作区解析。图片文件链接保持点击打开侧栏，鼠标停留或键盘聚焦时显示缩略图，Esc 关闭缩略图。图片加载失败时保留本地化状态与图片说明；不执行重复图片过滤。
 
+Chat 视图中已落定的 Markdown 链接、链接外的图片和表格可通过 `conversation.chat.markdown` chain slot 替换。其 owner 值为 `{ element }`，即 `MarkdownDelegateProvider.renderElement` 收到的解析数据。第一个 `select` 返回非 null 值的条目在该元素位置渲染；所有条目都拒绝时渲染默认元素。该 slot 没有条目时，Chat 不传入渲染器，Markdown 渲染不带 slot outlet。
+
 设置 → 通用设置 → 网页链接默认打开方式控制普通点击 Chat HTTP(S) 链接时的目标：「应用内侧边栏」（默认）打开新的右侧 Sidebar Browser tab，「默认浏览器」打开外部标签页。该设置项仅在 Sidebar Browser 可用时显示。若 Sidebar Browser 未注册，两种选择均使用外部浏览器；带修饰键的点击保留原生行为。`ui-chat.linkOpening` 偏好在回环地址浏览器中持久化，设置无法持久化写入时仅在当前进程内生效。已发送的文件引用及消息日志确认调用的 skill 也可在右侧栏打开预览。文件路径使用当前查看的 Session；skill 名称由该 Session 当前的输入触发源解析。两者悬停或聚焦时均使用正文文件链接的虚线下划线。会话、目录和命令标签仍只作为引用展示。
 
 <a id="system-prompt-row"></a>
@@ -160,6 +162,8 @@ Chat 会在历史前插与 renderer 重新挂载时恢复语义锚点，并且�
 
 - **transcript 只反映已加载的 Session 窗口**——只有会话控制器加载前一页事件后，更早的 transcript node 才会出现。轮次导航比窗口更宽：轨道把已加载的轮次与宿主 `turnOutline` 投影合并，每个已开始的轮次都有固定间距刻度（相隔 10px；阶梯高于外框时在框内滚动并以渐变淡出标示可滚方向），激活未加载刻度会先把历史分页拉到该轮次的 `turn/start` seq 再落到它的行上。没有该投影时（未挂载 `dsh-session-turn-outline` 的装配），轨道回退到仅显示已加载轮次。
 - **导航预览按卡片尺寸截断**——提示词一行（50 字符）、回复至多三行（120 字符），已加载与未加载 Turn 一致；未加载 Turn 的回复要等该轮落定后才随大纲到达，进行中的轮次在此之前只预览提示词（或仅轮次号）。
+
+- **被替换的 Markdown 元素位于 `<div>` 中**——`conversation.chat.markdown` 有条目时，每个已落定的链接、图片和表格都渲染在 slot outlet 的 `display: contents` `<div>` 内。因此段落中的链接或图片会在 `<p>` 中嵌套 `<div>`，React 开发构建会报告这一无效嵌套；布局不受影响。
 
 
 <a id="dev-note"></a>
