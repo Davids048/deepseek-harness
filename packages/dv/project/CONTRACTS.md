@@ -92,8 +92,6 @@ Only `record-store.ts` imports `node:fs` or knows a file path under the root. Th
 
 All of them have `inputs: []`, `outputs: []`, `based_on: null`, `supersedes: []`, `deterministic: true`.
 
-**Older projects.** Projects written before branches replaced drafts hold `proj.draft_accept` and `proj.draft_discard` records and `draft/<session>` branches. No module writes those records any more; history counts them as no step, and a `draft/<session>` branch loads as an ordinary branch with `title: null`.
-
 **Current form.** Every module reads records in their current form from the record store: the record line, with each update line applied in order, and with the `resolved_asset` of each `{record, output}` input filled from the producer's `outputs[output]` once the producer is `done` (a derived value, never written to disk).
 
 ## 4. Record store (`record-store.ts`)
@@ -103,7 +101,7 @@ Owner: agent A. Files: `<root>/<ProjectId>/project.json` (`ProjectInfo`, pretty-
 | Function                                  | Behavior                                                                                                                                                                                                |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `constructor(root, onChange)`             | Stores both; `mkdirSync(root, {recursive: true})` happens in `load`.                                                                                                                                    |
-| `load()`                                  | Reads every `<root>/*/project.json` (skips directories without it and `.trash`), replays `records.jsonl` (record lines, then update lines applied in file order), reads `branches.json` (a missing `current` reads as `main`, a missing `title` as null, other fields are dropped). Emits nothing. |
+| `load()`                                  | Reads every `<root>/*/project.json` (skips directories without it and `.trash`), replays `records.jsonl` (record lines, then update lines applied in file order), reads `branches.json`. Emits nothing. |
 | `lock(project, fn)`                       | A per-project promise chain: `fn` starts after every earlier `fn` for that project settled, whether it resolved or threw. Different projects run concurrently. Returns `fn`'s result or rejection.      |
 | `createProject(info)`                     | Writes `project.json`, an empty `records.jsonl`, and `{"branches":{},"current":"main"}` to `branches.json`. Refuses an existing ID with `invalid_params`.                                             |
 | `listProjects()` / `getProject(id)`       | Oldest first by `created_at`, then ID. `getProject` throws `unknown_project`.                                                                                                                           |
@@ -296,7 +294,6 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - `refuses undo with nothing to undo and redo with nothing to redo`: `nothing_to_undo` on a new project; `nothing_to_redo` after a fresh edit that followed an undo.
 - `lists history newest first with filters` (R): records from two actors and two branches; default order is reverse write order; `actor`, `branch`, `operation`, `session`, `before` and `limit` each narrow the list as specified.
 - `marks current, redo, branch and undone records, and lists the branch lines of each one`: one scenario with two branches asserts each mark and each `branches` list.
-- `marks the records no branch line holds as undone`: a record left off every line by a write after an undo on the same branch.
 - `filters by tool call, and by mark before the limit`: `tool_call` selects one agent record; `marks` selects `current` and `branch` entries; with `limit` 1 the mark filter keeps the newest matching entry.
 
 **`tests/branches.spec.ts` (C)**
@@ -307,7 +304,6 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - `forks a named branch on request at the current position without writing a record` (R): `b2` with the title; after a switch and an undo, `b3` forks at the undo target and `main` returns to its tip.
 - `switches branches, and returns a branch to a step when asked`: no jump record when the branch already stands at `to`; a `proj.undo` on the switched-to branch otherwise; `unknown_branch` for an unknown name.
 - `renames a branch and returns to the default label for an empty title`.
-- `reads a branches.json without titles or a current branch, and drops the draft session field`.
 
 **`tests/runner.spec.ts` (B)**
 
@@ -340,7 +336,7 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - `refuses an always call without user_approved before any record, and runs it with the argument kept out of params` (R, confirmation): the tool has `user_approved` and no `user_requested`; the refusal is a tool error with the exact text (the tool, the `confirmSummary` text, the GPU estimate, the bold question) and writes no record; the same call with `user_approved: true` ends `done` with params without the argument; a `user` call through `run` is never refused.
 - `refuses an over_gpu_budget call past the turn's budget, counting the turn's finished cost and unfinished estimates` (R, confirmation): the tool has `user_requested`; a 40 s call runs under the 60 s budget; the next 40 s call of the same turn is refused with the turn's total and the budget; with `user_requested: true` it runs and its params leave the argument out; a new turn starts from zero; a running render of the turn counts with its `estimate`.
 - `refuses to register an operation that asks for confirmation without a confirmSummary`: `invalid_params`; nothing is registered.
-- `gives the agent the dv:project prompt section: Project's rules, and the summary of the bound project's current branch` (R): with a `systemPrompt` service mounted, an unbound session's section holds the rules (no draft rule; the current-branch, roll-back fork and `dv_proj_branch_create` rules) and ends with "No project is bound to this conversation yet: start the work with dv_proj_create."; a bound session's section holds "This conversation belongs to project <ProjectId>" and the project summary `dv_proj_state` returns for the current branch, and no selection.
+- `gives the agent the dv:project prompt section: Project's rules, and the summary of the bound project's current branch` (R): with a `systemPrompt` service mounted, an unbound session's section holds the rules (the current-branch, roll-back fork and `dv_proj_branch_create` rules) and ends with "No project is bound to this conversation yet: start the work with dv_proj_create."; a bound session's section holds "This conversation belongs to project <ProjectId>" and the project summary `dv_proj_state` returns for the current branch, and no selection.
 - Held work delays a session's calls until it settles, even when it fails.
 
 **`tests/proj-tools.spec.ts`**

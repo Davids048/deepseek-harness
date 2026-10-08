@@ -128,12 +128,10 @@ describe('branchSteps', () => {
     const chain = [
       record({ id: 'c', operation: 'proj.create' }), record({ id: 'a', operation: 'timeline.create' }),
       record({ id: 'b', operation: 'timeline.rename' }), record({ id: 'u', operation: 'proj.undo' }),
-      record({ id: 'w', operation: 'proj.draft_accept' }), record({ id: 'v', operation: 'proj.draft_discard' }),
     ]
     const steps = branchSteps(chain, ['d', 'e'])
     expect(steps.current).toBe('b')
-    expect(['c', 'a', 'b', 'u', 'w', 'v', 'd', 'x'].map(id => stepPlace(id, steps)))
-      .toEqual(['before', 'before', 'current', null, null, null, 'after', null])
+    expect(['c', 'a', 'b', 'u', 'd', 'x'].map(id => stepPlace(id, steps))).toEqual(['before', 'before', 'current', null, 'after', null])
     expect(branchSteps([], []).current).toBeNull()
   })
 })
@@ -165,7 +163,7 @@ describe('branchTree', () => {
   it('runs a lane to the bottom when its fork point is not loaded, and owns a step by the first line when its branch lost it', () => {
     const tree = branchTree(entries.slice(0, 2), [branch('main', null), branch('b2', 'a')])
     expect(tree.map(row => row.lines)).toEqual([[{ lane: 1, up: false, down: true }], [{ lane: 1, up: true, down: true }]])
-    expect(entryBranch(entry({ id: 'r', branch: 'draft/s5' }, 'current', ['main', 'b2']), null)).toBe('main')
+    expect(entryBranch(entry({ id: 'r', branch: 'b9' }, 'current', ['main', 'b2']), null)).toBe('main')
     expect(entryBranch(entry({ id: 'r', branch: 'b2' }, 'branch', ['main', 'b2']), null)).toBe('b2')
     expect(entryBranch(entry({ id: 'r', branch: 'b2' }, 'branch', ['main', 'b2']), 'main')).toBe('main')
     expect(entryBranch(entry({ id: 'r' }, 'undone', []), 'main')).toBeNull()

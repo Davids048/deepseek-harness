@@ -8,8 +8,7 @@
  * `effectiveChain(R) = effectiveChain(parents[0] of R) + [R]`. State is always computed from the effective chain.
  *
  * Steps. Undo and redo act on one branch, the project's current branch. Every record is one step, except `proj.create`,
- * `proj.undo`, `proj.redo`, and the `proj.draft_accept` and `proj.draft_discard` records that projects written before
- * branches replaced drafts still hold.
+ * `proj.undo` and `proj.redo`.
  *
  * Redo line. The jump run of a branch is the trailing run of `proj.undo` and `proj.redo` records on the raw chain of its
  * head. With H the record just before that run, the redo line is `effectiveChain(H)`, and the redo steps are the steps
@@ -28,7 +27,7 @@ import type { HistoryEntry, HistoryQuery, ProjectId, ProjectRecord, RecordId, Re
 
 /** `proj.*` operations whose records are not steps (see the module comment). */
 const NOT_A_STEP = new Set([
-  'proj.create', 'proj.undo', 'proj.redo', 'proj.draft_accept', 'proj.draft_discard',
+  'proj.create', 'proj.undo', 'proj.redo',
 ])
 
 /**

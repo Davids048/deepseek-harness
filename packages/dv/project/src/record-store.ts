@@ -27,10 +27,7 @@ import type {
 /** A branch as `branches.json` stores it: every field of {@link Branch} except the computed `tip`. */
 export type StoredBranch = Omit<Branch, 'tip'>
 
-/**
- * The contents of `branches.json`. A file written before branches had titles and before the project had a current
- * branch reads with `title: null` and `current: main`; its extra fields (a draft's `session`) are dropped on load.
- */
+/** The contents of `branches.json`. */
 export interface BranchesFile {
   /** Branch name → branch. */
   branches: Record<string, StoredBranch>
@@ -74,22 +71,11 @@ function writeAtomic(file: string, text: string): void {
 }
 
 /**
- * @param branch - a branch, possibly carrying extra fields such as `tip`, or lacking `title` when read from an older file.
+ * @param branch - a branch, possibly carrying extra fields such as `tip`.
  * @returns exactly the stored fields of the branch.
  */
-function storedBranch(branch: Omit<StoredBranch, 'title'> & { title?: string | null }): StoredBranch {
-  return { name: branch.name, title: branch.title ?? null, head: branch.head, base: branch.base, forked_at: branch.forked_at }
-}
-
-/**
- * Read `branches.json` (see {@link BranchesFile} for older files).
- * @param text - the file contents.
- * @returns the branches and the current branch.
- */
-function parseBranches(text: string): BranchesFile {
-  const file = JSON.parse(text) as { branches: Record<string, Omit<StoredBranch, 'title'> & { title?: string | null }>; current?: string }
-  const branches = Object.fromEntries(Object.entries(file.branches).map(([name, branch]) => [name, storedBranch(branch)]))
-  return { branches, current: file.current ?? MAIN_BRANCH }
+function storedBranch(branch: StoredBranch): StoredBranch {
+  return { name: branch.name, title: branch.title, head: branch.head, base: branch.base, forked_at: branch.forked_at }
 }
 
 /** Append-only storage of every project's records, branch pointers and metadata. */
@@ -121,7 +107,7 @@ export class RecordStore {
         info,
         records: new Map(),
         order: [],
-        branches: parseBranches(readFileSync(join(dir, 'branches.json'), 'utf8')),
+        branches: JSON.parse(readFileSync(join(dir, 'branches.json'), 'utf8')) as BranchesFile,
       }
       for (const line of readFileSync(join(dir, 'records.jsonl'), 'utf8').split('\n')) {
         if (line === '') continue

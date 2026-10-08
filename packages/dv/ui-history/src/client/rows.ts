@@ -26,11 +26,8 @@ function scheduledBy(record: ProjectRecord): string[] {
 
 /** Undo and redo records move a branch between steps, so they are not rows. */
 const MOVES = new Set(['proj.undo', 'proj.redo'])
-/**
- * Records that are not steps: the moves between steps, and the draft accept and discard records that projects written
- * before branches replaced drafts still hold. Undo steps over them.
- */
-const NOT_A_STEP = new Set([...MOVES, 'proj.draft_accept', 'proj.draft_discard'])
+/** Records that are not steps: the moves between steps. Undo steps over them. */
+const NOT_A_STEP = MOVES
 
 /**
  * Turn history entries into panel rows: one row per operation record, newest first. The undo and redo records are not

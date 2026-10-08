@@ -299,7 +299,6 @@ describe('History panel', () => {
     const edit = await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: '人工改名' }, [], agent.session ?? undefined)
     await expect.poll(() => stepOf(page, edit)).toBe('current')
     expect(await rowOf(page, edit.id).getAttribute('data-mark')).toBe('current')
-    expect(await historyPanel(page).innerText()).not.toContain('草稿')
     const state = await stateOf(project.id)
     expect(state.current).toBe('main')
     expect(state.branches.map(branch => branch.name)).toEqual(['main'])

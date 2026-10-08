@@ -56,7 +56,7 @@ bundle         @dv/bundle                 the cordis.patch.yml rows of every pac
 
 ## 操作记录
 
-项目的每次变化都是项目 `records.jsonl` 文件中的一条记录，只有 `@dv/project` 读写这个文件。每条记录的 `kind` 都是 `'operation'`：它是一次操作调用。一条记录包含：谁（`actor`：`user`、`agent` 或 `system`）、来源（`surface`：`chat`、`canvas`、`timeline`、`asset_pool`、`history` 或 `api`）、原因（`intent`：智能体的 `reason` 参数，或对人的手势的简短描述）、所属组件（`component`）和操作（`operation`）及其版本、参数、各输入及其解析到的素材（`resolved_asset`）、输出、状态、父记录，以及两个链接：`based_on`（本记录带修改地重复那条记录，例如改了提示词的新版本）和 `supersedes`（本记录替代那些记录的输出）。字段 `session`、`turn` 和 `tool_call` 把记录链接到产生它的对话的 DSH 会话日志：对话 ID、该会话的 DSH 轮次编号和工具调用 ID；对话本身留在会话日志中。记录只追加不改写；状态变化、成本和报告以更新行追加，`branches.json` 保存分支指针。项目组件自己的动作也是记录（`proj.create`、`proj.undo`、`proj.redo`、`proj.stale_accept`；分支取代草稿之前写入的项目还带有 `proj.draft_accept` 和 `proj.draft_discard`），而 `dv_proj_state`、`dv_proj_history_list` 和 `inspect.*` 操作这类读取不写记录。
+项目的每次变化都是项目 `records.jsonl` 文件中的一条记录，只有 `@dv/project` 读写这个文件。每条记录的 `kind` 都是 `'operation'`：它是一次操作调用。一条记录包含：谁（`actor`：`user`、`agent` 或 `system`）、来源（`surface`：`chat`、`canvas`、`timeline`、`asset_pool`、`history` 或 `api`）、原因（`intent`：智能体的 `reason` 参数，或对人的手势的简短描述）、所属组件（`component`）和操作（`operation`）及其版本、参数、各输入及其解析到的素材（`resolved_asset`）、输出、状态、父记录，以及两个链接：`based_on`（本记录带修改地重复那条记录，例如改了提示词的新版本）和 `supersedes`（本记录替代那些记录的输出）。字段 `session`、`turn` 和 `tool_call` 把记录链接到产生它的对话的 DSH 会话日志：对话 ID、该会话的 DSH 轮次编号和工具调用 ID；对话本身留在会话日志中。记录只追加不改写；状态变化、成本和报告以更新行追加，`branches.json` 保存分支指针。项目组件自己的动作也是记录（`proj.create`、`proj.undo`、`proj.redo`、`proj.stale_accept`），而 `dv_proj_state`、`dv_proj_history_list` 和 `inspect.*` 操作这类读取不写记录。
 
 ## 操作如何运行
 

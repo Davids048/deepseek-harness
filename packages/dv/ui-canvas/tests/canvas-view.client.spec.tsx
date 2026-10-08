@@ -59,7 +59,6 @@ describe('CanvasView', () => {
     await waitFor(() => { node('g3') })
     expect(branches.every(branch => branch === null)).toBe(true)
     expect(node('g1').style.left).toBe('10px')
-    expect(node('g3').hasAttribute('data-node-draft')).toBe(false)
     expect(node('g2').getAttribute('data-node-stale')).toBe('true')
     expect(view.getByText(zh['badge.trim'])).toBeTruthy()
     // The center canvas has no branch bar; the shell shows the branch switcher above it.

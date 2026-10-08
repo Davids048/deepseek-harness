@@ -404,7 +404,7 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('the agent\'s plan shows on the canvas at once, and the agent reads the current branch with no draft rule', async () => {
+  it('the agent\'s plan shows on the canvas at once, and the agent reads the current branch', async () => {
     const { page, errors } = await openPage()
     await newProject(page)
     await send(page, '做两个镜头的广告')
@@ -417,8 +417,6 @@ describe('chat with the agent', () => {
     const prompt = promptOf(requestFor('只回复八') as ChatRequest)
     expect(prompt).toContain('Project summary of the current branch (main)')
     expect(prompt).toContain('"branches": [')
-    expect(prompt).not.toContain('"draft"')
-    expect(prompt).not.toContain('草稿')
     expect(errors).toEqual([])
   })
 

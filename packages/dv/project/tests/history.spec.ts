@@ -268,22 +268,6 @@ describe('history', () => {
     expect(m.reducers.getState(project, MAIN_BRANCH).components.history_test?.values).toEqual([1, 2, 3])
   })
 
-  it('marks the records no branch line holds as undone', async () => {
-    const m = startWithValues()
-    const project = await createTestProject(m)
-    const kept = await write(m, project, DIRECT, 1)
-    // A record appended after an undo on the same branch, as projects written before forking on write hold it.
-    const undone = await write(m, project, DIRECT, 2)
-    const undo = await undoOn(m, project, DIRECT, kept.id)
-    const after = await m.store.lock(project, () => m.store.append(project, {
-      parents: [undo.id], branch: MAIN_BRANCH, kind: 'operation', component: 'timeline', operation: 'timeline.clip_insert',
-      operation_version: '1', ...DIRECT, params: { value: 3 }, inputs: [], outputs: [], based_on: null, supersedes: [],
-      deterministic: false, status: 'done',
-    }))
-    const mark = (id: RecordId): string | undefined => m.history.list({ project, records: [id] })[0]?.mark
-    expect([mark(kept.id), mark(undone.id), mark(after.id)]).toEqual(['current', 'undone', 'current'])
-  })
-
   it('filters by tool call, and by mark before the limit', async () => {
     const m = startWithValues()
     const project = await createTestProject(m)

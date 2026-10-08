@@ -1,11 +1,9 @@
 /**
  * Tests of the branches module: every write of every actor lands on the project's current branch, a write after an
  * undo forks a new branch and keeps the undone steps on the old one, an explicit fork, switching with and without a
- * step to return to, renaming, and `branches.json` written before branches had titles and a current branch.
+ * step to return to, and renaming.
  * Writes go through `branches.forWrite` under the project lock, as the runner does.
  */
-import { readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { ProjectModules } from './support.ts'
 import { agentOrigin, createTestProject, OTHER_SESSION, startModules, userOrigin } from './support.ts'
@@ -197,26 +195,4 @@ describe('branches', () => {
     await expectCode(() => m.store.lock(project, () => m.branches.rename(project, 'b9', 'x')), 'unknown_branch')
   })
 
-  it('reads a branches.json without titles or a current branch, and drops the draft session field', async () => {
-    const m = startWithValues()
-    const project = await createTestProject(m)
-    const first = await write(m, project, userOrigin(), 1)
-    const file = join(m.root, project, 'branches.json')
-    writeFileSync(file, `${JSON.stringify({
-      branches: {
-        main: { name: 'main', head: first.id, base: null, forked_at: null, session: null },
-        'draft/session-a': { name: 'draft/session-a', head: first.id, base: 'main', forked_at: first.id, session: 'session-a' },
-      },
-    })}\n`)
-    m.store.load()
-    expect(m.branches.current(project).name).toBe(MAIN_BRANCH)
-    expect(m.branches.list(project)).toEqual([
-      { name: MAIN_BRANCH, title: null, head: first.id, base: null, forked_at: null, tip: first.id },
-      { name: 'draft/session-a', title: null, head: first.id, base: MAIN_BRANCH, forked_at: first.id, tip: first.id },
-    ])
-    await m.store.lock(project, () => m.branches.switch(project, 'draft/session-a', userOrigin()))
-    const written = JSON.parse(readFileSync(file, 'utf8')) as { current: string; branches: Record<string, object> }
-    expect(written.current).toBe('draft/session-a')
-    expect(Object.keys(written.branches['draft/session-a'] ?? {})).toEqual(['name', 'title', 'head', 'base', 'forked_at'])
-  })
 })

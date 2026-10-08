@@ -316,7 +316,6 @@ describe('agent tools', () => {
     expect(unbound).toContain('lands on the project\'s current branch at once; the user does not accept changes.')
     expect(unbound).toContain('A change written after a roll back continues on a new branch')
     expect(unbound).toContain('call dv_proj_branch_create')
-    expect(unbound).not.toContain('草稿')
     expect(unbound).toMatch(/No project is bound to this conversation yet: start the work with dv_proj_create\.$/)
     const projectId = await boundProject(fixture)
     const bound = await sectionOf('s1')
