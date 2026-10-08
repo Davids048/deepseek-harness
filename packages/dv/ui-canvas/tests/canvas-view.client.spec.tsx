@@ -293,7 +293,7 @@ describe('CanvasView', () => {
       if (v1 === undefined) throw new Error('fixture lacks plan p1')
       const v3 = {
         ...v1, version: 3, approved_by: null, references: ['hero@1'],
-        shots: [{ prompt: 'Picture 1 walks in the rain', mode: 'ref2va' as const }, { prompt: 'the sky clears', mode: 't2va' as const }],
+        shots: [{ prompt: '<Picture 1> walks in the rain', mode: 'ref2va' as const }, { prompt: 'the sky clears', mode: 't2va' as const }],
       }
       state.components.plan.plans['p1'] = [v1, { ...v1, version: 2, approved_by: null }, v3]
     })
@@ -306,12 +306,12 @@ describe('CanvasView', () => {
       return view.getByTestId('dv-canvas-plan-status').textContent ?? ''
     }
     expect([status(1), status(2), status(3)]).toEqual([zh['editor.planApproved'], '已被第 3 版取代', zh['editor.planPending']])
-    // v3's shot renders from Hero's reference image: a "Picture 1 · Hero" chip, and the image in place of Picture 1.
+    // v3's shot renders from Hero's reference image: a "Picture 1 · Hero" chip, and the image in place of <Picture 1> and its brackets.
     const shot = editor.querySelector('li[data-shot="1"]')
     expect([...shot?.querySelectorAll('img') ?? []].map(image => [image.getAttribute('alt'), image.getAttribute('src')?.includes('ref.png')]))
-      .toEqual([['', true], ['Picture 1', true]])
+      .toEqual([['', true], ['<Picture 1>', true]])
     expect(shot?.textContent).toContain('Picture 1 · Hero')
-    expect(shot?.textContent).toContain(' walks in the rain')
+    expect(shot?.querySelector('p')?.textContent).toBe(' walks in the rain')
     expect(shot?.textContent).toContain(zh['editor.firstFrameNone'])
     // A text shot shows its render mode and no reference images.
     const textShot = editor.querySelector('li[data-shot="2"]')

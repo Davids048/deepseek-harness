@@ -35,4 +35,11 @@ describe('pictureParts', () => {
     expect(pictureParts('no images')).toEqual([{ text: 'no images' }])
     expect(pictureParts('')).toEqual([])
   })
+
+  it('takes the angle brackets of a <Picture N> token into the token and leaves other tokens as text', () => {
+    expect(pictureParts('<Subject 1> is the woman in <Picture 1>; <picture 2> and <Picture 0> follow')).toEqual([
+      { text: '<Subject 1> is the woman in ' }, { picture: 1, text: '<Picture 1>' }, { text: '; ' },
+      { picture: 2, text: '<picture 2>' }, { text: ' and <Picture 0> follow' },
+    ])
+  })
 })
