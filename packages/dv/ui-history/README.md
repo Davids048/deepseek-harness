@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the web application a History panel beside the chat. A toggle in the panel's header switches between two views. The list view (列表 / List) shows the steps of the open project's current branch from every actor, surface, and chat session, newest first, one row per operation record, with who did it, when, the status, and a thumbnail; filters narrow the rows by actor, operation kind, and timeline, and selecting a row plays its output and focuses the record on the canvas or timeline. The tree view (分支树 / Branch tree) draws every branch of the project as a lane graph, and clicking a step moves the head there. The `dv-history` right-Sidebar tab type shows the panel of the project the shell has open.
+Use this package to give the web application a History panel beside the chat. The panel's header holds the branch switcher (`BranchSwitcher` of `@dv/ui-kit`): the current branch in a list of every branch, 新建分支 / New branch, which forks a branch from the current state, and 重命名 / Rename. A toggle below it switches between two views. The list view (列表 / List) shows the steps of the open project's current branch from every actor, surface, and chat session, newest first, one row per operation record, with who did it, when, the status, and a thumbnail; filters narrow the rows by actor, operation kind, and timeline, and selecting a row plays its output and focuses the record on the canvas or timeline. The tree view (分支树 / Branch tree) draws every branch of the project as a lane graph, and clicking a step moves the head there. The `dv-history` right-Sidebar tab type shows the panel of the project the shell has open.
 
 ## Table of Contents
 
@@ -44,6 +44,7 @@ The Host half registers nothing. The browser half registers the `dv-history` tab
 | Select a Timeline row or a timeline export | `dv:timeline-focus` `{timelineId, clipId}`; the shell shows the timeline and the editor selects the clip |
 | "Show in trajectory" in a selected agent row | `dv:trajectory-focus` `{session, toolCall}`; the shell opens 轨迹 on that chat session |
 | Undo, Redo in the header; 回到这一步 on a row | `POST /api/dv/undo` (with `to` for a row), `/api/dv/redo` with `surface: 'history'` |
+| 分支 / Branch list, 新建分支 / New branch, 重命名 / Rename in the header | `POST /api/dv/branches/switch`, `/api/dv/branches/create`, or `/api/dv/branches/rename` with `surface: 'history'`; a refusal shows the server's message |
 | Click a step of the branch tree | `POST /api/dv/branches/switch` `{branch, to}` with `surface: 'history'` |
 
 A `dv:history-focus` event `{session, toolCall}` shows the list view, clears the filters, finds the record that tool call wrote, loads pages until its row is loaded, and selects it. Only records marked `current` move the center; `proj.*` records are only selected.

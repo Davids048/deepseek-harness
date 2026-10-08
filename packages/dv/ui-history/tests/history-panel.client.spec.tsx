@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** The History panel over a scripted API: action rows, approval folds, filters, selection, actions, the branch tree, and empty states. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { DvClient } from '@dv/ui-kit/api.ts'
 import type { HistoryEntry, HistoryQuery, WireHistory, WireState } from '@dv/ui-kit/types.ts'
 import { DV_CANVAS_FOCUS_EVENT, DV_HISTORY_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT } from '@dv/ui-kit/workspace-events.ts'
@@ -211,6 +211,23 @@ describe('HistoryPanel', () => {
     })
     fireEvent.click(view.getByTestId('dv-history-view-toggle').querySelector('[data-view="list"]') as HTMLElement)
     await waitFor(() => { expect(view.queryByTestId('dv-history-tree')).toBeNull() })
+  })
+
+  it('switches, forks and renames branches from the switcher above the views, with surface history', async () => {
+    const { view, writes } = mount()
+    const switcher = await waitFor(() => within(view.getByTestId('dv-kit-branch-switcher')))
+    await waitFor(() => { expect(switcher.getByLabelText('Branch')).toHaveProperty('value', 'main') })
+    fireEvent.change(switcher.getByLabelText('Branch'), { target: { value: 'b2' } })
+    fireEvent.click(switcher.getByText('New branch'))
+    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('night')
+    fireEvent.click(switcher.getByText('Rename'))
+    prompt.mockRestore()
+    await waitFor(() => { expect(writes.filter(write => write.path.startsWith('/api/dv/branches/'))).toHaveLength(3) })
+    expect(writes.filter(write => write.path.startsWith('/api/dv/branches/'))).toEqual([
+      { path: '/api/dv/branches/switch', body: { project: 'p1', branch: 'b2', surface: 'history' } },
+      { path: '/api/dv/branches/create', body: { project: 'p1', surface: 'history' } },
+      { path: '/api/dv/branches/rename', body: { project: 'p1', branch: 'main', title: 'night' } },
+    ])
   })
 
   it('says what to do when the project has no records, and when the filters match none', async () => {

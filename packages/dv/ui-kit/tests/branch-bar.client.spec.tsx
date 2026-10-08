@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
-/** The branch bar and the branch switcher: project selection, switching, forking and renaming branches, undo, and new projects. */
+/** The branch bar (project selection, undo, new projects), the branch switcher of the History panel, and the bottom bar's branch button. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, within } from '@testing-library/react'
 import { BranchBar } from '../src/client/BranchBar.tsx'
 import type { BranchBarLabels, BranchBarProps } from '../src/client/BranchBar.tsx'
+import { BranchStatus } from '../src/client/BranchStatus.tsx'
 import { BranchSwitcher } from '../src/client/BranchSwitcher.tsx'
 import { fixtureState, PROJECT } from './fixture.client.tsx'
 
@@ -13,8 +14,8 @@ const labels: BranchBarLabels = { project: 'project', undo: 'undo', newProject: 
 
 function mount(overrides: Partial<BranchBarProps> = {}) {
   const props: BranchBarProps = {
-    projects: [PROJECT, { ...PROJECT, id: 'p2', title: 'Other' }], project: 'p1', state: fixtureState(), labels,
-    onProject: vi.fn(), branches: { onSwitch: vi.fn(), onCreate: vi.fn(), onRename: vi.fn() }, onUndo: vi.fn(),
+    projects: [PROJECT, { ...PROJECT, id: 'p2', title: 'Other' }], project: 'p1', labels,
+    onProject: vi.fn(), onUndo: vi.fn(),
     onCreate: vi.fn(),
     ...overrides,
   }
@@ -23,26 +24,23 @@ function mount(overrides: Partial<BranchBarProps> = {}) {
 }
 
 describe('BranchBar', () => {
-  it('lists projects and branches, and reports selection changes', () => {
+  it('lists projects, and reports selection changes and undo', () => {
     const { props, bar } = mount()
     const project = bar.getByLabelText('project')
     expect([...project.querySelectorAll('option')].map(option => option.textContent)).toEqual(['Demo', 'Other'])
     fireEvent.change(project, { target: { value: 'p2' } })
     expect(props.onProject).toHaveBeenCalledWith('p2')
-    const branch = bar.getByLabelText('Branch')
-    expect([...branch.querySelectorAll('option')].map(option => [option.value, option.textContent])).toEqual([['main', 'Main'], ['b2', 'Branch 2']])
-    fireEvent.change(branch, { target: { value: 'b2' } })
-    expect(props.branches.onSwitch).toHaveBeenCalledWith('b2')
+    // The Sidebar bar has no branch controls: the bottom bar and the History panel own them.
+    expect(bar.queryByLabelText('Branch')).toBeNull()
     fireEvent.click(bar.getByText('undo'))
     expect(props.onUndo).toHaveBeenCalledOnce()
   })
 
   it('uses window.prompt by default and shows the placeholder before a project is chosen', () => {
     const prompt = vi.spyOn(window, 'prompt').mockReturnValue('from-prompt')
-    const { props, bar } = mount({ project: null, state: null })
+    const { props, bar } = mount({ project: null })
     expect(bar.getByLabelText('project')).toHaveProperty('value', '')
     expect(bar.getByText('none')).toBeTruthy()
-    expect(bar.getByLabelText('Branch')).toHaveProperty('disabled', true)
     expect(bar.getByText('undo')).toHaveProperty('disabled', true)
     fireEvent.click(bar.getByText('new project'))
     expect(prompt).toHaveBeenCalledWith('title?')
@@ -101,5 +99,37 @@ describe('BranchSwitcher', () => {
     fireEvent.click(view.getByText('Rename'))
     expect(prompt).toHaveBeenCalledWith('Branch name', '')
     expect(onRename).toHaveBeenCalledWith('main', 'kept')
+  })
+})
+
+describe('BranchStatus', () => {
+  it('names the current branch, opens the branch list on a click, and switches only to another branch', () => {
+    const onSwitch = vi.fn()
+    const view = render(<BranchStatus state={{ ...fixtureState(), current: 'b2' }} onSwitch={onSwitch} />)
+    const status = within(view.getByTestId('dv-kit-branch-status'))
+    const button = status.getByRole('button', { name: 'Current branch: Branch 2' })
+    expect(status.queryAllByTestId('dv-kit-branch-option')).toHaveLength(0)
+    fireEvent.click(button)
+    const options = status.getAllByTestId('dv-kit-branch-option')
+    expect(options.map(option => [option.getAttribute('data-branch'), option.getAttribute('aria-selected')])).toEqual([['main', 'false'], ['b2', 'true']])
+    fireEvent.click(options[1] as HTMLElement)
+    expect(onSwitch).not.toHaveBeenCalled()
+    expect(status.queryAllByTestId('dv-kit-branch-option')).toHaveLength(0)
+    fireEvent.click(button)
+    fireEvent.click(status.getAllByTestId('dv-kit-branch-option')[0] as HTMLElement)
+    expect(onSwitch).toHaveBeenCalledExactlyOnceWith('main')
+  })
+
+  it('closes the list on Escape and on a click outside, and is disabled while the state loads', () => {
+    const view = render(<BranchStatus state={fixtureState()} onSwitch={vi.fn()} />)
+    const status = within(view.getByTestId('dv-kit-branch-status'))
+    fireEvent.click(status.getByRole('button'))
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(status.queryAllByTestId('dv-kit-branch-option')).toHaveLength(0)
+    fireEvent.click(status.getByRole('button'))
+    fireEvent.pointerDown(document.body)
+    expect(status.queryAllByTestId('dv-kit-branch-option')).toHaveLength(0)
+    cleanup()
+    expect(render(<BranchStatus state={null} onSwitch={vi.fn()} />).getByRole('button')).toHaveProperty('disabled', true)
   })
 })

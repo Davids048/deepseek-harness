@@ -1195,27 +1195,56 @@ describe('timeline stories', () => {
   })
 })
 
-/** The branch switcher in the workspace top bar. */
-function switcher(page: Page): Locator {
-  return page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-switcher"]').first()
+/** The current-branch button of the workspace's bottom bar. */
+function branchStatus(page: Page): Locator {
+  return page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-status"]').first()
 }
 
-/** @returns the option labels of the branch switcher, in branch order. */
+/** The branch switcher in the History panel header; a replaced panel can linger for a moment, so only the visible one counts. */
+function switcher(page: Page): Locator {
+  return page.locator('[data-testid="dv-history-panel"]:visible [data-testid="dv-kit-branch-switcher"]').first()
+}
+
+/**
+ * Open the History tab of the right panel; 面板 reopens a collapsed panel.
+ * @param page - a page showing a project workspace.
+ */
+async function openHistory(page: Page): Promise<void> {
+  const tab = page.locator('[role="tab"]', { hasText: /^历史$/ }).filter({ visible: true }).first()
+  const shown = await tab.waitFor({ timeout: 5000 }).then(() => true, () => false)
+  if (!shown) await page.getByRole('button', { name: '面板', exact: true }).click()
+  // A project switch remounts the right panel's session seat, so the tab found first can be replaced mid-click.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (await tab.click({ timeout: 3000 }).then(() => true, () => false)) break
+  }
+  await expect.poll(() => switcher(page).count(), { timeout: 15_000 }).toBe(1)
+}
+
+/** @returns the labels of the branches the bottom bar's list offers, in branch order; the list is closed again after. */
 async function branchOptions(page: Page): Promise<string[]> {
-  return await switcher(page).locator('option').evaluateAll(options => options.map(option => option.textContent ?? ''))
+  await branchStatus(page).getByRole('button').first().click()
+  const options = branchStatus(page).locator('[data-testid="dv-kit-branch-option"]')
+  await options.first().waitFor()
+  const labels = await options.evaluateAll(elements => elements.map(element => (element.textContent ?? '').replace(/^[✓\u2003]\s?/, '').trim()))
+  await page.keyboard.press('Escape')
+  return labels
 }
 
 describe('branches and keep anyway', () => {
-  it('the top bar names the current branch; 新建分支 forks it, renaming names it, and switching shows each branch on the canvas and the timeline', async () => {
+  it('the bottom bar names the current branch; History forks and names branches, and switching shows each branch on the canvas and the timeline', async () => {
     const project = await seedProject('branch-switch', 1)
     const page = await openPage()
     await gotoProject(page, project.id)
-    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
+    await expect.poll(() => branchStatus(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
+    expect(await branchStatus(page).innerText()).toContain('当前分支：主线')
     expect(await branchOptions(page)).toEqual(['主线'])
+    // The top bar has no branch controls; forking and renaming live in the History panel.
+    expect(await page.locator('[data-dv-workspace] header [data-testid="dv-kit-branch-switcher"]').count()).toBe(0)
     const takes = page.locator('[data-node-kind="take"]')
     await expect.poll(() => takes.count()).toBe(1)
+    await openHistory(page)
     await switcher(page).getByRole('button', { name: '新建分支', exact: true }).click()
-    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('b2')
+    await expect.poll(() => branchStatus(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('b2')
     expect(await branchOptions(page)).toEqual(['主线', '分支 2'])
     page.once('dialog', (dialog) => { void dialog.accept('夜景') })
     await switcher(page).getByRole('button', { name: '重命名', exact: true }).click()
@@ -1227,9 +1256,10 @@ describe('branches and keep anyway', () => {
     await viewToggle(page, '时间线').click()
     await page.locator('[data-testid="dv-timeline-editor"]').getByRole('button', { name: '＋ 新建' }).click()
     await expect.poll(() => timelineTabs(page)).toHaveLength(2)
-    // Back on 主线 the canvas and the timeline show 主线 as it was.
-    await switcher(page).getByLabel('分支').selectOption('main')
-    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
+    // Back on 主线, chosen from the bottom bar, the canvas and the timeline show 主线 as it was.
+    await branchStatus(page).getByRole('button').first().click()
+    await branchStatus(page).locator('[data-testid="dv-kit-branch-option"][data-branch="main"]').click()
+    await expect.poll(() => branchStatus(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
     await expect.poll(() => timelineTabs(page)).toHaveLength(1)
     await viewToggle(page, '画布').click()
     await expect.poll(() => takes.count()).toBe(1)

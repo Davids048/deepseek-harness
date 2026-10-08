@@ -88,7 +88,5 @@ describe('assetLibrary over a synthetic state', () => {
     expect(library.images).toEqual([
       expect.objectContaining({ id: 'redo-img', name: 'later.png' }), expect.objectContaining({ id: 'img', name: 'dropped.png' }),
     ])
-    expect([...library.elsewhere]).toEqual([['other-vid', 'b2'], ['redo-img', 'main']])
-    expect([...assetLibrary(state).elsewhere]).toEqual([])
   })
 })

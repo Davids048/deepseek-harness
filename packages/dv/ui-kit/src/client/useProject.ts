@@ -68,16 +68,16 @@ export function useOperations(client: DvClient): Loading<WireOperation[]> {
 }
 
 /**
- * The state of a branch, refetched on every project change while the component is mounted.
+ * The state of the project's current branch, refetched on every project change (a branch switch included) while the
+ * component is mounted.
  * @param client - the API client.
  * @param project - the project, or null before one is chosen.
- * @param branch - the branch to read, or null for the project's current branch (followed when it changes).
  * @returns the state.
  */
-export function useProjectState(client: DvClient, project: string | null, branch: string | null): Loading<WireState> {
+export function useProjectState(client: DvClient, project: string | null): Loading<WireState> {
   const loader = useLoader(
-    signal => project === null ? Promise.reject(new Error('no project')) : client.getState(project, branch, signal),
-    [client, project, branch],
+    signal => project === null ? Promise.reject(new Error('no project')) : client.getState(project, signal),
+    [client, project],
   )
   const reload = loader.reload
   const pending = useRef<ReturnType<typeof setTimeout> | null>(null)

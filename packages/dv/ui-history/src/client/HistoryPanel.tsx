@@ -1,6 +1,7 @@
 /**
  * The History panel: the edit history of a project, read through `POST /api/dv/history`, in two views that a toggle in
- * the header switches.
+ * the header switches. Above the views, the branch switcher (`BranchSwitcher` of `@dv/ui-kit`) shows the current branch
+ * and switches, forks (新建分支) and renames (重命名) branches.
  *
  * The list view (列表) shows the steps of the project's current branch from its start to its head, newest first, one
  * row per action, and the steps after the head that redo brings back, greyed. Each row shows the action with its
@@ -25,7 +26,8 @@ import { DvClient, assetUrl } from '@dv/ui-kit/api.ts'
 import { useCurrentProject } from '@dv/ui-kit/current-project.ts'
 import { useText } from '@dv/ui-kit/locale.ts'
 import type { PickText } from '@dv/ui-kit/locale.ts'
-import { branchLabel } from '@dv/ui-kit/state.ts'
+import { BranchSwitcher, branchActions } from '@dv/ui-kit/BranchSwitcher.tsx'
+import { branchLabel, entryBranch } from '@dv/ui-kit/state.ts'
 import { timelineName } from '@dv/ui-kit/timeline.ts'
 import type { Actor, Asset, Branch, HistoryEntry, HistoryQuery, ProjectRecord, RecordStatus, WireHistory } from '@dv/ui-kit/types.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
@@ -33,8 +35,8 @@ import {
   DV_HISTORY_FOCUS_EVENT, DV_TRAJECTORY_FOCUS_EVENT, dispatchWorkspaceEvent, type DvWorkspaceEventMap,
 } from '@dv/ui-kit/workspace-events.ts'
 import {
-  actionLabel, actionRows, branchTree, centerFocus, clipTimelines, ownerBranch, relativeTime, stepPlace, thumbnailOf,
-  timelineRecords, branchSteps, type ActionRow, type BranchTree, type Thumbnail, type TreeRow, type BranchSteps,
+  actionLabel, actionRows, branchTree, centerFocus, clipTimelines, relativeTime, stepPlace, thumbnailOf,
+  timelineRecords, branchSteps, type ActionRow, type Thumbnail, type TreeRow, type BranchSteps,
 } from './rows.ts'
 
 /** Props of {@link HistoryPanel}. */
@@ -214,7 +216,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   const { projectId, session } = props
   const client = useMemo(() => props.client ?? new DvClient(), [props.client])
   const t = useText()
-  const current = useProjectState(client, projectId, null)
+  const current = useProjectState(client, projectId)
   const [view, setView] = useState<HistoryView>('list')
   const [filters, setFilters] = useState<Filters>(NO_FILTERS)
   const [selected, setSelected] = useState<string | null>(null)
@@ -234,18 +236,15 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   const redoSteps = current.value?.redo_steps
   const steps = useMemo(() => branchSteps(records ?? [], redoSteps ?? []), [records, redoSteps])
   const timelines = current.value?.components.timeline.timelines ?? []
+  // A timeline filter applies only while the current branch has that timeline, so a branch switch cannot leave a hidden
+  // filter active.
+  const timeline = timelines.find(item => item.id === filters.timeline)
+  const shownFilters = timeline === undefined ? { ...filters, timeline: '' } : filters
   const timelineSet = useMemo(() => {
-    const timeline = timelines.find(item => item.id === filters.timeline)
-    if (filters.timeline === '' || current.value === null) return null
-    if (timeline === undefined) return []
+    if (timeline === undefined || current.value === null) return null
     const { records: branchRecords, created_by: createdBy } = current.value.components.proj
     return timelineRecords(branchRecords, createdBy, timeline.id, timeline.clips.flatMap(clip => clip.asset === null ? [] : [clip.asset]))
-  }, [filters.timeline, timelines, current.value])
-  // A timeline filter that the branch shown after a switch does not have is cleared, so no hidden filter stays active.
-  const filteredTimelineGone = filters.timeline !== '' && current.value !== null && !timelines.some(item => item.id === filters.timeline)
-  useEffect(() => {
-    if (filteredTimelineGone) setFilters(previous => ({ ...previous, timeline: '' }))
-  }, [filteredTimelineGone])
+  }, [timeline, current.value])
   // The list view reads the current branch's line with the filters; the tree view reads every branch line.
   const query = useMemo((): HistoryQuery | null => {
     if (view === 'tree') return { project: projectId, marks: ['current', 'redo', 'branch'] }
@@ -307,6 +306,11 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     })
   }
   const report = (failure: unknown): void => { setNotice(failure instanceof Error ? failure.message : String(failure)) }
+  // The branch switcher of the panel header: switch, fork and rename branches; a refused change shows its reason.
+  const branchGestures = branchActions(client, projectId, 'history', (work) => {
+    setNotice(null)
+    return work().then(() => { current.reload() }, report)
+  })
   // 回到这一步: move the current branch back to just after the record.
   const jump = (record: string): void => {
     setNotice(null)
@@ -314,8 +318,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   }
   // A step of the tree: stay on the current branch when its line holds the step, else switch to the step's owner.
   const moveTo = (entry: HistoryEntry): void => {
-    const shown = current.value?.current ?? null
-    const lane = shown !== null && entry.branches.includes(shown) ? shown : ownerBranch(entry)
+    const lane = entryBranch(entry, current.value?.current ?? null)
     if (lane === null) return
     setNotice(null)
     client.switchBranch(projectId, lane, 'history', entry.record.id, session).catch(report)
@@ -340,8 +343,8 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     const tail = view === 'tree'
       ? (
         <TreeView
-          tree={tree} assets={loaded.assets} records={recordsById} current={current.value?.current ?? null} head={steps.current}
-          onMove={moveTo}
+          rows={tree} lanes={branches ?? []} assets={loaded.assets} records={recordsById} current={current.value?.current ?? null}
+          head={steps.current} onMove={moveTo}
         />
       )
       : rows.map(row => (
@@ -367,9 +370,10 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   }
   return (
     <div data-testid="dv-history-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: '8px 8px 0', gap: 6 }}>
+      <BranchSwitcher state={current.value} {...branchGestures} />
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <ViewToggle view={view} onChange={setView} t={t} />
-        {view === 'list' ? <FilterBar filters={filters} onChange={setFilters} timelines={timelines} t={t} /> : null}
+        {view === 'list' ? <FilterBar filters={shownFilters} onChange={setFilters} timelines={timelines} t={t} /> : null}
         <Actions client={client} projectId={projectId} session={session} canRedo={steps.after.size > 0} />
       </div>
       {notice === null ? null : <p style={{ color: muted, fontSize: 12, margin: 0 }}>{notice}</p>}
@@ -558,7 +562,7 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
   const t = useText()
   const step = stepPlace(record.id, props.steps)
   // A step redo brings back is greyed.
-  const dimmed = step === 'after' || entry.mark === 'redo'
+  const dimmed = entry.mark === 'redo'
   const selected = props.selected === record.id
   const status = t(...STATUSES[record.status])
   const thumbnail = thumbnailOf(record, assets, props.records, (props.folded ?? []).map(child => child.record))
@@ -637,7 +641,9 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
  * @returns the tree.
  */
 function TreeView(props: {
-  tree: BranchTree
+  rows: TreeRow[]
+  /** The branch of each lane, in `WireState.branches` order. */
+  lanes: readonly Branch[]
   assets: ReadonlyMap<string, Asset>
   records: ReadonlyMap<string, ProjectRecord>
   current: string | null
@@ -645,7 +651,7 @@ function TreeView(props: {
   onMove: (entry: HistoryEntry) => void
 }): ReactNode {
   const t = useText()
-  const { lanes, rows } = props.tree
+  const { lanes, rows } = props
   return (
     <div data-testid="dv-history-tree" style={{ fontSize: 12 }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, padding: '6px 8px', borderBottom: `1px solid ${line}` }}>

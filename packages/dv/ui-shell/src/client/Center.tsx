@@ -19,7 +19,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DV_CURRENT_TIMELINE_EVENT, getTimelineOf, publishCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
 import { pickText, useText } from '@dv/ui-kit/locale.ts'
-import { BranchSwitcher, branchActions } from '@dv/ui-kit/BranchSwitcher.tsx'
+import { branchActions } from '@dv/ui-kit/BranchSwitcher.tsx'
+import { BranchStatus } from '@dv/ui-kit/BranchStatus.tsx'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
   DV_CANVAS_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT, DV_TIMELINE_INSERT_EVENT, type DvWorkspaceEventMap,
@@ -261,12 +262,12 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
   })
   const [renaming, setRenaming] = useState(false)
   // The state of the project's current branch, which every view shows and every edit goes to.
-  const state = useProjectState(client, projectId, null)
+  const state = useProjectState(client, projectId)
   // The chat session the workspace sits beside, recorded as the `session` of the views' edits; none until the main
   // session belongs to this project.
   const session = sessionInProject ? sessionId ?? null : null
-  // A branch switch, fork or rename refetches the state; a refused one leaves the page as it was and shows the server's
-  // reason.
+  // A branch switch from the bottom bar refetches the state; a refused one leaves the page as it was and shows the
+  // server's reason.
   const branches = branchActions(client, projectId, view === 'timeline' ? 'timeline' : 'canvas', work => work().then(
     () => { state.reload() }, (error: unknown) => { window.alert(error instanceof Error ? error.message : String(error)) },
   ))
@@ -390,7 +391,6 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
           ))}
         </div>
         <div className={css.barEnd}>
-          <BranchSwitcher state={state.value} {...branches} />
           <button type="button" className={css.panelsButton} title={t('打开对话、素材库和轨迹', 'Open Chat, Asset pool, and Trajectory')} onClick={showPanels}>
             {t('面板', 'Panels')}
           </button>
@@ -401,6 +401,9 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
           ? <CanvasView projectId={projectId} client={client} session={session} />
           : <TimelineView projectId={projectId} client={client} session={session} />}
       </div>
+      <footer className={css.statusBar}>
+        <BranchStatus state={state.value} onSwitch={branches.onSwitch} />
+      </footer>
     </div>
   )
 }

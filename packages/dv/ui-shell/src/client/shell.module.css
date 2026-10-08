@@ -71,7 +71,7 @@
 
 .topbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(max-content, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   flex: none;
   gap: 12px;
@@ -158,6 +158,16 @@
   justify-content: flex-end;
   gap: 10px;
   min-width: 0;
+}
+
+.statusBar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 8px;
+  border-top: 0.5px solid var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-secondary);
 }
 
 .viewArea {

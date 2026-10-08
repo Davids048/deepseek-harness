@@ -1,5 +1,5 @@
 ---
-description: "Browser code the DreamVerse views share: the /api/dv client, the wire types, the parameter form model, the track geometry, the window events, the view session hooks, the branch switcher, and the branch bar."
+description: "Browser code the DreamVerse views share: the /api/dv client, the wire types, the parameter form model, the track geometry, the window events, the view session hooks, the branch switcher, the current-branch button, and the branch bar."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package from a DreamVerse browser plugin to talk to `@dv/api` and to read the state it sends. `DvClient` wraps every `/api/dv` route and follows `/dv/events`; `fieldsOf` and `paramsOf` turn an operation's parameter schema into form fields and back; `useViewSession` keeps a view's project, the state of the project's current branch, and the operations in step with the host; `BranchSwitcher` shows the current branch and switches, forks and renames branches; `BranchBar` is the project, branch and undo bar of the Sidebar views; the event modules own the `dv:*` window events and page globals the panels exchange. The package is a library: it registers nothing and is bundled into each consumer.
+Use this package from a DreamVerse browser plugin to talk to `@dv/api` and to read the state it sends. `DvClient` wraps every `/api/dv` route and follows `/dv/events`; `fieldsOf` and `paramsOf` turn an operation's parameter schema into form fields and back; `useViewSession` keeps a view's project, the state of the project's current branch, and the operations in step with the host; `BranchStatus` is the small current-branch button of the workspace's bottom bar, whose list switches branches; `BranchSwitcher` shows the current branch and switches, forks and renames branches in the History panel; `BranchBar` is the project and undo bar of the Sidebar views; the event modules own the `dv:*` window events and page globals the panels exchange. The package is a library: it registers nothing and is bundled into each consumer.
 
 ## Table of Contents
 
@@ -35,14 +35,15 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | Module | Content |
 | --- | --- |
 | `types.ts` | `WireState`, `ProjectRecord`, `Branch`, `Asset`, `Timeline`, `Clip`, `WireOperation`, `WireProject`, `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry`, `WireHistory`, `PlanVersion`, `Shot` (with its render `mode`, `ref2va` or `t2va`, and `continue_previous`): the JSON `@dv/api` sends and receives, as structural types |
-| `api.ts` | `DvClient` (`listProjects`, `getState` (a null branch reads the current branch), `listOperations`, `runOperation`, `importAsset`, `createBranch`, `switchBranch`, `renameBranch`, `undo`, `redo`, `acceptStale`, `listHistory`, project, layout, workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
+| `api.ts` | `DvClient` (`listProjects`, `getState` (the current branch), `listOperations`, `runOperation`, `importAsset`, `createBranch`, `switchBranch`, `renameBranch`, `undo`, `redo`, `acceptStale`, `listHistory`, project, layout, workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`, `paramsOf(fields)`, `FieldParseError`: one control per schema property, typed coercion |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`, `timelineName(timeline, numbered)`, `formatSeconds` |
 | `references.ts` | `shotReferences(version, shot)`, `referenceImages(state, references)`, `pictureParts(prompt)`: the reference images a shot sends to the video model in the order its prompt names them `Picture 1`, `Picture 2`, …, and the prompt split at those tokens; a `t2va` shot has no reference images |
-| `state.ts` | `branchLabel` (the branch title, else 主线 / Main for `main`, 分支 n / Branch n for `b<n>`, else the name), `assetIndex`, `videoAssets` |
+| `state.ts` | `branchLabel` (the branch title, else 主线 / Main for `main`, 分支 n / Branch n for `b<n>`, else the name), `entryBranch` (the branch a history entry belongs to: the current branch when its line holds the record, else the branch the record was written on, else the first branch whose line holds it), `assetIndex`, `videoAssets` |
 | `useProject.ts` | `useProjects`, `useOperations`, `useProjectState`: loaders that refetch on every project event |
 | `useView.ts` | `useViewSession(client, surface, session?)`: the project choice, the state of the project's current branch, the operations, the last failure, and the branch-bar callbacks; `sessionFromLocation` reads the chat session from the page's `?session=` so the view opens on that session's project |
-| `BranchBar.tsx` | The Sidebar bar: the project picker, the branch switcher, a new-project button, and undo; its project and undo copy arrives as `labels`, already localized by the owning plugin |
+| `BranchBar.tsx` | The Sidebar bar: the project picker, a new-project button, and undo; its copy arrives as `labels`, already localized by the owning plugin |
+| `BranchStatus.tsx` | `BranchStatus`: the button 当前分支：<name> / Current branch: <name> of the workspace's bottom bar; a click opens the list of every branch (test IDs `dv-kit-branch-status`, `dv-kit-branch-option`), and choosing another branch calls `onSwitch`; Escape or a click outside closes the list |
 | `BranchSwitcher.tsx` | `BranchSwitcher`: the current branch in a list of every branch, which switches the project's current branch, and the 新建分支 / New branch and 重命名 / Rename buttons (test ID `dv-kit-branch-switcher`, attribute `data-branch`); `branchActions(client, project, surface, run)` binds them to the branch routes |
 | `compose.ts`, `workspace-events.ts` | The window events `dv:compose`, `dv:timeline-insert`, `dv:canvas-focus`, `dv:history-focus`, `dv:trajectory-focus`, `dv:timeline-focus` (`DV_*_EVENT`) and the asset drag type `application/x-dv-asset` |
 | `tool-labels.ts` | `DV_TOOL_LABELS`: the zh and en label of every `dv_*` tool, shown by the composer's tool cards and the History panel |
@@ -59,7 +60,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`DvClient` decodes every error body into a `DvApiError` that keeps the HTTP status, the `ProjectError` code, and the rest of the body. `useLoader` keeps the last value while a reload is in flight and ignores a response whose inputs changed; `useProjectState` folds several project events of one burst into one refetch, and with a null branch it follows the project's current branch, so a branch switch made anywhere refreshes every view. The types in `types.ts` copy the `@dv/project` and component types by hand because host packages cannot be imported into a browser bundle; a record arrives as `ProjectRecord` with its inputs' `ref` as the stored object.
+`DvClient` decodes every error body into a `DvApiError` that keeps the HTTP status and the `ProjectError` code. `useLoader` keeps the last value while a reload is in flight and ignores a response whose inputs changed; `useProjectState` reads the project's current branch and folds several project events of one burst into one refetch, so a branch switch made anywhere refreshes every view. The types in `types.ts` copy the `@dv/project` and component types by hand because host packages cannot be imported into a browser bundle; a record arrives as `ProjectRecord` with its inputs' `ref` as the stored object.
 
 | File | Content |
 | --- | --- |
@@ -69,7 +70,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | [`src/client/references.ts`](src/client/references.ts) | Shot reference images and `Picture N` tokens |
 | [`src/client/useProject.ts`](src/client/useProject.ts), [`src/client/useView.ts`](src/client/useView.ts) | The hooks |
 | [`src/client/BranchBar.tsx`](src/client/BranchBar.tsx) | The shared bar |
-| [`src/client/BranchSwitcher.tsx`](src/client/BranchSwitcher.tsx) | The branch switcher and its API bindings |
+| [`src/client/BranchSwitcher.tsx`](src/client/BranchSwitcher.tsx), [`src/client/BranchStatus.tsx`](src/client/BranchStatus.tsx) | The branch switcher with its API bindings, and the current-branch button |
 
 </details>
 

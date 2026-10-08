@@ -199,9 +199,9 @@ async function agentRename(page: Page, project: string, word: string): Promise<P
   return record
 }
 
-/** The branch switcher in the workspace top bar. */
+/** The branch switcher in the History panel header. */
 function switcher(page: Page): Locator {
-  return page.locator('[data-testid="dv-kit-branch-switcher"]:visible').first()
+  return historyPanel(page).locator('[data-testid="dv-kit-branch-switcher"]').first()
 }
 
 /**

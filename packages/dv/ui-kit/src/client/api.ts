@@ -83,9 +83,8 @@ export class DvApiError extends Error {
    * @param status - the HTTP status.
    * @param message - the server's explanation.
    * @param code - the Project error code, such as `unknown_branch`, when the server sent one.
-   * @param body - the whole error body, for fields beside `error` and `code`.
    */
-  constructor(readonly status: number, message: string, readonly code: string | null = null, readonly body: Record<string, unknown> = {}) {
+  constructor(readonly status: number, message: string, readonly code: string | null = null) {
     super(message)
     this.name = 'DvApiError'
   }
@@ -106,7 +105,7 @@ async function decode<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const fields = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
     const reason = typeof fields['error'] === 'string' ? fields['error'] : `HTTP ${String(response.status)}`
-    throw new DvApiError(response.status, reason, typeof fields['code'] === 'string' ? fields['code'] : null, fields)
+    throw new DvApiError(response.status, reason, typeof fields['code'] === 'string' ? fields['code'] : null)
   }
   return body as T
 }
@@ -155,12 +154,11 @@ export class DvClient {
 
   /**
    * @param project - the project.
-   * @param branch - a branch name, or null for the project's current branch.
    * @param signal - cancels the request.
-   * @returns the state of the branch.
+   * @returns the state of the project's current branch.
    */
-  getState(project: string, branch: string | null, signal?: AbortSignal): Promise<WireState> {
-    return this.get('/api/dv/state', branch === null ? { project } : { project, branch }, signal)
+  getState(project: string, signal?: AbortSignal): Promise<WireState> {
+    return this.get('/api/dv/state', { project }, signal)
   }
 
   /**
@@ -211,12 +209,11 @@ export class DvClient {
   /**
    * Fork a branch from the current branch at its head's position and make it the project's current branch.
    * @param project - the project.
-   * @param title - the name the human gave it, or null for the default label.
    * @param surface - where the gesture came from.
-   * @returns the new branch and the heads afterwards.
+   * @returns the new branch, with the default label, and the heads afterwards.
    */
-  createBranch(project: string, title: string | null, surface: ViewSurface): Promise<WireBranchResult> {
-    return this.post('/api/dv/branches/create', { project, surface, ...title === null ? {} : { title } })
+  createBranch(project: string, surface: ViewSurface): Promise<WireBranchResult> {
+    return this.post('/api/dv/branches/create', { project, surface })
   }
 
   /**

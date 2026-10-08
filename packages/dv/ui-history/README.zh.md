@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包让 web 应用在对话旁边多一个历史面板。面板顶部的开关在两个视图之间切换。列表视图（列表）显示所打开项目当前分支上来自所有发起者、来源和对话的步骤，最新的在前，每条操作记录一行，显示谁做的、何时、状态和缩略图；筛选按发起者、操作类型和时间线缩小行，选中一行会播放它的产出，并在画布或时间线上定位该记录。树视图（分支树）把项目的所有分支画成泳道图，点击一个步骤会把 head 移到那里。右侧栏的 `dv-history` 标签类型显示 shell 所打开项目的面板。
+使用本包让 web 应用在对话旁边多一个历史面板。面板顶部放着分支切换器（`@dv/ui-kit` 的 `BranchSwitcher`）：在所有分支的列表里显示当前分支，新建分支 从当前状态分出一个分支，重命名 修改当前分支的名称。它下面的开关在两个视图之间切换。列表视图（列表）显示所打开项目当前分支上来自所有发起者、来源和对话的步骤，最新的在前，每条操作记录一行，显示谁做的、何时、状态和缩略图；筛选按发起者、操作类型和时间线缩小行，选中一行会播放它的产出，并在画布或时间线上定位该记录。树视图（分支树）把项目的所有分支画成泳道图，点击一个步骤会把 head 移到那里。右侧栏的 `dv-history` 标签类型显示 shell 所打开项目的面板。
 
 ## 目录
 
@@ -44,6 +44,7 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-history` 标签类�
 | 选中时间线记录或时间线导出的行 | `dv:timeline-focus` `{timelineId, clipId}`；shell 显示时间线，编辑器选中该片段 |
 | 选中的智能体行里的"在轨迹中查看" | `dv:trajectory-focus` `{session, toolCall}`；shell 在该对话上打开 轨迹 |
 | 顶部的 撤销、重做；行上的 回到这一步 | `POST /api/dv/undo`（行上带 `to`）、`/api/dv/redo`，`surface: 'history'` |
+| 顶部的 分支 列表、新建分支、重命名 | `POST /api/dv/branches/switch`、`/api/dv/branches/create` 或 `/api/dv/branches/rename`，`surface: 'history'`；被拒绝时显示服务端的消息 |
 | 点击分支树上的步骤 | `POST /api/dv/branches/switch` `{branch, to}`，`surface: 'history'` |
 
 `dv:history-focus` 事件 `{session, toolCall}` 切到列表视图，清空筛选，找到该工具调用写下的记录，翻页直到它的行已加载，然后选中它。只有标记为 `current` 的记录会移动中间区域；`proj.*` 记录只被选中。

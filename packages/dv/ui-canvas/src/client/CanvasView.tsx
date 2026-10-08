@@ -91,7 +91,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
   const client = useMemo(() => given ?? new DvClient(), [given])
   const language = useLanguage()
   const t = givenT ?? translates[language]
-  const base = useProjectState(client, projectId, null)
+  const base = useProjectState(client, projectId)
   // The project's canvas list, from the stored layout and this view's drops and removals.
   const [placed, setPlaced] = useState<ReadonlySet<string>>(new Set())
   // This view's canvas list changes whose layout write has not settled: asset ID → on the list.

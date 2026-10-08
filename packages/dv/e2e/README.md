@@ -39,7 +39,7 @@ DSH_PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome-linux/chrome \
 
 | Story file | What the stories cover |
 | --- | --- |
-| [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | Canvas fit, pan, zoom, and floating editors; takes and plan versions; timeline tabs, playback, split, trim, reorder, undo, and export; the branch switcher (fork, rename, switch) and stale marks |
+| [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | Canvas fit, pan, zoom, and floating editors; takes and plan versions; timeline tabs, playback, split, trim, reorder, undo, and export; branches (the bottom bar's current-branch button switches, the History panel forks and renames) and stale marks |
 | [`tests/stories/assets.e2e.ts`](tests/stories/assets.e2e.ts) | The asset pool panel: imports through the file chooser, the drop zone, and the chat; the current branch's assets and other branches' assets with their label; previews; insertion into the timeline and the canvas |
 | [`tests/stories/history.e2e.ts`](tests/stories/history.e2e.ts) | The History panel: row order, labels, marks, approval folds, filters, focus on the canvas or the timeline, live updates, the fork after an undo, and the branch tree |
 | [`tests/stories/chat.e2e.ts`](tests/stories/chat.e2e.ts) | The chat and its composer: agent changes on the current branch across turns, the fork after an undo, confirmation in the conversation, attached images, `@` mentions, and what the model request received |

@@ -12,12 +12,11 @@ describe('DvClient', () => {
     expect(await client.listProjects()).toEqual([PROJECT])
     expect(await client.listProjects(undefined, 's1')).toEqual([PROJECT])
     expect(await client.createProject('Demo 2', 'canvas')).toMatchObject({ heads: { main: 'x' } })
-    expect((await client.getState('p1', 'b2')).project.id).toBe('p1')
-    expect((await client.getState('p1', null)).project.id).toBe('p1')
+    expect((await client.getState('p1')).project.id).toBe('p1')
     expect((await client.listOperations()).map(operation => operation.name)).toContain('shot.render_ref2va')
     const record = await client.runOperation({ project: 'p1', operation: 'timeline.clip_move', params: { clip: 'cl2', to: 1 }, surface: 'timeline' })
     expect(record.operation).toBe('timeline.clip_move')
-    await client.createBranch('p1', null, 'canvas')
+    await client.createBranch('p1', 'canvas')
     await client.undo('p1', 'canvas')
     await client.switchBranch('p1', 'b2', 'history', 'g1')
     await client.renameBranch('p1', 'b2', 'night')
@@ -82,16 +81,14 @@ describe('DvClient', () => {
   it('turns error statuses into DvApiError', async () => {
     const failing: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({ error: 'Unknown project' }), { status: 404 }))
     const client = new DvClient(failing)
-    await expect(client.getState('nope', 'main')).rejects.toMatchObject({ name: 'DvApiError', status: 404, message: 'Unknown project' })
+    await expect(client.getState('nope')).rejects.toMatchObject({ name: 'DvApiError', status: 404, message: 'Unknown project' })
     const noBody: typeof fetch = () => Promise.resolve(new Response('not json', { status: 500 }))
     await expect(new DvClient(noBody).listProjects()).rejects.toThrow(new DvApiError(500, 'HTTP 500'))
-    // A refused Project call carries its code and the rest of the body.
+    // A refused Project call carries its code.
     const unknown: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({
-      error: 'Project p1 has no branch b9.', code: 'unknown_branch', branch: 'b9',
+      error: 'Project p1 has no branch b9.', code: 'unknown_branch',
     }), { status: 404 }))
-    await expect(new DvClient(unknown).switchBranch('p1', 'b9', 'canvas')).rejects.toMatchObject({
-      status: 404, code: 'unknown_branch', body: { branch: 'b9' },
-    })
+    await expect(new DvClient(unknown).switchBranch('p1', 'b9', 'canvas')).rejects.toMatchObject({ status: 404, code: 'unknown_branch' })
   })
 
   it('follows the project changes through EventSource when the browser has it', () => {

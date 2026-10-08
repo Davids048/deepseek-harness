@@ -1,13 +1,12 @@
 /**
  * The state one view keeps about the project it shows: which project, the state of the project's current branch and
- * the operation declarations, the last failure, and the branch-bar gestures (switch, fork and rename a branch, undo,
- * new project) as API calls on behalf of the chat session the view sits beside.
+ * the operation declarations, the last failure, and the branch-bar gestures (undo, new project) as API calls on behalf
+ * of the chat session the view sits beside.
  *
  * @module @dv/ui-kit/useView
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { DvClient, ViewSurface } from './api.ts'
-import { branchActions } from './BranchSwitcher.tsx'
 import type { WireOperation, WireProject, WireState } from './types.ts'
 import { useOperations, useProjectState, useProjects } from './useProject.ts'
 import type { Loading } from './useProject.ts'
@@ -63,7 +62,7 @@ export function useViewSession(client: DvClient, surface: ViewSurface, session: 
   useEffect(() => {
     if (project === null && first !== null) setProject(first)
   }, [project, first])
-  const state = useProjectState(client, project, null)
+  const state = useProjectState(client, project)
   const operations = useOperations(client)
   const reload = state.reload
   const run = useCallback(async (work: () => Promise<unknown>): Promise<boolean> => {
@@ -77,13 +76,10 @@ export function useViewSession(client: DvClient, surface: ViewSurface, session: 
       return false
     }
   }, [reload])
-  const onProject = useCallback((next: string) => { setProject(next) }, [])
   const bar: ViewSession['bar'] = {
     projects: projects.value ?? [],
     project,
-    state: state.value,
-    onProject,
-    branches: branchActions(client, project, surface, run),
+    onProject: setProject,
     onUndo: () => { if (project !== null) void run(() => client.undo(project, surface, session)) },
     onCreate: (title) => {
       void run(() => client.createProject(title, surface)).then((ok) => {

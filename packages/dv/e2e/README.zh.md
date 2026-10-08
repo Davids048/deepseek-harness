@@ -39,7 +39,7 @@ DSH_PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome-linux/chrome \
 
 | 故事文件 | 故事覆盖的内容 |
 | --- | --- |
-| [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | 画布的适配、平移、缩放和浮动编辑器；版本和分镜计划的版本；时间线标签、播放、拆分、裁剪、重排、撤销和导出；分支切换器（新建、重命名、切换）和过期标记 |
+| [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | 画布的适配、平移、缩放和浮动编辑器；版本和分镜计划的版本；时间线标签、播放、拆分、裁剪、重排、撤销和导出；分支（底栏的当前分支按钮切换，历史面板新建和重命名）和过期标记 |
 | [`tests/stories/assets.e2e.ts`](tests/stories/assets.e2e.ts) | 素材库面板：经文件选择器、拖放区和对话导入；当前分支的素材，以及带分支名称的其他分支素材；预览；插入时间线和画布 |
 | [`tests/stories/history.e2e.ts`](tests/stories/history.e2e.ts) | 历史面板：行的顺序、名称、标记、批准折叠、筛选、在画布或时间线上定位、实时更新、撤销之后的分叉，以及分支树 |
 | [`tests/stories/chat.e2e.ts`](tests/stories/chat.e2e.ts) | 对话及其输入框：跨轮次落在当前分支上的智能体修改、撤销之后的分叉、在对话中确认、附上的图片、`@` 提及，以及模型请求收到的内容 |

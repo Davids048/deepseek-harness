@@ -132,7 +132,7 @@ export function projectMentionSource(): InputTriggerSource {
       // The project the shell has open; the entry page lists nothing.
       const projectId = getCurrentProject()
       if (projectId === null) return []
-      const state = await client.getState(projectId, null, signal)
+      const state = await client.getState(projectId, signal)
       const needle = query.toLowerCase()
       // The menu shows a candidate name that differs from its label as a trailing alias, so the name is the label
       // (numbered when labels repeat) and the `dv:` address travels in `value`.

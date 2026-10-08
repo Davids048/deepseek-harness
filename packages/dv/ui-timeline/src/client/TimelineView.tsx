@@ -44,7 +44,7 @@ const sharedClient = new DvClient()
 export function TimelineView({ projectId, client = sharedClient, session = null, t: givenCopy }: TimelineViewProps): ReactNode {
   const language = useLanguage()
   const t = useMemo(() => givenCopy ?? copyFor(language), [givenCopy, language])
-  const state = useProjectState(client, projectId, null)
+  const state = useProjectState(client, projectId)
   const [notice, setNotice] = useState<string | null>(null)
   const reload = state.reload
   const run = useCallback(async (work: () => Promise<unknown>): Promise<boolean> => {

@@ -6,6 +6,7 @@
  *
  * @module @dv/ui-history/rows
  */
+import { entryBranch } from '@dv/ui-kit/state.ts'
 import { DV_TOOL_LABELS } from '@dv/ui-kit/tool-labels.ts'
 import type { Asset, Branch, HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
@@ -345,37 +346,20 @@ export interface TreeRow {
   forks: TreeFork[]
 }
 
-/** The branch tree: one lane per branch, and its rows newest first. */
-export interface BranchTree {
-  /** The branch of each lane, in `WireState.branches` order. */
-  lanes: Branch[]
-  rows: TreeRow[]
-}
-
-/**
- * The branch that owns a step in the tree: the branch it was written on when that branch's line still holds it, else
- * the first branch whose line holds it.
- * @param entry - a history entry.
- * @returns the branch name, or null for a record on no branch line.
- */
-export function ownerBranch(entry: HistoryEntry): string | null {
-  return entry.branches.includes(entry.record.branch) ? entry.record.branch : entry.branches[0] ?? null
-}
-
 /**
  * Lay out the branch tree, `git log --graph` style. Each branch gets a lane; each step is one row, newest first, with
- * its dot in the lane of its owner ({@link ownerBranch}). A forked branch's lane runs from its newest step down to the
- * row of its `forked_at` record, where it bends into that row's dot; a branch without steps of its own yet shows a
- * marker at its fork row. `main` runs from its newest to its oldest step. When the fork row is not loaded, the lane
- * runs to the bottom. Undo and redo records and records on no branch line are not rows.
+ * its dot in the lane of the branch it belongs to (`entryBranch` without a current branch). A forked branch's lane runs
+ * from its newest step down to the row of its `forked_at` record, where it bends into that row's dot; a branch without
+ * steps of its own yet shows a marker at its fork row. `main` runs from its newest to its oldest step. When the fork
+ * row is not loaded, the lane runs to the bottom. Undo and redo records and records on no branch line are not rows.
  * @param entries - history entries, newest first.
  * @param branches - the project's branches, in lane order.
- * @returns the lanes and the rows.
+ * @returns the rows; lane i is `branches[i]`.
  */
-export function branchTree(entries: readonly HistoryEntry[], branches: readonly Branch[]): BranchTree {
-  const steps = entries.filter(entry => !MOVES.has(entry.record.operation ?? '') && ownerBranch(entry) !== null)
+export function branchTree(entries: readonly HistoryEntry[], branches: readonly Branch[]): TreeRow[] {
+  const steps = entries.filter(entry => !MOVES.has(entry.record.operation ?? '') && entryBranch(entry, null) !== null)
   const laneOf = new Map(branches.map((branch, index) => [branch.name, index]))
-  const rows: TreeRow[] = steps.map(entry => ({ entry, lane: laneOf.get(ownerBranch(entry) ?? '') ?? 0, lines: [], forks: [] }))
+  const rows: TreeRow[] = steps.map(entry => ({ entry, lane: laneOf.get(entryBranch(entry, null) ?? '') ?? 0, lines: [], forks: [] }))
   const rowOf = new Map(rows.map((row, index) => [row.entry.record.id, index]))
   branches.forEach((branch, lane) => {
     const owned = rows.flatMap((row, index) => row.lane === lane ? [index] : [])
@@ -392,5 +376,5 @@ export function branchTree(entries: readonly HistoryEntry[], branches: readonly 
       else row.lines.push({ lane, up: index > top, down: index < end || (forked && forkRow < 0) })
     }
   })
-  return { lanes: [...branches], rows }
+  return rows
 }

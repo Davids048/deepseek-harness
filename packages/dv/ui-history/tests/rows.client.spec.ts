@@ -4,9 +4,10 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { Branch, HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
+import { entryBranch } from '@dv/ui-kit/state.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
 import {
-  actionLabel, actionRows, branchSteps, branchTree, centerFocus, clipTimelines, operationLabel, ownerBranch, relativeTime, stepPlace,
+  actionLabel, actionRows, branchSteps, branchTree, centerFocus, clipTimelines, operationLabel, relativeTime, stepPlace,
   thumbnailOf, timelineRecords,
 } from '../src/client/rows.ts'
 
@@ -152,8 +153,7 @@ describe('branchTree', () => {
 
   it('puts each step in its owner\'s lane, runs a forked lane down to its fork point, and marks a branch without steps', () => {
     const tree = branchTree(entries, [branch('main', null), branch('b2', 'a'), branch('b3', 'm2')])
-    expect(tree.lanes.map(lane => lane.name)).toEqual(['main', 'b2', 'b3'])
-    expect(tree.rows.map(row => [row.entry.record.id, row.lane, row.lines, row.forks])).toEqual([
+    expect(tree.map(row => [row.entry.record.id, row.lane, row.lines, row.forks])).toEqual([
       ['x2', 1, [{ lane: 1, up: false, down: true }], []],
       ['x1', 1, [{ lane: 1, up: true, down: true }], []],
       ['m2', 0, [{ lane: 0, up: false, down: true }, { lane: 1, up: true, down: true }], [{ lane: 2, empty: true }]],
@@ -164,9 +164,10 @@ describe('branchTree', () => {
 
   it('runs a lane to the bottom when its fork point is not loaded, and owns a step by the first line when its branch lost it', () => {
     const tree = branchTree(entries.slice(0, 2), [branch('main', null), branch('b2', 'a')])
-    expect(tree.rows.map(row => row.lines)).toEqual([[{ lane: 1, up: false, down: true }], [{ lane: 1, up: true, down: true }]])
-    expect(ownerBranch(entry({ id: 'r', branch: 'draft/s5' }, 'current', ['main', 'b2']))).toBe('main')
-    expect(ownerBranch(entry({ id: 'r', branch: 'b2' }, 'branch', ['main', 'b2']))).toBe('b2')
-    expect(ownerBranch(entry({ id: 'r' }, 'undone', []))).toBeNull()
+    expect(tree.map(row => row.lines)).toEqual([[{ lane: 1, up: false, down: true }], [{ lane: 1, up: true, down: true }]])
+    expect(entryBranch(entry({ id: 'r', branch: 'draft/s5' }, 'current', ['main', 'b2']), null)).toBe('main')
+    expect(entryBranch(entry({ id: 'r', branch: 'b2' }, 'branch', ['main', 'b2']), null)).toBe('b2')
+    expect(entryBranch(entry({ id: 'r', branch: 'b2' }, 'branch', ['main', 'b2']), 'main')).toBe('main')
+    expect(entryBranch(entry({ id: 'r' }, 'undone', []), 'main')).toBeNull()
   })
 })

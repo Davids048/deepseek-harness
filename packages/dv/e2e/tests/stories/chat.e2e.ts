@@ -323,10 +323,10 @@ describe('chat with the agent', () => {
       .toEqual(['asset.import', 'bible.character_create', 'asset.import', 'shot.render_ref2va'])
     expect(agentRecords.every(record => record.branch === 'main')).toBe(true)
     expect(new Set(agentRecords.map(record => record.turn)).size).toBe(2)
-    // Nothing waits for the user: the workspace offers no accept and names the current branch in the switcher.
+    // Nothing waits for the user: the workspace offers no accept and names the current branch in its bottom bar.
     const workspace = page.locator('[data-dv-workspace]')
     expect(await workspace.getByRole('button', { name: '接受', exact: true }).count()).toBe(0)
-    expect(await workspace.locator('[data-testid="dv-kit-branch-switcher"]').first().getAttribute('data-branch')).toBe('main')
+    expect(await workspace.locator('[data-testid="dv-kit-branch-status"]').first().getAttribute('data-branch')).toBe('main')
     expect(errors).toEqual([])
   })
 
@@ -444,8 +444,8 @@ describe('chat with the agent', () => {
     const main = await stateOf('main')
     expect(main.head).toBe(tip)
     expect(main.components.proj.records.some(record => record.operation === 'bible.character_create')).toBe(false)
-    const switcher = page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-switcher"]').first()
-    await waitFor(async () => await switcher.getAttribute('data-branch') === 'b2', 'the switcher on 分支 2', 10_000)
+    const status = page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-status"]').first()
+    await waitFor(async () => await status.getAttribute('data-branch') === 'b2', 'the bottom bar on 分支 2', 10_000)
     await send(page, '只回复九')
     await waitChat(page, '收到九')
     expect(promptOf(requestFor('只回复九') as ChatRequest)).toContain('Project summary of the current branch (b2)')

@@ -52,7 +52,7 @@ const OTHER_BRANCH_ENTRIES = 200
 function useOtherBranchAssets(client: DvClient, projectId: string, current: WireState | null): OtherBranchAssets | null {
   const [others, setOthers] = useState<OtherBranchAssets | null>(null)
   useEffect(() => {
-    if (current === null) { setOthers(null); return }
+    if (current === null) return
     const controller = new AbortController()
     client.listHistory({ project: projectId, marks: ['redo', 'branch'], limit: OTHER_BRANCH_ENTRIES }, controller.signal)
       .then((history) => { if (!controller.signal.aborted) setOthers(otherBranchAssets(history, current)) }, () => {
@@ -60,7 +60,8 @@ function useOtherBranchAssets(client: DvClient, projectId: string, current: Wire
       })
     return () => { controller.abort() }
   }, [client, projectId, current])
-  return others
+  // While the panel does not show them, the last fetched assets are not shown either.
+  return current === null ? null : others
 }
 
 /**
@@ -70,7 +71,7 @@ function useOtherBranchAssets(client: DvClient, projectId: string, current: Wire
  */
 export function AssetsPanel(props: AssetsPanelProps): ReactNode {
   const client = useMemo(() => props.client ?? new DvClient(), [props.client])
-  const state = useProjectState(client, props.projectId, null)
+  const state = useProjectState(client, props.projectId)
   const [showOthers, setShowOthers] = useState(false)
   const others = useOtherBranchAssets(client, props.projectId, showOthers ? state.value : null)
   const t = useText()
@@ -79,8 +80,8 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
   // Asset ID → the label of the branch it comes from, for the assets outside the current branch's head.
   const elsewhere = useMemo(() => {
     const branches = new Map((state.value?.branches ?? []).map(branch => [branch.name, branchLabel(branch, t)]))
-    return new Map([...library?.elsewhere ?? []].map(([id, branch]) => [id, branches.get(branch) ?? branch]))
-  }, [library, state.value, t])
+    return new Map([...others?.branchOf ?? []].map(([id, branch]) => [id, branches.get(branch) ?? branch]))
+  }, [others, state.value, t])
 
   let body: ReactNode
   if (library === null) body = <p style={{ color: muted, fontSize: 12 }}>{state.error === null ? t('正在读取…', 'Loading…') : t(`读取失败：${state.error}`, `Failed to load: ${state.error}`)}</p>

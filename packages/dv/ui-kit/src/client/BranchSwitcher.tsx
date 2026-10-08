@@ -25,8 +25,6 @@ export interface BranchSwitcherProps {
   onRename: (branch: string, title: string) => void
   /** Ask the human for a branch title; defaults to `window.prompt`. */
   ask?: (message: string, initial: string) => string | null
-  /** Placement and look of the switcher in the hosting view. */
-  style?: CSSProperties
 }
 
 /** The callbacks of {@link BranchSwitcherProps} that write through the API. */
@@ -50,7 +48,7 @@ export function branchActions(
 ): BranchActions {
   return {
     onSwitch: (branch) => { if (project !== null) void run(() => client.switchBranch(project, branch, surface)) },
-    onCreate: () => { if (project !== null) void run(() => client.createBranch(project, null, surface)) },
+    onCreate: () => { if (project !== null) void run(() => client.createBranch(project, surface)) },
     onRename: (branch, title) => { if (project !== null) void run(() => client.renameBranch(project, branch, title)) },
   }
 }
@@ -60,17 +58,16 @@ export function branchActions(
  * @param props - the state and the callbacks.
  * @returns the element.
  */
-export function BranchSwitcher({ state, onSwitch, onCreate, onRename, ask, style }: BranchSwitcherProps): ReactNode {
+export function BranchSwitcher({ state, onSwitch, onCreate, onRename, ask }: BranchSwitcherProps): ReactNode {
   const t = useText()
   const branches = state?.branches ?? []
   const current = branches.find(branch => branch.name === state?.current)
   const prompt = ask ?? ((message: string, initial: string) => window.prompt(message, initial))
   return (
     <div
-      style={{ display: 'inline-flex', flex: 'none', alignItems: 'center', gap: 6, fontSize: 12, whiteSpace: 'nowrap', ...style }}
+      style={{ display: 'inline-flex', flex: 'none', alignItems: 'center', gap: 6, fontSize: 12, whiteSpace: 'nowrap' }}
       data-testid="dv-kit-branch-switcher" data-branch={state?.current ?? ''}
       title={t('所有视图和对话都显示这个分支，修改也写到这个分支', 'Every view and conversation shows this branch, and edits go to it')}
-      onPointerDown={(event) => { event.stopPropagation() }}
     >
       <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
         <span>{t('分支', 'Branch')}</span>

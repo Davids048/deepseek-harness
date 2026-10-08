@@ -1,12 +1,11 @@
 /**
- * The bar both Sidebar views share: project picker, the branch switcher of {@link BranchSwitcher}, new project, and
- * undo. The project picker, new project and undo copy arrives through `labels`, already localized by the owning plugin.
+ * The bar both Sidebar views share: project picker, new project, and undo. Its copy arrives through `labels`, already
+ * localized by the owning plugin.
  *
  * @module @dv/ui-kit/BranchBar
  */
 import type { CSSProperties, ReactNode } from 'react'
-import { BranchSwitcher, type BranchActions } from './BranchSwitcher.tsx'
-import type { WireProject, WireState } from './types.ts'
+import type { WireProject } from './types.ts'
 
 /** The localized copy the bar shows. */
 export interface BranchBarLabels {
@@ -21,12 +20,8 @@ export interface BranchBarLabels {
 export interface BranchBarProps {
   projects: WireProject[]
   project: string | null
-  /** The state of the project's current branch; null while it loads. */
-  state: WireState | null
   labels: BranchBarLabels
   onProject: (project: string) => void
-  /** The branch switcher's gestures. */
-  branches: BranchActions
   onUndo: () => void
   onCreate: (title: string) => void
   /** Ask the user for a project name; defaults to `window.prompt`. */
@@ -38,7 +33,7 @@ const control: CSSProperties = { fontSize: 12, padding: '2px 6px' }
 
 /**
  * The bar.
- * @param props - projects, state, copy, and callbacks.
+ * @param props - projects, copy, and callbacks.
  * @returns the element.
  */
 export function BranchBar(props: BranchBarProps): ReactNode {
@@ -53,7 +48,6 @@ export function BranchBar(props: BranchBarProps): ReactNode {
           {props.projects.map(project => <option key={project.id} value={project.id}>{project.title}</option>)}
         </select>
       </label>
-      <BranchSwitcher state={props.state} {...props.branches} />
       <button type="button" style={control} onClick={() => { const title = ask(labels.newProjectPrompt); if (title !== null && title.trim().length > 0) props.onCreate(title.trim()) }}>{labels.newProject}</button>
       <button type="button" style={control} onClick={props.onUndo} disabled={props.project === null}>{labels.undo}</button>
     </div>
