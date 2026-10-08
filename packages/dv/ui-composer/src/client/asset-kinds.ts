@@ -1,6 +1,6 @@
 /**
- * The media kind of each asset of the open DreamVerse project, followed outside React so the chat Markdown cards can
- * choose their elements in a pure `select`. The index holds the assets that the `main` branch and every open draft
+ * The media kind of each asset of the open DreamVerse project, followed outside React and read by the chat Markdown
+ * cards through a selector hook. The index holds the assets that the `main` branch and every open draft
  * branch mention, and it is fetched again after the project's change events.
  *
  * @module @dv/ui-composer/asset-kinds

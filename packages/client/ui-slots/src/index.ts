@@ -280,6 +280,11 @@ export interface ChainRenderOpts {
    * `conversation.composer` chain.
    */
   overlay?: boolean
+  /**
+   * Render the outlet's `display: contents` anchor as a `<span>` instead of a
+   * `<div>`, so the outlet can sit in phrasing content such as a paragraph.
+   */
+  inline?: boolean
 }
 
 /**

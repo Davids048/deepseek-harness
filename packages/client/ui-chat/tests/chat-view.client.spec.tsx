@@ -24,7 +24,7 @@ import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controlle
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { KeyedSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { EMPTY_CONVERSATION_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
@@ -600,12 +600,44 @@ describe('Chat node rendering', () => {
     act(() => { h.setMarkdownReplaced(true) })
     expect(view.getByTestId('card').textContent).toBe('Play')
     expect(view.queryByRole('link', { name: 'Play' })).toBeNull()
-    expect(owners.at(-1)).toEqual({
-      element: { kind: 'link', href: 'https://example.com/v1', title: undefined, text: 'Play' },
-    })
+    expect(owners.at(-1)?.element).toEqual({ kind: 'link', href: 'https://example.com/v1', title: undefined, text: 'Play' })
 
     act(() => { h.setMarkdownReplaced(false) })
     expect(view.getByRole('link', { name: 'Play' })).toBeTruthy()
+  })
+
+  it('renders a replaced paragraph link through an inline outlet and passes the default link to the entry', async () => {
+    const h = makeHarness({
+      nodes: [user(1, 'show'), assistant(2, 'Shot [Play](https://example.com/v1) and [Keep](https://example.com/v2)', 1)],
+      turnEnds: new Map([[1, 2]]),
+    })
+    h.setMarkdownReplaced(true)
+    const runtime = await SlotTestRuntime.create()
+    try {
+      await runtime.sessions.add({ id: SID })
+      using reference = runtime.sessions.retain(SID)
+      await runtime.root.declare({ 'conversation.chat.markdown': { kind: 'chain', scope: 'session' } }, props => (
+        <props.SessionProvider session={reference}>
+          <h.ChatView {...h.props} renderSlotChain={props.renderSlotChain} />
+        </props.SessionProvider>
+      ))
+      await act(async () => {
+        runtime.slots.register({
+          name: 'conversation.chat.markdown',
+          select: ({ element }) => element.kind === 'link' && element.text === 'Play' ? element.text : null,
+        }, ({ matched, fallback }) => <span data-testid="card">{matched}{fallback}</span>)
+      })
+      const view = runtime.renderRoot()
+      const paragraph = view.getByTestId('card').closest('p')
+      expect(paragraph).not.toBeNull()
+      expect(paragraph?.querySelector('div')).toBeNull()
+      expect([...paragraph!.querySelectorAll('[data-slot="conversation.chat.markdown"]')].map(anchor => anchor.tagName))
+        .toEqual(['SPAN', 'SPAN'])
+      expect(within(view.getByTestId('card')).getByRole('link', { name: 'Play' })).toBeTruthy()
+      expect(view.getByRole('link', { name: 'Keep' })).toBeTruthy()
+    } finally {
+      await runtime.dispose()
+    }
   })
 
   it('threads the injected file-mention vocabulary into the closing prose only', () => {

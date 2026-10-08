@@ -31,7 +31,7 @@ kind: "package-reference"
   name: '@dv/ui-composer'
 ```
 
-Host 半边不注册任何东西。浏览器半边注册 `@` 来源 `dv-project`；DSH 的 `commandUi` 服务挂载时，通过它注册 ＋ 菜单行 引用；以及 UI 插槽条目 `conversation.input.left`（ID 为 `dv-composer-compose`，不渲染任何内容，让每个已挂载的会话输入框成为 `dv:compose` 的目标）、`conversation.input.permission`（一个空条目）、`conversation.chat.markdown`（一个 chain 条目，所打开项目有视频或图片素材时存在），并为 `DV_TOOL_LABELS` 里的每个工具注册 `tool.call.toolview`：`dv_shot_render_ref2va` 和 `dv_shot_render_t2va` 用 `RenderCard`，其他每个工具用 `ToolLabelRow`。它还为每个有名称的工具在 DSH 的 `chat` 字典里加一条 `tool.name.<tool>`，运行中分组的标题读取它。
+Host 半边不注册任何东西。浏览器半边注册 `@` 来源 `dv-project`；DSH 的 `commandUi` 服务挂载时，通过它注册 ＋ 菜单行 引用；以及 UI 插槽条目 `conversation.input.left`（ID 为 `dv-composer-compose`，不渲染任何内容，让每个已挂载的会话输入框成为 `dv:compose` 的目标）、`conversation.input.permission`（一个空条目）、`conversation.chat.markdown`（一个 chain 条目，按 `/dv/assets/<id>` 路径匹配链接、图片和表格），并为 `DV_TOOL_LABELS` 里的每个工具注册 `tool.call.toolview`：`dv_shot_render_ref2va` 和 `dv_shot_render_t2va` 用 `RenderCard`，其他每个工具用 `ToolLabelRow`。它还为每个有名称的工具在 DSH 的 `chat` 字典里加一条 `tool.name.<tool>`，运行中分组的标题读取它。
 
 | 手势 | 请求或事件 |
 | --- | --- |
@@ -42,7 +42,7 @@ Host 半边不注册任何东西。浏览器半边注册 `@` 来源 `dv-project`
 
 `@` 列表读 `main` 的状态：按时间线名字和位置列出的每个片段（未命名的时间线为 时间线 1 · 片段 2），每个角色、场景和风格的最新版本，以及最新的 40 个图片和视频素材；选中一项会插入一个标签，其文字为 `@[<label>](dv:<kind>/<id>)`。引用 行在草稿末尾打开同一个列表。渲染卡片显示工具名称（参考图生成镜头 或 文字生成镜头）、提示词、状态 渲染中…、已渲染 或 未渲染，以及渲染出的视频。其他每个有名称的工具行显示工具名称和状态 进行中…、完成 或 未完成。每张已结束的渲染卡片，以及调用写了记录的每个已结束的行，都有 在历史中查看 链接。`dv:compose` 事件还会把 对话 标签提到前面。本包隐藏 DSH 的文件权限标签，并用 DreamVerse 主题变量绘制 对话 标签里的输入框卡片、＋ 按钮和发送按钮。
 
-在已结束的对话 Markdown 里，路径为 `/dv/assets/<id>` 且素材为视频的链接变成一张 16:9 小卡片，显示视频首帧、播放标记，下方是链接文字；点击后在卡片内带控件播放视频，暂停正在播放的其他卡片，不离开页面。每个表体行都链接这类视频的表格变成三列卡片网格，每张卡片的说明是该行其他单元格用 ` · ` 连接的文字（例如 `1 · 直播间开场「来一把吧」`）。图片素材的 Markdown 图片变成最宽 240 px 的缩略图，点击后在 DSH 的图片预览中放大显示。素材类型来自所打开项目 `main` 和每个打开的草稿分支的状态，每次项目事件后重新获取；其他链接、图片和表格保持 DSH 的渲染。
+在已结束的对话 Markdown 里，路径为 `/dv/assets/<id>` 且素材为视频的链接变成一张 16:9 小卡片，显示视频首帧、播放标记，下方是链接文字；点击后在卡片内带控件播放视频，暂停正在播放的其他卡片，不离开页面。每个表体行都链接这类视频的表格变成三列卡片网格，每张卡片的说明是该行其他单元格用 ` · ` 连接的文字（例如 `1 · 直播间开场「来一把吧」`）。图片素材的 Markdown 图片变成最宽 240 px 的缩略图，点击后在 DSH 的图片预览中放大显示。素材类型来自所打开项目 `main` 和每个打开的草稿分支的状态，每次项目事件后重新获取；素材类型变化时，正在卡片内播放的视频继续播放。其他链接、图片和表格保持 DSH 的渲染。
 
 -----
 
@@ -98,4 +98,4 @@ Host 半边不注册任何东西。浏览器半边注册 `@` 来源 `dv-project`
 <a id="known-limitations-and-deferred-work"></a>
 
 - **`@` 列表读 `main`** — `@` 列表和 引用 行读 `main` 的状态，所以只存在于对话草稿里的内容不会列出。
-- **卡片等待素材索引** — 所打开项目的状态加载完成前，以及 `main` 和打开的草稿都未提到的素材，其链接和图片保持 DSH 的渲染。索引每次变化都会重新注册 chain 条目，卡片随之重新挂载，正在卡片内播放的视频会停止。
+- **卡片等待素材索引** — 所打开项目的状态加载完成前，以及 `main` 和打开的草稿都未提到的素材，其链接和图片保持 DSH 的渲染。

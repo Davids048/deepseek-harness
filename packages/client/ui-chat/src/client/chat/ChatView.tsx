@@ -204,10 +204,11 @@ export function ChatView({
     [loadImage, renderSlot],
   )
   // Without chain entries, settled Markdown keeps its default DOM: no slot outlet wraps each link, image, or table.
+  // Links and images sit in paragraphs, so their outlets use an inline anchor.
   const markdownReplaced = useMarkdownReplaced(replaced => replaced)
   const renderMarkdownElement = useMemo<MarkdownElementRenderer | undefined>(() => markdownReplaced
-    ? (element: MarkdownElement, fallback: ReactNode) =>
-      renderSlotChain('conversation.chat.markdown', { element }, { fallback })
+    ? (element: MarkdownElement, fallback: ReactNode) => renderSlotChain(
+      'conversation.chat.markdown', { element, fallback }, { fallback, inline: element.kind !== 'table' })
     : undefined, [markdownReplaced, renderSlotChain])
 
   const firstKey = order[0]

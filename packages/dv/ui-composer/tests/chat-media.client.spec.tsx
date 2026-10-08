@@ -7,7 +7,9 @@ import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { DvClient } from '@dv/ui-kit/api.ts'
 import { publishCurrentProject } from '@dv/ui-kit/current-project.ts'
 import { followAssetKinds, kindOf, NO_ASSET_KINDS, type AssetKinds } from '../src/client/asset-kinds.ts'
-import { assetIdOf, registerChatMedia, selectChatMedia, type ChatMedia } from '../src/client/chat-media.ts'
+import {
+  assetIdOf, registerChatMedia, resolveChatMedia, selectAssetReference, type ChatMedia,
+} from '../src/client/chat-media.ts'
 import { ChatMediaView } from '../src/client/ChatMedia.tsx'
 
 const KINDS: AssetKinds = new Map([['v1.mp4', 'video'], ['v2.mp4', 'video'], ['i1.png', 'image']])
@@ -18,11 +20,28 @@ const table = (...rows: MarkdownTableCell[][]): MarkdownElement => ({
   kind: 'table', header: [cell('镜头'), cell('内容'), cell('视频')], rows,
 })
 
+/** The card form of one element under `kinds`: the entry's `select`, then the component's resolution. */
+function selectChatMedia(element: MarkdownElement, kinds: AssetKinds): ChatMedia | null {
+  const reference = selectAssetReference(element)
+  return reference === null ? null : resolveChatMedia(reference, kinds)
+}
+
 beforeEach(() => { document.documentElement.lang = 'zh-CN' })
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
   publishCurrentProject(null)
+})
+
+describe('selectAssetReference', () => {
+  it('matches asset paths without the asset kinds and declines other destinations', () => {
+    expect(selectAssetReference(link('/dv/assets/missing.mp4'))).toEqual({ kind: 'link', asset: 'missing.mp4', label: '播放' })
+    expect(selectAssetReference(link('https://example.com/v1.mp4'))).toBeNull()
+    expect(selectAssetReference(table([cell('1'), cell('播放', '/dv/assets/a1.wav')]))).toEqual({
+      kind: 'table', rows: [{ assets: [{ column: 1, asset: 'a1.wav' }], texts: ['1', '播放'] }],
+    })
+    expect(selectAssetReference(table([cell('1'), cell('外链', 'https://example.com/v1.mp4')]))).toBeNull()
+  })
 })
 
 describe('selectChatMedia', () => {
@@ -66,6 +85,12 @@ describe('selectChatMedia', () => {
       [cell('2'), cell('特写'), cell('定妆照', '/dv/assets/i1.png')],
     ), KINDS)).toBeNull()
     expect(selectChatMedia(table(), KINDS)).toBeNull()
+  })
+
+  it('takes the first video link of a row and captions the card with the other cells', () => {
+    const links = [{ href: '/dv/assets/i1.png', text: '定妆照' }, { href: '/dv/assets/v1.mp4', text: '播放' }]
+    const row = [cell('1'), { text: '定妆照 播放', links }]
+    expect(selectChatMedia(table(row), KINDS)).toEqual({ kind: 'grid', shots: [{ asset: 'v1.mp4', caption: '1' }] })
   })
 })
 
@@ -206,31 +231,70 @@ describe('followAssetKinds', () => {
 })
 
 describe('registerChatMedia', () => {
-  it('registers the chain entry while the project has media and removes it when the plugin unloads', async () => {
+  it('registers one shape-only chain entry per declaration and removes it when the plugin unloads', async () => {
     fakeEvents()
     vi.stubGlobal('fetch', stateFetch({ 'p1/main': state([['v1.mp4', 'video/mp4']]) }))
     const runtime = await SlotTestRuntime.create()
     await runtime.declare({ 'conversation.chat.markdown': { kind: 'chain', scope: 'session' } })
     const entries = () => runtime.slots.entries('conversation.chat.markdown')
     const plugin = await runtime.mount({ inject: ['slots'], apply: registerChatMedia })
-    expect(entries()).toHaveLength(0)
+    expect(entries()).toHaveLength(1)
+    const entry = entries()[0]
+    const select = entry!.select as (owner: { element: MarkdownElement }) => unknown
+    expect(select({ element: link('/dv/assets/v1.mp4') })).toEqual({ kind: 'link', asset: 'v1.mp4', label: '播放' })
 
     act(() => { publishCurrentProject('p1') })
-    await vi.waitFor(() => { expect(entries()).toHaveLength(1) })
-    const select = entries()[0]!.select as (owner: { element: MarkdownElement }) => ChatMedia | null
-    expect(select({ element: link('/dv/assets/v1.mp4') })).toEqual({ kind: 'video', asset: 'v1.mp4', label: '播放' })
-
+    await new Promise(resolve => setTimeout(resolve, 0))
     act(() => { publishCurrentProject(null) })
-    expect(entries()).toHaveLength(0)
-    act(() => { publishCurrentProject('p1') })
-    await vi.waitFor(() => { expect(entries()).toHaveLength(1) })
+    expect(entries()).toEqual([entry])
 
     await plugin.dispose()
     expect(entries()).toHaveLength(0)
-    act(() => { publishCurrentProject(null) })
+    await runtime.dispose()
+  })
+
+  it('keeps a playing card mounted while the asset index changes, and keeps the default link for other assets', async () => {
+    const events = fakeEvents()
+    const states: Record<string, unknown> = { 'p1/main': state([['v1.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']]) }
+    const fetchImpl = stateFetch(states)
+    vi.stubGlobal('fetch', fetchImpl)
+    const runtime = await SlotTestRuntime.create()
+    const session = await runtime.sessions.add({ id: 's1' })
+    using reference = runtime.sessions.retain(session)
+    const anchor = (href: string, text: string) => <a href={href}>{text}</a>
+    await runtime.root.declare({ 'conversation.chat.markdown': { kind: 'chain', scope: 'session' } }, props => (
+      <props.SessionProvider session={reference}>
+        {[['/dv/assets/v1.mp4', '镜头 1'], ['/dv/assets/a1.wav', '配乐']].map(([href, text]) => {
+          const fallback = anchor(href!, text!)
+          return (
+            <p key={href}>
+              {props.renderSlotChain('conversation.chat.markdown', { element: link(href!, text), fallback }, { fallback, inline: true })}
+            </p>
+          )
+        })}
+      </props.SessionProvider>
+    ))
+    await runtime.mount({ inject: ['slots'], apply: registerChatMedia })
+    const view = runtime.renderRoot()
+    // Before the index loads, both assets keep the default link.
+    expect(view.getByRole('link', { name: '镜头 1' })).toBeTruthy()
+
     act(() => { publishCurrentProject('p1') })
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(entries()).toHaveLength(0)
+    await vi.waitFor(() => { expect(view.getByRole('button', { name: '播放: 镜头 1' })).toBeTruthy() })
+    expect(view.getByRole('link', { name: '配乐' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: '播放: 镜头 1' }))
+    const player = view.container.querySelector('video[controls]')
+    expect(player).not.toBeNull()
+
+    // Another shot finishes rendering: the index changes, and the playing card stays the same DOM node.
+    states['p1/main'] = state([['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']])
+    const fetches = fetchImpl.mock.calls.length
+    await act(async () => {
+      events.send()
+      await vi.waitFor(() => { expect(fetchImpl.mock.calls.length).toBeGreaterThan(fetches) })
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    expect(view.container.querySelector('video[controls]')).toBe(player)
     await runtime.dispose()
   })
 })

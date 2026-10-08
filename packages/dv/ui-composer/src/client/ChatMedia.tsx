@@ -118,7 +118,7 @@ function ImageThumb({ asset, alt }: { asset: string; alt: string }): ReactNode {
 }
 
 /**
- * The chain component: the form that the entry's `select` chose.
+ * Draw one card form that the chain entry resolved from an element's asset references and the asset kinds.
  * @param props - the `matched` card form.
  * @returns the card, the thumbnail, or the grid.
  */

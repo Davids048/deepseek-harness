@@ -1,4 +1,5 @@
 /** Chat-owned Slot declarations and composed component props. */
+import type { ReactNode } from 'react'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -56,6 +57,8 @@ export interface TurnTailOwnerProps {
 export interface ChatMarkdownOwnerProps {
   /** Parsed link, image, or table data; destinations are authored text and unsanitized. */
   readonly element: MarkdownElement
+  /** The default rendering of the element, for an elected entry that keeps the element unchanged. */
+  readonly fallback: ReactNode
 }
 
 /** Owner currency of finalized-assistant actions. */
