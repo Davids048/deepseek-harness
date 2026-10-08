@@ -69,6 +69,8 @@ export interface ShellActions {
   hidePanels(): void
   /** The session whose right-panel seat is mounted, observed by the center. */
   mountedSeat: { getSnapshot(): SessionId | undefined; subscribe(fn: () => void): () => void }
+  /** Whether the right panel is expanded, observed by the center to show its open button only while it is hidden. */
+  panelExpanded: { getSnapshot(): boolean; subscribe(fn: () => void): () => void }
 }
 
 /**
@@ -354,5 +356,6 @@ export function createActions(ctx: ClientContext): ShellActions {
       if (ctx.sidebarRight.isExpanded()) ctx.sidebarRight.toggleExpanded()
     },
     mountedSeat: ctx.sidebarRight.mounted,
+    panelExpanded: ctx.sidebarRight.expanded,
   }
 }

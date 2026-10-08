@@ -273,6 +273,9 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     () => { state.reload() }, (error: unknown) => { window.alert(error instanceof Error ? error.message : String(error)) },
   ))
   const mounted = useSyncExternalStore(shell.mountedSeat.subscribe, shell.mountedSeat.getSnapshot)
+  // The right panel's own strip holds its collapse control while it is shown, so the open button sits in the same
+  // top-right corner only while the panel is hidden.
+  const panelExpanded = useSyncExternalStore(shell.panelExpanded.subscribe, shell.panelExpanded.getSnapshot)
   const opened = useRef(new Set<string>())
   useEffect(() => {
     // Once per session, the chat moves to the right panel when a session of this project mounts. The workspace renders
@@ -392,11 +395,15 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
           ))}
         </div>
         <div className={css.barEnd}>
-          <Tooltip label={t('打开对话、素材库和轨迹', 'Open Chat, Asset pool, and Trajectory')} side="bottom" delayMs={500}>
-            <button type="button" className={css.panelsButton} aria-label={t('打开右侧面板', 'Open the right panel')} onClick={showPanels}>
-              <IconPanelLeftOutlineRegular className={css.panelsIcon} />
-            </button>
-          </Tooltip>
+          {panelExpanded
+            ? null
+            : (
+              <Tooltip label={t('打开对话、素材库和轨迹', 'Open Chat, Asset pool, and Trajectory')} side="bottom" delayMs={500}>
+                <button type="button" className={css.panelsButton} aria-label={t('打开右侧面板', 'Open the right panel')} onClick={showPanels}>
+                  <IconPanelLeftOutlineRegular className={css.panelsIcon} />
+                </button>
+              </Tooltip>
+            )}
         </div>
       </header>
       <div className={css.viewArea}>
