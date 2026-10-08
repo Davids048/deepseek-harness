@@ -13,8 +13,10 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { pickText, useText } from '@dv/ui-kit/locale.ts'
 import type { ShellInjected } from './Center.tsx'
+import { ChevronDownIcon, ChevronRightIcon, HomeIcon, PlusIcon } from './icons.tsx'
 import { InlineRename, RowMenu } from './InlineRename.tsx'
 import type { WireProjectLink } from '@dv/ui-kit/types.ts'
+import { useProjectSessions } from './sessions.ts'
 import { NO_PROJECTS, useShell } from './store.ts'
 import css from './shell.module.css'
 
@@ -50,13 +52,18 @@ export function Navigator(props: NavigatorProps): ReactNode {
   // The open project always has a row, also when more than SHOWN_PROJECTS newer projects push it out of the list.
   const openRow = sorted.find(p => p.id === projectId)
   if (openRow !== undefined && !shown.includes(openRow)) shown.push(openRow)
-  const nav = (label: string, active: boolean, onClick: () => void): ReactNode => (
-    <button type="button" className={css.navItem} data-active={active ? '' : undefined} onClick={onClick}>{label}</button>
+  const nav = (label: string, active: boolean, onClick: () => void, icon?: ReactNode): ReactNode => (
+    <button
+      type="button" className={css.navItem} data-active={active ? '' : undefined} aria-current={active ? 'page' : undefined}
+      onClick={onClick}
+    >{icon}{label}</button>
   )
   return (
     <div className={css.nav} data-dv-navigator="">
-      <button type="button" className={css.navPrimary} onClick={() => { run(() => shell.newProject()) }}>＋ {t('新建项目', 'Create project')}</button>
-      {nav(t('首页', 'Home'), projectId === null, () => { run(() => shell.goHome()) })}
+      <button type="button" className={css.navSecondary} onClick={() => { run(() => shell.newProject()) }}>
+        <PlusIcon />{t('新建项目', 'Create project')}
+      </button>
+      {nav(t('首页', 'Home'), projectId === null, () => { run(() => shell.goHome()) }, <HomeIcon />)}
       {sorted.length > SHOWN_PROJECTS && nav(showAll ? t('收起项目', 'Fewer projects') : t('全部项目', 'All projects'), false, () => { setShowAll(value => !value) })}
       <div className={css.section}>{t('项目', 'Projects')}</div>
       {loaded && sorted.length === 0 && (
@@ -80,26 +87,12 @@ export function Navigator(props: NavigatorProps): ReactNode {
  * @returns the rows.
  */
 function ProjectTree(props: NavigatorProps & { project: WireProjectLink; open: boolean }): ReactNode {
-  const { project, open, shell, useSessions, useWorkspaces } = props
+  const { project, open, shell } = props
   const t = useText()
   const [expanded, setExpanded] = useState(open)
   const [renaming, setRenaming] = useState<string | null>(null)
   const current = useShell(s => s.sessionId)
-  const bindings = useShell(s => s.links?.bindings)
-  const workspaceSessions = useWorkspaces(
-    s => s.items.find(item => item.workspaceId === project.workspace_id || item.path === project.path)?.sessionIds,
-  )
-  const archived = useWorkspaces(s => s.archivedSessionIds)
-  const byId = useSessions(s => s.byId)
-  // A session belongs to one project: its binding, else the project whose Workspace holds it.
-  const ids = [...new Set([
-    ...workspaceSessions ?? [],
-    ...Object.entries(bindings ?? {}).filter(([, id]) => id === project.id).map(([id]) => id),
-  ])].filter(id => !archived.includes(id as never) && (bindings?.[id] ?? project.id) === project.id)
-  const sessions = ids
-    .map(id => byId[id as keyof typeof byId])
-    .filter(summary => summary !== undefined && (!summary.blank || summary.id === current))
-    .sort((a, b) => (b?.updatedAt ?? 0) - (a?.updatedAt ?? 0))
+  const sessions = useProjectSessions(props, project)
   const isOpen = expanded || open
   const toggle = (): void => {
     setExpanded(!isOpen)
@@ -111,7 +104,11 @@ function ProjectTree(props: NavigatorProps & { project: WireProjectLink; open: b
   return (
     <>
       <div className={css.treeRow} data-active={open ? '' : undefined}>
-        <span role="button" tabIndex={0} onClick={toggle} onKeyDown={() => {}}>{isOpen ? '▾' : '▸'}</span>
+        <span
+          role="button" tabIndex={0} className={css.treeCaret} aria-expanded={isOpen}
+          aria-label={isOpen ? t('收起会话', 'Hide chats') : t('展开会话', 'Show chats')}
+          onClick={toggle} onKeyDown={() => {}}
+        >{isOpen ? <ChevronDownIcon /> : <ChevronRightIcon />}</span>
         {renaming === project.id
           ? (
             <InlineRename
@@ -133,13 +130,13 @@ function ProjectTree(props: NavigatorProps & { project: WireProjectLink; open: b
           ]}
         />
         <button
-          type="button" className={css.treeAdd} title={t('新对话', 'New chat')}
+          type="button" className={css.treeAdd} title={t('新对话', 'New chat')} aria-label={t('新对话', 'New chat')}
           onClick={() => { run(() => shell.newSession(project.id)) }}
         >
-          ＋
+          <PlusIcon />
         </button>
       </div>
-      {isOpen && sessions.map(summary => summary === undefined ? null : (
+      {isOpen && sessions.map(summary => (
         <div
           key={summary.id} role="button" tabIndex={0} className={`${css.treeRow} ${css.treeChild}`}
           data-active={summary.id === current ? '' : undefined}
@@ -172,7 +169,14 @@ function ProjectTree(props: NavigatorProps & { project: WireProjectLink; open: b
   )
 }
 
-/** The brand name in the sidebar header. */
+/** The brand in the sidebar header: the DreamVerse mark (a play glyph on the accent square) and the name. */
 export function BrandName(): ReactNode {
-  return <span className={css.brand}>DreamVerse</span>
+  return (
+    <span className={css.brand}>
+      <span className={css.brandMark} aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5.5v13a1 1 0 0 0 1.5.9l10.4-6.5a1 1 0 0 0 0-1.8L8.5 4.6A1 1 0 0 0 7 5.5z" /></svg>
+      </span>
+      DreamVerse
+    </span>
+  )
 }

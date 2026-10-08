@@ -1929,9 +1929,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ownerProps: [
       '/** Owner props of `dreamverse.sidebar`: the project history that the harness lists. */\nexport interface SidebarProps {\n  open?: boolean\n  /** Harness ID of the current project, or null when it has none; the history omits it because the Current entry shows it. */\n  currentProjectId?: ProjectId | null\n  currentProjectLabel?: string\n  hasCurrentProject?: boolean\n  connectionClosed?: boolean\n  projectResetPending?: boolean\n  /** The harness project list, newest update first. */\n  projects?: ProjectSummary[]\n  /** The failure of the last history action, such as a deletion that the harness refused. */\n  notice?: string\n  onClose?: () => void\n  /** Opens a listed project by its harness ID. */\n  onSelectProject?: (projectId: ProjectId) => void\n  onDeleteProject?: (projectId: ProjectId) => void\n  onNewProject?: () => void\n  onOpenAssets?: () => void\n}',
     ],
-    ownerPropsReferences: [
-      'ProjectSummary',
-    ],
+    ownerPropsReferences: [],
     standardProps: [
       'useResource: UseResource',
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',

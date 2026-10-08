@@ -5,8 +5,9 @@
   height: 100%;
   min-width: 0;
   min-height: 0;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
+  background: var(--dv-bg);
+  color: var(--dv-text);
+  font-family: var(--dv-font-sans);
 }
 
 .entryChat {
@@ -15,103 +16,394 @@
   min-height: 0;
 }
 
+/* Entry page before the first message: the headline column, the composer, the template chips, and the recent projects
+   share one 880 px column, and the page scrolls when they do not fit. */
+.center[data-blank] {
+  overflow-y: auto;
+  padding: 0 40px 56px;
+}
+
+.entryIntro,
+.center[data-blank] .entryChat,
+.templates,
+.recent {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+.entryIntro {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-top: 120px;
+  text-align: center;
+}
+
+.entryHeadline {
+  margin: 0;
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.templates {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.templatesLabel {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dv-text-2);
+}
+
+.soonTag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--dv-radius-sm);
+  background: var(--dv-surface-3);
+  color: var(--dv-text-2);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.templateChip {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--dv-line);
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--dv-text-2);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: default;
+}
+
 .recent {
   flex: none;
-  padding: 0 32px 28px;
+  padding-top: 40px;
+}
+
+.recentHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
 }
 
 .recentTitle {
-  margin: 0 0 10px;
-  font-size: 13px;
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
   font-weight: 500;
-  color: var(--dsw-alias-label-tertiary);
+}
+
+.textButton {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dv-accent-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
 }
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
 }
 
 .card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 12px;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 12px;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: none;
   background: transparent;
   color: inherit;
+  font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.card:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+.cardCover {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--dv-radius-lg);
+  background: var(--dv-surface-3);
+  box-shadow: 0 0 0 1px var(--dv-line);
+  transition: box-shadow 120ms var(--dv-ease);
 }
 
-.cardThumb {
-  height: 90px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, rgba(120, 90, 255, 0.25), rgba(40, 180, 160, 0.2));
+.card:hover .cardCover {
+  box-shadow: 0 0 0 1px var(--dv-line-strong), var(--dv-shadow-1);
+}
+
+/* The total duration on a project card's cover. */
+.cardDuration {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  padding: 2px 8px;
+  border-radius: var(--dv-radius-sm);
+  background: rgba(10, 11, 13, 0.72);
+  color: #fff;
+  font-family: var(--dv-font-mono);
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.coverMedia {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.cardText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 0 2px;
 }
 
 .cardTitle {
   overflow: hidden;
-  font-size: 13px;
+  font-size: 14px;
+  line-height: 22px;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .cardMeta {
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dv-text-2);
 }
 
+/* Workspace header: left sidebar toggle and session switcher, the 画布 | 时间线 control, the right panel toggle. */
 .topbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   flex: none;
-  gap: 12px;
-  min-height: 48px;
-  padding: 0 16px 0 20px;
-  padding-inline-start: max(20px, var(--dsh-frame-leading-clearance, 0px));
-  border-bottom: 0.5px solid var(--dsw-alias-border-l3);
+  gap: 8px;
+  height: 52px;
+  box-sizing: border-box;
+  padding: 0 16px 0 10px;
+  padding-inline-start: max(10px, var(--dsh-frame-leading-clearance, 0px));
+  border-bottom: 1px solid var(--dv-line);
 }
 
-.crumbs {
+.barStart {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 0;
-  overflow: hidden;
-  font-size: 14px;
-  white-space: nowrap;
 }
 
-.crumbProject {
+.iconButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--dv-radius-md);
+  background: transparent;
+  color: var(--dv-text-2);
+  cursor: pointer;
+  transition: background-color 120ms var(--dv-ease), color 120ms var(--dv-ease);
+}
+
+.iconButton:hover {
+  background: var(--dv-surface-3);
+  color: var(--dv-text);
+}
+
+/* The session switcher and its menu. */
+.switcherRoot {
+  position: relative;
+  min-width: 0;
+}
+
+.switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  height: 36px;
+  box-sizing: border-box;
+  padding: 0 10px 0 6px;
+  border: none;
+  border-radius: var(--dv-radius-md);
+  background: transparent;
+  color: var(--dv-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms var(--dv-ease);
+}
+
+.switcher:hover,
+.switcher[aria-expanded='true'] {
+  background: var(--dv-surface-3);
+}
+
+.switcherCover {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 28px;
+  height: 18px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--dv-surface-3);
+  box-shadow: 0 0 0 1px var(--dv-line);
+}
+
+.switcherProject {
   flex: 0 1 auto;
   min-width: 3em;
   overflow: hidden;
+  font-size: 14px;
+  line-height: 22px;
   font-weight: 500;
   text-overflow: ellipsis;
 }
 
-.crumbSep,
-.crumbSession {
-  color: var(--dsw-alias-label-tertiary);
+.switcherSep {
+  flex: none;
+  color: var(--dv-text-3);
 }
 
-.crumbSession {
+.switcherSession {
   flex: 0 10 auto;
   min-width: 0;
   overflow: hidden;
+  color: var(--dv-text-2);
   text-overflow: ellipsis;
 }
 
-/* The workspace measures its own width so a narrow center gives the breadcrumb the space the centering would waste. */
+.switcherChevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--dv-text-2);
+}
+
+.menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 320px;
+  max-height: min(560px, calc(100vh - 80px));
+  box-sizing: border-box;
+  padding: 6px;
+  overflow-y: auto;
+  border-radius: var(--dv-radius-xl);
+  background: var(--dv-surface-1);
+  box-shadow: 0 0 0 1px var(--dv-line-strong), var(--dv-shadow-2);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.menuItem {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--dv-radius-md);
+  background: transparent;
+  color: var(--dv-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms var(--dv-ease);
+}
+
+.menuItem:hover,
+.menuItem[data-active] {
+  background: var(--dv-surface-3);
+}
+
+.menuItemQuiet {
+  color: var(--dv-text-2);
+}
+
+.menuLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuCheck {
+  display: inline-flex;
+  color: var(--dv-accent-text);
+}
+
+.menuTrail {
+  display: inline-flex;
+  color: var(--dv-text-2);
+}
+
+.menuDivider {
+  flex: none;
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--dv-line);
+}
+
+.menuHeading {
+  overflow: hidden;
+  padding: 6px 10px 2px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dv-text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuScroll {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* The workspace measures its own width so a narrow center gives the switcher the space the centering would waste. */
 .workspace {
   container-type: inline-size;
 }
@@ -119,12 +411,11 @@
 @container (max-width: 560px) {
   .topbar {
     grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 8px;
     padding-inline-end: 10px;
   }
 
   .toggle .toggleItem {
-    padding: 4px 10px;
+    padding: 0 10px;
   }
 }
 
@@ -132,24 +423,32 @@
   display: inline-flex;
   padding: 3px;
   border-radius: 10px;
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dv-surface-3);
 }
 
 .toggleItem {
-  padding: 4px 16px;
+  height: 28px;
+  padding: 0 16px;
   border: none;
-  border-radius: 8px;
+  border-radius: 7px;
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dv-text-2);
+  font: inherit;
   font-size: 13px;
+  line-height: 20px;
   cursor: pointer;
+  transition: background-color 120ms var(--dv-ease), color 120ms var(--dv-ease);
+}
+
+.toggleItem:hover {
+  color: var(--dv-text);
 }
 
 .toggleItem[data-active] {
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
+  background: var(--dv-surface-1);
+  color: var(--dv-text);
   font-weight: 500;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 .barEnd {
@@ -214,55 +513,77 @@
   gap: 2px;
   height: 100%;
   min-height: 0;
-  padding: 4px 10px 8px;
+  padding: 4px 12px 8px;
   overflow-y: auto;
   font-size: 13px;
+  line-height: 20px;
 }
 
-.navPrimary {
+/* 新建项目: the secondary button style, because the composer's send button is the one solid button on screen. */
+.navSecondary {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
   margin: 2px 0 8px;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 10px;
-  background: var(--dsw-alias-state-business-primary);
-  color: #fff;
-  font-size: 13px;
+  padding: 0 12px;
+  border: 1px solid var(--dv-line-strong);
+  border-radius: var(--dv-radius-md);
+  background: transparent;
+  color: var(--dv-text);
+  font: inherit;
   font-weight: 500;
   text-align: left;
   cursor: pointer;
+  transition: background-color 120ms var(--dv-ease);
+}
+
+.navSecondary:hover {
+  background: var(--dv-surface-3);
 }
 
 .navItem,
 .treeRow {
   display: flex;
+  flex: none;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
-  padding: 6px 10px;
+  min-height: 34px;
+  box-sizing: border-box;
+  padding: 0 10px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--dv-radius-md);
   background: transparent;
-  color: inherit;
-  font-size: 13px;
+  color: var(--dv-text);
+  font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: background-color 120ms var(--dv-ease);
+}
+
+.treeRow {
+  gap: 6px;
+  padding-left: 4px;
 }
 
 .navItem:hover,
 .treeRow:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dv-surface-3);
 }
 
 .navItem[data-active],
 .treeRow[data-active] {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dv-surface-3);
   font-weight: 500;
 }
 
 .section {
-  margin: 8px 10px 4px;
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
+  margin: 16px 10px 4px;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dv-text-2);
 }
 
 .treeLabel {
@@ -273,23 +594,58 @@
 }
 
 .treeChild {
-  padding-left: 26px;
-  color: var(--dsw-alias-label-secondary, inherit);
+  padding-left: 30px;
+  color: var(--dv-text-2);
+}
+
+.treeCaret {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--dv-radius-sm);
+  color: var(--dv-text-2);
 }
 
 .treeAdd {
+  display: inline-flex;
   flex: none;
-  padding: 0 6px;
+  align-items: center;
+  padding: 2px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--dv-radius-sm);
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dv-text-2);
   cursor: pointer;
 }
 
+.treeAdd:hover,
+.rowMenuButton:hover {
+  color: var(--dv-text);
+}
+
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  line-height: 24px;
   font-weight: 600;
-  letter-spacing: 0.2px;
+  color: var(--dv-text);
+}
+
+.brandMark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--dv-radius-md);
+  background: var(--dv-accent);
+  color: #FFFFFF;
 }
 
 /* Right-panel tab bodies. */
@@ -309,56 +665,42 @@
   display: none;
 }
 
-/* Entry page before the first message: a headline above a short composer band, then the recent projects. */
-.entryHeadline {
-  flex: none;
-  margin: 18vh 0 0;
-  padding: 0 32px;
-  font-size: 26px;
-  font-weight: 600;
-  text-align: center;
-}
-
-.center[data-blank] .entryChat {
-  flex: none;
-  height: 180px;
-}
-
 /* The blank band holds only the composer, whose ＋ menu opens upward above the band; the conversation body and its
    scroller must not clip it. */
+.center[data-blank] .entryChat {
+  flex: none;
+  max-width: 760px;
+  height: 112px;
+  margin-top: 24px;
+}
+
 .center[data-blank] .entryChat :global([class*='_embeddedBody']),
 .center[data-blank] .entryChat :global([class*='_scrollBody']) {
   overflow: visible;
-}
-
-.panelsButton {
-  flex: none;
-  margin-left: 8px;
-  padding: 4px 10px;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 8px;
   background: transparent;
-  color: inherit;
-  font-size: 12px;
-  cursor: pointer;
 }
 
-.panelsButton:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+/* The entry page's composer card. The in-session chat composer is styled by @dv/ui-composer. */
+.center[data-dv-entry] .entryChat :global([data-composer-card]) {
+  max-width: 760px;
+  border: 1px solid var(--dv-line-strong);
+  border-radius: 20px;
+  background: var(--dv-surface-2);
+  box-shadow: var(--dv-shadow-1);
 }
 
 .renameInput {
   flex: 1;
   min-width: 0;
   padding: 2px 6px;
-  border: 1px solid var(--dsw-alias-state-business-primary);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dv-accent);
+  border-radius: var(--dv-radius-sm);
+  background: var(--dv-surface-2);
   color: inherit;
   font: inherit;
 }
 
-/* Row ⋯ menu: hidden until the row is hovered or the menu is open. */
+/* Row menu: hidden until the row is hovered or the menu is open. */
 .rowMenu {
   position: relative;
   flex: none;
@@ -371,11 +713,13 @@
 }
 
 .rowMenuButton {
-  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--dv-radius-sm);
   background: transparent;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dv-text-2);
   cursor: pointer;
 }
 
@@ -388,37 +732,39 @@
   flex-direction: column;
   min-width: 120px;
   padding: 4px;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 8px;
-  background: var(--dsw-alias-bg-base);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16);
+  border-radius: var(--dv-radius-lg);
+  background: var(--dv-surface-1);
+  box-shadow: 0 0 0 1px var(--dv-line-strong), var(--dv-shadow-2);
 }
 
 .rowMenuItem {
   padding: 6px 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--dv-radius-sm);
   background: transparent;
-  color: inherit;
+  color: var(--dv-text);
+  font: inherit;
   font-size: 13px;
+  line-height: 20px;
+  font-weight: 400;
   text-align: left;
   cursor: pointer;
 }
 
 .rowMenuItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--dv-surface-3);
 }
 
 .rowMenuItem[data-danger] {
-  color: #d9443a;
+  color: var(--dv-danger);
 }
 
 /* Navigator hints: what to do when a list is empty. */
 .navHint {
   margin: 2px 10px 6px;
   font-size: 12px;
-  line-height: 1.5;
-  color: var(--dsw-alias-label-tertiary);
+  line-height: 16px;
+  color: var(--dv-text-2);
 }
 
 /* Empty-state hint inside a right-panel tab. */
@@ -427,9 +773,9 @@
   padding: 0 24px;
   max-width: 320px;
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 20px;
   text-align: center;
-  color: var(--dsw-alias-label-tertiary);
+  color: var(--dv-text-2);
 }
 
 /* The blank chat's hint floats over the conversation so the composer keeps the tab's full width. */
@@ -444,4 +790,35 @@
 /* A blank chat has no transcript; keep the composer at the bottom so its menus open into the empty space. */
 .tab[data-dv-chat] :global([data-composer-seat]) {
   margin-top: auto;
+}
+
+/* Focus and motion for the shell's own controls. */
+.navSecondary:focus-visible,
+.navItem:focus-visible,
+.treeCaret:focus-visible,
+.treeLabel:focus-visible,
+.treeAdd:focus-visible,
+.rowMenuButton:focus-visible,
+.rowMenuItem:focus-visible,
+.iconButton:focus-visible,
+.switcher:focus-visible,
+.menuItem:focus-visible,
+.toggleItem:focus-visible,
+.textButton:focus-visible,
+.card:focus-visible {
+  outline: 2px solid var(--dv-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cardCover,
+  .iconButton,
+  .switcher,
+  .menuItem,
+  .toggleItem,
+  .navSecondary,
+  .navItem,
+  .treeRow {
+    transition: none;
+  }
 }
