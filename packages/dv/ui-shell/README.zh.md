@@ -24,14 +24,14 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在叠了 `dsh-web-app`（提供侧栏、会话和 Workspace 服务以及客户端模块加载器）和 `@dv/api`（提供外壳调用的路由）的 profile 里挂载插件。同时挂载 `@dv/ui-asset-pool` 和 `@dv/ui-history`：面板 按钮和右侧面板的指南页会打开它们的标签。先构建浏览器 bundle：`pnpm run build` 会写出 `lib/client.js`。
+在叠了 `dsh-web-app`（提供侧栏、会话和 Workspace 服务以及客户端模块加载器）和 `@dv/api`（提供外壳调用的路由）的 profile 里挂载插件。同时挂载 `@dv/ui-asset-pool` 和 `@dv/ui-history`：右侧面板按钮和右侧面板的指南页会打开它们的标签。先构建浏览器 bundle：`pnpm run build` 会写出 `lib/client.js`。
 
 ```yaml
 - id: dv-ui-shell
   name: '@dv/ui-shell'
 ```
 
-Host 半边不注册任何东西。浏览器半边以优先级 -1 注册中间区域、导航和品牌名 DreamVerse 以覆盖 DSH 的条目，注册 `dv-chat` 和 `dv-trajectory` 标签类型及其标签主体，以及提供 对话、素材库、历史 和 轨迹 的右侧面板指南页。它还隐藏 DreamVerse 不用的 DSH 界面（欢迎提示、侧栏的品牌图标、新会话按钮和插件入口、输入框统计、上下文用量、Host 斜杠命令），改写几条 DSH 文字，并在浏览器标签页上用 DreamVerse 图标替换 DSH 的图标。工作区顶栏还显示项目名（双击可重命名）、对话标题和 面板 按钮；首页显示标题 今天想做一个什么视频？ 和最多八个最近项目。URL hash 的形式为 `#project=<id>&view=timeline&timeline=t2&session=<id>`，所以刷新、后退和前进都能恢复位置。
+Host 半边不注册任何东西。浏览器半边以优先级 -1 注册中间区域、导航和品牌名 DreamVerse 以覆盖 DSH 的条目，注册 `dv-chat` 和 `dv-trajectory` 标签类型及其标签主体，以及提供 对话、素材库、历史 和 轨迹 的右侧面板指南页。它还隐藏 DreamVerse 不用的 DSH 界面（欢迎提示、侧栏的品牌图标、新会话按钮和插件入口、输入框统计、上下文用量、Host 斜杠命令），改写几条 DSH 文字，并在浏览器标签页上用 DreamVerse 图标替换 DSH 的图标。工作区顶栏还显示项目名（双击可重命名）、对话标题和右侧面板按钮（右侧栏同款的面板图标，标签为 打开右侧面板 / Open the right panel），它打开 对话、素材库 和 轨迹；首页显示标题 今天想做一个什么视频？ 和最多八个最近项目。URL hash 的形式为 `#project=<id>&view=timeline&timeline=t2&session=<id>`，所以刷新、后退和前进都能恢复位置。
 
 | 手势 | 请求或事件 |
 | --- | --- |

@@ -24,14 +24,14 @@ Use this package to turn the DSH web app into DreamVerse. With no project open, 
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin in a profile that stacks `dsh-web-app` (which provides the sidebars, the session and Workspace services, and the client module loader) and `@dv/api` (which serves the routes the shell calls). Mount `@dv/ui-asset-pool` and `@dv/ui-history` too: the 面板 / Panels button and the right-panel guide open their tabs. Build the browser bundle first: `pnpm run build` writes `lib/client.js`.
+Mount the plugin in a profile that stacks `dsh-web-app` (which provides the sidebars, the session and Workspace services, and the client module loader) and `@dv/api` (which serves the routes the shell calls). Mount `@dv/ui-asset-pool` and `@dv/ui-history` too: the right-panel button and the right-panel guide open their tabs. Build the browser bundle first: `pnpm run build` writes `lib/client.js`.
 
 ```yaml
 - id: dv-ui-shell
   name: '@dv/ui-shell'
 ```
 
-The Host half registers nothing. The browser half registers the center, the navigator, and the brand name DreamVerse at priority -1 over DSH's entries, the `dv-chat` and `dv-trajectory` tab types with their tab bodies, and the right-panel guide that offers 对话, 素材库, 历史, and 轨迹. It also hides DSH chrome that DreamVerse does not use (the welcome notice, the sidebar's brand mark, New Session button and Plugins entry, the composer statistics, the context meter, and the host slash commands) rewords a few DSH strings, and shows the DreamVerse icon in the browser tab in place of DSH's. The workspace top bar also shows the project name (a double-click renames it), the chat session title, and the 面板 / Panels button; the entry page shows the headline 今天想做一个什么视频？ / What video do you want to make? and up to eight recent projects. The URL hash has the form `#project=<id>&view=timeline&timeline=t2&session=<id>`, so a reload, Back, and Forward restore the location.
+The Host half registers nothing. The browser half registers the center, the navigator, and the brand name DreamVerse at priority -1 over DSH's entries, the `dv-chat` and `dv-trajectory` tab types with their tab bodies, and the right-panel guide that offers 对话, 素材库, 历史, and 轨迹. It also hides DSH chrome that DreamVerse does not use (the welcome notice, the sidebar's brand mark, New Session button and Plugins entry, the composer statistics, the context meter, and the host slash commands) rewords a few DSH strings, and shows the DreamVerse icon in the browser tab in place of DSH's. The workspace top bar also shows the project name (a double-click renames it), the chat session title, and the right-panel button (the right sidebar's panel icon, labelled 打开右侧面板 / Open the right panel), which opens 对话, 素材库, and 轨迹; the entry page shows the headline 今天想做一个什么视频？ / What video do you want to make? and up to eight recent projects. The URL hash has the form `#project=<id>&view=timeline&timeline=t2&session=<id>`, so a reload, Back, and Forward restore the location.
 
 | Gesture | Request or event |
 | --- | --- |

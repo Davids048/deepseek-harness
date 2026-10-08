@@ -14,6 +14,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { IconPanelLeftOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationViewsProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -391,9 +392,11 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
           ))}
         </div>
         <div className={css.barEnd}>
-          <button type="button" className={css.panelsButton} title={t('打开对话、素材库和轨迹', 'Open Chat, Asset pool, and Trajectory')} onClick={showPanels}>
-            {t('面板', 'Panels')}
-          </button>
+          <Tooltip label={t('打开对话、素材库和轨迹', 'Open Chat, Asset pool, and Trajectory')} side="bottom" delayMs={500}>
+            <button type="button" className={css.panelsButton} aria-label={t('打开右侧面板', 'Open the right panel')} onClick={showPanels}>
+              <IconPanelLeftOutlineRegular className={css.panelsIcon} />
+            </button>
+          </Tooltip>
         </div>
       </header>
       <div className={css.viewArea}>

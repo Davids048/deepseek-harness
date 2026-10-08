@@ -663,12 +663,12 @@ describe('navigation, projects, sessions, and panels', () => {
     }
     expect(await rightTabs(page)).toEqual([])
     // The top bar's 面板 brings back 对话 / 素材库 / 历史 / 轨迹 with 对话 in front.
-    await page.getByRole('button', { name: '面板' }).click()
+    await page.getByRole('button', { name: '打开右侧面板', exact: true }).click()
     await waitFor(async () => (await rightTabs(page)).length === 4, 'tabs reopened', 10_000)
     await chat(page).waitFor({ timeout: 10_000 })
     await page.getByRole('button', { name: '收起右侧边栏' }).click()
     await waitFor(async () => (await rightTabs(page)).length === 0, 'right panel collapsed', 5000)
-    await page.getByRole('button', { name: '面板' }).click()
+    await page.getByRole('button', { name: '打开右侧面板', exact: true }).click()
     await waitFor(async () => (await rightTabs(page)).length === 4, 'right panel expanded', 10_000)
     await page.getByRole('button', { name: '收起侧边栏' }).click()
     await waitFor(async () => !await navigator(page).isVisible(), 'navigator hidden', 5000)
@@ -712,7 +712,8 @@ describe('navigation, projects, sessions, and panels', () => {
       const nav = await navigator(page).innerText()
       for (const label of ['Create project', 'Home', 'Projects']) expect(nav).toContain(label)
       const bar = await page.locator('[data-dv-workspace] header').innerText()
-      for (const label of ['Canvas', 'Timeline', 'Panels', 'New chat']) expect(bar).toContain(label)
+      for (const label of ['Canvas', 'Timeline', 'New chat']) expect(bar).toContain(label)
+      await expect.poll(() => page.locator('[data-dv-workspace] header').getByRole('button', { name: 'Open the right panel', exact: true }).count()).toBe(1)
       expect([...await rightTabs(page)].sort()).toEqual(['Asset pool', 'Chat', 'History', 'Trajectory'])
     } finally {
       // The language is a durable DSH preference shared by every browser of this harness; restore Chinese.

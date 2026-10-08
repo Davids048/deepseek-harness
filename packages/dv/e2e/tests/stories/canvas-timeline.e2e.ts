@@ -1212,7 +1212,7 @@ function switcher(page: Page): Locator {
 async function openHistory(page: Page): Promise<void> {
   const tab = page.locator('[role="tab"]', { hasText: /^历史$/ }).filter({ visible: true }).first()
   const shown = await tab.waitFor({ timeout: 5000 }).then(() => true, () => false)
-  if (!shown) await page.getByRole('button', { name: '面板', exact: true }).click()
+  if (!shown) await page.getByRole('button', { name: '打开右侧面板', exact: true }).click()
   // A project switch remounts the right panel's session seat, so the tab found first can be replaced mid-click.
   for (let attempt = 0; attempt < 4; attempt++) {
     if (await tab.click({ timeout: 3000 }).then(() => true, () => false)) break

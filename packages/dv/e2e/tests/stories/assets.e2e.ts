@@ -180,10 +180,10 @@ describe('The asset pool panel', () => {
 
   /** Open the 素材库 / Asset pool tab of the right panel. */
   async function openAssets(page: Page, lang: 'zh' | 'en' = 'zh'): Promise<void> {
-    // The tab strip of the right panel; 面板 / Panels reopens a collapsed panel.
+    // The tab strip of the right panel; the right-panel button reopens a collapsed panel.
     const tab = page.locator('[role="tab"]', { hasText: lang === 'zh' ? /^素材库$/ : /^Asset pool$/ }).filter({ visible: true }).first()
     // The panels open by themselves once the project's chat session is in place; wait for that before reopening them.
-    if (!await tab.waitFor({ timeout: 5000 }).then(() => true, () => false)) await page.getByRole('button', { name: lang === 'zh' ? '面板' : 'Panels', exact: true }).click()
+    if (!await tab.waitFor({ timeout: 5000 }).then(() => true, () => false)) await page.getByRole('button', { name: lang === 'zh' ? '打开右侧面板' : 'Open the right panel', exact: true }).click()
     // A project switch remounts the right panel's session seat, so the tab found first can be replaced mid-click.
     for (let attempt = 0; attempt < 4; attempt++) {
       if (await tab.click({ timeout: 3000 }).then(() => true, () => false)) break
