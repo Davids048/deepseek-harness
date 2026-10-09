@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Timeline editor copy: timeline tabs, viewer, toolbar, tracks, and the branch bar. */
+    /** Timeline editor copy: timeline tabs, viewer, toolbar, tracks, and the project bar. */
     dvTimeline: DvTimelineKey
   }
 }
@@ -37,7 +37,6 @@ export const zh = {
   'viewer.noTimelines': '项目还没有时间线。点上方的 ＋ 新建 创建一条。',
   'viewer.placeholder': '片段 {position}：{status}',
   'tool.undo': '撤销',
-  'tool.redo': '重做',
   'tool.split': '拆分',
   'tool.play': '播放',
   'tool.pause': '暂停',
@@ -100,7 +99,6 @@ export const en = {
   'viewer.noTimelines': 'The project has no timelines yet. Click ＋ New at the top to start one.',
   'viewer.placeholder': 'Clip {position}: {status}',
   'tool.undo': 'Undo',
-  'tool.redo': 'Redo',
   'tool.split': 'Split',
   'tool.play': 'Play',
   'tool.pause': 'Pause',

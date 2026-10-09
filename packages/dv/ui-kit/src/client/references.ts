@@ -30,7 +30,7 @@ export function shotReferences(version: Pick<PlanVersion, 'references'>, shot: P
  * to that character, location or style version's reference images (characters tried first, then locations, then
  * styles), `<record>#<output>` names that output of a record, and any other text is an asset ID. A text the state cannot
  * resolve, and an asset that is not an image, adds nothing.
- * @param state - the branch state the references are read against.
+ * @param state - the project state the references are read against.
  * @param references - the reference texts, in input order.
  * @returns the image asset IDs; position N - 1 is `Picture N`.
  */

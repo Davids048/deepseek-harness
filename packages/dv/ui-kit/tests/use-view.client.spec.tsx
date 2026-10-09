@@ -42,7 +42,7 @@ describe('useViewSession', () => {
     await waitFor(() => { expect(result.current.state.value).not.toBeNull() })
     expect(result.current.project).toBe('p1')
     expect(result.current.operations.value?.length).toBeGreaterThan(0)
-    expect(result.current.state.value?.current).toBe('main')
+    expect(result.current.state.value?.head).toBe('g3')
     act(() => { result.current.bar.onUndo() })
     await waitFor(() => { expect(writes).toHaveLength(1) })
     expect(writes).toEqual([{ path: '/api/dv/undo', body: { project: 'p1', surface: 'canvas' } }])
@@ -50,7 +50,7 @@ describe('useViewSession', () => {
     expect(result.current.project).toBe('p2')
   })
 
-  it('undoes on the project\'s current branch on behalf of the chat session beside the view', async () => {
+  it('undoes the project\'s last step on behalf of the chat session beside the view', async () => {
     const { fetch, writes } = scriptedFetch()
     const client = new DvClient(fetch)
     const { result } = renderHook(() => useViewSession(client, 'canvas', 's5'))
@@ -64,7 +64,7 @@ describe('useViewSession', () => {
   it('keeps the failure message of a write and clears it on the next success', async () => {
     const refused = (path: string): boolean => path === '/api/dv/undo' || path === '/api/dv/projects'
     const { fetch } = scriptedFetch({
-      post: path => refused(path) ? { status: 409, body: { error: 'nothing to undo' } } : { status: 200, body: { heads: {} } },
+      post: path => refused(path) ? { status: 409, body: { error: 'nothing to undo' } } : { status: 200, body: { record: {} } },
     })
     const client = new DvClient(fetch)
     const { result } = renderHook(() => useViewSession(client, 'timeline'))
@@ -73,7 +73,7 @@ describe('useViewSession', () => {
     await act(async () => { ok = await result.current.run(() => client.undo('p1', 'timeline')) })
     expect(ok).toBe(false)
     expect(result.current.notice).toBe('nothing to undo')
-    await act(async () => { ok = await result.current.run(() => client.createBranch('p1', 'timeline')) })
+    await act(async () => { ok = await result.current.run(() => client.acceptStale('p1', 'g2', 'timeline')) })
     expect(ok).toBe(true)
     expect(result.current.notice).toBeNull()
     await act(async () => { ok = await result.current.run(() => Promise.reject(new Error('boom'))) })
@@ -118,7 +118,8 @@ describe('useProjectState', () => {
     expect(reads).toBe(1)
     expect(result.current.loading).toBe(false)
     vi.useFakeTimers()
-    const fire = (): void => { listeners.get('branch')?.(new MessageEvent('branch', { data: '{"kind":"branch","name":"main","head":"s1","current":"main"}' })) }
+    const appended = JSON.stringify({ kind: 'record', record: fixtureState().components.proj.records[0] })
+    const fire = (): void => { listeners.get('record')?.(new MessageEvent('record', { data: appended })) }
     act(() => { fire(); fire(); fire() })
     act(() => { vi.advanceTimersByTime(200) })
     vi.useRealTimers()
@@ -173,12 +174,12 @@ describe('useProjectState', () => {
     const second = pending.shift()
     if (first === undefined || second === undefined) throw new Error('two reads expected')
     const stale = fixtureState()
-    stale.branch = 'stale'
+    stale.head = 'stale'
     await act(async () => { first(stale); await Promise.resolve() })
     expect(result.current.value).toBeNull()
     const fresh = fixtureState()
-    fresh.branch = 'b2'
+    fresh.head = 'fresh'
     await act(async () => { second(fresh) })
-    await waitFor(() => { expect(result.current.value?.branch).toBe('b2') })
+    await waitFor(() => { expect(result.current.value?.head).toBe('fresh') })
   })
 })

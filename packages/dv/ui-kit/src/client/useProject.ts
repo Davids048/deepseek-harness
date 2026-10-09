@@ -1,6 +1,6 @@
 /**
- * React hooks that keep a view's copy of a project in step with the host: the project list, the state of the selected
- * branch, and the operation declarations. The state is refetched after every project change.
+ * React hooks that keep a view's copy of a project in step with the host: the project list, the project's current
+ * state, and the operation declarations. The state is refetched after every project change.
  *
  * @module @dv/ui-kit/useProject
  */
@@ -68,8 +68,7 @@ export function useOperations(client: DvClient): Loading<WireOperation[]> {
 }
 
 /**
- * The state of the project's current branch, refetched on every project change (a branch switch included) while the
- * component is mounted.
+ * The project's current state, refetched on every project change while the component is mounted.
  * @param client - the API client.
  * @param project - the project, or null before one is chosen.
  * @returns the state.

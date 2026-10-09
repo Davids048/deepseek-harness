@@ -52,7 +52,6 @@ export interface RecordFailure {
 export interface ProjectRecord {
   id: string
   parents: string[]
-  branch: string
   kind: 'operation'
   /** The component key that owns the operation, for example `timeline`. */
   component: string
@@ -88,22 +87,6 @@ export interface ProjectInfo {
   id: string
   title: string
   created_at: string
-}
-
-/** One branch of a project. Branches are never merged; they share only the asset pool. */
-export interface Branch {
-  /** `main`, or `b<n>` for a forked branch; never changes. */
-  name: string
-  /** The name the human gave the branch; null shows the default label of `name` (`branchLabel`). */
-  title: string | null
-  /** The branch's last step, or the step an undo returned it to. */
-  head: string
-  /** The branch this one was forked from; null for `main`. */
-  base: string | null
-  /** The record of `base` this branch was forked at; null for `main`. */
-  forked_at: string | null
-  /** The branch's last step, which redo can bring back when `head` stands before it. */
-  tip: string
 }
 
 /** One stored asset of the asset pool. */
@@ -217,7 +200,7 @@ export interface TimelineState {
 /** The state slices of the components the browser reads, sent verbatim by the server. */
 export interface ComponentStates {
   proj: {
-    /** The records of the branch's effective chain, oldest first. */
+    /** The records of the effective chain, oldest first. */
     records: ProjectRecord[]
     /** Stale records: record → the record whose change made it stale. */
     stale: Record<string, string>
@@ -230,24 +213,17 @@ export interface ComponentStates {
   plan: PlanState
   shot: ShotState
   timeline: TimelineState
-  /** The assets on the branch's canvas, in the order they were placed. */
+  /** The assets on the canvas, in the order they were placed. */
   asset: { placed: string[] }
 }
 
-/** The state of one branch at its head, with the branches and assets the views need beside it. */
+/** The project's current state, with the assets the views need beside it. */
 export interface WireState {
   project: ProjectInfo
-  /** The branch the state is for. */
-  branch: string
+  /** The project's last record. */
   head: string
-  heads: Record<string, string>
-  /** Every branch of the project; `main` first, then by name. */
-  branches: Branch[]
-  /** The project's current branch, which every view shows and every write goes to. */
-  current: string
   components: ComponentStates
-  /** The steps that redo brings back on the branch, oldest first; empty when nothing can be redone. */
-  redo_steps: string[]
+  /** Every asset a record of the project created or names, anywhere in the history; the asset pool keeps them all. */
   assets: Asset[]
 }
 
@@ -282,39 +258,23 @@ export interface WireProject {
   id: string
   title: string
   created_at: string
-  heads: Record<string, string>
   /** Whether the chat session the view sits beside is bound to this project. */
   current?: boolean
 }
 
-/**
- * One project change, as the event stream sends it: an appended record, a record update, or a branch that was created,
- * renamed or moved, or that became the project's current branch (`current`).
- */
+/** One project change, as the event stream sends it: an appended record or a record update. */
 export type ProjectEvent =
   | { kind: 'record'; record: ProjectRecord }
   | { kind: 'update'; record: ProjectRecord }
-  | { kind: 'branch'; name: string; head: string; current: string }
 
-/** One entry of the history list: a record in its current form and where it stands. */
+/** One entry of the history list: one record of the project in its current form. */
 export interface HistoryEntry {
   record: ProjectRecord
-  /**
-   * `current` (on the effective chain of the current branch's head), `redo` (a step redo brings back on the current
-   * branch), `branch` (on the line of another branch only), or `undone` (on no branch line).
-   */
-  mark: 'current' | 'redo' | 'branch' | 'undone'
-  /** The branches whose line holds the record, `main` first; the steps before a fork are on both branches. */
-  branches: string[]
 }
 
 /** What `POST /api/dv/history` selects (the JSON body). Every filter is optional; filters combine with AND. */
 export interface HistoryQuery {
   project: string
-  /** Only records appended to this branch name. */
-  branch?: string
-  /** Only entries with one of these marks. */
-  marks?: Array<HistoryEntry['mark']>
   actor?: Actor
   /** A component key, such as `timeline`. */
   component?: string
@@ -356,16 +316,9 @@ export interface OperationRequest {
   supersedes?: string[]
 }
 
-/** The record a project-level route wrote (undo, redo, stale accept), with the branch heads afterwards. */
+/** The record a project-level route wrote (undo, stale accept). */
 export interface WireRecordResult {
   record: ProjectRecord
-  heads: Record<string, string>
-}
-
-/** A branch that a branch route created, switched to, or renamed, with the branch heads afterwards. */
-export interface WireBranchResult {
-  branch: Branch
-  heads: Record<string, string>
 }
 
 /** Where a canvas node sits, in canvas units. */

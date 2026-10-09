@@ -1,10 +1,10 @@
 // User stories of the History panel (历史), walked in Chromium against the shipped profile with a fake video backend that
 // renders playable VP9 videos and a scripted agent model. Projects are seeded through the `/api/dv` routes; agent turns
-// go through the chat. Every story checks the action rows the creator sees: their order, labels, who, thumbnails, marks,
-// the renders folded under a plan approval, the focus a selected row gives the canvas or the timeline, live updates,
-// the steps of the current branch (回到这一步, Ctrl+Z and Shift+Ctrl+Z, and the greyed steps redo brings back), the branch
-// a write after an undo forks, the 分支树 view that switches between branches, and the branch menu that forks and names
-// a branch in place.
+// go through the chat. Every story checks the action rows the creator sees: their order, labels, who, thumbnails, the
+// 当前 mark of the newest row, the renders folded under a plan approval, the focus a selected row gives the canvas or the
+// timeline, and live updates. The history is one line that only grows: an undo (Ctrl+Z, the undo button, 回到这一步 in a
+// row's ⋮ menu) adds a 回到「…」 row, the steps after its target stay listed, and a later edit continues from the earlier
+// state.
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
@@ -34,7 +34,7 @@ let projectCount = 0
  * @param operation - the operation name.
  * @param params - the operation params.
  * @param inputs - the input references.
- * @param session - the chat session the record names; the record lands on the project's current branch either way.
+ * @param session - the chat session the record names; the record goes at the end of the project's history either way.
  * @returns the record.
  */
 async function runOperation(
@@ -49,10 +49,9 @@ async function runOperation(
   return await harness.api.post('/api/dv/operation', body) as ProjectRecord
 }
 
-/** @returns the folded state of a project branch, the project's current branch by default. */
-async function stateOf(project: string, branch?: string): Promise<WireState> {
-  const query = branch === undefined ? '' : `&branch=${encodeURIComponent(branch)}`
-  return await harness.api.get(`/api/dv/state?project=${project}${query}`) as WireState
+/** @returns the project's current state. */
+async function stateOf(project: string): Promise<WireState> {
+  return await harness.api.get(`/api/dv/state?project=${project}`) as WireState
 }
 
 /** @returns a project created through the API with a unique title. */
@@ -169,7 +168,7 @@ async function openHistory(page: Page): Promise<void> {
 
 /**
  * Ask the scripted agent to rename timeline t1 in the chat, which writes one agent record whose intent is
- * `改名：<word>` on the project's current branch, then return to 历史.
+ * `改名：<word>` at the end of the project's history, then return to 历史.
  * @param page - a page showing the project.
  * @param project - the project.
  * @param word - the chat message, unique to the story.
@@ -195,34 +194,13 @@ async function agentRename(page: Page, project: string, word: string): Promise<P
   return record
 }
 
-/** The branch menu in the History panel header. */
-function switcher(page: Page): Locator {
-  return historyPanel(page).locator('[data-testid="dv-kit-branch-menu"]').first()
-}
-
-/**
- * Show one view of the History panel.
- * @param page - a page showing the History panel.
- * @param view - `list` or `tree`.
- */
-async function showView(page: Page, view: 'list' | 'tree'): Promise<void> {
-  const button = historyPanel(page).locator(`[data-testid="dv-history-view-toggle"] [data-view="${view}"]`)
-  await button.click()
-  await expect.poll(() => button.getAttribute('aria-selected')).toBe('true')
-}
-
 /**
  * Choose 回到这一步 in a row's ⋮ menu.
- * @param row - a list row or a tree node.
+ * @param row - a history row.
  */
 async function stepBack(row: Locator): Promise<void> {
   await row.locator('[data-testid="dv-history-step-actions"]').click()
   await row.locator('[data-testid="dv-history-step-back"]').click()
-}
-
-/** A node of the 分支树 view. */
-function treeNode(page: Page, record: string): Locator {
-  return historyPanel(page).locator(`[data-testid="dv-history-tree-node"][data-record="${record}"]`)
 }
 
 /** @returns the names of the timeline tabs the timeline editor shows. */
@@ -241,9 +219,15 @@ async function threeRenames(project: string): Promise<ProjectRecord[]> {
   return renames
 }
 
-/** @returns the `data-step` of one record's row, or null when the row is not a step of the current branch. */
-async function stepOf(page: Page, record: ProjectRecord | undefined): Promise<string | null> {
-  return await rowOf(page, record?.id ?? '').getAttribute('data-step')
+/** @returns the record ID of the row that carries 当前: the newest record of the project. */
+async function currentRow(page: Page): Promise<string | null> {
+  const marked = historyPanel(page).locator('[data-testid="dv-history-row"]:has([data-testid="dv-history-current"])')
+  return await marked.count() === 1 ? await marked.getAttribute('data-record') : null
+}
+
+/** @returns the name of timeline `t1` in the project's current state, or undefined when the state has no timeline. */
+async function timelineName(project: string): Promise<string | undefined> {
+  return (await stateOf(project)).components.timeline.timelines[0]?.name
 }
 
 beforeAll(async () => {
@@ -275,7 +259,6 @@ describe('History panel', () => {
     const render = rowOf(page, project.renders[1]?.id ?? '')
     expect(await render.getAttribute('data-actor')).toBe('user')
     expect(await render.getAttribute('data-status')).toBe('done')
-    expect(await render.getAttribute('data-mark')).toBe('current')
     const text = await render.innerText()
     for (const word of ['你', '参考图生成镜头']) expect(text).toContain(word)
     // One thumbnail per row: the take's still, which the browser loads.
@@ -288,7 +271,7 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
-  it('an agent row shows the intent the agent gave for its call; the agent\'s and the human\'s edits land on the current branch at once', async () => {
+  it('an agent row shows the intent the agent gave for its call; the agent\'s and the human\'s edits go at the end of one history at once', async () => {
     const project = await seedProject('history-turn')
     const page = await openPage()
     await gotoProject(page, project.id)
@@ -299,68 +282,46 @@ describe('History panel', () => {
     await expect.poll(() => agentRow.innerText(), { timeout: 30_000 }).toContain('改名：history-turn-request')
     expect(await agentRow.innerText()).toContain('智能体')
     expect(await agentRow.getAttribute('data-surface')).toBe('chat')
-    expect(await agentRow.getAttribute('data-mark')).toBe('current')
-    expect(agent.branch).toBe('main')
+    await expect.poll(() => currentRow(page)).toBe(agent.id)
     const edit = await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: '人工改名' }, [], agent.session ?? undefined)
-    await expect.poll(() => stepOf(page, edit)).toBe('current')
-    expect(await rowOf(page, edit.id).getAttribute('data-mark')).toBe('current')
-    const state = await stateOf(project.id)
-    expect(state.current).toBe('main')
-    expect(state.branches.map(branch => branch.name)).toEqual(['main'])
+    // The human's edit follows the agent's on the same line and becomes the newest row.
+    await expect.poll(() => currentRow(page)).toBe(edit.id)
+    expect((await shownRecords(page)).slice(0, 2)).toEqual([edit.id, agent.id])
+    expect(edit.parents).toEqual([agent.id])
+    expect(await timelineName(project.id)).toBe('人工改名')
     expect(page.errors).toEqual([])
   })
 
-  it('undo greys the undone step; a write after it forks 分支 2, 分支树 switches back to 主线, and the menu forks and names 分支 3', async () => {
-    const project = await seedProject('history-marks')
+  it('undo adds a 回到「…」 row and keeps the undone step listed; a write after it continues from the earlier state on the same line', async () => {
+    const project = await seedProject('history-undo')
     const page = await openPage()
     await gotoProject(page, project.id)
     await openHistory(page)
     const records = (await stateOf(project.id)).components.proj.records
     await expect.poll(() => rows(page).count()).toBe(records.length)
     const before = await shownRecords(page)
-    await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas' })
-    await expect.poll(() => rowOf(page, project.timeline.id).getAttribute('data-mark')).toBe('redo')
-    expect(await stepOf(page, project.timeline)).toBe('after')
-    // The undo record is not a row, and the step it took back stays listed.
-    expect(await shownRecords(page)).toEqual(expect.arrayContaining(before))
-    expect(await rows(page).count()).toBe(before.length)
-    // A write after the undo continues on 分支 2; 主线 keeps the undone step.
-    const fork = await runOperation(project.id, 'timeline.create', { timeline: 't1', assets: [project.renders[0]?.outputs[0] ?? ''] })
-    expect(fork.branch).toBe('b2')
-    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('b2')
-    await expect.poll(() => rowOf(page, project.timeline.id).count()).toBe(0)
-    expect((await stateOf(project.id, 'main')).head).toBe(project.timeline.id)
-    // The tree labels each lane where it starts: 分支 2 on its head step, which carries 当前, and 主线 on its last step.
-    await showView(page, 'tree')
-    const label = (record: string): Locator => treeNode(page, record).locator('[data-testid="dv-history-tree-branch"]')
-    await expect.poll(() => treeNode(page, fork.id).getAttribute('data-head')).toBe('true')
-    expect(await treeNode(page, fork.id).locator('[data-testid="dv-history-tree-current"]').innerText()).toBe('当前')
-    expect(await label(fork.id).innerText()).toBe('分支 2')
-    await expect.poll(() => label(project.timeline.id).innerText()).toBe('主线')
-    // A click selects 主线's last step and writes nothing; 回到这一步 switches back to 主线.
-    await treeNode(page, project.timeline.id).click()
-    await expect.poll(() => treeNode(page, project.timeline.id).getAttribute('aria-selected')).toBe('true')
-    expect((await stateOf(project.id)).current).toBe('b2')
-    await stepBack(treeNode(page, project.timeline.id))
-    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
-    await expect.poll(() => treeNode(page, project.timeline.id).getAttribute('data-head')).toBe('true')
-    expect((await stateOf(project.id)).current).toBe('main')
-    // 新建分支 in the header's branch menu forks 分支 3 at once and opens its name in place.
-    await switcher(page).locator('button').first().click()
-    await switcher(page).locator('[data-testid="dv-kit-branch-create"]').click()
-    const name = switcher(page).locator('[data-testid="dv-kit-branch-name"]')
-    await expect.poll(() => name.inputValue(), { timeout: 15_000 }).toBe('分支 3')
-    await name.fill('夜景')
-    await name.press('Enter')
-    await expect.poll(async () => (await stateOf(project.id)).branches.find(branch => branch.name === 'b3')?.title).toBe('夜景')
-    await expect.poll(() => switcher(page).locator('button').first().innerText()).toBe('夜景')
-    // 从这里新建分支 in a step's ⋮ menu forks 分支 4 at that step; 主线 stays where it was.
-    const mainHead = (await stateOf(project.id, 'main')).head
-    await treeNode(page, project.timeline.id).locator('[data-testid="dv-history-step-actions"]').click()
-    await treeNode(page, project.timeline.id).locator('[data-testid="dv-history-step-fork"]').click()
-    await expect.poll(() => switcher(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('b4')
-    expect((await stateOf(project.id)).branches.find(branch => branch.name === 'b4')?.forked_at).toBe(project.timeline.id)
-    expect((await stateOf(project.id, 'main')).head).toBe(mainHead)
+    expect(await currentRow(page)).toBe(project.timeline.id)
+    const { record: undo } = await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas' }) as { record: ProjectRecord }
+    // The undo is the newest row, named after the step it returned to; the step it took back stays listed.
+    await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(undo.id)
+    expect(await rowOf(page, undo.id).innerText()).toContain('回到「')
+    expect(await shownRecords(page)).toEqual([undo.id, ...before])
+    expect((await stateOf(project.id)).components.timeline.timelines).toEqual([])
+    // A write after the undo continues from the earlier state, after the undo on the same line.
+    const again = await runOperation(project.id, 'timeline.create', { timeline: 't1', assets: [project.renders[0]?.outputs[0] ?? ''] })
+    expect(again.parents).toEqual([undo.id])
+    await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(again.id)
+    expect(await shownRecords(page)).toEqual([again.id, undo.id, ...before])
+    expect((await stateOf(project.id)).components.timeline.timelines[0]?.clips).toHaveLength(1)
+    // 回到这一步 on the undone step returns the project to it with one more 回到「新建时间线」 row.
+    await stepBack(rowOf(page, project.timeline.id))
+    await expect.poll(async () => (await stateOf(project.id)).components.timeline.timelines[0]?.clips.length, { timeout: 15_000 }).toBe(2)
+    await expect.poll(() => shownRecords(page)).toHaveLength(before.length + 3)
+    const back = (await shownRecords(page))[0] ?? ''
+    expect(await currentRow(page)).toBe(back)
+    expect(await rowOf(page, back).innerText()).toContain('回到「新建时间线」')
+    // The newest row offers no 回到这一步; the project already shows it.
+    expect(await rowOf(page, back).locator('[data-testid="dv-history-step-actions"]').count()).toBe(0)
     expect(page.errors).toEqual([])
   })
 
@@ -464,50 +425,50 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
-  it('回到这一步 jumps back to the first of three edits: the timeline shows that state and the later rows are greyed', async () => {
+  it('回到这一步 returns to the first of three edits: a 回到「…」 row is added, the later rows stay, and the timeline shows that state', async () => {
     const project = await seedProject('history-jump')
     const [first, second, third] = await threeRenames(project.id)
     const page = await openPage()
     await gotoProject(page, project.id)
     await openHistory(page)
-    await expect.poll(() => stepOf(page, third)).toBe('current')
+    await expect.poll(() => currentRow(page)).toBe(third?.id)
     expect(await rowOf(page, third?.id ?? '').locator('[data-testid="dv-history-current"]').innerText()).toBe('当前')
-    expect(await stepOf(page, first)).toBe('before')
-    expect(await historyPanel(page).locator('[data-testid="dv-history-redo"]').isDisabled()).toBe(true)
+    // The header holds only the undo button.
+    expect(await historyPanel(page).locator('[data-testid="dv-history-undo"]').count()).toBe(1)
     await stepBack(rowOf(page, first?.id ?? ''))
-    await expect.poll(() => stepOf(page, first)).toBe('current')
-    // The rows' marks come from the history list, which refetches shortly after the state changed.
-    for (const later of [second, third]) {
-      expect(await stepOf(page, later)).toBe('after')
-      await expect.poll(() => rowOf(page, later?.id ?? '').getAttribute('data-mark')).toBe('redo')
-    }
-    expect(await historyPanel(page).locator('[data-testid="dv-history-redo"]').isDisabled()).toBe(false)
-    const state = await stateOf(project.id)
-    expect(state.components.timeline.timelines[0]?.name).toBe('first')
-    expect(state.redo_steps).toEqual([second?.id, third?.id])
+    await expect.poll(() => timelineName(project.id), { timeout: 15_000 }).toBe('first')
+    // The list refetches shortly after the state changed; the undo row then leads it and carries 当前.
+    await expect.poll(async () => (await shownRecords(page))[0], { timeout: 15_000 }).not.toBe(third?.id)
+    const back = (await shownRecords(page))[0] ?? ''
+    await expect.poll(() => currentRow(page)).toBe(back)
+    expect(await rowOf(page, back).innerText()).toContain('回到「')
+    for (const later of [second, third]) expect(await rowOf(page, later?.id ?? '').count()).toBe(1)
     await viewToggle(page, '时间线').click()
     await page.locator('[data-testid="dv-timeline-editor"]').waitFor({ timeout: 15_000 })
     await expect.poll(() => timelineTabs(page)).toEqual(['first'])
     expect(page.errors).toEqual([])
   })
 
-  it('Ctrl+Z and Shift+Ctrl+Z step the current branch back and forward outside text fields', async () => {
+  it('Ctrl+Z undoes the last step of the whole project outside text fields; repeated presses go further back', async () => {
     const project = await seedProject('history-keys')
-    const [first, second, third] = await threeRenames(project.id)
+    const [, , third] = await threeRenames(project.id)
     const page = await openPage()
     await gotoProject(page, project.id)
     await openHistory(page)
-    await expect.poll(() => stepOf(page, third)).toBe('current')
+    await expect.poll(() => currentRow(page)).toBe(third?.id)
+    const listed = (await shownRecords(page)).length
     // The keys reach the page only while no text field has the focus.
     await page.evaluate(() => { (document.activeElement as HTMLElement | null)?.blur() })
     await page.keyboard.press('Control+Z')
-    await expect.poll(() => stepOf(page, second)).toBe('current')
+    await expect.poll(() => timelineName(project.id)).toBe('second')
     await page.keyboard.press('Control+Z')
-    await expect.poll(() => stepOf(page, first)).toBe('current')
-    expect([await stepOf(page, second), await stepOf(page, third)]).toEqual(['after', 'after'])
+    await expect.poll(() => timelineName(project.id)).toBe('first')
+    // There is no redo: Shift+Ctrl+Z changes nothing.
     await page.keyboard.press('Control+Shift+Z')
-    await expect.poll(() => stepOf(page, second)).toBe('current')
-    expect((await stateOf(project.id)).components.timeline.timelines[0]?.name).toBe('second')
+    await page.waitForTimeout(500)
+    expect(await timelineName(project.id)).toBe('first')
+    // Each undo is one more row; the renames stay listed.
+    await expect.poll(async () => (await shownRecords(page)).length).toBe(listed + 2)
     // In the chat composer Ctrl+Z edits the text and leaves the project alone.
     await page.locator('[role="tab"]', { hasText: /^对话$/ }).filter({ visible: true }).first().click()
     const composer = page.locator('[data-dv-chat] [contenteditable="true"]:visible').first()
@@ -515,29 +476,26 @@ describe('History panel', () => {
     await page.keyboard.type('history-keys')
     await page.keyboard.press('Control+Z')
     await page.waitForTimeout(500)
-    expect((await stateOf(project.id)).components.timeline.timelines[0]?.name).toBe('second')
+    expect(await timelineName(project.id)).toBe('first')
     expect(page.errors).toEqual([])
   })
 
-  it('a new edit after a jump continues on 分支 2, and the list shows only that branch\'s steps', async () => {
+  it('a new edit after going back continues from that state, and the steps after it stay listed and reachable', async () => {
     const project = await seedProject('history-drop')
     const [first, second, third] = await threeRenames(project.id)
     const page = await openPage()
     await gotoProject(page, project.id)
     await openHistory(page)
-    await expect.poll(() => stepOf(page, third)).toBe('current')
+    await expect.poll(() => currentRow(page)).toBe(third?.id)
     await stepBack(rowOf(page, first?.id ?? ''))
-    await expect.poll(() => stepOf(page, third)).toBe('after')
+    await expect.poll(() => timelineName(project.id), { timeout: 15_000 }).toBe('first')
     const fourth = await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: 'fourth' })
-    expect(fourth.branch).toBe('b2')
-    await expect.poll(() => stepOf(page, fourth)).toBe('current')
-    expect(await stepOf(page, first)).toBe('before')
-    // The later steps stay on 主线, so the list of 分支 2 no longer shows them, and redo has nothing to bring back.
-    for (const kept of [second, third]) await expect.poll(() => rowOf(page, kept?.id ?? '').count()).toBe(0)
-    expect(await historyPanel(page).locator('[data-testid="dv-history-redo"]').isDisabled()).toBe(true)
-    expect((await stateOf(project.id)).redo_steps).toEqual([])
-    expect((await stateOf(project.id, 'main')).components.timeline.timelines[0]?.name).toBe('third')
-    expect((await stateOf(project.id)).components.timeline.timelines[0]?.name).toBe('fourth')
+    await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(fourth.id)
+    expect(await timelineName(project.id)).toBe('fourth')
+    // Nothing was lost: the second and third renames are still rows, and the project can return to the third.
+    for (const kept of [second, third]) expect(await rowOf(page, kept?.id ?? '').count()).toBe(1)
+    await stepBack(rowOf(page, third?.id ?? ''))
+    await expect.poll(() => timelineName(project.id), { timeout: 15_000 }).toBe('third')
     expect(page.errors).toEqual([])
   })
 

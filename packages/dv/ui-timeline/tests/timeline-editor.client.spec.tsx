@@ -160,17 +160,12 @@ describe('TimelineView', () => {
     expect(requests()[1]).toMatchObject({ operation: 'timeline.delete', params: { timeline: 't2' } })
   })
 
-  it('edits the project\'s current branch at once, with the chat session beside it recorded on each edit', async () => {
-    const branches: Array<string | null> = []
-    const { fetch, writes } = scriptedFetch({ state: () => ({ ...fixtureState(), branch: 'b2', current: 'b2' }) })
-    const reading: typeof fetch = (input, init) => {
-      if (typeof input === 'string' && input.startsWith('/api/dv/state')) branches.push(new URL(input, 'http://host').searchParams.get('branch'))
-      return fetch(input, init)
-    }
-    const editing = render(<TimelineView projectId="p1" session="s5" client={new DvClient(reading)} />)
+  it('edits the project at once, with the chat session beside it recorded on each edit, and offers undo without redo', async () => {
+    const { fetch, writes } = scriptedFetch({ state: () => fixtureState() })
+    const editing = render(<TimelineView projectId="p1" session="s5" client={new DvClient(fetch)} />)
     await waitFor(() => { expect((editing.getByText('拆分') as HTMLButtonElement).disabled).toBe(false) })
-    expect(branches.every(branch => branch === null)).toBe(true)
-    expect(editing.queryByTestId('dv-kit-branch-switcher')).toBeNull()
+    expect(editing.getByText('撤销')).toBeTruthy()
+    expect(editing.queryByText('重做')).toBeNull()
     fireEvent.contextMenu(editing.getAllByRole('tab')[0] as HTMLElement)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     fireEvent.click(editing.getByRole('menuitem', { name: '删除时间线' }))

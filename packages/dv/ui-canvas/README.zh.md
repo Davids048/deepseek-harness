@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包让 web 应用在对话旁边多一个 DreamVerse 项目的画布。`CanvasView` 在可平移、可缩放的画布上把项目当前分支的记录画成节点，节点之间按流过的素材连线，过期记录有标记。点一个节点打开浮动编辑器，可以渲染新版本、更换参考图，或预填对话输入框。shell 把 `CanvasView` 放在中间区域、分支切换器下方；右侧栏的 `dv-canvas` 标签类型在分支栏下显示同一个画布。
+使用本包让 web 应用在对话旁边多一个 DreamVerse 项目的画布。`CanvasView` 在可平移、可缩放的画布上把项目当前状态的记录画成节点，节点之间按流过的素材连线，过期记录有标记。点一个节点打开浮动编辑器，可以渲染新版本、更换参考图，或预填对话输入框。shell 把 `CanvasView` 放在中间区域；右侧栏的 `dv-canvas` 标签类型在项目栏下显示同一个画布。
 
 ## 目录
 
@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在叠了 `dsh-web-app`（提供右侧栏、locale 服务和客户端模块加载器）和 `@dv/api`（提供画布调用的路由）的 profile 里挂载插件。先构建浏览器 bundle：`pnpm run build` 会写出 `lib/client.js`。
 
-画布只显示项目当前分支在其 head 处的状态，不显示历史：角色、场景和风格以当前版本画成 `bible` 节点，位于分支画布上的导入图片和视频画成 `asset` 节点，每个分镜计划以最新版本画成 `plan` 节点，`shot.render_ref2va` 和 `shot.render_t2va` 记录画成 `take` 节点。画出的版本是：每个分镜计划最新版本中每个镜头的当前版本（计划时间线上该镜头的片段所播放的版本，否则是该镜头该计划版本中最新完成的版本，或批准时沿用的较早版本）及其重拍；不属于分镜计划的版本；输出仍在使用中的版本（被时间线片段播放、被当前设定或分镜计划版本用作参考图、或被已画出的版本用作输入）。被删掉的镜头的版本和较早计划版本中未被使用的版本不显示，所以撤销或回到之前某一步会改变画布显示的内容。导入的图片或视频只在其素材 ID 位于分支的画布上（`asset` 切片的 `placed`）时才有一个 `asset` 节点；用作角色、场景或风格参考图的除外，它由该 `bible` 节点显示。读取画布外素材的版本没有来自该素材的边，它的编辑器仍列出该参考图。用户把文件或素材库缩略图拖到画布上，或在对话消息里以附加图片或 `dv:asset/<id>` 标签发出某个素材（由 `@dv/chat-references` 放置）时，该素材放到画布上；`asset` 节点编辑器里的"从画布移除"把它移出画布，素材仍留在素材库里。这些都是当前分支的记录，所以历史会列出它们，撤销能退回它们，每个分支有自己的画布。`bible` 卡片显示类别、名称，以及当前版本的参考图组成的一排小缩略图（最多四张，其余显示为"+N"），所以角色、场景或风格与图片看起来不同；这些参考图从不单独画成 `asset` 节点。当前分支改变时画布跟着改变，画布的修改立即写到这个分支。
+画布只显示项目的当前状态，不显示历史：角色、场景和风格以当前版本画成 `bible` 节点，位于画布上的导入图片和视频画成 `asset` 节点，每个分镜计划以最新版本画成 `plan` 节点，`shot.render_ref2va` 和 `shot.render_t2va` 记录画成 `take` 节点。画出的版本是：每个分镜计划最新版本中每个镜头的当前版本（计划时间线上该镜头的片段所播放的版本，否则是该镜头该计划版本中最新完成的版本，或批准时沿用的较早版本）及其重拍；不属于分镜计划的版本；输出仍在使用中的版本（被时间线片段播放、被当前设定或分镜计划版本用作参考图、或被已画出的版本用作输入）。被删掉的镜头的版本和较早计划版本中未被使用的版本不显示，所以撤销或回到之前某一步会改变画布显示的内容。导入的图片或视频只在其素材 ID 位于画布上（`asset` 切片的 `placed`）时才有一个 `asset` 节点；用作角色、场景或风格参考图的除外，它由该 `bible` 节点显示。读取画布外素材的版本没有来自该素材的边，它的编辑器仍列出该参考图。用户把文件或素材库缩略图拖到画布上，或在对话消息里以附加图片或 `dv:asset/<id>` 标签发出某个素材（由 `@dv/chat-references` 放置）时，该素材放到画布上；`asset` 节点编辑器里的"从画布移除"把它移出画布，素材仍留在素材库里。这些都是加在历史末尾的记录，所以历史会列出它们，撤销能退回它们。`bible` 卡片显示类别、名称，以及当前版本的参考图组成的一排小缩略图（最多四张，其余显示为"+N"），所以角色、场景或风格与图片看起来不同；这些参考图从不单独画成 `asset` 节点。当前状态改变时画布跟着改变，画布的修改立即加在历史末尾。
 
 ```yaml
 - id: dv-ui-canvas
@@ -43,7 +43,7 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-canvas` 标签类�
 | 把素材库缩略图拖到画布上 | 素材还没有节点时，`POST /api/dv/operation` 执行 `asset.place`，该素材作为输入角色 `asset`；它的节点放在指针下 |
 | 在 `asset` 节点编辑器里点"从画布移除" | `POST /api/dv/operation` 执行 `asset.unplace`，该素材作为输入角色 `asset`；素材仍留在素材库里 |
 | 让智能体改 | `dv:compose` 窗口事件，用指向该节点的 `@` 引用预填对话输入框 |
-| 在过期节点的编辑器里点"仍然保留" | 对节点的记录调用 `POST /api/dv/stale/accept`（在当前分支上运行 `proj.stale_accept`） |
+| 在过期节点的编辑器里点"仍然保留" | 对节点的记录调用 `POST /api/dv/stale/accept`（在历史末尾运行 `proj.stale_accept`） |
 | 拖动节点、平移或缩放 | `POST /api/dv/layout`，带以节点 ID 为键的移动位置和视口 |
 
 每个请求都带 `surface: 'canvas'` 和画布旁边的对话，记录把该对话存为它的 `session`。带 `{recordId}` 的 `dv:canvas-focus` 窗口事件把该记录的节点移到中央并打开。记录没有自己的节点时，该事件打开它写下的设定版本的节点，否则打开它第一个产出的节点。
@@ -58,13 +58,13 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-canvas` 标签类�
 <details>
 <summary>实现内部——点击展开</summary>
 
-`CanvasView` 用 `@dv/ui-kit/useProject.ts` 的 `useProjectState` 读项目当前分支的状态；`buildCanvasGraph` 把它变成节点、边和默认的分列布局：先设定和素材，再分镜计划，版本按首帧链深度排列，重拍挨着它的源版本。设定节点的 ID 是 `bible:<id>`；其他节点的 ID 是它的记录 ID。`/api/dv/layout` 中存下的位置覆盖默认布局；布局读写失败时忽略。请求的输入是引用文本（`<asset>`、`<record>#<output>`、`<id>@<version>`），由 `referenceText` 从记录存储的输入引用写出。每收到一帧 `/dv/events`，状态就重新拉取，所以对话消息放上的素材不用刷新就会出现；本视图发出的摆放立即显示，直到状态显示它为止，被拒绝的摆放会恢复原样。
+`CanvasView` 用 `@dv/ui-kit/useProject.ts` 的 `useProjectState` 读项目的当前状态；`buildCanvasGraph` 把它变成节点、边和默认的分列布局：先设定和素材，再分镜计划，版本按首帧链深度排列，重拍挨着它的源版本。设定节点的 ID 是 `bible:<id>`；其他节点的 ID 是它的记录 ID。`/api/dv/layout` 中存下的位置覆盖默认布局；布局读写失败时忽略。请求的输入是引用文本（`<asset>`、`<record>#<output>`、`<id>@<version>`），由 `referenceText` 从记录存储的输入引用写出。每收到一帧 `/dv/events`，状态就重新拉取，所以对话消息放上的素材不用刷新就会出现；本视图发出的摆放立即显示，直到状态显示它为止，被拒绝的摆放会恢复原样。
 
 | 文件 | 内容 |
 | --- | --- |
 | [`src/client/index.ts`](src/client/index.ts) | 注册 |
 | [`src/client/definition.ts`](src/client/definition.ts) | 标签类型 |
-| [`src/client/CanvasBody.tsx`](src/client/CanvasBody.tsx) | 标签主体：分支栏下的 `CanvasView` |
+| [`src/client/CanvasBody.tsx`](src/client/CanvasBody.tsx) | 标签主体：项目栏下的 `CanvasView` |
 | [`src/client/CanvasView.tsx`](src/client/CanvasView.tsx) | 画布：平移、缩放、拖动、拖放、布局存储 |
 | [`src/client/graph.ts`](src/client/graph.ts) | 节点、边和默认布局 |
 | [`src/client/NodeCard.tsx`](src/client/NodeCard.tsx)、[`src/client/NodeEditor.tsx`](src/client/NodeEditor.tsx) | 节点卡片和浮动编辑器 |
@@ -79,7 +79,7 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-canvas` 标签类�
 
 - [`@dv/api`](../api/README.zh.md) — 每个手势背后的路由。
 - [`@dv/ui-kit`](../ui-kit/README.zh.md) — API 客户端、wire 类型和 hook。
-- [DreamVerse 各包](../../../docs/subsystems/video-harness.zh.md) — 画布所显示的过期、版本和分支。
+- [DreamVerse 各包](../../../docs/subsystems/video-harness.zh.md) — 画布所显示的过期、版本和历史规则。
 
 -----
 

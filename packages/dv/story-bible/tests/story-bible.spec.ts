@@ -186,19 +186,22 @@ describe('dvStoryBible', () => {
     expect(Object.keys(fixture.ctx.dvProject.getState(fixture.project).components.bible.characters)).toEqual([])
   })
 
-  it('keeps the versions written on a branch off the branch it was forked from', async () => {
+  it('takes a version an undo took back off the state, and frees its ID there', async () => {
     const fixture = await start()
     const lead = fixture.put('lead')
-    const branch = (await fixture.ctx.dvProject.createBranch(fixture.project, null)).name
-    value(await fixture.call('dv_bible_character_create', { reason: 'lead', character: 'c1', name: 'Lead', inputs: { reference: [lead] } }))
-    expect(Object.keys(fixture.ctx.dvProject.getState(fixture.project, branch).components.bible.characters)).toEqual(['c1'])
-    await fixture.ctx.dvProject.switchBranch(fixture.project, 'main', HUMAN)
-    // On main the ID c1 is still free, so a location may take it there.
+    const created = value(await fixture.call('dv_bible_character_create', {
+      reason: 'lead', character: 'c1', name: 'Lead', inputs: { reference: [lead] },
+    }))
+    const bible = () => fixture.ctx.dvProject.getState(fixture.project).components.bible
+    expect(Object.keys(bible().characters)).toEqual(['c1'])
+    await fixture.ctx.dvProject.undo(fixture.project, HUMAN)
+    // After the undo the ID c1 is free again, so a location may take it.
     await fixture.ctx.dvProject.run({
       ...HUMAN, project: fixture.project, operation: 'bible.location_create', params: { location: 'c1', name: 'Cave' }, inputs: [],
     })
-    const main = fixture.ctx.dvProject.getState(fixture.project, 'main').components.bible
-    expect([Object.keys(main.characters), Object.keys(main.locations)]).toEqual([[], ['c1']])
-    expect(Object.keys(fixture.ctx.dvProject.getState(fixture.project, branch).components.bible.locations)).toEqual([])
+    expect([Object.keys(bible().characters), Object.keys(bible().locations)]).toEqual([[], ['c1']])
+    // The character's record stays in the history.
+    expect(fixture.ctx.dvProject.listHistory({ project: fixture.project, operation: 'bible.character_create' }).map(entry => entry.record.id))
+      .toEqual([created.record])
   })
 })

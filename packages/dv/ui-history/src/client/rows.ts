@@ -1,14 +1,13 @@
 /**
  * Pure readings behind the History panel: the action rows of history entries (a plan approval folds the renders it
- * scheduled), the label of an action with its subject, the thumbnail of a record, relative times, the record set of a
- * timeline, where selecting a record focuses the center, the steps of the current branch, and the lane layout of the
- * branch tree. Nothing here touches the DOM or the network, so the unit tests cover it directly.
+ * scheduled), the label of an action with its subject, the thumbnail of a record, relative times, where selecting a
+ * record focuses the center, and which rows offer 回到这一步. Nothing here touches the DOM or the network, so the unit
+ * tests cover it directly.
  *
  * @module @dv/ui-history/rows
  */
-import { entryBranch } from '@dv/ui-kit/state.ts'
 import { DV_TOOL_LABELS } from '@dv/ui-kit/tool-labels.ts'
-import type { Asset, Branch, HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
+import type { Asset, HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
 
 /** One row of the panel: an operation entry and, for a plan approval, the entries of the records it scheduled. */
@@ -24,27 +23,20 @@ function scheduledBy(record: ProjectRecord): string[] {
   return Array.isArray(scheduled) ? scheduled.filter((id): id is string => typeof id === 'string') : []
 }
 
-/** Undo and redo records move a branch between steps, so they are not rows. */
-const MOVES = new Set(['proj.undo', 'proj.redo'])
-/** Records that are not steps: the moves between steps. Undo steps over them. */
-const NOT_A_STEP = MOVES
-
 /**
- * Turn history entries into panel rows: one row per operation record, newest first. The undo and redo records are not
- * rows. The records a loaded plan approval scheduled fold under the approval's row instead of
- * standing alone.
+ * Turn history entries into panel rows: one row per record, newest first, undo records included. The records a loaded
+ * plan approval scheduled fold under the approval's row instead of standing alone.
  * @param entries - history entries, newest first.
  * @returns the rows, newest first.
  */
 export function actionRows(entries: readonly HistoryEntry[]): ActionRow[] {
-  const operations = entries.filter(entry => !MOVES.has(entry.record.operation ?? ''))
-  const loaded = new Map(operations.map(entry => [entry.record.id, entry]))
+  const loaded = new Map(entries.map(entry => [entry.record.id, entry]))
   const folded = new Map<string, string>()
-  for (const { record } of operations) {
+  for (const { record } of entries) {
     for (const id of scheduledBy(record)) if (loaded.has(id)) folded.set(id, record.id)
   }
   const rows: ActionRow[] = []
-  for (const entry of operations) {
+  for (const entry of entries) {
     if (folded.has(entry.record.id)) continue
     const row: ActionRow = { entry, children: [] }
     rows.push(row)
@@ -86,13 +78,37 @@ function field(fields: Record<string, unknown> | undefined, key: string): string
 }
 
 /**
+ * The record a `proj.undo` record returned the project to, followed through undo records to the step whose state it
+ * shows.
+ * @param record - an undo record.
+ * @param records - the loaded records by ID.
+ * @returns the target record, or undefined when it is not loaded.
+ */
+function undoTarget(record: ProjectRecord, records: ReadonlyMap<string, ProjectRecord>): ProjectRecord | undefined {
+  let target = records.get(field(record.params, 'to') ?? '')
+  const seen = new Set<string>()
+  while (target?.operation === 'proj.undo' && !seen.has(target.id)) {
+    seen.add(target.id)
+    target = records.get(field(target.params, 'to') ?? '')
+  }
+  return target
+}
+
+/**
  * The label a row shows for its action: the tool label followed by its subject. Plans name their title or PlanId and
  * version (`report.plan`, `report.version`), a plan's shot render names its shot number (`params.shot`), and story bible
- * records name the character, location or style.
+ * records name the character, location or style. An undo record names the step it returned to: 回到「…」.
  * @param record - the operation record.
+ * @param records - the loaded records by ID, to name the target of an undo record.
  * @returns the Chinese and English label.
  */
-export function actionLabel(record: ProjectRecord): readonly [string, string] {
+export function actionLabel(record: ProjectRecord, records: ReadonlyMap<string, ProjectRecord> = new Map()): readonly [string, string] {
+  if (record.operation === 'proj.undo') {
+    const target = undoTarget(record, records)
+    if (target === undefined) return ['回到之前的一步', 'Go back to an earlier step']
+    const [toZh, toEn] = actionLabel(target, records)
+    return [`回到「${toZh}」`, `Go back to “${toEn}”`]
+  }
   const [zh, en] = operationLabel(record.operation)
   // A PlanId (`p1`); a plan named by its record ID comes from a project made before plans had IDs and is not shown.
   const named = field(record.report, 'plan') ?? field(record.params, 'plan')
@@ -199,7 +215,7 @@ function reportedClips(record: ProjectRecord): string[] {
  * The timeline each clip belongs to: the timeline of the record that assigned the clip (`timeline.create`, `update`,
  * `clip_insert` name it by `params.timeline`, a create without one makes `t1`; `clip_split` adds to the timeline of the
  * split clip).
- * @param records - a branch's records, oldest first.
+ * @param records - the records of the current state, oldest first.
  * @returns clip ID → timeline ID.
  */
 export function clipTimelines(records: readonly ProjectRecord[]): Map<string, string> {
@@ -238,16 +254,17 @@ export type CenterFocus =
   | null
 
 /**
- * The center focus of a selected entry. Only `current` records are in the state the canvas and the timeline show.
+ * The center focus of a selected entry. Only records of the current state are what the canvas and the timeline show.
  * Timeline records and timeline exports focus their timeline and clip; `proj.*` records focus nothing; every other
  * record focuses its node.
  * @param entry - the selected entry.
- * @param owner - clip ID → timeline ID of the current branch, from {@link clipTimelines}.
+ * @param owner - clip ID → timeline ID of the current state, from {@link clipTimelines}.
+ * @param inState - the IDs of the current state's records (`components.proj.records`).
  * @returns the focus, or null.
  */
-export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, string>): CenterFocus {
+export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, string>, inState: ReadonlySet<string>): CenterFocus {
   const { record } = entry
-  if (entry.mark !== 'current') return null
+  if (!inState.has(record.id)) return null
   if (record.component === 'proj') return null
   if (record.component === 'timeline' || record.operation === 'deliver.timeline_export') {
     const timelineId = timelineOf(record, owner)
@@ -258,139 +275,15 @@ export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, stri
   return { event: 'dv:canvas-focus', detail: { recordId: record.id } }
 }
 
-/** Where a record stands among the steps of the current branch: the current step, a step before it, or a step redo brings back. */
-export type StepPlace = 'current' | 'before' | 'after'
-
-/** The steps of the current branch: its current step, the steps before it, and the steps after it that redo brings back. */
-export interface BranchSteps {
-  current: string | null
-  before: ReadonlySet<string>
-  after: ReadonlySet<string>
-}
-
 /**
- * The steps of the current branch. Every operation record on the branch's effective chain is a step except the records
- * of `NOT_A_STEP`; the newest is the current step.
- * @param chain - the records of the current branch's effective chain, oldest first (`components.proj.records`).
- * @param redoSteps - the steps redo brings back (`WireState.redo_steps`).
- * @returns the steps.
+ * Whether a row offers 回到这一步: not the newest record (the project already shows it), not an unfinished record, and
+ * not the record the newest undo record already returned to.
+ * @param record - the row's record.
+ * @param newest - the project's newest record, or undefined while none is loaded.
+ * @returns whether the project can go back to the record.
  */
-export function branchSteps(chain: readonly ProjectRecord[], redoSteps: readonly string[]): BranchSteps {
-  const steps = chain.filter(record => !NOT_A_STEP.has(record.operation ?? ''))
-  const current = steps.at(-1)?.id ?? null
-  return { current, before: new Set(steps.slice(0, -1).map(record => record.id)), after: new Set(redoSteps) }
-}
-
-/**
- * Where one record stands among the current branch's steps.
- * @param record - the record ID.
- * @param steps - the current branch's steps.
- * @returns the place, or null for a record that is not a step of the current branch.
- */
-export function stepPlace(record: string, steps: BranchSteps): StepPlace | null {
-  if (record === steps.current) return 'current'
-  if (steps.before.has(record)) return 'before'
-  return steps.after.has(record) ? 'after' : null
-}
-
-/** The most columns the branch tree draws; a branch that finds no free column shares the last one. */
-export const TREE_COLUMNS = 6
-
-/** A lane line that passes through one row of the branch tree: whether it reaches the row's top and bottom edges. */
-export interface TreeLine {
-  /** The lane index, in branch order; it picks the line's color. */
-  lane: number
-  /** The column the line is drawn in. */
-  column: number
-  up: boolean
-  down: boolean
-}
-
-/** A branch that forks at one row of the branch tree: its lane bends into the row's dot. */
-export interface TreeFork {
-  /** The lane index of the forked branch; it picks the color. */
-  lane: number
-  /** The column the forked branch's lane is drawn in. */
-  column: number
-  /** True when the branch has no step of its own yet; its lane then ends in a hollow marker at this row. */
-  empty: boolean
-}
-
-/** One row of the branch tree: one step, its dot, the lane lines and forks drawn beside it, and its branch labels. */
-export interface TreeRow {
-  entry: HistoryEntry
-  /** The lane of the branch that owns the step; it picks the dot's color. */
-  lane: number
-  /** The column the dot sits in. */
-  column: number
-  lines: TreeLine[]
-  forks: TreeFork[]
-  /** The branches whose lane starts at this row (their newest loaded step, or the fork row of a branch without steps). */
-  refs: string[]
-}
-
-/** The rows one branch's lane covers, top (newest) to end. */
-interface LaneSpan {
-  lane: number
-  top: number
-  end: number
-}
-
-/**
- * Lay out the branch tree, `git log --graph` style. Each branch gets a lane; each step is one row, newest first, with
- * its dot in the lane of the branch it belongs to (`entryBranch` without a current branch). A forked branch's lane runs
- * from its newest step down to the row of its `forked_at` record, where it bends into that row's dot; a branch without
- * steps of its own yet shows a marker at its fork row. `main` runs from its newest to its oldest step. When the fork
- * row is not loaded, the lane runs to the bottom. Undo and redo records and records on no branch line are not rows.
- * Lanes take columns: `main` the first, every other lane the leftmost column no other lane covers in its rows, so a column
- * frees up below a branch's fork row; at most {@link TREE_COLUMNS} columns.
- * @param entries - history entries, newest first.
- * @param branches - the project's branches, in lane order.
- * @returns the rows; lane i is `branches[i]`.
- */
-export function branchTree(entries: readonly HistoryEntry[], branches: readonly Branch[]): TreeRow[] {
-  const steps = entries.filter(entry => !MOVES.has(entry.record.operation ?? '') && entryBranch(entry, null) !== null)
-  const laneOf = new Map(branches.map((branch, index) => [branch.name, index]))
-  const rows: TreeRow[] = steps.map(entry => ({
-    entry, lane: laneOf.get(entryBranch(entry, null) ?? '') ?? 0, column: 0, lines: [], forks: [], refs: [],
-  }))
-  const rowOf = new Map(rows.map((row, index) => [row.entry.record.id, index]))
-  const spans: LaneSpan[] = []
-  const forkRows = new Map<number, number>()
-  const empty = new Set<number>()
-  branches.forEach((branch, lane) => {
-    const owned = rows.flatMap((row, index) => row.lane === lane ? [index] : [])
-    const forked = branch.forked_at !== null
-    const forkRow = forked ? rowOf.get(branch.forked_at ?? '') ?? -1 : -1
-    // A branch with nothing to draw: no step of its own and its fork row is not loaded.
-    if (owned.length === 0 && forkRow < 0) return
-    const top = owned.length === 0 ? forkRow : Math.min(...owned)
-    const end = !forked ? Math.max(...owned) : forkRow >= 0 ? forkRow : rows.length
-    spans.push({ lane, top, end })
-    forkRows.set(lane, forkRow)
-    if (owned.length === 0) empty.add(lane)
-    rows[top]?.refs.push(branch.name)
-  })
-  // `main` keeps the first column, loaded or not; the other lanes, newest first, take the leftmost column whose last lane
-  // ended above.
-  const columnOf = new Map<number, number>([[0, 0]])
-  const busyUntil: number[] = [rows.length]
-  for (const span of spans.filter(item => item.lane !== 0).sort((a, b) => a.top - b.top)) {
-    const free = busyUntil.findIndex(end => end < span.top)
-    const column = free >= 0 ? free : Math.min(busyUntil.length, TREE_COLUMNS - 1)
-    busyUntil[column] = Math.max(busyUntil[column] ?? -1, span.end)
-    columnOf.set(span.lane, column)
-  }
-  for (const row of rows) row.column = columnOf.get(row.lane) ?? 0
-  for (const { lane, top, end } of spans) {
-    const column = columnOf.get(lane) ?? 0
-    const forkRow = forkRows.get(lane) ?? -1
-    for (let index = top; index <= end; index += 1) {
-      const row = rows[index]
-      if (row === undefined) continue
-      if (index === forkRow) row.forks.push({ lane, column, empty: empty.has(lane) })
-      else row.lines.push({ lane, column, up: index > top, down: index < end })
-    }
-  }
-  return rows
+export function canGoBack(record: ProjectRecord, newest: ProjectRecord | undefined): boolean {
+  if (newest === undefined || record.id === newest.id) return false
+  if (record.status === 'pending' || record.status === 'running') return false
+  return !(newest.operation === 'proj.undo' && newest.params['to'] === record.id)
 }

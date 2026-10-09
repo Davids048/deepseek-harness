@@ -1,7 +1,7 @@
 /**
  * Project's own `dv_proj_*` tools through the `dvProject` service with the real DSH tool registry: session binding,
- * the project summary with the reducers' `agentSummary` fields, history, undo and redo, forking a branch on a write
- * after an undo and on request, stale acceptance, reading another branch, and waiting for scheduled records.
+ * the project summary with the reducers' `agentSummary` fields, the one-line history, undo by one step and to a record,
+ * stale acceptance, and waiting for scheduled records.
  */
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -24,8 +24,7 @@ declare module '@dv/project' {
 
 /** Every `dv_proj_*` tool. */
 const PROJ_TOOLS = [
-  'dv_proj_create', 'dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_branch_create',
-  'dv_proj_undo', 'dv_proj_redo', 'dv_proj_stale_accept', 'dv_proj_wait',
+  'dv_proj_create', 'dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_undo', 'dv_proj_stale_accept', 'dv_proj_wait',
 ]
 
 interface Fixture {
@@ -121,8 +120,7 @@ describe('dv_proj_* tools', () => {
     const created = json(await fixture.call('dv_proj_create', { title: 'dance' }))
     const projectId = brandString<ProjectId>(String(created['project_id']))
     expect(created).toEqual({
-      record: created['head'], project_id: projectId, head: expect.any(String), branch: 'main', branches: [{ name: 'main', title: null }],
-      records: 1,
+      record: created['head'], project_id: projectId, head: expect.any(String), records: 1,
       stale: [],
       recent: [expect.objectContaining({ operation: 'proj.create', status: 'done', summary: 'proj.create', intent: 'create project dance' })],
     })
@@ -141,7 +139,7 @@ describe('dv_proj_* tools', () => {
     const origin = { actor: 'user' as const, surface: 'api' as const, session: null, turn: null, tool_call: null, intent: 'create' }
     const info = await fixture.project.createProject('existing', origin)
     expect((await fixture.call('dv_proj_open', { project_id: 'missing' })).isError).toBe(true)
-    expect(json(await fixture.call('dv_proj_open', { project_id: info.id }))).toMatchObject({ project_id: info.id, branch: 'main' })
+    expect(json(await fixture.call('dv_proj_open', { project_id: info.id }))).toMatchObject({ project_id: info.id, records: 1 })
     expect(fixture.project.sessionProject(brandString<SessionId>('s1'))).toBe(info.id)
   })
 
@@ -162,7 +160,7 @@ describe('dv_proj_* tools', () => {
     json(await fixture.call('dv_proj_create', { title: 'summary' }))
     const made = value(await fixture.call('dv_asset_grab_still', { reason: 'a still', prompt: 'kite' }))
     const state = json(await fixture.call('dv_proj_state', {}))
-    expect(Object.keys(state)).toEqual(['project_id', 'head', 'branch', 'branches', 'records', 'stills', 'versions', 'stale', 'recent'])
+    expect(Object.keys(state)).toEqual(['project_id', 'head', 'records', 'stills', 'versions', 'stale', 'recent'])
     expect(state['stills']).toEqual([made.outputs[0]?.url])
     expect(state['versions']).toBe(0)
     removeVersions()
@@ -179,7 +177,7 @@ describe('dv_proj_* tools', () => {
     const made = value(await fixture.call('dv_asset_grab_still', { reason: 'a still', prompt: 'kite' }))
     expect(errorOf(await fixture.call('dv_asset_import', { reason: 'bring it', prompt: 'x' }))).toContain('no such file')
     const state = json(await fixture.call('dv_proj_state', {}))
-    expect(state).toMatchObject({ branch: 'main', branches: [{ name: 'main', title: null }] })
+    expect(state).toMatchObject({ records: 3 })
     expect(state['recent']).toEqual([
       expect.objectContaining({ operation: 'proj.create' }),
       {
@@ -192,40 +190,36 @@ describe('dv_proj_* tools', () => {
     removeStill()
     expect((json(await fixture.call('dv_proj_state', {}))['recent'] as Array<{ summary: string }>)[1]?.summary).toBe('asset.grab_still')
     expect(json(await fixture.call('dv_proj_history_list', { limit: 3 }))).toEqual([
-      expect.objectContaining({ operation: 'asset.import', mark: 'current', status: 'failed', actor: 'agent', branches: ['main'] }),
+      expect.objectContaining({ operation: 'asset.import', status: 'failed', actor: 'agent' }),
       {
-        record: made.record, mark: 'current', operation: 'asset.grab_still', status: 'done', actor: 'agent', intent: 'a still',
-        branches: ['main'], outputs: [made.outputs[0]?.asset_id],
+        record: made.record, operation: 'asset.grab_still', status: 'done', actor: 'agent', intent: 'a still',
+        outputs: [made.outputs[0]?.asset_id],
       },
-      expect.objectContaining({ operation: 'proj.create', mark: 'current', actor: 'agent' }),
+      expect.objectContaining({ operation: 'proj.create', actor: 'agent' }),
     ])
     expect(json(await fixture.call('dv_proj_history_list', { operation: 'asset.grab_still' }))).toHaveLength(1)
     expect(json(await fixture.call('dv_proj_history_list', { project_id: projectId }))).toHaveLength(3)
   })
 
-  it('undoes and redoes, forks a branch on a write after an undo and on request, and accepts a stale record only when called', async () => {
+  it('undoes one step and to a record as records at the end of the history, and accepts a stale record only when called', async () => {
     const fixture = await start()
     fixture.project.registerOperation(still())
     const projectId = brandString<ProjectId>(String(json(await fixture.call('dv_proj_create', { title: 'edits' }))['project_id']))
-    value(await fixture.call('dv_asset_grab_still', { reason: 'first', prompt: 'one' }))
-    expect(json(await fixture.call('dv_proj_state', {}))).toMatchObject({ branch: 'main', records: 2 })
-    expect(json(await fixture.call('dv_proj_undo', {}))).toMatchObject({ branch: 'main', records: 2 })
-    expect(json(await fixture.call('dv_proj_redo', {}))).toMatchObject({ branch: 'main', records: 3 })
-    // `to` goes back to a record from the history; the project returns to its state just after it.
+    const first = value(await fixture.call('dv_asset_grab_still', { reason: 'first', prompt: 'one' }))
+    expect(json(await fixture.call('dv_proj_state', {}))).toMatchObject({ records: 2 })
+    expect(json(await fixture.call('dv_proj_undo', {}))).toMatchObject({ records: 2 })
+    // `to` goes back to a record from the history, an undone one too; the project returns to its state just after it.
+    expect(json(await fixture.call('dv_proj_undo', { to: first.record }))).toMatchObject({ records: 3 })
     const create = fixture.project.listHistory({ project: projectId, operation: 'proj.create' })[0]!.record.id
-    expect(json(await fixture.call('dv_proj_undo', { to: create }))).toMatchObject({ branch: 'main', records: 2 })
+    expect(json(await fixture.call('dv_proj_undo', { to: create }))).toMatchObject({ records: 2 })
     expect(fixture.project.listHistory({ project: projectId, operation: 'proj.undo' })[0]?.record).toMatchObject({
       params: { to: create }, intent: `go back to ${create}`,
     })
-    // A write after the undo continues on a new branch; main keeps the undone step.
+    expect(json(await fixture.call('dv_proj_history_list', { limit: 1 }))).toEqual([expect.objectContaining({ operation: 'proj.undo', to: create })])
+    // A write after the undo continues from the earlier state; the undone steps stay in the history.
     const second = value(await fixture.call('dv_asset_grab_still', { reason: 'second', prompt: 'two' }))
-    expect(json(await fixture.call('dv_proj_state', {}))).toMatchObject({
-      branch: 'b2', records: 2, branches: [{ name: 'main', title: null }, { name: 'b2', title: null }],
-    })
-    expect(json(await fixture.call('dv_proj_state', { branch: 'main' }))).toMatchObject({ branch: 'main', records: 2 })
-    expect(json(await fixture.call('dv_proj_branch_create', { title: 'night' }))).toMatchObject({
-      branch: 'b3', records: 2, branches: [{ name: 'main', title: null }, { name: 'b2', title: null }, { name: 'b3', title: 'night' }],
-    })
+    expect(json(await fixture.call('dv_proj_state', {}))).toMatchObject({ records: 3 })
+    expect(json(await fixture.call('dv_proj_history_list', { operation: 'asset.grab_still' }))).toHaveLength(2)
     // A consumer of a superseded output is stale until the agent accepts it.
     const consumer = value(await fixture.call('dv_asset_grab_still', { reason: 'from the second', prompt: 'three', inputs: { reference: `${second.record}#0` } }))
     value(await fixture.call('dv_asset_grab_still', { reason: 'retake', prompt: 'two again', supersedes: [second.record] }))
@@ -249,20 +243,9 @@ describe('dv_proj_* tools', () => {
     expect(metaOf('dv_proj_undo', undone)).toEqual({ record: newest('proj.undo') })
     const state = json(await fixture.call('dv_proj_state', {}))
     expect(state['record']).toBeUndefined()
-    for (const name of ['dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_branch_create', 'dv_proj_wait']) {
+    for (const name of ['dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_wait']) {
       expect(fixture.context.tools.get(name)?.output?.presentationMeta, name).toBeUndefined()
     }
-  })
-
-  it('reads another branch than the current one', async () => {
-    const fixture = await start()
-    fixture.project.registerOperation(still())
-    json(await fixture.call('dv_proj_create', { title: 'branches' }))
-    json(await fixture.call('dv_proj_branch_create', {}))
-    value(await fixture.call('dv_asset_grab_still', { reason: 'on the branch', prompt: 'alt' }))
-    expect(json(await fixture.call('dv_proj_state', {}))).toMatchObject({ branch: 'b2', records: 2 })
-    expect(json(await fixture.call('dv_proj_state', { branch: 'main' }))).toMatchObject({ branch: 'main', records: 1 })
-    expect((await fixture.call('dv_proj_state', { branch: 'b9' })).isError).toBe(true)
   })
 
   it('waits for scheduled records and shows a pending record by its status', async () => {
@@ -276,12 +259,12 @@ describe('dv_proj_* tools', () => {
     const projectId = brandString<ProjectId>(String(json(await fixture.call('dv_proj_create', { title: 'wait' }))['project_id']))
     const origin = { actor: 'user' as const, surface: 'api' as const, session: null, turn: null, tool_call: null, intent: 'slow' }
     const scheduled = await fixture.project.run({ ...origin, project: projectId, operation: 'asset.grab_still', params: { prompt: 's' }, inputs: [], after: [] })
-    const pending = json(await fixture.call('dv_proj_state', { branch: 'main' }))['recent'] as Array<{ record: string; summary: string }>
+    const pending = json(await fixture.call('dv_proj_state', {}))['recent'] as Array<{ record: string; summary: string }>
     expect(pending.at(-1)?.record).toBe(scheduled.record?.id)
     expect(['pending', 'running']).toContain(pending.at(-1)?.summary)
     const waiting = fixture.call('dv_proj_wait', {})
     release()
-    expect(json(await waiting)['branch']).toBe('main')
+    expect(json(await waiting)['records']).toBe(2)
     expect(fixture.project.getRecord(projectId, brandString<RecordId>(String(scheduled.record?.id))).status).toBe('done')
   })
 })

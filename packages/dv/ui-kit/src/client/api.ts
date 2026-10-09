@@ -6,7 +6,7 @@
  */
 import type {
   CanvasLayout, HistoryQuery, OperationRequest, ProjectEvent,
-  ProjectInfo, ProjectRecord, WireBranchResult, WireHistory, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
+  ProjectInfo, ProjectRecord, WireHistory, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
   WireWorkspaces,
 } from './types.ts'
 
@@ -72,7 +72,7 @@ function releaseEventSource(project: string, shared: SharedEventSource): void {
 }
 
 /** The SSE event names of `/dv/events`: the kinds of a project change. */
-const EVENT_KINDS: ReadonlyArray<ProjectEvent['kind']> = ['record', 'update', 'branch']
+const EVENT_KINDS: ReadonlyArray<ProjectEvent['kind']> = ['record', 'update']
 
 /** The surface a view sends with its writes: a subset of the record field `Surface`. */
 export type ViewSurface = 'canvas' | 'timeline' | 'asset_pool' | 'history'
@@ -82,7 +82,7 @@ export class DvApiError extends Error {
   /**
    * @param status - the HTTP status.
    * @param message - the server's explanation.
-   * @param code - the Project error code, such as `unknown_branch`, when the server sent one.
+   * @param code - the Project error code, such as `unknown_record`, when the server sent one.
    */
   constructor(readonly status: number, message: string, readonly code: string | null = null) {
     super(message)
@@ -110,7 +110,7 @@ async function decode<T>(response: Response): Promise<T> {
   return body as T
 }
 
-/** Every `/api/dv` call of the browser: project state, operations, history, branches, undo and redo, layout, workspaces. */
+/** Every `/api/dv` call of the browser: project state, operations, history, undo, layout, workspaces. */
 export class DvClient {
   constructor(private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init)) {}
 
@@ -155,14 +155,14 @@ export class DvClient {
   /**
    * @param project - the project.
    * @param signal - cancels the request.
-   * @returns the state of the project's current branch.
+   * @returns the project's current state.
    */
   getState(project: string, signal?: AbortSignal): Promise<WireState> {
     return this.get('/api/dv/state', { project }, signal)
   }
 
   /**
-   * List a project's records with their marks, newest first, and the assets they name.
+   * List a project's records, newest first, and the assets they name.
    * The query travels as a JSON body because a `records` set can be long; the route writes no record.
    * @param query - the project and the filters.
    * @param signal - cancels the request.
@@ -207,66 +207,16 @@ export class DvClient {
   }
 
   /**
-   * Fork a branch from the current branch at its head's position, or with `from` at that step of that branch's line,
-   * and make it the project's current branch.
-   * @param project - the project.
-   * @param surface - where the gesture came from.
-   * @param from - the branch and the step to fork at.
-   * @returns the new branch, with the default label, and the heads afterwards.
-   */
-  createBranch(project: string, surface: ViewSurface, from?: { branch: string; to: string }): Promise<WireBranchResult> {
-    return this.post('/api/dv/branches/create', { project, surface, ...from })
-  }
-
-  /**
-   * Make a branch the project's current branch and, with `to`, return it to that step of its line.
-   * @param project - the project.
-   * @param branch - the branch name.
-   * @param surface - where the gesture came from.
-   * @param to - a step on the branch's line; omit to keep the branch where it stands.
-   * @param session - the chat session the view sits beside, recorded on the jump record; null for none.
-   * @returns the branch and the heads afterwards.
-   */
-  switchBranch(
-    project: string, branch: string, surface: ViewSurface, to?: string, session: string | null = null,
-  ): Promise<WireBranchResult> {
-    return this.post('/api/dv/branches/switch', {
-      project, branch, surface, ...to === undefined ? {} : { to }, ...session === null ? {} : { session },
-    })
-  }
-
-  /**
-   * Give a branch the name the human chose; an empty title returns to the default label.
-   * @param project - the project.
-   * @param branch - the branch name.
-   * @param title - the title.
-   * @returns the branch and the heads afterwards.
-   */
-  renameBranch(project: string, branch: string, title: string): Promise<WireBranchResult> {
-    return this.post('/api/dv/branches/rename', { project, branch, title })
-  }
-
-  /**
-   * Move the project's current branch back by one step, or jump it to a step.
+   * Return the project to an earlier state: one step back, or to the state just after the record `to`. The undo is a
+   * new record at the end of the history.
    * @param project - the project.
    * @param surface - where the gesture came from.
    * @param session - the chat session the view sits beside, or null.
-   * @param to - a record on the branch's effective chain or one of its redo steps; omit for one step back.
-   * @returns the undo (or redo, for a jump forward) record and the heads afterwards.
+   * @param to - any finished record of the project; omit for one step back.
+   * @returns the undo record.
    */
   undo(project: string, surface: ViewSurface, session: string | null = null, to?: string): Promise<WireRecordResult> {
     return this.post('/api/dv/undo', { project, surface, ...session === null ? {} : { session }, ...to === undefined ? {} : { to } })
-  }
-
-  /**
-   * Move the project's current branch forward by one step that an undo removed.
-   * @param project - the project.
-   * @param surface - where the gesture came from.
-   * @param session - the chat session the view sits beside, or null.
-   * @returns the redo record and the heads afterwards.
-   */
-  redo(project: string, surface: ViewSurface, session: string | null = null): Promise<WireRecordResult> {
-    return this.post('/api/dv/redo', { project, surface, ...session === null ? {} : { session } })
   }
 
   /**
@@ -275,7 +225,7 @@ export class DvClient {
    * @param record - the stale record.
    * @param surface - where the decision was made.
    * @param session - the chat session the view sits beside, or null.
-   * @returns the accept record and the heads afterwards.
+   * @returns the accept record.
    */
   acceptStale(project: string, record: string, surface: ViewSurface, session: string | null = null): Promise<WireRecordResult> {
     return this.post('/api/dv/stale/accept', { project, record, surface, ...session === null ? {} : { session } })
@@ -301,7 +251,7 @@ export class DvClient {
   }
 
   /**
-   * Put assets on the canvas of the project's current branch (`asset.place`), or take them off it (`asset.unplace`);
+   * Put assets on the project's canvas (`asset.place`), or take them off it (`asset.unplace`);
    * the assets stay in the asset pool either way.
    * @param project - the project.
    * @param assetIds - the assets.

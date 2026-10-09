@@ -1,4 +1,4 @@
-/** Canvas nodes and edges derived from the shared branch state. */
+/** Canvas nodes and edges derived from the shared project state. */
 import { describe, expect, it } from 'vitest'
 import type { PlanVersion, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'

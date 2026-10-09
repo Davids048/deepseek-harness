@@ -67,10 +67,10 @@ function bibleItems(kind: 'character' | 'location' | 'style', versions: Record<s
 }
 
 /**
- * The project items of a branch state: every clip of every timeline, the characters, locations and styles, and the
+ * The project items of a project state: every clip of every timeline, the characters, locations and styles, and the
  * assets. Labels and group names follow the interface language at call time, so the label a pick inserts is in that
  * language.
- * @param state - the state of the project's current branch.
+ * @param state - the project's current state.
  * @returns the items in display order.
  */
 export function projectItems(state: WireState): Item[] {

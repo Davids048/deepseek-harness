@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse 各视图共用的浏览器代码：/api/dv 客户端、wire 类型、参数表单模型、轨道几何、窗口事件、视图会话 hook、分支菜单和分支栏。"
+description: "DreamVerse 各视图共用的浏览器代码：/api/dv 客户端、wire 类型、参数表单模型、轨道几何、窗口事件、视图会话 hook 和项目栏。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-在 DreamVerse 的浏览器插件里使用本包与 `@dv/api` 通信，并读取它发来的状态。`DvClient` 封装每条 `/api/dv` 路由并跟随 `/dv/events`；`fieldsOf` 和 `paramsOf` 把操作的参数 schema 变成表单字段再变回参数；`useViewSession` 让视图的项目、项目当前分支的状态和操作与宿主同步；`BranchMenu` 是工作区底栏和历史面板顶部的当前分支小按钮，展开的菜单可以切换、新建和重命名分支；`BranchBar` 是侧栏视图的项目和撤销栏；事件模块拥有各面板之间交换的 `dv:*` 窗口事件和页面全局变量。本包是一个库：它不注册任何东西，会被打进每个消费者的 bundle。
+在 DreamVerse 的浏览器插件里使用本包与 `@dv/api` 通信，并读取它发来的状态。`DvClient` 封装每条 `/api/dv` 路由并跟随 `/dv/events`；`fieldsOf` 和 `paramsOf` 把操作的参数 schema 变成表单字段再变回参数；`useViewSession` 让视图的项目、项目的当前状态和操作与宿主同步；`ProjectBar` 是侧栏视图的项目和撤销栏；事件模块拥有各面板之间交换的 `dv:*` 窗口事件和页面全局变量。本包是一个库：它不注册任何东西，会被打进每个消费者的 bundle。
 
 ## 目录
 
@@ -34,16 +34,15 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 
 | 模块 | 内容 |
 | --- | --- |
-| `types.ts` | `WireState`、`ProjectRecord`、`Branch`、`Asset`、`Timeline`、`Clip`、`WireOperation`、`WireProject`、`ProjectEvent`、`OperationRequest`、`HistoryQuery`、`HistoryEntry`、`WireHistory`、`PlanVersion`、`Shot`（带生成方式 `mode`，即 `ref2va` 或 `t2va`，以及 `continue_previous`）：`@dv/api` 收发的 JSON 的结构类型 |
-| `api.ts` | `DvClient`（`listProjects`、`getState`（读当前分支）、`listOperations`、`runOperation`、`importAsset`、`createBranch`、`switchBranch`、`renameBranch`、`undo`、`redo`、`acceptStale`、`listHistory`、`placeOnCanvas`（在画布来源上执行 `asset.place` 或 `asset.unplace`），项目、布局（位置和视口）、工作区和对话调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
+| `types.ts` | `WireState`、`ProjectRecord`、`Asset`、`Timeline`、`Clip`、`WireOperation`、`WireProject`、`ProjectEvent`、`OperationRequest`、`HistoryQuery`、`HistoryEntry`、`WireHistory`、`PlanVersion`、`Shot`（带生成方式 `mode`，即 `ref2va` 或 `t2va`，以及 `continue_previous`）：`@dv/api` 收发的 JSON 的结构类型 |
+| `api.ts` | `DvClient`（`listProjects`、`getState`（读当前状态）、`listOperations`、`runOperation`、`importAsset`、`undo`（后退一步，或带 `to` 回到某条记录）、`acceptStale`、`listHistory`、`placeOnCanvas`（在画布来源上执行 `asset.place` 或 `asset.unplace`），项目、布局（位置和视口）、工作区和对话调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`、`paramsOf(fields)`、`FieldParseError`：每个 schema 属性一个控件，带类型转换 |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`、`timelineName(timeline, numbered)`、`formatSeconds` |
 | `references.ts` | `shotReferences(version, shot)`、`referenceImages(state, references)`、`pictureParts(prompt)`：一个镜头发给视频模型的参考图，按提示词里 `Picture 1`、`Picture 2`…… 的编号顺序排列，以及在这些标记处切开的提示词；`t2va` 镜头没有参考图 |
-| `state.ts` | `branchLabel`（分支标题；没有标题时 `main` 为 主线 / Main，`b<n>` 为 分支 n / Branch n，其他为分支名）、`entryBranch`（历史条目属于哪个分支：当前分支的线包含该记录时为当前分支，否则为写入记录的分支，再否则为第一个包含该记录的分支）、`assetIndex`、`videoAssets` |
+| `state.ts` | `assetIndex`、`videoAssets` |
 | `useProject.ts` | `useProjects`、`useOperations`、`useProjectState`：每次项目事件都重新拉取的加载器 |
-| `useView.ts` | `useViewSession(client, surface, session?)`：项目选择、项目当前分支的状态、操作、最近一次失败和分支栏回调；`sessionFromLocation` 从页面地址的 `?session=` 读对话，让视图打开该对话的项目 |
-| `BranchBar.tsx` | 侧栏的栏：项目选择器、新建项目按钮和撤销；文案以 `labels` 传入，由所属插件先本地化 |
-| `BranchMenu.tsx` | `BranchMenu`：带 `BranchIcon` 和当前分支名称的按钮，以及它的菜单（测试 ID `dv-kit-branch-menu`（带 `data-branch`）、`dv-kit-branch-option`、`dv-kit-branch-rename`、`dv-kit-branch-name`、`dv-kit-branch-create`），菜单在调用方传入的 `side` 一侧展开（底栏用 `top`，面板顶部用 `bottom`）。菜单把当前分支排在第一并标 ✓，分支达到八个时显示搜索框，选择另一个分支时调用 `onSwitch`，在原位置重命名分支（✎ 或 F2；回车或离开输入框保存，Escape 保留原名；最多 40 个字符；与其他分支显示的名称相同时拒绝，并提示 已有同名分支 / Name already used），新建分支 / New branch 调用 `onCreate`，然后打开新分支的默认名称供可选的重命名；↑ 和 ↓ 在各行之间移动，按 Escape 或点击外面关闭菜单。`branchActions(client, project, surface, run)` 把 `BranchActions` 绑定到分支路由；其 `onCreate` 返回新分支的名称 |
+| `useView.ts` | `useViewSession(client, surface, session?)`：项目选择、项目的当前状态、操作、最近一次失败和项目栏回调；`sessionFromLocation` 从页面地址的 `?session=` 读对话，让视图打开该对话的项目 |
+| `ProjectBar.tsx` | 侧栏的栏（测试 ID `dv-kit-project-bar`）：项目选择器、新建项目按钮和撤销；文案以 `labels` 传入，由所属插件先本地化 |
 | `compose.ts`、`workspace-events.ts` | 窗口事件 `dv:compose`、`dv:timeline-insert`、`dv:canvas-focus`、`dv:history-focus`、`dv:trajectory-focus`、`dv:timeline-focus`（`DV_*_EVENT`）和素材拖拽类型 `application/x-dv-asset` |
 | `tool-labels.ts` | `DV_TOOL_LABELS`：每个 `dv_*` 工具的中英文标签，由输入框的工具卡片和历史面板显示 |
 | `current-project.ts`、`current-timeline.ts` | 打开的项目和选中的时间线，存在 `window.__dvCurrentProject` 和 `window.__dvCurrentTimeline` 上，用 `dv:current-project` 和 `dv:current-timeline` 通知 |
@@ -59,7 +58,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 <details>
 <summary>实现内部——点击展开</summary>
 
-`DvClient` 把每个错误响应体解码成 `DvApiError`，保留 HTTP 状态和 `ProjectError` 代码。`useLoader` 在重新加载期间保留上一个值，并忽略输入已变化的响应；`useProjectState` 读取项目的当前分支，并把一阵项目事件合成一次重新拉取，所以任何地方切换分支都会刷新每个视图。`types.ts` 里的类型手工照抄 `@dv/project` 和各组件的类型，因为宿主包不能被导入进浏览器 bundle；记录以 `ProjectRecord` 到达，输入的 `ref` 是存储时的对象。
+`DvClient` 把每个错误响应体解码成 `DvApiError`，保留 HTTP 状态和 `ProjectError` 代码。`useLoader` 在重新加载期间保留上一个值，并忽略输入已变化的响应；`useProjectState` 读取项目的当前状态，并把一阵项目事件合成一次重新拉取，所以任何地方的撤销都会刷新每个视图。`types.ts` 里的类型手工照抄 `@dv/project` 和各组件的类型，因为宿主包不能被导入进浏览器 bundle；记录以 `ProjectRecord` 到达，输入的 `ref` 是存储时的对象。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -68,8 +67,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | [`src/client/timeline.ts`](src/client/timeline.ts) | 时间线辅助函数 |
 | [`src/client/references.ts`](src/client/references.ts) | 镜头参考图和 `Picture N` 标记 |
 | [`src/client/useProject.ts`](src/client/useProject.ts)、[`src/client/useView.ts`](src/client/useView.ts) | hook |
-| [`src/client/BranchBar.tsx`](src/client/BranchBar.tsx) | 共用的栏 |
-| [`src/client/BranchMenu.tsx`](src/client/BranchMenu.tsx) | 分支菜单及其 API 绑定 |
+| [`src/client/ProjectBar.tsx`](src/client/ProjectBar.tsx) | 共用的栏 |
 
 </details>
 
@@ -79,8 +77,8 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 ## 进一步探索
 
 - [`@dv/api`](../api/README.zh.md) — 这个客户端读取的路由和 JSON。
-- [`@dv/ui-canvas`](../ui-canvas/README.zh.md) 与 [`@dv/ui-timeline`](../ui-timeline/README.zh.md) — 使用这些 hook 和分支栏的两个视图。
-- [DreamVerse 各包](../../../docs/subsystems/video-harness.zh.md) — 记录、分支和过期标记的含义。
+- [`@dv/ui-canvas`](../ui-canvas/README.zh.md) 与 [`@dv/ui-timeline`](../ui-timeline/README.zh.md) — 使用这些 hook 和项目栏的两个视图。
+- [DreamVerse 各包](../../../docs/subsystems/video-harness.zh.md) — 记录、历史规则和过期标记的含义。
 
 -----
 

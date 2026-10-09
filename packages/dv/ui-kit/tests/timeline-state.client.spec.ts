@@ -1,6 +1,6 @@
 /** Timeline helpers and the state readings both views share. */
 import { describe, expect, it } from 'vitest'
-import { assetIndex, branchLabel, videoAssets } from '../src/client/state.ts'
+import { assetIndex, videoAssets } from '../src/client/state.ts'
 import { formatSeconds, timelineName } from '../src/client/timeline.ts'
 import { fixtureState } from './fixture.client.tsx'
 
@@ -20,13 +20,8 @@ describe('timeline helpers', () => {
 })
 
 describe('state readings', () => {
-  it('labels branches, indexes assets, and picks videos newest first', () => {
+  it('indexes assets and picks videos newest first', () => {
     const state = fixtureState()
-    const t = (zh: string): string => zh
-    expect(state.branches.map(branch => branchLabel(branch, t))).toEqual(['主线', '分支 2'])
-    expect(branchLabel({ name: 'b2', title: '夜景' }, t)).toBe('夜景')
-    expect(branchLabel({ name: 'b12', title: null }, (_zh, en) => en)).toBe('Branch 12')
-    expect(branchLabel({ name: 'trial', title: null }, t)).toBe('trial')
     expect(assetIndex(state).get('export.mp4')?.mime).toBe('video/mp4')
     expect(videoAssets(state).map(video => video.id)).toEqual(['shot1.mp4', 'shot2.mp4', 'export.mp4'])
   })

@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Canvas tab name, guide entry, node cards, node editor, and branch bar copy. */
+    /** Canvas tab name, guide entry, node cards, node editor, and project bar copy. */
     dvCanvas: DvCanvasKey
   }
 }

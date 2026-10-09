@@ -1,7 +1,7 @@
 /**
  * The pure reducer of the `asset` slice: which assets are on the canvas. A finished `asset.place` adds its `asset`
  * inputs, a finished `asset.unplace` takes them off, and a finished `asset.import` with `params.place` adds its output.
- * The slice follows the branch's records, so undo, redo and branch switches change the canvas with them.
+ * The slice follows the records of the effective chain, so an undo changes the canvas with them.
  *
  * @module @dv/asset-pool/reducer
  */
@@ -16,7 +16,7 @@ function inputAssets(record: ProjectRecord): AssetId[] {
   return record.inputs.flatMap(input => input.role === 'asset' && input.resolved_asset !== null ? [input.resolved_asset] : [])
 }
 
-/** The `asset` reducer: the canvas placements of the branch. */
+/** The `asset` reducer: the canvas placements of the state. */
 export const assetReducer: Reducer<'asset'> = {
   initial: () => ({ placed: [] }),
   reduce(slice, record) {

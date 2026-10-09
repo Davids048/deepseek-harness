@@ -29,9 +29,9 @@ Mount `@dv/chat-references` after the DreamVerse components; it injects `dvProje
   name: '@dv/chat-references'
 ```
 
-The composer of `@dv/ui-composer` serializes a picked project item as `@[<label>](dv:<kind>/<id>)`. At `agent/pre-step` the plugin finds these mentions in the step's user messages and appends one `dv-mentions` context message that describes each mention with concrete IDs, read from the current branch of the session's project. Mention URIs: `dv:asset/<AssetId>`, `dv:record/<RecordId>`, `dv:character/<CharacterId>`, `dv:location/<LocationId>`, `dv:style/<StyleId>`, and `dv:clip/<ClipId>`.
+The composer of `@dv/ui-composer` serializes a picked project item as `@[<label>](dv:<kind>/<id>)`. At `agent/pre-step` the plugin finds these mentions in the step's user messages and appends one `dv-mentions` context message that describes each mention with concrete IDs, read from the current state of the session's project. Mention URIs: `dv:asset/<AssetId>`, `dv:record/<RecordId>`, `dv:character/<CharacterId>`, `dv:location/<LocationId>`, `dv:style/<StyleId>`, and `dv:clip/<ClipId>`.
 
-When a user message that the user typed in a live session carries images, the plugin reads them from `attachments` and runs one `asset.import` with `place: true` per image as the user, on the surface `chat`, on the project's current branch, so each image also goes on the canvas. The session's next tool call waits until the import finished (`dvProject.holdToolCalls`). When such a message mentions assets (`dv:asset/<id>`), the plugin puts the mentioned assets that a record of the current branch created and that are not on the canvas yet on it with one `asset.place` by the user, on the surface `chat`. A session without a bound project imports and places nothing.
+When a user message that the user typed in a live session carries images, the plugin reads them from `attachments` and runs one `asset.import` with `place: true` per image as the user, on the surface `chat`, at the end of the project's history, so each image also goes on the canvas. The session's next tool call waits until the import finished (`dvProject.holdToolCalls`). When such a message mentions assets (`dv:asset/<id>`), the plugin puts the mentioned assets that a record in the current state created and that are not on the canvas yet on it with one `asset.place` by the user, on the surface `chat`. A session without a bound project imports and places nothing.
 
 The mention helpers `parseMentions`, `formatMention`, and `describeMention` are exported for other consumers; `dvChatReferences.expansionMessage(sessionId, messages)` returns the context message for one step.
 
@@ -43,13 +43,13 @@ The mention helpers `parseMentions`, `formatMention`, and `describeMention` are 
 | [`src/index.ts`](src/index.ts) | `DvChatReferences`: the `agent/pre-step` listener that appends the `dv-mentions` message, the project a mention resolves against (the session's bound project, else the newest project that produced a mentioned asset, else the newest project), and the `session/event` listener that imports chat images and places mentioned assets |
 | [`src/expand.ts`](src/expand.ts) | `parseMentions`, `formatMention`, and `describeMention`: each mention URI described with concrete IDs and the record that produced it |
 
-A mention of a clip names the clip by its `ClipId`, which is unique in the project; a placeholder clip names the render record it waits for. A mention of a character, location, or style names its latest version on the current branch and tells the model to pass that version as an input.
+A mention of a clip names the clip by its `ClipId`, which is unique in the project; a placeholder clip names the render record it waits for. A mention of a character, location, or style names its latest version in the current state and tells the model to pass that version as an input.
 
 <a id="further-exploration"></a>
 ## Further Exploration
 
 - [DreamVerse packages](../../../docs/subsystems/video-harness.md)
-- [`@dv/project`](../project/README.md) for the current branch, the records the expansion describes, and `holdToolCalls`
+- [`@dv/project`](../project/README.md) for the current state, the records the expansion describes, and `holdToolCalls`
 - [`@dv/ui-composer`](../ui-composer/src/index.ts) for the composer that writes the mentions
 - [`@dv/bundle`](../../bundle/dv/README.md) for the profile that mounts everything
 

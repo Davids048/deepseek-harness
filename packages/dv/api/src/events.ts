@@ -1,6 +1,6 @@
 /**
  * A project's changes as a server-sent event stream: one event per Project change, named by its kind (`record` for an
- * appended record, `update` for a record update, `branch` for a branch that was created, moved, or removed), and a
+ * appended record, `update` for a record update), and a
  * comment line every keep-alive interval so proxies keep the response open.
  *
  * @module @dv/api/events

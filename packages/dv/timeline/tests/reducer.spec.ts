@@ -11,7 +11,7 @@ let counter = 0
 function edit(operation: string, params: Record<string, unknown>, fields: Partial<ProjectRecord> = {}): ProjectRecord {
   counter += 1
   return {
-    id: brandString<RecordId>(`record-${counter}`), parents: [], branch: 'main', kind: 'operation', component: 'timeline', operation,
+    id: brandString<RecordId>(`record-${counter}`), parents: [], kind: 'operation', component: 'timeline', operation,
     operation_version: '1', actor: 'user', surface: 'timeline', turn: null, session: null, tool_call: null, intent: 'edit', params,
     inputs: [], outputs: [], based_on: null, supersedes: [], deterministic: false, status: 'done', created_at: new Date().toISOString(),
     ...fields,

@@ -22,18 +22,15 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
  * @returns the rendered view, the recorded writes, and a node lookup.
  */
 function mount(withTranslate = true, edit: (state: WireState) => void = () => undefined) {
-  // The project's current branch is b2, which holds the retake g3; the view asks for the current branch by name.
-  const branches: Array<string | null> = []
   const scripted = scriptedFetch({
     state: () => {
       const state = fixtureState()
       edit(state)
-      return { ...state, branch: 'b2', current: 'b2' }
+      return state
     },
   })
   const layoutWrites: unknown[] = []
   const fetchWithLayout: typeof fetch = (input, init) => {
-    if (typeof input === 'string' && input.startsWith('/api/dv/state')) branches.push(new URL(input, 'http://host').searchParams.get('branch'))
     if (typeof input === 'string' && input.startsWith('/api/dv/layout')) {
       if (init?.method === 'POST') layoutWrites.push(JSON.parse(String(init.body)))
       const layout = { positions: { g1: { x: 10, y: 20 } }, viewport: { x: 0, y: 0, zoom: 1 } }
@@ -49,19 +46,16 @@ function mount(withTranslate = true, edit: (state: WireState) => void = () => un
     if (!(element instanceof HTMLElement)) throw new Error(`no node ${id}`)
     return element
   }
-  return { view, writes: scripted.writes, layoutWrites, node, branches }
+  return { view, writes: scripted.writes, layoutWrites, node }
 }
 
 describe('CanvasView', () => {
-  it('draws the project\'s current branch with nodes at stored positions, and stores a dragged position', async () => {
-    const { view, node, layoutWrites, branches } = mount()
+  it('draws the project\'s current state with nodes at stored positions, and stores a dragged position', async () => {
+    const { view, node, layoutWrites } = mount()
     await waitFor(() => { node('g3') })
-    expect(branches.every(branch => branch === null)).toBe(true)
     expect(node('g1').style.left).toBe('10px')
     expect(node('g2').getAttribute('data-node-stale')).toBe('true')
     expect(view.getByText(zh['badge.trim'])).toBeTruthy()
-    // The center canvas has no branch bar; the shell shows the branch switcher above it.
-    expect(view.queryByTestId('dv-kit-branch-switcher')).toBeNull()
     fireEvent.pointerDown(node('g2'), { button: 0, clientX: 0, clientY: 0, pointerId: 1 })
     fireEvent.pointerMove(view.getByTestId('dv-canvas-view'), { clientX: 50, clientY: 30, pointerId: 1 })
     fireEvent.pointerUp(view.getByTestId('dv-canvas-view'), { pointerId: 1 })
@@ -109,7 +103,7 @@ describe('CanvasView', () => {
     await waitFor(() => { expect(writes).toContainEqual(placement('asset.unplace')) })
   })
 
-  it('draws an asset that another writer put on the branch\'s canvas once the state refetches', async () => {
+  it('draws an asset that another writer put on the project\'s canvas once the state refetches', async () => {
     const canvas: string[] = []
     const { view, node } = mount(true, (state) => {
       state.assets.push(asset('chat.png', 'image/png', 'u2'))

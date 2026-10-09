@@ -1,9 +1,9 @@
 /**
- * Types of the Project component: IDs, the record format of `records.jsonl`, branches, operations, reducers, project
- * state, history queries, and run requests.
+ * Types of the Project component: IDs, the record format of `records.jsonl`, operations, reducers, project state,
+ * history queries, and run requests.
  *
- * Field case: types that are written to disk or sent over the wire (records, update lines, `branches.json`,
- * `project.json`, run requests, history queries) use snake_case fields, matching the record format. Types that only
+ * Field case: types that are written to disk or sent over the wire (records, update lines, `project.json`, run
+ * requests, history queries) use snake_case fields, matching the record format. Types that only
  * code sees (operation specs, the execute context, reducers) use camelCase members.
  *
  * @module @dv/project/types
@@ -106,10 +106,8 @@ export interface RecordFailure {
  */
 export interface ProjectRecord {
   id: RecordId
-  /** The record this one follows on its branch; empty only for the first record of a project. */
+  /** The record written just before this one; empty only for the first record of a project. */
   parents: RecordId[]
-  /** The name of the branch the record was appended to: `main` or `b<n>`. */
-  branch: string
   kind: RecordKind
   /** The component key that owns the operation, for example `timeline`. */
   component: string
@@ -192,25 +190,6 @@ export interface ProjectInfo {
   created_at: string
 }
 
-/**
- * One branch of a project: a named pointer to a record. `branches.json` stores every field except `tip`. A branch is
- * never merged into another one; branches share only the asset pool.
- */
-export interface Branch {
-  /** `main`, or `b<n>` for a branch forked from another one; never changes. */
-  name: string
-  /** The name the human gave the branch; null shows the view's default label for `name`. */
-  title: string | null
-  /** The record the branch points at: its last step, or the step an undo returned it to. */
-  head: RecordId
-  /** The branch this one was forked from; null for `main`. */
-  base: string | null
-  /** The record of `base` this branch was forked at; null for `main`. */
-  forked_at: RecordId | null
-  /** The last step of the branch, which redo can bring back when `head` stands before it. Computed on read. */
-  tip: RecordId
-}
-
 /** The result of an operation's execute function. */
 export interface OperationResult {
   /** The created assets, in the order the operation declares them. */
@@ -229,7 +208,7 @@ export interface OperationContext {
   params: Record<string, unknown>
   /** The record's inputs; every `resolved_asset` is set. */
   inputs: RecordInput[]
-  /** The project state at the record's parent on its branch (for a read, at the head of the current branch). */
+  /** The project state at the record's parent (for a read, the project's current state). */
   state: ProjectState
   /** A directory the call may write temporary files into; the runner removes it after the call. */
   scratchDir: string
@@ -276,7 +255,7 @@ export interface OperationToolCall {
   args: Record<string, unknown>
   /** The run request Project will send; `prepareToolCall` may change its `params` and `inputs`. */
   request: RunRequest
-  /** The state of the project's current branch, which the inputs were parsed against. */
+  /** The project's current state, which the inputs were parsed against. */
   state: ProjectState
   /** The DSH tool call: the calling agent, the call ID and the stop signal. */
   exec: ToolRunContext
@@ -323,7 +302,7 @@ export interface OperationSpec {
    * What an agent call will do and cost, for the refusal text. `registerOperation` refuses a spec whose `confirm` is
    * not `never` and that has no `confirmSummary` (`invalid_params`).
    * @param call - the parsed call, after the operation's `prepareToolCall`.
-   * @param state - the state of the project's current branch.
+   * @param state - the project's current state.
    * @returns `text`: what the agent shows the user before asking (for `plan.approve`: one line per shot it renders);
    *   `gpu_seconds`: the call's GPU estimate, which also counts against the turn's budget.
    */
@@ -343,7 +322,7 @@ export interface OperationSpec {
   /**
    * The records a call of this operation replaces; the runner adds them to the record's `supersedes`.
    * @param params - the call's parameters.
-   * @param state - the state of the current branch the call writes to.
+   * @param state - the project's current state, which the call writes after.
    * @returns the replaced records; omit the function for operations that replace nothing by themselves.
    */
   supersedes?(params: Record<string, unknown>, state: ProjectState): RecordId[]
@@ -366,7 +345,7 @@ export interface OperationSpec {
    * needs a reference image). The runner calls it under the project lock, after the params and inputs are valid, so
    * it must stay fast and must never call `dvProject.run`.
    * @param request - the call.
-   * @param state - the state of the current branch the call writes to (or reads, for a read-only operation).
+   * @param state - the project's current state, which the call writes after (or reads, for a read-only operation).
    * @throws Error that rejects `run` unchanged; nothing is written.
    */
   precondition?(request: RunRequest, state: ProjectState): Promise<void>
@@ -391,7 +370,7 @@ export interface OperationSpec {
  */
 export interface ComponentStates {
   proj: {
-    /** The records of the branch's effective chain, oldest first (undo and redo records jump; see the history module). */
+    /** The records of the effective chain, oldest first (undo records jump; see the history module). */
     records: ProjectRecord[]
     /** Stale records: record → the record whose change made it stale. */
     stale: Record<RecordId, RecordId>
@@ -406,7 +385,7 @@ export interface ComponentStates {
 type ComponentKey = keyof ComponentStates
 
 /**
- * A component's reducer: it turns the records of a branch into the component's state slice. Reducers are pure: they
+ * A component's reducer: it turns the records of the effective chain into the component's state slice. Reducers are pure: they
  * read only their arguments and return a new slice or the same slice unchanged.
  */
 export interface Reducer<K extends ComponentKey = ComponentKey> {
@@ -444,35 +423,26 @@ export interface Reducer<K extends ComponentKey = ComponentKey> {
    * `dv_proj_*` tools return. Project merges the fields of every reducer that defines it, in component key order,
    * after the record count and before the stale records; a field name that Project or another component already uses
    * throws `invalid_params`.
-   * @param slice - the slice at the branch head.
+   * @param slice - the slice of the current state.
    * @param assets - the asset store, for the URLs of the assets the slice names.
-   * @param state - the whole state at the branch head, for the records the slice refers to.
+   * @param state - the whole current state, for the records the slice refers to.
    * @returns the fields by name.
    */
   agentSummary?(slice: ComponentStates[K], assets: Pick<AssetStore, 'url'>, state: ProjectState): Record<string, JsonValue>
 }
 
-/** The state of one branch at its head. */
+/** The state of a project at one record: the result of the effective chain that ends there. */
 export interface ProjectState {
   project: ProjectInfo
-  /** The branch the state was computed for. */
-  branch: string
-  /** The record the branch points at. */
+  /** The record the state is computed at; for the current state, the project's last record. */
   head: RecordId
   /** One slice per registered reducer. */
   components: ComponentStates
-  /**
-   * The steps that `proj.redo` brings back on the branch, oldest first; empty when nothing can be redone. Set by
-   * `dvProject.getState`; states computed for other purposes (accept replay, an operation's input state) leave it empty.
-   */
-  redo_steps: RecordId[]
 }
 
 /** What a history query selects. Every filter is optional; filters combine with AND. */
 export interface HistoryQuery {
   project: ProjectId
-  /** Only records appended to this branch name. */
-  branch?: string
   actor?: Actor
   component?: string
   operation?: string
@@ -482,8 +452,6 @@ export interface HistoryQuery {
   turn?: TurnId
   /** Only records written by this tool call. */
   tool_call?: string
-  /** Only entries whose mark is one of these. */
-  marks?: Array<HistoryEntry['mark']>
   /** Only these records. */
   records?: RecordId[]
   /** Only records written before this record, for paging. */
@@ -492,19 +460,9 @@ export interface HistoryQuery {
   limit?: number
 }
 
-/** One entry of the history list. */
+/** One entry of the history list: one record of the project. */
 export interface HistoryEntry {
   record: ProjectRecord
-  /**
-   * Where the record stands: `current` (on the effective chain of the current branch's head), `redo` (a step that redo
-   * brings back on the current branch), `branch` (on the line of another branch only), `undone` (on no branch line).
-   */
-  mark: 'current' | 'redo' | 'branch' | 'undone'
-  /**
-   * The branches whose line holds the record, in `listBranches` order. The line of a branch is the effective chain of
-   * its `tip`, so the steps before a fork are on the lines of both branches.
-   */
-  branches: string[]
 }
 
 /** One operation call through `dvProject.run`. */
@@ -537,11 +495,6 @@ export interface RunResult {
 export type ProjectEvent =
   | { kind: 'record'; record: ProjectRecord }
   | { kind: 'update'; record: ProjectRecord }
-  /**
-   * A branch was created, renamed or moved (`name` names it), or the project's current branch changed (`name` names the
-   * branch it changed to); `head` is that branch's head and `current` the current branch after the change.
-   */
-  | { kind: 'branch'; name: string; head: RecordId; current: string }
 
 /**
  * The asset pool as Project sees it: Project checks that input assets exist, imports the files operations produce,

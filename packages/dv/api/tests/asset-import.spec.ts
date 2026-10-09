@@ -1,6 +1,6 @@
 /**
  * The asset import route over the real Project service and asset pool: a stored file becomes an `asset.import` record
- * on the working branch of the named chat session, and malformed requests are refused with their status.
+ * at the end of the project's history, with the named chat session, and malformed requests are refused with their status.
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -35,14 +35,14 @@ it('stores an imported file as an asset.import record with the caller\'s surface
   expect(fixture.assets.read(asset).equals(lastFrame)).toBe(true)
   expect(record.outputs).toEqual([asset])
   expect(record).toMatchObject({
-    actor: 'user', surface: 'canvas', operation: 'asset.import', status: 'done', branch: 'main', params: { name: 'ref.png', mime: 'image/png' },
+    actor: 'user', surface: 'canvas', operation: 'asset.import', status: 'done', params: { name: 'ref.png', mime: 'image/png', place: true },
   })
 
-  // With a forked branch current, the import lands on that branch and records the chat session beside the panel.
-  await fixture.project.createBranch(projectId, null)
+  // An import from the asset pool panel follows the canvas import, records the chat session beside the panel, and does
+  // not put the asset on the canvas.
   const fromPanel = { project: projectId, name: 'ref.png', mime: 'image/png', surface: 'asset_pool', session: 's1' }
-  const onBranch = await post(fromPanel, new Uint8Array(lastFrame))
-  expect(onBranch.json).toMatchObject({ record: { branch: 'b2', session: 's1', actor: 'user', surface: 'asset_pool' } })
+  const panel = await post(fromPanel, new Uint8Array(lastFrame))
+  expect(panel.json).toMatchObject({ record: { parents: [record.id], session: 's1', actor: 'user', surface: 'asset_pool', params: { place: false } } })
 
   // The surface names the caller, the canvas or the asset pool panel; a missing or other surface is refused.
   for (const surface of [undefined, 'timeline', 'chat']) {

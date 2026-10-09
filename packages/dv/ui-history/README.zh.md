@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse 历史面板：项目当前分支的步骤，每个操作一行，最新的在前，带批准折叠、产出预览，并能在画布或时间线上定位记录；另有显示所有分支的分支树。"
+description: "DreamVerse 历史面板：项目唯一一条历史线上的每一条记录，每个操作一行，最新的在前，带批准折叠、产出预览、行上的 回到这一步，并能在画布或时间线上定位记录。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包让 web 应用在对话旁边多一个历史面板。面板顶部放着分支菜单（`@dv/ui-kit` 的 `BranchMenu`，与底栏的相同）、两个视图之间的 列表 | 分支树 切换，以及撤销和重做。列表视图（列表）显示所打开项目当前分支上来自所有发起者、来源和对话的步骤，最新的在前，每条操作记录一行，显示谁做的、何时、状态和缩略图，选中一行会播放它的产出，并在画布或时间线上定位该记录。树视图（分支树）把项目的所有分支画成泳道图，每一行的 ⋮ 菜单提供 回到这一步 / Go back to this step 和 从这里新建分支 / New branch from here。右侧栏的 `dv-history` 标签类型显示 shell 所打开项目的面板。
+使用本包让 web 应用在对话旁边多一个历史面板。项目只有一条只增长的历史线（[历史规则](../../../docs/subsystems/video-harness.zh.md#history-rules)），所以面板是一张列表，列出所打开项目来自所有发起者、来源和对话的每一条记录，最新的在前，包括撤销记录。每行显示谁做的、何时、状态和缩略图；选中一行会播放它的产出，若该记录在当前状态中，还会在画布或时间线上定位它。顶部放着撤销按钮，每一行的 ⋮ 菜单提供 回到这一步 / Go back to this step。右侧栏的 `dv-history` 标签类型显示 shell 所打开项目的面板。
 
 ## 目录
 
@@ -26,29 +26,25 @@ kind: "package-reference"
 
 在叠了 `dsh-web-app`（提供右侧栏和客户端模块加载器）和 `@dv/api`（提供面板调用的路由）的 profile 里挂载插件。先构建浏览器 bundle：`pnpm run build` 会写出 `lib/client.js`。
 
-列表视图请求标记为 `current` 和 `redo` 的条目：当前分支到 head 为止的步骤，以及 head 之后重做能带回的步骤。每行显示带主体的工具名称（修改分镜计划 p1 → v2、参考图生成镜头 7、新建角色「名字」）、谁做的（你、智能体、自动）、多久以前、状态，以及一张缩略图（图片；视频用其版本的静帧，没有静帧时用视频画面；其他文件没有缩略图）。智能体行的第二行显示记录自身的 `intent`，即智能体为这次调用给出的理由。分镜计划批准安排的渲染和时间线记录（`report.scheduled`）折叠在批准行下面，由 渲染 n 个镜头 开关展开。撤销和重做记录本身不成行。当前的一步带 当前，重做能带回的步骤（`WireState.redo_steps`）变淡。每行末尾有一个 ⋮ 按钮（更多操作），它的菜单在当前一步之前的每一步上提供 回到这一步（`/api/dv/undo` 带 `to` = 该记录，分支回到这条记录之后），在每一步上提供 从这里新建分支。
+面板请求项目的每一条记录，最新的在前。每行显示带主体的工具名称（修改分镜计划 p1 → v2、参考图生成镜头 7、新建角色「名字」）、谁做的（你、智能体、自动）、多久以前、状态，以及一张缩略图（图片；视频用其版本的静帧，没有静帧时用视频画面；其他文件没有缩略图）。智能体行的第二行显示记录自身的 `intent`，即智能体为这次调用给出的理由。撤销记录写作 回到「…」，并写出它回到的那一步的名称（那一步尚未加载时写作 回到之前的一步）。分镜计划批准安排的渲染和时间线记录（`report.scheduled`）折叠在批准行下面，由 渲染 n 个镜头 开关展开。最新的一行带 当前。每行末尾有一个 ⋮ 按钮（更多操作），它的菜单提供 回到这一步（`/api/dv/undo` 带 `to` = 该记录，加一步让项目回到紧接这条记录之后的状态）；最新的一行、尚未结束的记录，以及最新一次撤销已经回到的那条记录不提供它（`canGoBack`）。
 
 ```yaml
 - id: dv-ui-history
   name: '@dv/ui-history'
 ```
 
-树视图请求标记为 `current`、`redo` 和 `branch` 的条目：任何分支的线上的每一步。每行是一个步骤：拥有它的分支的泳道上一个圆点，经过这一行的分支的线，一张小缩略图，以及带主体的工具名称。分叉出来的分支的泳道弯向它分叉处那个步骤的圆点；还没有自己步骤的分支在那里以空心标记结束。每个分支的名称（主线、分支 n，或用户起的名字）以泳道颜色描边，标在它的泳道开始的那一行；当前分支的名称为实心，标在它的 head 步骤上。head 步骤所在行带强调色底色和左边线，并标 当前；树打开时以及每次 head 移动后，树会滚动到这一行；重做能带回的步骤变淡。点击一个步骤会选中它，并像列表视图一样定位它的记录。每个节点末尾有同样的 ⋮ 菜单：除 head 外的每一步上，回到这一步 / Go back to this step 会把该步骤的分支设为当前分支，并把该分支的 head 移到这个步骤：当前分支的线包含这个步骤时用当前分支，否则用拥有它的分支。
-
 Host 半边不注册任何东西。浏览器半边注册 `dv-history` 标签类型（侧栏指南页以"历史"提供的页面）和以自身 id `@dv/ui-history` 为键的标签主体，并在收到 `dv:history-focus` 窗口事件时打开该标签。
 
 | 手势 | 请求或事件 |
 | --- | --- |
-| 打开面板、切换视图、点"加载更多"翻页 | `POST /api/dv/history`，带视图的 `marks`；每页 50 条，下一页用 `before` |
-| 选中渲染、设定、分镜计划或素材的行 | `dv:canvas-focus` `{recordId}`；shell 显示画布，画布打开记录的节点 |
-| 选中时间线记录或时间线导出的行 | `dv:timeline-focus` `{timelineId, clipId}`；shell 显示时间线，编辑器选中该片段 |
+| 打开面板、点"加载更多"翻页 | `POST /api/dv/history`；每页 50 条，下一页用 `before` |
+| 选中当前状态中渲染、设定、分镜计划或素材的行 | `dv:canvas-focus` `{recordId}`；shell 显示画布，画布打开记录的节点 |
+| 选中当前状态中时间线记录或时间线导出的行 | `dv:timeline-focus` `{timelineId, clipId}`；shell 显示时间线，编辑器选中该片段 |
 | 选中的智能体行里的"在轨迹中查看" | `dv:trajectory-focus` `{session, toolCall}`；shell 在该对话上打开 轨迹 |
-| 顶部的 撤销、重做；列表行 ⋮ 菜单里的 回到这一步 | `POST /api/dv/undo`（行上带 `to`）、`/api/dv/redo`，`surface: 'history'` |
-| 顶部分支菜单里的切换、新建分支、重命名（✎） | `POST /api/dv/branches/switch`、`/api/dv/branches/create` 或 `/api/dv/branches/rename`，`surface: 'history'`；被拒绝时显示服务端的消息 |
-| 分支树节点 ⋮ 菜单里的 回到这一步 | `POST /api/dv/branches/switch` `{branch, to}`，`surface: 'history'` |
-| 行或节点 ⋮ 菜单里的 从这里新建分支 | `POST /api/dv/branches/create` `{branch, to}`，`surface: 'history'`：`branch` 是线上包含该步骤的分支（当前分支的线包含它时用当前分支），`to` 是该步骤；新分支成为当前分支 |
+| 顶部的撤销（提示 撤销（Ctrl+Z / ⌘Z）） | `POST /api/dv/undo`，`surface: 'history'` |
+| 行 ⋮ 菜单里的 回到这一步 | `POST /api/dv/undo` `{to}`，`surface: 'history'`；被拒绝时显示服务端的消息 |
 
-`dv:history-focus` 事件 `{session, toolCall}` 切到列表视图，找到该工具调用写下的记录，翻页直到它的行已加载，然后选中它。只有标记为 `current` 的记录会移动中间区域；`proj.*` 记录只被选中。
+`dv:history-focus` 事件 `{session, toolCall}` 找到该工具调用写下的记录，翻页直到它的行已加载，然后选中它。只有当前状态中的记录（`state.components.proj.records`）会移动中间区域；其他记录只被选中。
 
 -----
 
@@ -58,14 +54,14 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-history` 标签类�
 <details>
 <summary>实现内部——点击展开</summary>
 
-`HistoryPanel` 用 `useProjectState` 读项目当前分支的状态，以得到分支、当前的一步、重做步骤、时间线和记录。`branchTree` 从已加载的条目和分支排出树视图：一个步骤的拥有者是写下它的分支（该分支的线仍包含它时），否则是第一个线上包含它的分支（`HistoryEntry.branches`）；分叉出来的分支的泳道从它最新的步骤一直延伸到 `forked_at` 那一行，那一行还没加载时延伸到底部。泳道占用列：`main` 占第一列，其他泳道占在它的各行里没有其他泳道占用的最左一列，最多 `TREE_COLUMNS`（6）列。每个树行用一个内联 SVG 画出泳道线、分叉和圆点。在 `/dv/events` 上，`update` 事件替换已加载行中的记录，其他事件以 200 ms 防抖重新拉取已加载的窗口。
+`HistoryPanel` 用 `useProjectState` 读取项目的当前状态，以得到时间线和当前状态的记录，并通过 `POST /api/dv/history` 列出历史。`actionRows` 把排定的记录折叠到它们的批准下面，`actionLabel` 为每条记录命名（撤销记录按它的目标命名，沿撤销记录一直找到它回到的那一步），`centerFocus` 决定选中的行定位什么，`canGoBack` 决定哪些行提供 回到这一步。在 `/dv/events` 上，`update` 事件替换已加载行中的记录，`record` 事件以 200 ms 防抖重新拉取已加载的窗口。
 
 | 文件 | 内容 |
 | --- | --- |
 | [`src/client/index.ts`](src/client/index.ts) | 注册，以及收到 `dv:history-focus` 时打开标签 |
 | [`src/client/definition.ts`](src/client/definition.ts) | 标签类型 |
-| [`src/client/HistoryPanel.tsx`](src/client/HistoryPanel.tsx) | 面板、顶部（分支菜单、视图切换、撤销和重做按钮）、带 ⋮ 菜单的行、预览、分支树和标签主体 |
-| [`src/client/rows.ts`](src/client/rows.ts) | 操作行和批准折叠、带主体的名称、缩略图、相对时间、中间区域定位、当前分支的步骤和分支树布局 |
+| [`src/client/HistoryPanel.tsx`](src/client/HistoryPanel.tsx) | 面板、带撤销按钮的顶部、带 ⋮ 菜单的行、预览和标签主体 |
+| [`src/client/rows.ts`](src/client/rows.ts) | 操作行和批准折叠、带主体的名称、缩略图、相对时间、中间区域定位和 `canGoBack` |
 
 </details>
 
@@ -74,8 +70,9 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-history` 标签类�
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [`@dv/api`](../api/README.zh.md) — 历史路由、切换分支的路由，以及撤销和重做的路由。
-- [`@dv/project`](../project/README.zh.md) — 历史查询、其条目的标记和分支线，以及分支。
+- [历史规则](../../../docs/subsystems/video-harness.zh.md#history-rules) — 哪些修改是步骤，以及撤销和 回到这一步 做什么。
+- [`@dv/api`](../api/README.zh.md) — 历史路由和撤销路由。
+- [`@dv/project`](../project/README.zh.md) — 历史查询和撤销。
 - [`@dv/ui-kit`](../ui-kit/README.zh.md) — API 客户端、wire 类型、窗口事件和工具名称。
 
 -----
@@ -83,7 +80,7 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-history` 标签类�
 <a id="model-experience"></a>
 ## 模型体验
 
-间接地，通过 `@dv/project`；历史面板的撤销、重做和切换分支写下的记录，以及它们选定的当前分支，只经由 [`@dv/project`](../project/README.zh.md) 的 `dv:project` 提示词段落以及 `dv_proj_*` 和操作工具到达模型。
+间接地，通过 `@dv/project`；历史面板写下的撤销记录只经由 [`@dv/project`](../project/README.zh.md) 的 `dv:project` 提示词段落以及 `dv_proj_*` 和操作工具到达模型。
 
 #### KV Cache 影响
 
@@ -93,6 +90,5 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-history` 标签类�
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **分支树最多六列** — 超过六条泳道覆盖同样的行时，多出的泳道共用最后一列，它们的线会重叠。
-- **重新拉取整个窗口** — 每个 `record` 或 `branch` 事件都重新拉取已加载的窗口（最多 200 条）；翻到很早的长历史重新加载慢。
-- **树视图和列表一样分页** — 树只画已加载的条目；分叉点在尚未加载的页上的泳道会延伸到底部，直到"加载更多"把它加载进来。
+- **重新拉取整个窗口** — 每个 `record` 事件都重新拉取已加载的窗口（最多 200 条）；翻到很早的长历史重新加载慢。
+- **撤销名称需要目标已加载** — 目标在尚未加载的页上的撤销行写作 回到之前的一步，直到"加载更多"加载那一页。

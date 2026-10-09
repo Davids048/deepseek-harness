@@ -1,10 +1,10 @@
 /**
- * The handlers behind the browser routes, independent of transport: list and create projects, read a branch state,
- * list operations, run an operation as the human, create, switch and rename branches, undo and redo, accept a stale
- * record, and list the history. The Fetch routes and the tests call these methods directly.
+ * The handlers behind the browser routes, independent of transport: list and create projects, read the project
+ * state, list operations, run an operation as the human, undo, accept a stale record, and list the history. The Fetch
+ * routes and the tests call these methods directly.
  *
  * Every write goes through `dvProject` with actor `user`, the surface the request names, and the chat session the view
- * sits beside (`session`, when the request names one); it lands on the project's current branch.
+ * sits beside (`session`, when the request names one); it goes at the end of the project's history.
  *
  * @module @dv/api/api
  */
@@ -13,7 +13,7 @@ import type DvAssetPool from '@dv/asset-pool'
 import { ProjectError } from '@dv/project'
 import type DvProject from '@dv/project'
 import type {
-  AssetId, Branch, HistoryEntry, HistoryQuery, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordOrigin, RunRequest, SessionId,
+  AssetId, HistoryEntry, HistoryQuery, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordOrigin, RunRequest, SessionId,
   Surface,
 } from '@dv/project'
 import {
@@ -55,8 +55,6 @@ export interface WireProject {
   id: ProjectId
   title: string
   created_at: string
-  /** The head record of every branch, by branch name. */
-  heads: Record<string, RecordId>
   /** Whether the chat session the view sits beside is bound to this project. */
   current: boolean
 }
@@ -124,7 +122,7 @@ export interface ApiServices {
 
 /** The HTTP status of each refused Project call that a browser request can cause. */
 const STATUS_OF: Partial<Record<ProjectError['code'], 400 | 404 | 409>> = {
-  unknown_project: 404, unknown_branch: 404, unknown_record: 404, unknown_operation: 404, unknown_asset: 404,
+  unknown_project: 404, unknown_record: 404, unknown_operation: 404, unknown_asset: 404,
   invalid_params: 400, invalid_inputs: 400, input_not_ready: 400,
 }
 
@@ -174,11 +172,10 @@ const HISTORY_ENUMS = {
   actor: ['user', 'agent', 'system'],
   kind: ['operation'],
   status: ['pending', 'running', 'done', 'failed', 'cancelled'],
-  marks: ['current', 'redo', 'branch', 'undone'],
 } as const
 
 /** The history filters that take one free-form string, copied to the query as they are. */
-const HISTORY_STRINGS = ['branch', 'component', 'operation', 'session', 'turn', 'tool_call', 'before'] as const
+const HISTORY_STRINGS = ['component', 'operation', 'session', 'turn', 'tool_call', 'before'] as const
 
 /** The number of entries a history request returns when it names no limit, and the most it may ask for. */
 const HISTORY_LIMIT = { default: 50, max: 200 } as const
@@ -206,18 +203,13 @@ function historyQueryOf(body: Record<string, unknown>, project: ProjectId): Hist
     if (typeof value !== 'string' || !allowed.includes(value)) throw invalid(`'${field}' must be one of ${allowed.join(', ')}.`)
     query[field] = value
   }
-  // `marks` and `records` are arrays of strings; `marks` takes only known marks.
-  for (const field of ['marks', 'records'] as const) {
-    const value = body[field]
-    if (value === undefined || value === null) continue
-    if (!Array.isArray(value) || !value.every((item): item is string => typeof item === 'string')) {
-      throw invalid(`'${field}' must be an array of strings.`)
+  // `records` is an array of strings.
+  const records = body['records']
+  if (records !== undefined && records !== null) {
+    if (!Array.isArray(records) || !records.every((item): item is string => typeof item === 'string')) {
+      throw invalid("'records' must be an array of strings.")
     }
-    const allowed: readonly string[] = HISTORY_ENUMS.marks
-    if (field === 'marks' && !value.every(mark => allowed.includes(mark))) {
-      throw invalid(`'marks' may hold only ${allowed.join(', ')}.`)
-    }
-    query[field] = value
+    query['records'] = records
   }
   const limit = body['limit'] ?? HISTORY_LIMIT.default
   if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > HISTORY_LIMIT.max) {
@@ -245,12 +237,6 @@ function humanOrigin(body: Record<string, unknown>, intent: string): RecordOrigi
   return { actor: 'user', surface: surfaceOf(body['surface']), session: sessionOf(body['session']), turn: null, tool_call: null, intent }
 }
 
-/** A branch write's answer: the branch after the change and every branch head. */
-export interface BranchChange {
-  branch: Branch
-  heads: Record<string, RecordId>
-}
-
 /** Reads and writes a project on behalf of the canvas, the timeline, and the asset pool panel. */
 export class ApiHandlers {
   constructor(private readonly services: ApiServices) {}
@@ -265,7 +251,7 @@ export class ApiHandlers {
     const bound = session === null || session.length === 0 ? null : this.services.project.sessionProject(brandString<SessionId>(session))
     return this.services.project.listProjects()
       .map(info => ({
-        id: info.id, title: info.title, created_at: info.created_at, heads: this.heads(info.id), current: info.id === bound,
+        id: info.id, title: info.title, created_at: info.created_at, current: info.id === bound,
       }))
       .sort((a, b) => Number(b.current) - Number(a.current) || b.created_at.localeCompare(a.created_at))
   }
@@ -298,23 +284,16 @@ export class ApiHandlers {
   }
 
   /**
-   * The state of a branch at its head.
+   * The project's current state.
    * @param project - the raw project ID.
-   * @param branch - a branch name; anything but a non-empty string reads the project's current branch.
-   * @returns the wire state, with every branch and the current branch.
-   * @throws ApiRequestError when the project or the branch is unknown.
+   * @returns the wire state, with every asset the project's records created or name.
+   * @throws ApiRequestError when the project is unknown.
    */
-  getState(project: unknown, branch?: unknown): WireState {
+  getState(project: unknown): WireState {
     const projectId = this.requireProject(project)
-    let state
-    try {
-      state = this.services.project.getState(projectId, typeof branch === 'string' && branch.length > 0 ? branch : undefined)
-    } catch (error) {
-      if (!(error instanceof ProjectError)) throw error
-      throw new ApiRequestError(404, error.message, error.code)
-    }
     const { project: service } = this.services
-    return toWireState(state, service.listBranches(projectId), service.currentBranch(projectId).name, id => this.assetOrNull(id))
+    const records = service.listHistory({ project: projectId }).map(entry => entry.record)
+    return toWireState(service.getState(projectId), records, id => this.assetOrNull(id))
   }
 
   /** @returns the declaration of every registered operation that a view can run: every operation that is not `readOnly`. */
@@ -323,8 +302,8 @@ export class ApiHandlers {
   }
 
   /**
-   * Run an operation as the human, from a view. The record goes to the project's current branch (forked first after an
-   * undo). A call whose inputs name an unfinished record is scheduled to run once that record is done.
+   * Run an operation as the human, from a view. The record goes at the end of the project's history. A call whose
+   * inputs name an unfinished record is scheduled to run once that record is done.
    * @param raw - the {@link OperationRequest}.
    * @returns the record, finished or pending.
    * @throws ApiRequestError when the body or the operation is unknown, or Project refuses the call.
@@ -360,104 +339,39 @@ export class ApiHandlers {
   }
 
   /**
-   * Fork a branch from the current branch at its head's position, or with `branch` and `to` at that step of that branch's
-   * line, and make it current.
-   * @param raw - `{project, title?, branch?, to?, session?, surface}`; an empty or missing title keeps the default label.
-   * @returns the new branch and the heads afterwards.
-   * @throws ApiRequestError (400 `invalid_params` when only one of `branch` and `to` is given or `to` is no step of the
-   *   branch, 404 `unknown_branch` or `unknown_record`).
-   */
-  async createBranch(raw: unknown): Promise<BranchChange> {
-    const body = objectOf(raw)
-    const projectId = this.requireProject(body['project'])
-    const title = typeof body['title'] === 'string' && body['title'].trim().length > 0 ? body['title'].trim() : null
-    if ((body['branch'] === undefined) !== (body['to'] === undefined)) {
-      throw new ApiRequestError(400, "'branch' and 'to' go together.", 'invalid_params')
-    }
-    const from = body['branch'] === undefined
-      ? undefined
-      : { branch: stringOf(body['branch'], 'branch'), record: brandString<RecordId>(stringOf(body['to'], 'to')) }
-    const branch = await refused(() => this.services.project.createBranch(projectId, title, from))
-    return { branch, heads: this.heads(projectId) }
-  }
-
-  /**
-   * Make a branch the project's current branch and, with `to`, return it to that step of its line.
-   * @param raw - `{project, branch, to?, session?, surface}`.
-   * @returns the branch and the heads afterwards.
-   * @throws ApiRequestError (404 `unknown_branch` or `unknown_record`, 400 `invalid_params` for a `to` off the line).
-   */
-  async switchBranch(raw: unknown): Promise<BranchChange> {
-    const body = objectOf(raw)
-    const projectId = this.requireProject(body['project'])
-    const name = stringOf(body['branch'], 'branch')
-    const to = body['to'] === undefined ? undefined : brandString<RecordId>(stringOf(body['to'], 'to'))
-    const branch = await refused(() => this.services.project.switchBranch(projectId, name, humanOrigin(body, `switch to ${name}`), to))
-    return { branch, heads: this.heads(projectId) }
-  }
-
-  /**
-   * Give a branch the name the human chose; an empty title returns to the default label.
-   * @param raw - `{project, branch, title}`.
-   * @returns the branch and the heads afterwards.
-   * @throws ApiRequestError (404 `unknown_branch`, 400 `invalid_params` without a string title).
-   */
-  async renameBranch(raw: unknown): Promise<BranchChange> {
-    const body = objectOf(raw)
-    const projectId = this.requireProject(body['project'])
-    const name = stringOf(body['branch'], 'branch')
-    if (typeof body['title'] !== 'string') throw new ApiRequestError(400, "'title' must be a string.", 'invalid_params')
-    const title = body['title']
-    const branch = await refused(() => this.services.project.renameBranch(projectId, name, title))
-    return { branch, heads: this.heads(projectId) }
-  }
-
-  /**
-   * Move the project's current branch back by one step, or jump it to the record `to` (a record on its effective
-   * chain, or one of its redo steps).
+   * Return the project to an earlier state: one step back, or to the record `to` (any finished record of the project).
+   * The `proj.undo` record goes at the end of the history.
    * @param raw - `{project, session?, surface, to?}`.
-   * @returns the `proj.undo` record (`proj.redo` for a jump forward) and the heads afterwards.
+   * @returns the `proj.undo` record.
    */
-  async undo(raw: unknown): Promise<{ record: ProjectRecord; heads: Record<string, RecordId> }> {
+  async undo(raw: unknown): Promise<{ record: ProjectRecord }> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
     const to = body['to'] === undefined ? undefined : brandString<RecordId>(stringOf(body['to'], 'to'))
-    const record = await refused(() => this.services.project.undo(projectId, humanOrigin(body, 'undo'), to))
-    return { record, heads: this.heads(projectId) }
+    const record = await refused(() => this.services.project.undo(projectId, humanOrigin(body, to === undefined ? 'undo' : `go back to ${to}`), to))
+    return { record }
   }
 
   /**
-   * Move the project's current branch forward by one redo step.
-   * @param raw - `{project, session?, surface}`.
-   * @returns the `proj.redo` record and the heads afterwards.
-   */
-  async redo(raw: unknown): Promise<{ record: ProjectRecord; heads: Record<string, RecordId> }> {
-    const body = objectOf(raw)
-    const projectId = this.requireProject(body['project'])
-    const record = await refused(() => this.services.project.redo(projectId, humanOrigin(body, 'redo')))
-    return { record, heads: this.heads(projectId) }
-  }
-
-  /**
-   * Accept a stale record as it is: a `proj.stale_accept` record on the project's current branch removes its stale mark
-   * and the marks of the records made from it.
+   * Accept a stale record as it is: a `proj.stale_accept` record at the end of the history removes its stale mark and
+   * the marks of the records made from it.
    * @param raw - `{project, record, session?, surface}`.
-   * @returns the `proj.stale_accept` record and the heads afterwards.
+   * @returns the `proj.stale_accept` record.
    * @throws ApiRequestError (404, code `unknown_record`) when the record does not exist.
    */
-  async acceptStale(raw: unknown): Promise<{ record: ProjectRecord; heads: Record<string, RecordId> }> {
+  async acceptStale(raw: unknown): Promise<{ record: ProjectRecord }> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
     const target = brandString<RecordId>(stringOf(body['record'], 'record'))
     const record = await refused(() => this.services.project.acceptStale(projectId, target, humanOrigin(body, `accept ${target}`)))
-    return { record, heads: this.heads(projectId) }
+    return { record }
   }
 
   /**
-   * List a project's records with their marks, newest first, through `dvProject.listHistory` (the query behind
-   * `dv_proj_history_list`). A read: it writes no record.
-   * @param raw - the history query: `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?,
-   *   turn?, tool_call?, records?, before?, limit?}`; `limit` is 1 to 200, default 50.
+   * List a project's records, newest first, through `dvProject.listHistory` (the query behind `dv_proj_history_list`).
+   * A read: it writes no record.
+   * @param raw - the history query: `{project, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?,
+   *   records?, before?, limit?}`; `limit` is 1 to 200, default 50.
    * @returns the entries and every asset they name.
    * @throws ApiRequestError (400 `invalid_params`, 404 `unknown_project`, 404 `unknown_record` for `before`).
    */
@@ -485,14 +399,6 @@ export class ApiHandlers {
    */
   private requireProject(value: unknown): ProjectId {
     return requireProject(this.services.project, value)
-  }
-
-  /**
-   * @param projectId - the project.
-   * @returns the head record of every branch, by branch name.
-   */
-  private heads(projectId: ProjectId): Record<string, RecordId> {
-    return Object.fromEntries(this.services.project.listBranches(projectId).map(branch => [branch.name, branch.head]))
   }
 
   /**

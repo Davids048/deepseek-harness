@@ -2,13 +2,13 @@
  * The bar both Sidebar views share: project picker, new project, and undo. Its copy arrives through `labels`, already
  * localized by the owning plugin.
  *
- * @module @dv/ui-kit/BranchBar
+ * @module @dv/ui-kit/ProjectBar
  */
 import type { CSSProperties, ReactNode } from 'react'
 import type { WireProject } from './types.ts'
 
 /** The localized copy the bar shows. */
-export interface BranchBarLabels {
+export interface ProjectBarLabels {
   project: string
   undo: string
   newProject: string
@@ -17,10 +17,10 @@ export interface BranchBarLabels {
 }
 
 /** What the bar needs and does. */
-export interface BranchBarProps {
+export interface ProjectBarProps {
   projects: WireProject[]
   project: string | null
-  labels: BranchBarLabels
+  labels: ProjectBarLabels
   onProject: (project: string) => void
   onUndo: () => void
   onCreate: (title: string) => void
@@ -36,11 +36,11 @@ const control: CSSProperties = { fontSize: 12, padding: '2px 6px' }
  * @param props - projects, copy, and callbacks.
  * @returns the element.
  */
-export function BranchBar(props: BranchBarProps): ReactNode {
+export function ProjectBar(props: ProjectBarProps): ReactNode {
   const { labels } = props
   const ask = props.ask ?? ((message: string) => window.prompt(message))
   return (
-    <div style={bar} data-testid="dv-kit-branch-bar">
+    <div style={bar} data-testid="dv-kit-project-bar">
       <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
         <span>{labels.project}</span>
         <select style={control} value={props.project ?? ''} onChange={(event) => { props.onProject(event.target.value) }} aria-label={labels.project}>

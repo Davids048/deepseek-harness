@@ -1,6 +1,6 @@
 /**
  * `dvChatReferences` over the real Project service and components: `dv:` mentions of a step's user messages become a
- * `dv-mentions` context message read from the project's current branch, chat images become `asset.import` records of
+ * `dv-mentions` context message read from the project's current state, chat images become `asset.import` records of
  * the session's project that put them on its canvas, mentioned assets go on the canvas, and disposal removes both
  * listeners.
  */
@@ -97,7 +97,7 @@ function textOf(message: UserMessage | undefined): string {
 }
 
 describe('mention expansion', () => {
-  it('appends a dv-mentions message that reads the character from the project\'s current branch, not from main', async () => {
+  it('appends a dv-mentions message that reads the character from the project\'s current state, after an undo too', async () => {
     const { fixture, preStep } = await start()
     const session = brandString<SessionId>('s1')
     const user: RecordOrigin = { actor: 'user', surface: 'canvas', session: null, turn: null, tool_call: null, intent: 'set up' }
@@ -111,20 +111,21 @@ describe('mention expansion', () => {
     await fixture.project.run({
       ...user, project: info.id, operation: 'bible.character_create', inputs: reference, params: { character: 'c1', name: 'Lead' },
     })
-    // The agent's update lands on the forked branch b2; version 2 of c1 exists only there.
-    await fixture.project.createBranch(info.id, null)
-    await fixture.project.run({
+    const update = await fixture.project.run({
       actor: 'agent', surface: 'chat', session, turn: null, tool_call: 'call-update', intent: 'rename the lead',
-      project: info.id, operation: 'bible.character_update', inputs: reference, params: { character: 'c1', name: 'Lead on branch' },
+      project: info.id, operation: 'bible.character_update', inputs: reference, params: { character: 'c1', name: 'Lead renamed' },
     })
-    expect(fixture.project.currentBranch(info.id).name).toBe('b2')
-    expect(fixture.project.getState(info.id, 'main').components.bible.characters[brandString<CharacterId>('c1')]).toHaveLength(1)
 
     const messages = await preStep('make @[Lead](dv:character/c1) wave')
     expect(messages).toHaveLength(2)
     expect(messages[1]?.source).toMatchObject({ kind: 'dv-mentions' })
-    expect(textOf(messages[1])).toContain('character c1@2 "Lead on branch"')
+    expect(textOf(messages[1])).toContain('character c1@2 "Lead renamed"')
     expect(textOf(messages[1])).toContain('pass it as input c1@2')
+    // After an undo of the update, the mention reads version 1 again.
+    await fixture.project.undo(info.id, user)
+    expect(fixture.project.getState(info.id).components.bible.characters[brandString<CharacterId>('c1')]).toHaveLength(1)
+    expect(textOf((await preStep('make @[Lead](dv:character/c1) wave'))[1])).toContain('character c1@1 "Lead"')
+    expect(update.record?.status).toBe('done')
     // A message without mentions enters unchanged.
     expect(await preStep('hello')).toHaveLength(1)
   })
@@ -140,7 +141,7 @@ describe('mention expansion', () => {
 })
 
 describe('chat images', () => {
-  it('imports the images a user attached in a bound chat as project assets on the current branch and its canvas', async () => {
+  it('imports the images a user attached in a bound chat as project assets and puts them on the canvas', async () => {
     const { fixture, attachments, emit, callAs } = await start()
     const image = await attachments.saveImage({ data: Buffer.from('chat-image'), mediaType: 'image/png', name: 'cat.png' })
     const message = { source: { kind: 'user' }, content: [{ type: 'image', attachment: image }] }

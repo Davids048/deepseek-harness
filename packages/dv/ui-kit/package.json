@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Shared browser code of the DreamVerse views: the /api/dv client, the wire types, the parameter form model, the timeline geometry, the window events, and the branch bar.",
+  "description": "Shared browser code of the DreamVerse views: the /api/dv client, the wire types, the parameter form model, the timeline geometry, the window events, and the project bar.",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json",

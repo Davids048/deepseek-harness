@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse 的实时媒体流：一个 Cordis 服务把正在渲染的镜头的 fMP4 分块，以及项目的记录和分支变化，经 /vh/ws WebSocket 路由发给浏览器。"
+description: "DreamVerse 的实时媒体流：一个 Cordis 服务把正在渲染的镜头的 fMP4 分块，以及项目的记录变化，经 /vh/ws WebSocket 路由发给浏览器。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包让浏览器在 `shot.render` 仍在渲染镜头时观看它。本包的 Cordis 服务从 `@dv/shot-render` 接收每个正在渲染的版本的 fMP4 分块，并按 DreamVerse 媒体帧格式（`media_init`、二进制分块、`media_segment_complete`）发给经 `/vh/ws` WebSocket 路由订阅该项目的每个浏览器。在镜头中途订阅的浏览器先收到已经发出的分块，以字节预算为上限。同一个 socket 还转发 `dvProject` 中项目的记录和分支变化，所以一条连接同时承载媒体和状态。
+使用本包让浏览器在 `shot.render` 仍在渲染镜头时观看它。本包的 Cordis 服务从 `@dv/shot-render` 接收每个正在渲染的版本的 fMP4 分块，并按 DreamVerse 媒体帧格式（`media_init`、二进制分块、`media_segment_complete`）发给经 `/vh/ws` WebSocket 路由订阅该项目的每个浏览器。在镜头中途订阅的浏览器先收到已经发出的分块，以字节预算为上限。同一个 socket 还转发 `dvProject` 中项目的记录变化，所以一条连接同时承载媒体和状态。
 
 ## 目录
 
@@ -53,7 +53,6 @@ kind: "package-reference"
 | 镜头结束 | `{type: 'media_segment_complete', segment_idx, stream_id}` |
 | 镜头失败 | `{type: 'error', stream_id, message}` |
 | 记录写入或更新 | `{type: 'op', change: 'append' 或 'patch', op}`，`op` 是 `ProjectRecord` |
-| 分支被创建或移动，或者当前分支改变 | `{type: 'head', branch, to, current}`，`to` 是分支头，`current` 是项目的当前分支 |
 | 错误的消息 | 文本不是 JSON 或不是订阅命令时为 `{type: 'error', message}` |
 
 -----
@@ -80,7 +79,7 @@ kind: "package-reference"
 ## 进一步探索
 
 - [`@dv/shot-render`](../../dv/shot-render/README.zh.md) — 渲染版本并把其分块写入本服务的操作。
-- [`@dv/project`](../../dv/project/README.zh.md) — socket 转发的记录和分支事件。
+- [`@dv/project`](../../dv/project/README.zh.md) — socket 转发的记录事件。
 - [DreamVerse 包](../../../docs/subsystems/video-harness.zh.md) — DreamVerse 各包如何组合。
 - [`dsh-host-webserver`](../../host/webserver/README.zh.md) — 提供升级路由的 web 服务器。
 

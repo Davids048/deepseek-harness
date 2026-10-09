@@ -1,7 +1,7 @@
 /**
- * A branch state the view tests share: one character, one approved plan whose shots were rendered and put on a timeline,
- * a running retake on branch `b2` (forked from `main` at `x1`), and a failed export. Also a scripted
- * `fetch` that answers the `/api/dv` routes from such a state and records every write.
+ * A project state the view tests share: one character, one approved plan whose shots were rendered and put on a
+ * timeline, a failed export, and a running retake as the last record. Also a scripted `fetch` that answers the
+ * `/api/dv` routes from such a state and records every write.
  */
 import type { Asset, OperationRequest, ProjectRecord, WireOperation, WireProject, WireState } from '../src/client/types.ts'
 
@@ -13,7 +13,7 @@ import type { Asset, OperationRequest, ProjectRecord, WireOperation, WireProject
 export function record(partial: Partial<ProjectRecord> & { id: string }): ProjectRecord {
   const operation = partial.operation ?? null
   return {
-    parents: [], turn: 't1', session: null, branch: 'main', kind: 'operation', component: operation?.split('.')[0] ?? 'proj',
+    parents: [], turn: 't1', session: null, kind: 'operation', component: operation?.split('.')[0] ?? 'proj',
     operation, operation_version: operation === null ? null : '1', actor: 'user', surface: 'chat', tool_call: null, intent: '',
     inputs: [], params: {}, outputs: [], based_on: null, supersedes: [], status: 'done', deterministic: true,
     created_at: '2026-10-05T00:00:00Z',
@@ -37,7 +37,7 @@ export function asset(id: string, mime: string, createdBy: string | null, durati
 }
 
 /** The project of the fixture. */
-export const PROJECT: WireProject = { id: 'p1', title: 'Demo', created_at: '2026-10-05T00:00:00Z', heads: { main: 's1' } }
+export const PROJECT: WireProject = { id: 'p1', title: 'Demo', created_at: '2026-10-05T00:00:00Z' }
 
 /**
  * The shared state.
@@ -73,21 +73,13 @@ export function fixtureState(): WireState {
       outputs: ['export-last.png'],
     }),
     record({
-      id: 'g3', turn: 't5', session: 's5', branch: 'b2', actor: 'agent', operation: 'shot.render_ref2va', deterministic: false, based_on: 'g1',
+      id: 'g3', turn: 't5', session: 's5', actor: 'agent', operation: 'shot.render_ref2va', deterministic: false, based_on: 'g1',
       inputs: [hero], params: { prompt: 'hero walks, wider' }, status: 'running',
     }),
   ]
   return {
     project: { id: 'p1', title: 'Demo', created_at: '2026-10-05T00:00:00Z' },
-    branch: 'main',
-    head: 's1',
-    heads: { main: 's1', b2: 'g3' },
-    branches: [
-      { name: 'main', title: null, head: 's1', base: null, forked_at: null, tip: 's1' },
-      { name: 'b2', title: null, head: 'g3', base: 'main', forked_at: 'x1', tip: 'g3' },
-    ],
-    current: 'main',
-    redo_steps: [],
+    head: 'g3',
     components: {
       proj: {
         records,
@@ -156,7 +148,7 @@ export interface Recorded {
 /** What the scripted fetch answers with. */
 export interface ScriptedRoutes {
   projects?: WireProject[]
-  state?: WireState | ((branch: string) => WireState)
+  state?: WireState | (() => WireState)
   operations?: WireOperation[]
   /** Answer a POST; return `{status, body}` or throw. Default echoes a done record. */
   post?: (path: string, body: unknown) => { status: number; body: unknown }
@@ -183,13 +175,13 @@ export function scriptedFetch(routes: ScriptedRoutes = {}): { fetch: typeof fetc
         const request = body as OperationRequest
         return Promise.resolve(json(record({ id: `new-${String(writes.length)}`, operation: request.operation, params: request.params ?? {}, outputs: ['new.mp4'] })))
       }
-      return Promise.resolve(json({ heads: { main: 'x' }, record: record({ id: 'b1' }) }))
+      return Promise.resolve(json({ record: record({ id: 'b1' }) }))
     }
     switch (url.pathname) {
       case '/api/dv/projects': return Promise.resolve(json(routes.projects ?? [PROJECT]))
       case '/api/dv/state': {
         const state = routes.state ?? fixtureState
-        return Promise.resolve(json(typeof state === 'function' ? state(url.searchParams.get('branch') ?? 'main') : state))
+        return Promise.resolve(json(typeof state === 'function' ? state() : state))
       }
       case '/api/dv/operations': return Promise.resolve(json(routes.operations ?? OPERATIONS))
       default: return Promise.resolve(json({ error: `no route ${url.pathname}` }, 404))

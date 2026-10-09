@@ -1,5 +1,5 @@
 /**
- * Values that every module of the Project service uses: the component keys, the error classes and the branch names.
+ * Values that every module of the Project service uses: the component keys and the error classes.
  *
  * @module @dv/project/shared
  */
@@ -9,13 +9,9 @@
  */
 export const COMPONENT_KEYS: ReadonlySet<string> = new Set(['proj', 'asset', 'bible', 'plan', 'shot', 'timeline', 'deliver', 'inspect'])
 
-/** The name of a project's first branch, which every other branch forks from directly or through another branch. */
-export const MAIN_BRANCH = 'main'
-
-/** Why a Project call was refused. The record store, the runner, branches and history throw these codes. */
+/** Why a Project call was refused. The record store, the runner and history throw these codes. */
 export type ProjectErrorCode =
   | 'unknown_project'
-  | 'unknown_branch'
   | 'unknown_record'
   | 'unknown_operation'
   | 'unknown_asset'
@@ -24,12 +20,10 @@ export type ProjectErrorCode =
   | 'input_not_ready'
   | 'operation_exists'
   | 'reducer_exists'
-  | 'branch_exists'
   | 'parent_not_head'
   | 'status_backwards'
   | 'record_finished'
   | 'nothing_to_undo'
-  | 'nothing_to_redo'
 
 /** A Project call was refused before it changed anything; `code` says why. */
 export class ProjectError extends Error {

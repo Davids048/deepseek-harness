@@ -174,7 +174,7 @@ describe('dvAssetPool', () => {
     const record = fixture.ctx.dvProject.getRecord(fixture.project, brandString<RecordId>(imported.record))
     expect(record).toMatchObject({ actor: 'agent', component: 'asset', operation: 'asset.import', params: { path, mime: 'image/png' }, outputs: [asset] })
     expect(fixture.ctx.dvAssetPool.get(asset)).toMatchObject({ id: asset, mime: 'image/png', name: 'face.png', size_bytes: 9, created_by: record.id, width: null, duration_sec: null })
-    expect(fixture.ctx.dvProject.getState(fixture.project, record.branch).components.proj.created_by[asset]).toBe(record.id)
+    expect(fixture.ctx.dvProject.getState(fixture.project).components.proj.created_by[asset]).toBe(record.id)
     const inline = await fixture.run('asset.import', { base64: Buffer.from('hello').toString('base64'), mime: 'text/plain', name: 'note.txt' })
     expect(fixture.ctx.dvAssetPool.read(inline.outputs[0] as AssetId).toString()).toBe('hello')
     const bare = await fixture.run('asset.import', { base64: Buffer.from('x').toString('base64'), mime: 'text/plain' })
@@ -184,7 +184,7 @@ describe('dvAssetPool', () => {
     expect(spec?.summarize(bare)).toBe('imported bytes')
   })
 
-  it('puts assets on the canvas and takes them off as records of the branch, refuses a call that changes nothing, and undo takes a placement back', async () => {
+  it('puts assets on the canvas and takes them off as records, refuses a call that changes nothing, and undo takes a placement back', async () => {
     const fixture = await start()
     const placed = (): AssetId[] => fixture.ctx.dvProject.getState(fixture.project).components.asset.placed
     const assetInput = (asset: AssetId): RecordInput => ({ role: 'asset', ref: { asset }, resolved_asset: asset })
@@ -201,7 +201,7 @@ describe('dvAssetPool', () => {
     await fixture.run('asset.unplace', {}, [assetInput(b)])
     expect(placed()).toEqual([a])
     await expect(fixture.run('asset.unplace', {}, [assetInput(b)])).rejects.toMatchObject({ code: 'invalid_params' })
-    // An asset that no record of the branch created cannot go on the canvas.
+    // An asset that no record of the current state created cannot go on the canvas.
     const outside = fixture.ctx.dvAssetPool.importAsset(Buffer.from('outside'), { mime: 'image/png', name: 'o.png' }, null)
     await expect(fixture.run('asset.place', {}, [assetInput(outside)])).rejects.toMatchObject({ code: 'invalid_inputs' })
     expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before + 1)

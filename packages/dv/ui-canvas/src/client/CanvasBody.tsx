@@ -1,6 +1,6 @@
 /**
- * The canvas as a right-Sidebar tab body: the branch bar above a {@link CanvasView} of the selected project's current
- * branch.
+ * The canvas as a right-Sidebar tab body: the project and undo bar (`ProjectBar`) above a {@link CanvasView} of the
+ * selected project's current state.
  * Hosts that place the canvas in the center mount {@link CanvasView} directly.
  */
 import { useMemo } from 'react'
@@ -8,8 +8,8 @@ import type { CSSProperties, ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { DvClient } from '@dv/ui-kit/api.ts'
-import { BranchBar } from '@dv/ui-kit/BranchBar.tsx'
-import type { BranchBarLabels } from '@dv/ui-kit/BranchBar.tsx'
+import { ProjectBar } from '@dv/ui-kit/ProjectBar.tsx'
+import type { ProjectBarLabels } from '@dv/ui-kit/ProjectBar.tsx'
 import { useViewSession } from '@dv/ui-kit/useView.ts'
 import { CanvasView } from './CanvasView.tsx'
 import type {} from './locales.ts'
@@ -25,11 +25,11 @@ export type CanvasBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & CanvasInj
 const root: CSSProperties = { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, fontSize: 12 }
 
 /**
- * The branch bar's copy in the canvas namespace.
+ * The project and undo bar's copy in the canvas namespace.
  * @param t - namespace-bound translate.
  * @returns the labels.
  */
-export function barLabels(t: CanvasBodyProps['t']): BranchBarLabels {
+export function barLabels(t: CanvasBodyProps['t']): ProjectBarLabels {
   return {
     project: t('bar.project'), undo: t('bar.undo'), newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
     noProject: t('bar.noProject'),
@@ -56,7 +56,7 @@ export function CanvasBody({ client, t }: CanvasBodyProps): ReactNode {
   }
   return (
     <div style={root} data-testid="dv-canvas-body">
-      <BranchBar {...view.bar} labels={labels} />
+      <ProjectBar {...view.bar} labels={labels} />
       {content}
     </div>
   )

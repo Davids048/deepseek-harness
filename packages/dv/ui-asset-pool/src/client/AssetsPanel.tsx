@@ -1,9 +1,8 @@
 /**
  * The project asset pool panel: an import drop zone, every asset of the project once in thumbnail grids grouped by media
  * type (图片 · 视频 · 从生成中截取的帧), drag sources that carry the asset ID as `application/x-dv-asset`, and a
- * preview on click. The panel lists the assets of the project's current branch up to its head; its toggle 显示其他分支的素材
- * (Show assets from other branches) adds the assets that only other branches or the current branch's redo steps hold,
- * each with a badge naming its branch.
+ * preview on click. The panel lists every asset of the project, including the assets of steps that an undo went back
+ * past: the asset pool only grows.
  *
  * @module @dv/ui-asset-pool/AssetsPanel
  */
@@ -14,15 +13,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DvClient, assetUrl } from '@dv/ui-kit/api.ts'
-import type { Asset, WireState } from '@dv/ui-kit/types.ts'
+import type { Asset, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
 import { dispatchCompose } from '@dv/ui-kit/compose.ts'
 import { useCurrentProject } from '@dv/ui-kit/current-project.ts'
 import { useText } from '@dv/ui-kit/locale.ts'
-import { branchLabel } from '@dv/ui-kit/state.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import { DV_ASSET_DRAG_TYPE, DV_TIMELINE_INSERT_EVENT, dispatchWorkspaceEvent } from '@dv/ui-kit/workspace-events.ts'
-import { assetLibrary, otherBranchAssets } from './library.ts'
-import type { OtherBranchAssets } from './library.ts'
+import { assetLibrary } from './library.ts'
 
 /** Props of {@link AssetsPanel}. */
 export interface AssetsPanelProps {
@@ -38,30 +35,29 @@ const muted = 'var(--dv-muted, rgba(127, 127, 127, 0.95))'
 const accent = 'var(--dv-accent, #7c5cff)'
 const button: CSSProperties = { border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '5px 12px', fontSize: 13, cursor: 'pointer' }
 
-/** The most history entries the panel reads for the assets outside the current branch's head. */
-const OTHER_BRANCH_ENTRIES = 200
+/** The most history entries the panel reads for the records an undo went back past. */
+const HISTORY_ENTRIES = 200
 
 /**
- * The assets that only other branches or the current branch's redo steps hold, refetched whenever the state of the
- * current branch reloads, which happens on every change of the project.
+ * The newest records of the project's history, for the render stills and import names of the assets outside the
+ * current state; refetched whenever the state reloads, which happens on every change of the project.
  * @param client - the API client.
  * @param projectId - the project.
- * @param current - the state of the current branch, or null while it loads or while the panel does not show them.
- * @returns the assets, or null while none are read; a failed fetch shows none.
+ * @param current - the current state, or null while it loads.
+ * @returns the records; none while they load or after a failed fetch.
  */
-function useOtherBranchAssets(client: DvClient, projectId: string, current: WireState | null): OtherBranchAssets | null {
-  const [others, setOthers] = useState<OtherBranchAssets | null>(null)
+function useHistoryRecords(client: DvClient, projectId: string, current: WireState | null): ProjectRecord[] {
+  const [records, setRecords] = useState<ProjectRecord[]>([])
   useEffect(() => {
     if (current === null) return
     const controller = new AbortController()
-    client.listHistory({ project: projectId, marks: ['redo', 'branch'], limit: OTHER_BRANCH_ENTRIES }, controller.signal)
-      .then((history) => { if (!controller.signal.aborted) setOthers(otherBranchAssets(history, current)) }, () => {
-        if (!controller.signal.aborted) setOthers(null)
+    client.listHistory({ project: projectId, limit: HISTORY_ENTRIES }, controller.signal)
+      .then((history) => { if (!controller.signal.aborted) setRecords(history.entries.map(entry => entry.record)) }, () => {
+        if (!controller.signal.aborted) setRecords([])
       })
     return () => { controller.abort() }
   }, [client, projectId, current])
-  // While the panel does not show them, the last fetched assets are not shown either.
-  return current === null ? null : others
+  return records
 }
 
 /**
@@ -72,16 +68,10 @@ function useOtherBranchAssets(client: DvClient, projectId: string, current: Wire
 export function AssetsPanel(props: AssetsPanelProps): ReactNode {
   const client = useMemo(() => props.client ?? new DvClient(), [props.client])
   const state = useProjectState(client, props.projectId)
-  const [showOthers, setShowOthers] = useState(false)
-  const others = useOtherBranchAssets(client, props.projectId, showOthers ? state.value : null)
+  const history = useHistoryRecords(client, props.projectId, state.value)
   const t = useText()
   const [preview, setPreview] = useState<Asset | null>(null)
-  const library = useMemo(() => state.value === null ? null : assetLibrary(state.value, others), [state.value, others])
-  // Asset ID → the label of the branch it comes from, for the assets outside the current branch's head.
-  const elsewhere = useMemo(() => {
-    const branches = new Map((state.value?.branches ?? []).map(branch => [branch.name, branchLabel(branch, t)]))
-    return new Map([...others?.branchOf ?? []].map(([id, branch]) => [id, branches.get(branch) ?? branch]))
-  }, [others, state.value, t])
+  const library = useMemo(() => state.value === null ? null : assetLibrary(state.value, history), [state.value, history])
 
   let body: ReactNode
   if (library === null) body = <p style={{ color: muted, fontSize: 12 }}>{state.error === null ? t('正在读取…', 'Loading…') : t(`读取失败：${state.error}`, `Failed to load: ${state.error}`)}</p>
@@ -90,28 +80,19 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
   } else {
     body = (
       <>
-        <Section title={t('图片', 'Images')} assets={library.images} elsewhere={elsewhere} onOpen={setPreview} />
-        <Section title={t('视频', 'Videos')} assets={library.videos} elsewhere={elsewhere} onOpen={setPreview} />
-        <Section
-          title={t('从生成中截取的帧', 'Extracted from generation')} assets={library.extracted} elsewhere={elsewhere} onOpen={setPreview}
-        />
+        <Section title={t('图片', 'Images')} assets={library.images} onOpen={setPreview} />
+        <Section title={t('视频', 'Videos')} assets={library.videos} onOpen={setPreview} />
+        <Section title={t('从生成中截取的帧', 'Extracted from generation')} assets={library.extracted} onOpen={setPreview} />
       </>
     )
   }
   return (
     <div data-testid="dv-asset-pool-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: 12, gap: 10 }}>
       <ImportZone client={client} projectId={props.projectId} session={props.session} />
-      <button
-        type="button" data-testid="dv-asset-pool-other-branches" aria-pressed={showOthers}
-        onClick={() => { setShowOthers(shown => !shown) }}
-        style={{ ...button, alignSelf: 'flex-start', fontSize: 12, padding: '3px 10px', ...showOthers ? { borderColor: accent, color: accent } : {} }}
-      >
-        {showOthers ? t('隐藏其他分支的素材', 'Hide assets from other branches') : t('显示其他分支的素材', 'Show assets from other branches')}
-      </button>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{body}</div>
       {preview === null
         ? null
-        : <Preview key={preview.id} asset={preview} branch={elsewhere.get(preview.id) ?? null} onClose={() => { setPreview(null) }} />}
+        : <Preview key={preview.id} asset={preview} onClose={() => { setPreview(null) }} />}
     </div>
   )
 }
@@ -166,22 +147,17 @@ function ImportZone(props: { client: DvClient; projectId: string; session: strin
 
 /**
  * One titled grid of thumbnails.
- * @param props - the title, the assets, the branch label of each asset outside the current branch, and the preview callback.
+ * @param props - the title, the assets, and the preview callback.
  * @returns the section, or nothing when it has no assets.
  */
-function Section(props: {
-  title: string
-  assets: Asset[]
-  elsewhere: ReadonlyMap<string, string>
-  onOpen: (asset: Asset) => void
-}): ReactNode {
+function Section(props: { title: string; assets: Asset[]; onOpen: (asset: Asset) => void }): ReactNode {
   if (props.assets.length === 0) return null
   return (
     <section style={{ marginBottom: 14 }}>
       <h3 style={{ fontSize: 12, fontWeight: 600, color: muted, margin: '0 0 6px' }}>{props.title} · {props.assets.length}</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 6 }}>
         {props.assets.map(asset => (
-          <Thumb key={asset.id} asset={asset} branch={props.elsewhere.get(asset.id) ?? null} onOpen={props.onOpen} />
+          <Thumb key={asset.id} asset={asset} onOpen={props.onOpen} />
         ))}
       </div>
     </section>
@@ -190,11 +166,10 @@ function Section(props: {
 
 /**
  * One draggable thumbnail; dragging it carries the asset ID, clicking it opens the preview.
- * @param props - the asset, the label of the other branch it comes from (null for the current branch), and the preview
- *   callback.
+ * @param props - the asset and the preview callback.
  * @returns the thumbnail.
  */
-function Thumb(props: { asset: Asset; branch: string | null; onOpen: (asset: Asset) => void }): ReactNode {
+function Thumb(props: { asset: Asset; onOpen: (asset: Asset) => void }): ReactNode {
   const { asset } = props
   const video = asset.mime.startsWith('video/')
   const media: CSSProperties = { width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }
@@ -211,9 +186,6 @@ function Thumb(props: { asset: Asset; branch: string | null; onOpen: (asset: Ass
       {video && asset.duration_sec !== null
         ? <span style={{ position: 'absolute', right: 3, bottom: 3, fontSize: 10, background: '#000a', color: '#fff', borderRadius: 3, padding: '0 3px' }}>{asset.duration_sec.toFixed(0)}s</span>
         : null}
-      {props.branch === null
-        ? null
-        : <span data-testid="dv-asset-pool-branch-badge" style={{ position: 'absolute', left: 3, top: 3, maxWidth: 'calc(100% - 6px)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, background: accent, color: '#fff', borderRadius: 3, padding: '0 4px' }}>{props.branch}</span>}
     </button>
   )
 }
@@ -221,11 +193,10 @@ function Thumb(props: { asset: Asset; branch: string | null; onOpen: (asset: Ass
 /**
  * The preview dialog: the media at full size, its facts, and actions. Escape or a click outside closes it. The dialog
  * renders on `document.body`, so the right sidebar's resize handle and stacking context cannot cover its buttons.
- * @param props - the asset, the label of the other branch it comes from (null for the current branch), and the close
- *   callback.
+ * @param props - the asset and the close callback.
  * @returns the dialog.
  */
-function Preview(props: { asset: Asset; branch: string | null; onClose: () => void }): ReactNode {
+function Preview(props: { asset: Asset; onClose: () => void }): ReactNode {
   const { asset, onClose } = props
   const t = useText()
   // The asset pool records no dimensions for imported files, so read them from the loaded media.
@@ -251,7 +222,6 @@ function Preview(props: { asset: Asset; branch: string | null; onClose: () => vo
           : <img src={assetUrl(asset.id)} alt={asset.name} onLoad={(event) => { setLoadedSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }) }} style={{ maxWidth: '80vw', maxHeight: '70vh', objectFit: 'contain', borderRadius: 8 }} />}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
           <span style={{ fontWeight: 600 }}>{asset.name}</span>
-          {props.branch === null ? null : <span style={{ fontSize: 11, background: accent, color: '#fff', borderRadius: 3, padding: '0 4px' }}>{props.branch}</span>}
           <span style={{ opacity: 0.7 }}>{facts.join(' · ')}</span>
           <span style={{ flex: 1 }} />
           {video ? <button type="button" style={button} onClick={() => { dispatchWorkspaceEvent(DV_TIMELINE_INSERT_EVENT, { assetId: asset.id }); onClose() }}>{t('插入片段', 'Insert clip')}</button> : null}

@@ -338,7 +338,7 @@ export default class DvShotRender extends Service {
    * comes before any record, so no failed take reaches the project. A call that a plan scheduled (param `plan`) is told
    * to update the plan with `dv_plan_update`; `plan.approve` names the shots in front of it.
    * @param request - the call, with its input references.
-   * @param state - the state of the current branch the call writes to.
+   * @param state - the project's current state, which the call writes after.
    * @throws Error telling the model to ask the user for a reference image first.
    */
   private async precondition(request: RunRequest, state: ProjectState): Promise<void> {

@@ -9,7 +9,7 @@ const project = brandString<ProjectId>('p1')
 const img = brandString<AssetId>('img1')
 const vid = brandString<AssetId>('vid1')
 const shot: ProjectRecord = {
-  id: brandString<RecordId>('rec-shot'), parents: [], branch: 'main', kind: 'operation', component: 'shot', operation: 'shot.render_ref2va',
+  id: brandString<RecordId>('rec-shot'), parents: [], kind: 'operation', component: 'shot', operation: 'shot.render_ref2va',
   operation_version: '1', actor: 'agent', surface: 'chat', turn: brandString<TurnId>('t1'), session: brandString<SessionId>('s1'),
   tool_call: null, intent: 'shot', params: { prompt: 'a cat walks', duration_sec: 5 },
   inputs: [
@@ -22,7 +22,7 @@ const shot: ProjectRecord = {
 const lead = { id: brandString<CharacterId>('c1'), version: 1, name: 'Lead', description: '', references: [img], created_by: shot.id }
 const sources: ExpansionSources = {
   getState: (): ProjectState => ({
-    project: { id: project, title: 'p', created_at: '' }, branch: 'main', head: shot.id, redo_steps: [],
+    project: { id: project, title: 'p', created_at: '' }, head: shot.id,
     components: {
       proj: { records: [shot], stale: {}, superseded: {}, created_by: { [vid]: shot.id } },
       timeline: {
@@ -56,7 +56,7 @@ describe('dv mentions', () => {
     expect(block).toContain('asset vid1 made by record rec-shot (dv_shot_render_ref2va, done)')
     expect(block).toContain('prompt "a cat walks", duration 5 s')
     expect(block).toContain('inputs [reference=img1, reference=c1@2]')
-    expect(expansionBlock('@[x](dv:clip/cl9)', project, sources)).toContain('no clip cl9 on main')
+    expect(expansionBlock('@[x](dv:clip/cl9)', project, sources)).toContain('no clip cl9 in the current state')
     expect(expansionBlock('@[x](dv:clip/cl3)', project, sources))
       .toContain('clip cl3, clip 3 of timeline t1, a placeholder clip (no asset until its render is done), its render made by record rec-shot')
   })
@@ -67,8 +67,8 @@ describe('dv mentions', () => {
     const block = expansionBlock(text, project, sources) ?? ''
     expect(block).toContain('asset img1, imported (no producing record)')
     expect(block).toContain('character c1@1 "Lead", reference images [img1]; pass it as input c1@1')
-    expect(block).toContain('no character c9 on main')
-    expect(block).toContain('no location c1 on main')
+    expect(block).toContain('no character c9 in the current state')
+    expect(block).toContain('no location c1 in the current state')
     expect(block).toContain('(dv:record/rec-shot): made by record rec-shot')
     expect(block).toContain('record none not found')
     expect(block).toContain('unknown mention kind')

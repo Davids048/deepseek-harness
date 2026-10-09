@@ -43,7 +43,7 @@ function freshPng(): Buffer {
 
 /**
  * The scripted agent. `只回复<X>` answers `收到<X>`; `做广告` imports a reference, plans one shot, approves, and waits;
- * every record lands on the project's current branch at once.
+ * every record goes at the end of the project's history at once.
  */
 const RULES: ScriptedRule[] = [
   { match: /只回复\S+/, steps: [view => ({ text: `收到${/只回复(\S+)/.exec(view.userText)?.[1] ?? ''}` })] },
@@ -148,9 +148,9 @@ describe('The asset pool panel', () => {
     return shot.outputs[0] ?? ''
   }
 
-  /** The folded state of a project branch, the project's current branch by default. */
-  const stateOf = async (projectId: string, branch?: string): Promise<WireState> =>
-    await harness.api.get(`/api/dv/state?project=${projectId}${branch === undefined ? '' : `&branch=${encodeURIComponent(branch)}`}`) as WireState
+  /** The project's current state. */
+  const stateOf = async (projectId: string): Promise<WireState> =>
+    await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
 
   /**
    * Ask the scripted agent for the ad in the open project's chat and wait until its turn ends.
@@ -165,7 +165,7 @@ describe('The asset pool panel', () => {
   }
 
   /**
-   * Import one image through the API as a user's canvas edit; it lands on the project's current branch.
+   * Import one image through the API as a user's canvas edit; it goes at the end of the project's history.
    * @param projectId - the project.
    * @param name - the file name.
    * @returns the asset ID.
@@ -289,28 +289,20 @@ describe('The asset pool panel', () => {
       expect(errors).toEqual([])
     })
 
-    it('lists only the current branch\'s assets; 显示其他分支的素材 adds another branch\'s assets with its label', async () => {
+    it('keeps listing the asset of an undone import: the asset pool only grows', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
-      const video = await seedVideo(project.id, 'shared prompt')
-      await harness.api.post('/api/dv/branches/create', { project: project.id, surface: 'canvas' })
-      const elsewhere = await seedImage(project.id, 'only-on-b2.png')
-      expect((await stateOf(project.id)).current).toBe('b2')
-      await harness.api.post('/api/dv/branches/switch', { project: project.id, branch: 'main', surface: 'canvas' })
+      const video = await seedVideo(project.id, 'kept prompt')
+      const undone = await seedImage(project.id, 'undone-import.png')
+      await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas' })
+      // The current state no longer has the import, and the asset pool still holds its asset.
+      const state = await stateOf(project.id)
+      expect(state.components.proj.created_by[undone]).toBeUndefined()
+      expect(state.assets.map(asset => asset.id)).toContain(undone)
       await openProject(page, project.title)
       await openAssets(page)
       await expect.poll(() => assetsPanel(page).locator(`[data-asset-id="${video}"]`).count(), { timeout: 15_000 }).toBe(1)
-      expect(await assetsPanel(page).locator(`[data-asset-id="${elsewhere}"]`).count()).toBe(0)
-      const toggle = assetsPanel(page).locator('[data-testid="dv-asset-pool-other-branches"]')
-      await toggle.click()
-      await expect.poll(() => toggle.getAttribute('aria-pressed')).toBe('true')
-      const other = assetsPanel(page).locator(`[data-asset-id="${elsewhere}"]`)
-      await expect.poll(() => other.count(), { timeout: 15_000 }).toBe(1)
-      expect(await other.locator('[data-testid="dv-asset-pool-branch-badge"]').innerText()).toBe('分支 2')
-      // The assets of the current branch carry no branch label.
-      expect(await assetsPanel(page).locator(`[data-asset-id="${video}"] [data-testid="dv-asset-pool-branch-badge"]`).count()).toBe(0)
-      await toggle.click()
-      await expect.poll(() => other.count()).toBe(0)
+      await expect.poll(() => assetsPanel(page).locator(`[data-asset-id="${undone}"]`).count(), { timeout: 15_000 }).toBe(1)
       expect(errors).toEqual([])
     })
 
@@ -333,32 +325,31 @@ describe('The asset pool panel', () => {
       expect(errors).toEqual([])
     })
 
-    it('imports into the project\'s current branch: a forked branch gets the file and 主线 does not', async () => {
+    it('an import from the panel goes at the end of the project\'s history and its asset shows in the panel', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
-      await harness.api.post('/api/dv/branches/create', { project: project.id, surface: 'canvas' })
       await openProject(page, project.title)
       await openAssets(page)
-      const file = { name: 'into-branch.png', mimeType: 'image/png', buffer: freshPng() }
+      const file = { name: 'into-history.png', mimeType: 'image/png', buffer: freshPng() }
       await assetsPanel(page).locator('input[type="file"]').setInputFiles(file)
-      const names = async (branch: string): Promise<string[]> => (await stateOf(project.id, branch)).assets.map(asset => asset.name)
-      await expect.poll(() => names('b2'), { timeout: 10_000 }).toContain('into-branch.png')
-      expect(await names('main')).not.toContain('into-branch.png')
+      const names = async (): Promise<string[]> => (await stateOf(project.id)).assets.map(asset => asset.name)
+      await expect.poll(names, { timeout: 10_000 }).toContain('into-history.png')
+      const [newest] = (await harness.api.post('/api/dv/history', { project: project.id, limit: 1 }) as { entries: Array<{ record: ProjectRecord }> }).entries
+      expect(newest?.record).toMatchObject({ operation: 'asset.import', surface: 'asset_pool' })
       expect(errors).toEqual([])
     })
 
-    it('插入片段 after an agent turn inserts into the timeline that turn made on the current branch', async () => {
+    it('插入片段 after an agent turn inserts into the timeline that turn made', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
       const video = await seedVideo(project.id, 'agent insert prompt')
       await openProject(page, project.title)
       await agentAd(page)
-      // The approved plan's timeline is on the current branch at once; no accept step comes between.
+      // The approved plan's timeline is in the project at once; no accept step comes between.
       const clips = async (): Promise<Array<{ asset: string | null }>> =>
         (await stateOf(project.id)).components.timeline.timelines[0]?.clips ?? []
       const before = (await clips()).length
       expect(before).toBeGreaterThan(0)
-      expect((await stateOf(project.id)).current).toBe('main')
       await openAssets(page)
       await assetsPanel(page).locator(`[data-asset-id="${video}"]`).click()
       await page.getByRole('dialog').getByRole('button', { name: '插入片段' }).click()

@@ -72,7 +72,7 @@ interface EditedInput {
 
 /**
  * The asset that shows a reference: the latest reference image of a character, location or style, or the asset itself.
- * @param state - the branch state.
+ * @param state - the project state.
  * @param ref - reference text such as `hero@1` or an asset ID.
  * @returns the asset ID, or null.
  */
@@ -84,7 +84,7 @@ function refImage(state: WireState, ref: string): string | null {
 
 /**
  * A reference chip label: the name of the character, location or style, or the asset's name.
- * @param state - the branch state.
+ * @param state - the project state.
  * @param ref - reference text.
  * @returns the label.
  */

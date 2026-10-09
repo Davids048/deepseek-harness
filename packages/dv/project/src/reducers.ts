@@ -1,6 +1,6 @@
 /**
- * The reducer registry and project state. Components register one reducer per component key; the state of a branch
- * is the result of passing every record of the branch's effective chain (see `effectiveChain` in the history module),
+ * The reducer registry and project state. Components register one reducer per component key; the state at a record
+ * is the result of passing every record of its effective chain (see `effectiveChain` in the history module),
  * oldest first, through every registered reducer. Project registers its own reducer, {@link projReducer}, for the
  * `proj` slice.
  *
@@ -182,38 +182,35 @@ export class ReducerRegistry {
   }
 
   /**
-   * The state of a branch at its head.
+   * The project's current state: the state at its head.
    * @param project - the project.
-   * @param branch - a branch name; throws `unknown_branch`.
    * @returns the state.
    */
-  getState(project: ProjectId, branch: string): ProjectState {
+  getState(project: ProjectId): ProjectState {
     this.store.getProject(project)
-    const stored = this.store.getBranch(project, branch)
-    if (stored === undefined) throw new ProjectError('unknown_branch', `Project ${project} has no branch ${branch}.`)
-    return this.stateAt(project, branch, stored.head)
+    const head = this.store.head(project)
+    if (head === undefined) throw new ProjectError('invalid_params', `Project ${project} has no record to compute a state from.`)
+    return this.stateAt(project, head)
   }
 
   /**
-   * The state at any record, labelled with a branch name; the runner uses it for the state at a record's parent.
+   * The state at any record; the runner uses it for the state at a record's parent.
    * @param project - the project.
-   * @param branch - the branch name the state is labelled with.
    * @param head - the record to compute the state at.
    * @returns the state of the effective chain ending at `head`.
    */
-  stateAt(project: ProjectId, branch: string, head: RecordId): ProjectState {
-    return this.reduceChain(this.store.getProject(project), branch, effectiveChain(this.store, project, head))
+  stateAt(project: ProjectId, head: RecordId): ProjectState {
+    return this.reduceChain(this.store.getProject(project), effectiveChain(this.store, project, head))
   }
 
   /**
    * Pass a list of records through every reducer, starting from each reducer's initial slice. Pure: the same records
    * always give the same state.
    * @param info - the project's metadata.
-   * @param branch - the branch name the state is labelled with.
    * @param records - the effective chain, oldest first; must not be empty.
    * @returns the state at the last record.
    */
-  reduceChain(info: ProjectInfo, branch: string, records: ProjectRecord[]): ProjectState {
+  reduceChain(info: ProjectInfo, records: ProjectRecord[]): ProjectState {
     const last = records.at(-1)
     if (last === undefined) throw new ProjectError('invalid_params', `Project ${info.id} has no record to compute a state from.`)
     const slices = new Map<keyof ComponentStates, AnySlice>()
@@ -224,13 +221,13 @@ export class ReducerRegistry {
         slices.set(key, this.reduceSlice(reducer, slices.get(key) ?? reducer.initial(), record, slices))
       }
     }
-    return { project: info, branch, head: last.id, components: componentStates(slices), redo_steps: [] }
+    return { project: info, head: last.id, components: componentStates(slices) }
   }
 
   /**
    * The project summary fields of every reducer that defines `agentSummary`, in component key order (keys outside
    * that list follow in registration order).
-   * @param state - a state of a branch.
+   * @param state - a project state.
    * @param assets - the asset store, for asset URLs.
    * @returns one field object per such reducer.
    */
@@ -272,7 +269,7 @@ export class ReducerRegistry {
 
   /**
    * The record that created the version a character, location or style reference names, read from a computed state.
-   * @param state - a state of a branch.
+   * @param state - a project state.
    * @param ref - a `{character, version}`, `{location, version}` or `{style, version}` reference.
    * @returns the record, or null when no registered reducer defines `createdBy` or the reference names no known
    *   version.

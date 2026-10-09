@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse 的素材库组件：dvAssetPool 服务、带 /dv/assets 路由的内容寻址素材存储、每个分支的画布摆放，以及操作 asset.import、asset.grab_still、asset.place 和 asset.unplace 及其智能体工具。"
+description: "DreamVerse 的素材库组件：dvAssetPool 服务、带 /dv/assets 路由的内容寻址素材存储、当前状态的画布摆放，以及操作 asset.import、asset.grab_still、asset.place 和 asset.unplace 及其智能体工具。"
 kind: "package-reference"
 ---
 
@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `@dv/project` 和 `@dv/ffmpeg` 之后挂载插件。其他插件注入 `dvAssetPool`。本服务经 `dvProject.registerAssetStore` 注册自己，因此同一文件导入两次只是一个素材。`asset.grab_still` 经 `dvFfmpeg` 运行，`dvProject` 把这四个操作变成智能体工具 `dv_asset_import`、`dv_asset_grab_still`、`dv_asset_place` 和 `dv_asset_unplace`。`asset` 归约函数维护 `placed`，即分支画布上的素材，按放上的顺序排列；`proj` 切片的 `created_by` 记着创建每个素材的记录。画布上有哪些素材属于项目内容：每次摆放都是一条记录，因此属于一个分支，历史会列出它，撤销能把它退回。
+在 `@dv/project` 和 `@dv/ffmpeg` 之后挂载插件。其他插件注入 `dvAssetPool`。本服务经 `dvProject.registerAssetStore` 注册自己，因此同一文件导入两次只是一个素材。`asset.grab_still` 经 `dvFfmpeg` 运行，`dvProject` 把这四个操作变成智能体工具 `dv_asset_import`、`dv_asset_grab_still`、`dv_asset_place` 和 `dv_asset_unplace`。`asset` 归约函数维护 `placed`，即当前状态中画布上的素材，按放上的顺序排列；`proj` 切片的 `created_by` 记着创建每个素材的记录。画布上有哪些素材属于项目内容：每次摆放都是一条记录，因此历史会列出它，撤销能把它退回。
 
 ```yaml
 - id: dv-asset-pool
@@ -42,7 +42,7 @@ kind: "package-reference"
 | --- | --- | --- | --- |
 | `asset.import` | `dv_asset_import` | 参数 `path`（本机上的文件）或 `base64`（字节）、`mime`（必填）、`name`（默认：文件名）、`place`（为 true 时同时把素材放到画布上） | `asset` |
 | `asset.grab_still` | `dv_asset_grab_still` | 输入 `video`，参数 `at`：`first`、`last`（默认）或以秒计的时间 | `still`（PNG） |
-| `asset.place` | `dv_asset_place` | 输入 `asset`（一个或多个）；素材不是当前分支的记录创建的时返回 `invalid_inputs`，全部素材已在画布上时返回 `invalid_params` | 无 |
+| `asset.place` | `dv_asset_place` | 输入 `asset`（一个或多个）；素材不是当前状态中的记录创建的时返回 `invalid_inputs`，全部素材已在画布上时返回 `invalid_params` | 无 |
 | `asset.unplace` | `dv_asset_unplace` | 输入 `asset`（一个或多个）；没有一个素材在画布上时返回 `invalid_params`；素材仍留在素材库 | 无 |
 
 | 方法 | 行为 |
@@ -87,7 +87,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-四个工具 `dv_asset_import`、`dv_asset_grab_still`、`dv_asset_place` 和 `dv_asset_unplace`，采用 `@dv/project` 给每个操作工具的格式。`dv_asset_import` 的描述是 "Bring a file into the asset pool: a path on this machine, or base64 bytes. Returns the asset ID to reference later."，参数为 `path`、`base64`、`mime`（必填）、`name` 和 `place`（"Also put the asset on the canvas."）。`dv_asset_grab_still` 的描述是 "Grab one frame of a video as a PNG still, to look at it or to use it as a reference." 和 "Runs on the CPU."，接受输入 `video` 和参数 `at`（`'first'`、`'last'` 或以秒计的时间；默认 last）。这两个描述都以 "Repeating a call with the same inputs and params reuses the earlier result." 结尾。`dv_asset_place` 的描述是 "Put assets of the project on the canvas, where the user sees each one as a node. The assets must have been created on the current branch."，`dv_asset_unplace` 的描述是 "Take assets off the canvas. The assets stay in the asset pool."；两者都接受输入 `asset`。
+四个工具 `dv_asset_import`、`dv_asset_grab_still`、`dv_asset_place` 和 `dv_asset_unplace`，采用 `@dv/project` 给每个操作工具的格式。`dv_asset_import` 的描述是 "Bring a file into the asset pool: a path on this machine, or base64 bytes. Returns the asset ID to reference later."，参数为 `path`、`base64`、`mime`（必填）、`name` 和 `place`（"Also put the asset on the canvas."）。`dv_asset_grab_still` 的描述是 "Grab one frame of a video as a PNG still, to look at it or to use it as a reference." 和 "Runs on the CPU."，接受输入 `video` 和参数 `at`（`'first'`、`'last'` 或以秒计的时间；默认 last）。这两个描述都以 "Repeating a call with the same inputs and params reuses the earlier result." 结尾。`dv_asset_place` 的描述是 "Put assets of the project on the canvas, where the user sees each one as a node. The assets must come from a record in the current state of the project."，`dv_asset_unplace` 的描述是 "Take assets off the canvas. The assets stay in the asset pool."；两者都接受输入 `asset`。
 
 #### Token 影响
 

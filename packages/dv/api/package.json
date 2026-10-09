@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Browser API of DreamVerse: authenticated routes that read branch state, run operations from the canvas and the timeline, create, switch and rename branches, undo and redo, and stream project changes.",
+  "description": "Browser API of DreamVerse: authenticated routes that read the project state, run operations from the canvas and the timeline, undo, and stream project changes.",
   "exports": {
     ".": "./src/index.ts",
     "./package.json": "./package.json"

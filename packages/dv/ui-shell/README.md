@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to turn the DSH web app into DreamVerse. With no project open, the center shows the entry page: the chat composer and recent projects. With a project open, it shows the canvas or the timeline editor, switched by 画布 | 时间线 / Canvas | Timeline in the top bar. A bottom bar under the view holds the branch menu (`BranchMenu` of `@dv/ui-kit`), a button with the current branch's name whose menu switches the current branch, which every view shows, and forks and renames branches. The left sidebar shows the navigator: 新建项目 / Create project, 首页 / Home, and the project → chat session tree. The right panel gets the 对话 / Chat and 轨迹 / Trajectory tabs. Outside text fields, Ctrl+Z and Shift+Ctrl+Z (Cmd on macOS) undo and redo the project's current branch.
+Use this package to turn the DSH web app into DreamVerse. With no project open, the center shows the entry page: the chat composer and recent projects. With a project open, it shows the canvas or the timeline editor, switched by 画布 | 时间线 / Canvas | Timeline in the top bar. The left sidebar shows the navigator: 新建项目 / Create project, 首页 / Home, and the project → chat session tree. The right panel gets the 对话 / Chat and 轨迹 / Trajectory tabs. Outside text fields, Ctrl+Z (Cmd+Z on macOS) undoes the last step of the open project, with an undo record at the end of its history.
 
 ## Table of Contents
 
@@ -43,13 +43,12 @@ The Host half registers nothing. The browser half registers the center, the navi
 | Delete a project (row menu, then the confirmation) | `POST /api/dv/projects/delete` (the project moves to the trash directory); the linked Workspace is deleted and an open project returns to 首页 |
 | Rename or delete a chat session (row menu) | DSH's session rename, or archive with its activity stopped |
 | A main session that sits in a project's Workspace without a binding | `POST /api/dv/workspaces/bind` |
-| A branch chosen from 当前分支 / Current branch in the bottom bar | `POST /api/dv/branches/switch` with the shown view as `surface`; then the state refetches, and a refusal shows the server's message |
-| 插入片段 / Insert clip in the 素材库 panel (`dv:timeline-insert` `{assetId}`) | `POST /api/dv/operation` with `timeline.clip_insert` at the end of the selected timeline (else the first one), or `timeline.create` of `t1` holding the clip when the current branch has no timeline, `surface: 'timeline'`; then the timeline view shows |
+| 插入片段 / Insert clip in the 素材库 panel (`dv:timeline-insert` `{assetId}`) | `POST /api/dv/operation` with `timeline.clip_insert` at the end of the selected timeline (else the first one), or `timeline.create` of `t1` holding the clip when the current state has no timeline, `surface: 'timeline'`; then the timeline view shows |
 | `dv:canvas-focus` | the canvas view shows |
 | `dv:timeline-focus` `{timelineId, clipId}` | the timeline is selected and the timeline view shows |
 | `dv:trajectory-focus` `{session, toolCall}` | the main session moves to `session`, then 轨迹 opens scrolled to that tool call |
 
-The workspace sends the chat session to the canvas and the timeline editor only while the main session belongs to the open project; until then their edits go to `main`. Every change of the open project is published as `dv:current-project` for the other DreamVerse bundles.
+The workspace sends the chat session to the canvas and the timeline editor only while the main session belongs to the open project; until then their edits carry no chat session. Every change of the open project is published as `dv:current-project` for the other DreamVerse bundles.
 
 -----
 
@@ -68,10 +67,10 @@ The workspace sends the chat session to the canvas and the timeline editor only 
 | [`src/client/index.ts`](src/client/index.ts) | Registrations, the New Session and first-use default Workspace overrides, the links poll, and the `dv:trajectory-focus` listener |
 | [`src/client/actions.ts`](src/client/actions.ts) | `ShellActions`: create, open, rename, and delete projects and chat sessions, the entry page, and the right-panel tabs |
 | [`src/client/store.ts`](src/client/store.ts) | The shared state (open project, view, timeline, main session, links), the URL hash mirror, and the session → project lookup |
-| [`src/client/Center.tsx`](src/client/Center.tsx) | The center: URL restore, the entry page, recent projects, the workspace top bar, the views, the bottom bar with the branch menu, and the window event listeners |
+| [`src/client/Center.tsx`](src/client/Center.tsx) | The center: URL restore, the entry page, recent projects, the workspace top bar, the views, and the window event listeners |
 | [`src/client/Navigator.tsx`](src/client/Navigator.tsx) | The left navigator and the brand name |
 | [`src/client/tabs.tsx`](src/client/tabs.tsx) | The 对话 and 轨迹 tab types and bodies |
-| [`src/client/undo-keys.ts`](src/client/undo-keys.ts) | The Ctrl+Z / Shift+Ctrl+Z window listener that calls `/api/dv/undo` and `/api/dv/redo` |
+| [`src/client/undo-keys.ts`](src/client/undo-keys.ts) | `isUndoKey` and `listenUndoKey`: the Ctrl+Z (Cmd+Z) window listener that calls `/api/dv/undo` |
 | [`src/client/chrome.tsx`](src/client/chrome.tsx) | Hidden and reworded DSH chrome, the right-panel guide, and tab titles that follow the interface language |
 | [`src/client/InlineRename.tsx`](src/client/InlineRename.tsx) | The inline title field and the ⋯ row menu |
 | [`src/client/views.ts`](src/client/views.ts) | The canvas and timeline views, imported from their packages' sources into this bundle |

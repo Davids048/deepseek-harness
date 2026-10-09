@@ -1,5 +1,5 @@
 /**
- * Canvas nodes and edges derived from a branch state. The canvas shows the state of the project's current branch only: a
+ * Canvas nodes and edges derived from a project state. The canvas shows the project's current state only: a
  * node is an item a creator works with now: a character, a location or a style at its current version, an imported asset
  * on the project's canvas list (see {@link buildCanvasGraph}), a plan at its latest version, the current take of each
  * shot of that version, a take that is not part of a plan, and a take whose outputs are in use. Deterministic edits
@@ -103,7 +103,7 @@ function approvalLayout(version: PlanVersion, records: ReadonlyMap<string, Proje
 }
 
 /**
- * The render records the canvas draws, which make up the current state of the branch:
+ * The render records the canvas draws, which make up the current state of the project:
  * - for each shot of each plan's latest version, its current take together with the retakes of the same original take.
  *   The current take is the take the shot's clip on the plan's timeline plays (the clip at the shot's position, when it
  *   plays a take of that shot), else the newest done take of that shot and version or the earlier take the version's
@@ -112,7 +112,7 @@ function approvalLayout(version: PlanVersion, records: ReadonlyMap<string, Proje
  * - every take whose outputs are in use: played by a timeline clip, named as a reference by a current story bible or plan
  *   version, or read as an input by a drawn take.
  * Takes of shots a later plan version removed, and takes of earlier versions that nothing uses, are left out.
- * @param state - a branch state.
+ * @param state - a project state.
  * @returns the record IDs.
  */
 function shownTakes(state: WireState): Set<string> {
@@ -192,7 +192,7 @@ function shownTakes(state: WireState): Set<string> {
 
 /**
  * Every character, location and style of a state with its latest version.
- * @param state - a branch state.
+ * @param state - a project state.
  * @returns one entry per story bible item, characters first.
  */
 export function bibleItems(state: WireState): Array<{ kind: BibleKind; id: string; versions: Character[] | Location[] | Style[] }> {
@@ -203,7 +203,7 @@ export function bibleItems(state: WireState): Array<{ kind: BibleKind; id: strin
 
 /**
  * The versions of one character, location or style.
- * @param state - a branch state.
+ * @param state - a project state.
  * @param id - the character, location or style ID.
  * @returns its versions, oldest first, or undefined when the story bible has no such ID.
  */
@@ -241,7 +241,7 @@ function bibleIdOf(ref: RecordInputRef): string | undefined {
 /**
  * Name each imported asset by this project's own `asset.import` record. The asset pool keeps the name of the first
  * import of identical bytes in any project, so another project's file name would otherwise show here.
- * @param state - a branch state.
+ * @param state - a project state.
  * @returns the state with import names applied; `state` itself when no name differs.
  */
 export function withImportNames(state: WireState): WireState {
@@ -256,13 +256,13 @@ export function withImportNames(state: WireState): WireState {
 }
 
 /**
- * The canvas graph of a branch state, with a default layout: story bible items and assets in column 0, plans in
+ * The canvas graph of a project state, with a default layout: story bible items and assets in column 0, plans in
  * column 1, takes from column 2 rightwards by first-frame chain depth, retakes in their source take's column.
  * An imported image or video gets one node, drawn from its first `asset.import` record, when its asset ID is on the
- * branch's canvas (`placed`) and it is not a reference image of a character, location or style, which that story bible
+ * project's canvas (`placed`) and it is not a reference image of a character, location or style, which that story bible
  * node shows. A take that reads an asset off the canvas has no edge from it.
- * @param state - a branch state.
- * @param placed - the assets on the canvas; defaults to the branch's `asset` slice.
+ * @param state - a project state.
+ * @param placed - the assets on the canvas; defaults to the state's `asset` slice.
  * @returns the nodes and edges.
  */
 export function buildCanvasGraph(
@@ -407,7 +407,7 @@ function numberTakes(nodes: CanvasNode[], edges: CanvasEdge[]): void {
 
 /**
  * Mark takes that a timeline trims: a timeline clip with an in or out point.
- * @param state - the branch state.
+ * @param state - the project state.
  * @param nodes - the drawn nodes, badged in place.
  * @param nodeOfAsset - resolves an asset to its node.
  */

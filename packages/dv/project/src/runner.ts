@@ -1,13 +1,13 @@
 /**
  * The operation runner: the operation registry and the single change path of operations. `run` checks a request,
- * writes its pending record on the right branch, then executes the operation now or hands the record to the
+ * writes its pending record after the project's head, then executes the operation now or hands the record to the
  * scheduler. The agent's confirmation (`OperationSpec.confirm`) is checked earlier, in the agent tool call.
  *
  * Lock scope: the runner holds the project lock (from the record store) while it checks and appends a record and
  * while it writes each update line. It releases the lock while `execute` runs, so a long render does not block other
  * edits, and an operation's `execute` may itself call `dvProject.run`.
  *
- * Calls: the record store (lock, append, update, records), branches (`forWrite`, `current`), the reducer
+ * Calls: the record store (lock, head, append, update, records), the reducer
  * registry (state at a record's parent, character, location and style assets), the scheduler (`enqueue`), and the
  * asset store. Called by the service and by the scheduler (`execute`).
  *
@@ -17,7 +17,6 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { validateArgs } from '@deepseek-ai/dsh-tools'
-import type { Branches } from './branches.ts'
 import type { ReducerRegistry } from './reducers.ts'
 import type { RecordStore } from './record-store.ts'
 import type { Scheduler } from './scheduler.ts'
@@ -51,7 +50,6 @@ export interface RunnerAssets {
 /** The modules and services the runner calls. */
 export interface RunnerDeps {
   store: RecordStore
-  branches: Branches
   reducers: ReducerRegistry
   assets: RunnerAssets
   scheduler: Scheduler
@@ -147,7 +145,7 @@ export class Runner {
    * @returns the record, its outputs and report.
    */
   async run(request: RunRequest): Promise<RunResult> {
-    const { store, branches, reducers, scheduler } = this.deps
+    const { store, reducers, scheduler } = this.deps
     const spec = this.operations.get(request.operation)
     if (spec === undefined) throw new ProjectError('unknown_operation', `Operation ${request.operation} is not registered.`)
     store.getProject(request.project)
@@ -156,19 +154,18 @@ export class Runner {
     if (spec.readOnly === true) return await this.runRead(spec, request)
 
     const pending = await store.lock(request.project, async () => {
-      // Inputs resolve before `forWrite`, which may fork a branch, so that a refused call writes nothing. A forked branch
-      // starts at the position of the current branch's head, so the state there is the state at the parent.
+      // Inputs resolve before the append, so that a refused call writes nothing; the state at the head is the state at
+      // the new record's parent.
       for (const record of request.after ?? []) store.getRecord(request.project, record)
-      const state = reducers.getState(request.project, branches.current(request.project).name)
+      const state = reducers.getState(request.project)
       const inputs = this.resolveInputs(spec, request, state, request.after !== undefined)
       // The operation's own rule refuses the call before anything is written; the lock keeps the state it read current.
       await spec.precondition?.(request, state)
       // The operation names the records it replaces itself; the caller may name more.
       const supersedes = [...new Set([...request.supersedes ?? [], ...spec.supersedes?.(request.params, state) ?? []])]
-      const branch = branches.forWrite(request.project)
       const origin = originOf(request)
       return store.append(request.project, {
-        parents: [this.headOf(request.project, branch)], branch, kind: 'operation', component: spec.component, operation: spec.name,
+        parents: [this.headOf(request.project)], kind: 'operation', component: spec.component, operation: spec.name,
         operation_version: spec.version, ...origin, params: request.params, inputs, outputs: [], based_on: request.based_on ?? null,
         supersedes, deterministic: spec.deterministic, status: 'pending',
       })
@@ -220,7 +217,7 @@ export class Runner {
     let scratchDir: string | null = null
     try {
       // `parents[0]` always exists: an operation record follows at least the project's `proj.create` record.
-      const state = reducers.stateAt(project, running.branch, running.parents[0] ?? running.id)
+      const state = reducers.stateAt(project, running.parents[0] ?? running.id)
       scratchDir = await mkdtemp(join(tmpdir(), 'dv-operation-'))
       const started = performance.now()
       const result = await spec.execute({
@@ -247,20 +244,19 @@ export class Runner {
   }
 
   /**
-   * Accept a stale record's result: append `proj.stale_accept` with `params {record}` on the branch for the next
-   * write (`branches.forWrite`). Takes the project lock.
+   * Accept a stale record's result: append `proj.stale_accept` with `params {record}` after the head. Takes the project
+   * lock.
    * @param project - the project.
-   * @param record - a record that is stale on that branch.
+   * @param record - a record that is stale in the current state.
    * @param origin - who accepts it.
    * @returns the `proj.stale_accept` record.
    */
   acceptStale(project: ProjectId, record: RecordId, origin: RecordOrigin): Promise<ProjectRecord> {
-    const { store, branches } = this.deps
+    const { store } = this.deps
     return store.lock(project, () => {
       store.getRecord(project, record)
-      const branch = branches.forWrite(project)
       return store.append(project, {
-        parents: [this.headOf(project, branch)], branch, kind: 'operation', component: 'proj', operation: 'proj.stale_accept',
+        parents: [this.headOf(project)], kind: 'operation', component: 'proj', operation: 'proj.stale_accept',
         operation_version: '1', ...origin, params: { record }, inputs: [], outputs: [], based_on: null, supersedes: [],
         deterministic: true, status: 'done',
       })
@@ -301,15 +297,14 @@ export class Runner {
   }
 
   /**
-   * Run a read-only operation on the head of the project's current branch: no lock, no record, no confirmation.
+   * Run a read-only operation on the project's current state: no lock, no record, no confirmation.
    * @param spec - a read-only operation.
    * @param request - the call.
    * @returns the outputs and the report; the record is null.
    */
   private async runRead(spec: OperationSpec, request: RunRequest): Promise<RunResult> {
-    const { branches, reducers, assets } = this.deps
-    const branch = branches.current(request.project).name
-    const state = reducers.getState(request.project, branch)
+    const { reducers, assets } = this.deps
+    const state = reducers.getState(request.project)
     const inputs = this.resolveInputs(spec, request, state, false)
     await spec.precondition?.(request, state)
     const scratchDir = await mkdtemp(join(tmpdir(), 'dv-operation-'))
@@ -390,13 +385,12 @@ export class Runner {
 
   /**
    * @param project - the project.
-   * @param branch - an existing branch name.
-   * @returns the branch's head record.
+   * @returns the project's head record; every project has its `proj.create` record.
    */
-  private headOf(project: ProjectId, branch: string): RecordId {
-    const stored = this.deps.store.getBranch(project, branch)
-    if (stored === undefined) throw new ProjectError('unknown_branch', `Branch ${branch} does not exist in project ${project}.`)
-    return stored.head
+  private headOf(project: ProjectId): RecordId {
+    const head = this.deps.store.head(project)
+    if (head === undefined) throw new ProjectError('invalid_params', `Project ${project} has no record to follow.`)
+    return head
   }
 
   /**

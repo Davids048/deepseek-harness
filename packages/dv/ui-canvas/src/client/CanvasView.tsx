@@ -3,9 +3,9 @@
  * empty space to pan, scroll to zoom around the cursor, drag a node to move it, click a node to open its floating
  * editor. A scroll over an overlay marked `data-dv-scroll-island`, such as the floating editor, scrolls that overlay.
  * Node positions and the viewport are stored per project through `/api/dv/layout`. The canvas draws the project's
- * current branch at its head and follows it when the current branch changes; its writes land on that branch. Colors
+ * current state and follows every change of it; its writes go at the end of the project's history. Colors
  * come from the DSH theme tokens, so the canvas follows the app's light and dark themes. An imported asset has a node
- * only while it is on the branch's canvas (the `asset` slice's `placed`): dropping a 素材 tile on the canvas runs
+ * only while it is on the project's canvas (the `asset` slice's `placed`): dropping a 素材 tile on the canvas runs
  * `asset.place` with its node under the pointer, dropping image and video files imports them with `place`, and the
  * asset node's "从画布移除" runs `asset.unplace`. Each of these is a record, so History lists it and undo takes it back.
  */
@@ -103,9 +103,9 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
   const language = useLanguage()
   const t = givenT ?? translates[language]
   const base = useProjectState(client, projectId)
-  // This view's placements whose record the branch state does not show yet: asset ID → on the canvas.
+  // This view's placements whose record the project state does not show yet: asset ID → on the canvas.
   const [inFlight, setInFlight] = useState<ReadonlyMap<string, boolean>>(new Map())
-  // The branch's canvas, with this view's placements in flight already applied.
+  // The project's canvas, with this view's placements in flight already applied.
   const placed = useMemo(() => {
     const next = new Set(base.value?.components.asset.placed ?? [])
     for (const [assetId, on] of inFlight) {
@@ -114,7 +114,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     }
     return next
   }, [base.value, inFlight])
-  // A placement leaves the in-flight map once the branch state shows it.
+  // A placement leaves the in-flight map once the project state shows it.
   useEffect(() => {
     if (base.value === null || inFlight.size === 0) return
     const shown = new Set(base.value.components.asset.placed)
@@ -122,7 +122,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     if (settled.length > 0) setInFlight(current => withoutKeys(current, settled.map(([assetId]) => assetId)))
   }, [base.value, inFlight])
   /**
-   * Put an asset on the branch's canvas or take it off: at once in this view, then through an `asset.place` or
+   * Put an asset on the project's canvas or take it off: at once in this view, then through an `asset.place` or
    * `asset.unplace` record.
    * @param assetId - the asset.
    * @param on - true to place it, false to remove it.
@@ -426,7 +426,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     if (assetId !== '') {
       const id = graph?.assetNodes[assetId]
       if (id !== undefined) { placeNode(id, point); return }
-      // An imported asset of this branch that is not on the canvas goes on it, with its node under the pointer.
+      // An imported asset of the current state that is not on the canvas goes on it, with its node under the pointer.
       const imported = graph?.state.components.proj.records.some(record => record.operation === 'asset.import' && record.outputs.includes(assetId))
       if (imported !== true) { setNotice(t('drop.noNode')); return }
       pendingDrops.current.set(assetId, point)

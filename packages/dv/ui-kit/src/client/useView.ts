@@ -1,7 +1,7 @@
 /**
- * The state one view keeps about the project it shows: which project, the state of the project's current branch and
- * the operation declarations, the last failure, and the branch-bar gestures (undo, new project) as API calls on behalf
- * of the chat session the view sits beside.
+ * The state one view keeps about the project it shows: which project, the project's current state and the operation
+ * declarations, the last failure, and the gestures of the project and undo bar (`ProjectBar`: undo, new project) as API
+ * calls on behalf of the chat session the view sits beside.
  *
  * @module @dv/ui-kit/useView
  */
@@ -10,7 +10,7 @@ import type { DvClient, ViewSurface } from './api.ts'
 import type { WireOperation, WireProject, WireState } from './types.ts'
 import { useOperations, useProjectState, useProjects } from './useProject.ts'
 import type { Loading } from './useProject.ts'
-import type { BranchBarProps } from './BranchBar.tsx'
+import type { ProjectBarProps } from './ProjectBar.tsx'
 
 /** What a view body reads and calls. */
 export interface ViewSession {
@@ -20,7 +20,7 @@ export interface ViewSession {
   session: string | null
   projects: Loading<WireProject[]>
   project: string | null
-  /** The state of the project's current branch, which the view shows and writes to. */
+  /** The project's current state, which the view shows and writes after. */
   state: Loading<WireState>
   operations: Loading<WireOperation[]>
   /** The message of the last failed call, cleared by the next successful one. */
@@ -31,8 +31,8 @@ export interface ViewSession {
    * @returns whether the call succeeded.
    */
   run: (work: () => Promise<unknown>) => Promise<boolean>
-  /** The branch bar's data and callbacks, without its copy. */
-  bar: Omit<BranchBarProps, 'labels' | 'ask'>
+  /** The project and undo bar's data and callbacks, without its copy. */
+  bar: Omit<ProjectBarProps, 'labels' | 'ask'>
 }
 
 /**
@@ -46,7 +46,7 @@ export function sessionFromLocation(search: string = window.location.search): st
 }
 
 /**
- * Keep a view's project, state, and operations, and bind the branch-bar gestures to the API. The first project
+ * Keep a view's project, state, and operations, and bind the project and undo bar's gestures to the API. The first project
  * shown is the one the beside chat session is bound to when the address names a session, else the newest.
  * @param client - the API client.
  * @param surface - the view's name in the records it writes.

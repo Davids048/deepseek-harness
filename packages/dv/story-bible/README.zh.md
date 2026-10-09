@@ -45,7 +45,7 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-归约函数只读已完成的 `bible.*` 记录。一个版本的参考图是记录的 `reference` 输入所解析到的素材，因此运行器会检查它们存在，记录也把它们列为它读取的内容。Project 调用 `bible` 键下归约函数的两个可选成员：`assetsOf` 把 `<id>@<version>` 输入解析为其参考图，`createdBy` 指出写出一个版本的记录（Project 把它当作该输入的产生者，用于过期标记和解析 `<id>@<version>`）。每个分支有自己的版本：在一个分支上写出的版本，在它分叉出来的分支上不存在。
+归约函数只读已完成的 `bible.*` 记录。一个版本的参考图是记录的 `reference` 输入所解析到的素材，因此运行器会检查它们存在，记录也把它们列为它读取的内容。Project 调用 `bible` 键下归约函数的两个可选成员：`assetsOf` 把 `<id>@<version>` 输入解析为其参考图，`createdBy` 指出写出一个版本的记录（Project 把它当作该输入的产生者，用于过期标记和解析 `<id>@<version>`）。版本跟随当前状态：撤销回到某个版本之前时，该版本从状态中移除，它的 ID 在该状态中重新可用。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -58,7 +58,7 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [`@dv/project`](../project/README.zh.md)：操作、归约函数、过期标记和分支。
+- [`@dv/project`](../project/README.zh.md)：操作、归约函数、过期标记和撤销。
 - [`COMPONENT-TEMPLATE.md`](../COMPONENT-TEMPLATE.md)：本包遵循的布局。
 
 -----

@@ -106,9 +106,9 @@ function wholeClip(id: ClipId, asset: AssetId | null, source: Clip['source'] = n
 
 /**
  * The status of a clip: `ready` with an asset, `rendering` while its source record is pending or running, else `failed`
- * (the source record ended without the output, or the branch does not hold it).
+ * (the source record ended without the output, or the state does not hold it).
  * @param clip - a clip.
- * @param records - the records of the branch, in their current form.
+ * @param records - the records of the state, in their current form.
  * @returns the status.
  */
 function clipStatusOf(clip: Clip, records: ProjectRecord[]): ClipStatus {

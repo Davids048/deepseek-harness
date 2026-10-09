@@ -1,37 +1,30 @@
 /**
- * The JSON the browser receives: the state of one branch (`ProjectState` with its component slices sent verbatim) with
- * the asset pool entries it references, the branch heads, the branches and the current branch, the history
- * list, and the operation declarations the canvas turns into parameter forms. Records travel as `ProjectRecord`, unchanged.
+ * The JSON the browser receives: the project's current state (`ProjectState` with its component slices sent verbatim)
+ * with the asset pool entries of the whole project, the history list, and the operation declarations the canvas turns
+ * into parameter forms. Records travel as `ProjectRecord`, unchanged.
  *
  * @module @dv/api/wire
  */
 import type { Asset } from '@dv/asset-pool'
 import type {
-  AssetId, Branch, ComponentStates, HistoryEntry, OperationSpec, ProjectId, ProjectInfo, ProjectState, RecordId,
+  AssetId, ComponentStates, HistoryEntry, OperationSpec, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId,
 } from '@dv/project'
 import type {} from '@dv/shot-plan'
 import type {} from '@dv/shot-render'
 import type {} from '@dv/story-bible'
 import type {} from '@dv/timeline'
 
-/** The state of one branch as the browser reads it. */
+/** The project's current state as the browser reads it. */
 export interface WireState {
   project: ProjectInfo
-  /** The branch the state is for. */
-  branch: string
-  /** The branch's head record. */
+  /** The project's last record. */
   head: RecordId
-  /** The head record of every branch, by branch name. */
-  heads: Record<string, RecordId>
-  /** Every branch of the project with its tip; `main` first, then by name. */
-  branches: Branch[]
-  /** The project's current branch, which every view shows and every write goes to. */
-  current: string
   /** One slice per registered reducer, as Project computed them. */
   components: ComponentStates
-  /** The steps that redo brings back on the branch, oldest first (`ProjectState.redo_steps`). */
-  redo_steps: RecordId[]
-  /** The asset pool entry of every asset a record created, imported, or still references. */
+  /**
+   * The asset pool entry of every asset a record of the project created or names, anywhere in the history, and every
+   * asset the current state references; the asset pool keeps them all.
+   */
   assets: Asset[]
 }
 
@@ -58,14 +51,16 @@ export interface WireOperation {
 }
 
 /**
- * Collect every asset a state mentions: created assets, record outputs, resolved inputs, character, location and
- * style references, and timeline clips. Records that failed before creating anything add nothing.
- * @param state - a branch state.
+ * Collect every asset a project mentions: the outputs and resolved inputs of every record of its history, the created
+ * assets of the state, and the character, location and style references and timeline clips of the state. Records that
+ * failed before creating anything add nothing.
+ * @param state - the project's current state.
+ * @param records - every record of the project.
  * @returns the asset IDs, each once, in first-mention order.
  */
-export function mentionedAssets(state: ProjectState): AssetId[] {
+export function mentionedAssets(state: ProjectState, records: readonly ProjectRecord[]): AssetId[] {
   const seen = new Set<AssetId>(Object.keys(state.components.proj.created_by) as AssetId[])
-  for (const record of state.components.proj.records) {
+  for (const record of records) {
     for (const id of record.outputs) seen.add(id)
     for (const input of record.inputs) if (input.resolved_asset !== null) seen.add(input.resolved_asset)
   }
@@ -81,29 +76,18 @@ export function mentionedAssets(state: ProjectState): AssetId[] {
 }
 
 /**
- * Turn a branch state into the wire form.
- * @param state - the branch state.
- * @param branches - the project's branches.
- * @param current - the project's current branch.
+ * Turn the project's current state into the wire form.
+ * @param state - the current state.
+ * @param records - every record of the project, for the assets of the whole history.
  * @param asset - looks an asset up; unknown IDs return null and are left out.
  * @returns the wire state.
  */
-export function toWireState(state: ProjectState, branches: Branch[], current: string, asset: (id: AssetId) => Asset | null): WireState {
-  const assets = mentionedAssets(state).flatMap((id) => {
+export function toWireState(state: ProjectState, records: readonly ProjectRecord[], asset: (id: AssetId) => Asset | null): WireState {
+  const assets = mentionedAssets(state, records).flatMap((id) => {
     const found = asset(id)
     return found === null ? [] : [found]
   })
-  return {
-    project: state.project,
-    branch: state.branch,
-    head: state.head,
-    heads: Object.fromEntries(branches.map(branch => [branch.name, branch.head])),
-    branches,
-    current,
-    components: state.components,
-    redo_steps: state.redo_steps,
-    assets,
-  }
+  return { project: state.project, head: state.head, components: state.components, assets }
 }
 
 /**

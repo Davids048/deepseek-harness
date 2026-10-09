@@ -1,5 +1,5 @@
 ---
-description: "Asset pool component of DreamVerse: the dvAssetPool service, the content-addressed asset store with its /dv/assets route, the canvas placements of each branch, and the operations asset.import, asset.grab_still, asset.place and asset.unplace with their agent tools."
+description: "Asset pool component of DreamVerse: the dvAssetPool service, the content-addressed asset store with its /dv/assets route, the canvas placements of the current state, and the operations asset.import, asset.grab_still, asset.place and asset.unplace with their agent tools."
 kind: "package-reference"
 ---
 
@@ -24,7 +24,7 @@ Use this package to keep every image, video, audio, and text file of a project e
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvAssetPool`. The service registers itself with `dvProject.registerAssetStore`, so the same file imported twice is one asset. `asset.grab_still` runs through `dvFfmpeg`, and `dvProject` turns the four operations into the agent tools `dv_asset_import`, `dv_asset_grab_still`, `dv_asset_place` and `dv_asset_unplace`. The `asset` reducer keeps `placed`, the assets on the branch's canvas in the order they were placed; the `proj` slice's `created_by` names the record that created each asset. Which assets are on the canvas is project content: each placement is a record, so it belongs to one branch, History lists it, and undo takes it back.
+Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvAssetPool`. The service registers itself with `dvProject.registerAssetStore`, so the same file imported twice is one asset. `asset.grab_still` runs through `dvFfmpeg`, and `dvProject` turns the four operations into the agent tools `dv_asset_import`, `dv_asset_grab_still`, `dv_asset_place` and `dv_asset_unplace`. The `asset` reducer keeps `placed`, the assets on the canvas of the current state in the order they were placed; the `proj` slice's `created_by` names the record that created each asset. Which assets are on the canvas is project content: each placement is a record, so History lists it and undo takes it back.
 
 ```yaml
 - id: dv-asset-pool
@@ -42,7 +42,7 @@ Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvA
 | --- | --- | --- | --- |
 | `asset.import` | `dv_asset_import` | params `path` (a file on this machine) or `base64` (the bytes), `mime` (required), `name` (default: the file name), `place` (true also puts the asset on the canvas) | `asset` |
 | `asset.grab_still` | `dv_asset_grab_still` | input `video`, param `at`: `first`, `last` (default), or a time in seconds | `still` (PNG) |
-| `asset.place` | `dv_asset_place` | input `asset` (one or more); refused with `invalid_inputs` for an asset no record of the current branch created, and with `invalid_params` when every asset is already on the canvas | none |
+| `asset.place` | `dv_asset_place` | input `asset` (one or more); refused with `invalid_inputs` for an asset that no record in the current state created, and with `invalid_params` when every asset is already on the canvas | none |
 | `asset.unplace` | `dv_asset_unplace` | input `asset` (one or more); refused with `invalid_params` when none of the assets is on the canvas; the assets stay in the pool | none |
 
 | Method | Behavior |
@@ -87,7 +87,7 @@ Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvA
 
 #### What the model sees
 
-Four tools, `dv_asset_import`, `dv_asset_grab_still`, `dv_asset_place` and `dv_asset_unplace`, in the format `@dv/project` gives every operation tool. `dv_asset_import` says "Bring a file into the asset pool: a path on this machine, or base64 bytes. Returns the asset ID to reference later." and takes `path`, `base64`, `mime` (required), `name` and `place` ("Also put the asset on the canvas."). `dv_asset_grab_still` says "Grab one frame of a video as a PNG still, to look at it or to use it as a reference." and "Runs on the CPU.", and takes the input `video` and the param `at` (`'first'`, `'last'`, or a time in seconds; default last). These two descriptions end with "Repeating a call with the same inputs and params reuses the earlier result." `dv_asset_place` says "Put assets of the project on the canvas, where the user sees each one as a node. The assets must have been created on the current branch." and `dv_asset_unplace` says "Take assets off the canvas. The assets stay in the asset pool."; both take the input `asset`.
+Four tools, `dv_asset_import`, `dv_asset_grab_still`, `dv_asset_place` and `dv_asset_unplace`, in the format `@dv/project` gives every operation tool. `dv_asset_import` says "Bring a file into the asset pool: a path on this machine, or base64 bytes. Returns the asset ID to reference later." and takes `path`, `base64`, `mime` (required), `name` and `place` ("Also put the asset on the canvas."). `dv_asset_grab_still` says "Grab one frame of a video as a PNG still, to look at it or to use it as a reference." and "Runs on the CPU.", and takes the input `video` and the param `at` (`'first'`, `'last'`, or a time in seconds; default last). These two descriptions end with "Repeating a call with the same inputs and params reuses the earlier result." `dv_asset_place` says "Put assets of the project on the canvas, where the user sees each one as a node. The assets must come from a record in the current state of the project." and `dv_asset_unplace` says "Take assets off the canvas. The assets stay in the asset pool."; both take the input `asset`.
 
 #### Token effect
 

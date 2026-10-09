@@ -41,7 +41,7 @@ export interface AgentToolDeps {
   confirmGpuSecondsThreshold: number
   /** Every registered operation, for the GPU estimate of the turn's unfinished records. */
   listOperations(): OperationSpec[]
-  /** The service's state read of the project's current branch, which every write goes to. */
+  /** The service's read of the project's current state, which every write follows. */
   currentState(project: ProjectId): ProjectState
   /** The record that created a character, location or style version, or null for an unknown version. */
   versionCreatedBy(state: ProjectState, ref: RecordInputRef): RecordId | null
@@ -347,7 +347,7 @@ export class AgentTools {
 
   /**
    * Run one tool call: wait for the session's held work, resolve the project and the inputs against the project's
-   * current branch, let the operation prepare the call, refuse it when it needs the user's agreement, run it as the
+   * current state, let the operation prepare the call, refuse it when it needs the user's agreement, run it as the
    * agent, and describe the record.
    */
   private async call(spec: OperationSpec, args: Record<string, unknown>, exec: ToolRunContext): Promise<OperationToolValue> {
@@ -422,7 +422,7 @@ export class AgentTools {
 
   /**
    * The GPU seconds the call's turn already spent or scheduled: the cost of its finished records and the operation
-   * estimate of its unfinished ones, on every branch of the project.
+   * estimate of its unfinished ones, anywhere in the project's history.
    * @param request - the call; its session and turn select the records.
    * @returns the seconds; 0 for a call outside any turn.
    */

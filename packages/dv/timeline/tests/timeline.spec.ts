@@ -1,7 +1,7 @@
 /**
  * The Timeline component in a REAL composition: a test-only `cordis.yml` boots the DSH tool registry, `dvProject`,
  * `dvFfmpeg`, the asset pool and `dvTimeline` through the Loader. The agent edits timelines with the `dv_timeline_*`
- * tools on the project's current branch, the human edits them with `dvProject.run`, and each call becomes one record that
+ * tools at the end of the project's history, the human edits them with `dvProject.run`, and each call becomes one record that
  * the `timeline` slice folds. Clips are named by the clip IDs that the records store in `report.clips`.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -27,7 +27,7 @@ import DvTimeline from '../src/index.ts'
 /** The plugin classes the fixture rows resolve through `globalThis`, because Node imports the rows outside Vite. */
 const PLUGINS = { SystemPrompt, ToolRuntime, DvProject, DvFfmpeg, DvAssetPool, DvTimeline }
 
-/** The human on the timeline panel, outside any chat session; switches branches in the tests. */
+/** The human on the timeline panel, outside any chat session; undoes in the tests. */
 const HUMAN: RecordOrigin = { actor: 'user', surface: 'timeline', session: null, turn: null, tool_call: null, intent: 'switch' }
 
 /** The ten operations in registration order. */
@@ -41,7 +41,7 @@ interface Fixture {
   project: ProjectId
   /** Run one tool as the agent of chat session `s1`, which is bound to `project`. */
   call(name: string, args: Record<string, unknown>): Promise<ToolExecutionResult>
-  /** Run one operation as the human on the timeline panel, on the project's current branch. */
+  /** Run one operation as the human on the timeline panel, at the end of the project's history. */
   run(operation: string, params: Record<string, unknown>, inputs?: RunRequest['inputs']): Promise<ProjectRecord>
 }
 
@@ -133,13 +133,13 @@ describe('dvTimeline', () => {
     expect(fixture.ctx.dvProject.getState(fixture.project).components).not.toHaveProperty('timeline')
   })
 
-  it('records the agent\'s timeline edits on the project\'s current branch and folds them into the timeline slice', async () => {
+  it('records the agent\'s timeline edits at the end of the project\'s history and folds them into the timeline slice', async () => {
     const fixture = await start()
     const created = value(await fixture.call('dv_timeline_create', { reason: 'lay out', name: '开场', assets: ['a1', 'a2', 'a3'] }))
     expect(created).toMatchObject({ status: 'done', summary: 'timeline of 3 clips', outputs: [], scheduled: [] })
     const record = fixture.ctx.dvProject.getRecord(fixture.project, brandString<RecordId>(created.record))
     expect(record).toMatchObject({
-      actor: 'agent', component: 'timeline', operation: 'timeline.create', operation_version: '2', branch: 'main', session: 's1',
+      actor: 'agent', component: 'timeline', operation: 'timeline.create', operation_version: '2', session: 's1',
       params: { name: '开场', assets: ['a1', 'a2', 'a3'] }, inputs: [], outputs: [], status: 'done', report: { clips: ['cl1', 'cl2', 'cl3'] },
     })
     const moved = value(await fixture.call('dv_timeline_clip_move', { reason: 'open on the kite', clip: 'cl3', to: 1 }))
@@ -163,10 +163,10 @@ describe('dvTimeline', () => {
     expect(fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1'])
   })
 
-  it('records the human\'s edits on main, replaces clips with timeline.update, and assembles a create from clip inputs', async () => {
+  it('records the human\'s edits, replaces clips with timeline.update, and assembles a create from clip inputs', async () => {
     const fixture = await start()
     const create = await fixture.run('timeline.create', { assets: ['a1'] })
-    expect(create).toMatchObject({ actor: 'user', surface: 'timeline', branch: 'main', operation: 'timeline.create', status: 'done' })
+    expect(create).toMatchObject({ actor: 'user', surface: 'timeline', operation: 'timeline.create', status: 'done' })
     await fixture.run('timeline.clip_insert', { at: 1, asset: 'a0' })
     const clips = (): unknown => fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines[0]?.clips
       .map(clip => [clip.id, clip.asset])
@@ -215,20 +215,20 @@ describe('dvTimeline', () => {
     expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before + cases.length + 1)
   })
 
-  it('keeps clip IDs unique across branches', async () => {
+  it('keeps clip IDs unique across an undo', async () => {
     const fixture = await start()
     await fixture.run('timeline.create', { assets: ['a1', 'a2'] })
-    const branch = (await fixture.ctx.dvProject.createBranch(fixture.project, null)).name
-    // The forked branch and main add a clip each; the project-wide numbering gives them different IDs.
-    expect(value(await fixture.call('dv_timeline_clip_insert', { reason: 'add', at: 3, asset: 'd1' })).report).toEqual({ clips: ['cl3'] })
-    await fixture.ctx.dvProject.switchBranch(fixture.project, 'main', HUMAN)
-    expect(await fixture.run('timeline.clip_insert', { at: 3, asset: 'm1' })).toMatchObject({ branch: 'main', report: { clips: ['cl4'] } })
-    await fixture.ctx.dvProject.switchBranch(fixture.project, branch, HUMAN)
-    value(await fixture.call('dv_timeline_clip_move', { reason: 'open on it', clip: 'cl3', to: 1 }))
-    const clipsOn = (name: string): unknown => fixture.ctx.dvProject.getState(fixture.project, name).components.timeline.timelines[0]?.clips
+    // The agent adds a clip, the human undoes it and adds another; the project-wide numbering gives them different IDs.
+    const added = value(await fixture.call('dv_timeline_clip_insert', { reason: 'add', at: 3, asset: 'd1' }))
+    expect(added.report).toEqual({ clips: ['cl3'] })
+    await fixture.ctx.dvProject.undo(fixture.project, HUMAN)
+    expect(await fixture.run('timeline.clip_insert', { at: 3, asset: 'm1' })).toMatchObject({ report: { clips: ['cl4'] } })
+    const clips = (): unknown => fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines[0]?.clips
       .map(clip => [clip.id, clip.asset])
-    expect(clipsOn(branch)).toEqual([['cl3', 'd1'], ['cl1', 'a1'], ['cl2', 'a2']])
-    expect(clipsOn('main')).toEqual([['cl1', 'a1'], ['cl2', 'a2'], ['cl4', 'm1']])
+    expect(clips()).toEqual([['cl1', 'a1'], ['cl2', 'a2'], ['cl4', 'm1']])
+    // Going back to the agent's insert brings cl3 back.
+    await fixture.ctx.dvProject.undo(fixture.project, HUMAN, brandString<RecordId>(added.record))
+    expect(clips()).toEqual([['cl1', 'a1'], ['cl2', 'a2'], ['cl3', 'd1']])
   })
 
   it('lays out a render that is not done as a placeholder clip that becomes ready when the render is done', async () => {
@@ -277,7 +277,7 @@ describe('dvTimeline', () => {
     expect(fixture.ctx.dvProject.getRecord(fixture.project, second).status).toBe('failed')
   })
 
-  it('keeps a placeholder clip on a forked branch and fills it when the render is done', async () => {
+  it('keeps a placeholder clip laid out while the render runs and fills it when the render is done, after an undo too', async () => {
     const fixture = await start()
     const held = gate()
     fixture.ctx.dvProject.registerOperation({
@@ -297,18 +297,21 @@ describe('dvTimeline', () => {
       if (found === undefined) throw new Error('the render wrote no record')
       return found.record.id
     })
-    // The agent lays the render out on a branch forked after the render started; main gets another timeline.
-    const branch = (await fixture.ctx.dvProject.createBranch(fixture.project, null)).name
-    const laidOut = await fixture.call('dv_timeline_create', { reason: 'lay out', inputs: { clip: [`${render}#0`] } })
-    expect(value(laidOut)).toMatchObject({ status: 'done', scheduled: [], report: { clips: ['cl1'] } })
-    await fixture.ctx.dvProject.switchBranch(fixture.project, 'main', HUMAN)
-    await fixture.run('timeline.create', { timeline: 't2', assets: ['m1'] })
-    const t1 = (): unknown => fixture.ctx.dvProject.getState(fixture.project, branch).components.timeline.timelines.find(entry => entry.id === 't1')?.clips
+    // The agent lays the render out while it runs; the human undoes that and makes another timeline, then goes back.
+    const laidOut = value(await fixture.call('dv_timeline_create', { reason: 'lay out', inputs: { clip: [`${render}#0`] } }))
+    expect(laidOut).toMatchObject({ status: 'done', scheduled: [], report: { clips: ['cl1'] } })
+    const timelines = (): Array<{ id: string; clips: unknown[] }> =>
+      fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines
+    const t1 = (): unknown => timelines().find(entry => entry.id === 't1')?.clips
     expect(t1()).toEqual([{ id: 'cl1', asset: null, source: { record: render, output: 0 }, in_sec: null, out_sec: null }])
+    await fixture.ctx.dvProject.undo(fixture.project, HUMAN)
+    await fixture.run('timeline.create', { timeline: 't2', assets: ['m1'] })
+    expect(timelines().map(entry => entry.id)).toEqual(['t2'])
+    await fixture.ctx.dvProject.undo(fixture.project, HUMAN, brandString<RecordId>(laidOut.record))
     held.resolve()
     await running
     const [take] = fixture.ctx.dvProject.getRecord(fixture.project, render).outputs
     expect(t1()).toEqual([{ id: 'cl1', asset: take, source: { record: render, output: 0 }, in_sec: null, out_sec: null }])
-    expect(fixture.ctx.dvProject.getState(fixture.project, 'main').components.timeline.timelines.map(entry => entry.id)).toEqual(['t2'])
+    expect(timelines().map(entry => entry.id)).toEqual(['t1'])
   })
 })

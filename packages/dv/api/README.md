@@ -1,5 +1,5 @@
 ---
-description: "Browser API of DreamVerse: authenticated routes that read branch state, run operations from the canvas, the timeline and the asset pool panel as human records, create, switch and rename branches, undo and redo, accept stale records, and stream project changes."
+description: "Browser API of DreamVerse: authenticated routes that read the project state, run operations from the canvas, the timeline and the asset pool panel as human records, undo, accept stale records, and stream project changes."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to let browser views read and change a DreamVerse project through HTTP instead of through the agent. `dvApi` registers authenticated Fetch routes under `/api/dv/` for projects, branch state, operations run as the human, asset imports, branches, undo and redo, stale records, history, canvas layouts, and Workspace links. A raw `GET /dv/events` route streams every project change as server-sent events. The `@dv/ui-*` packages are its consumers; the browser client is `DvClient` of `@dv/ui-kit`.
+Use this package to let browser views read and change a DreamVerse project through HTTP instead of through the agent. `dvApi` registers authenticated Fetch routes under `/api/dv/` for projects, the project state, operations run as the human, asset imports, undo, stale records, history, canvas layouts, and Workspace links. A raw `GET /dv/events` route streams every project change as server-sent events. The `@dv/ui-*` packages are its consumers; the browser client is `DvClient` of `@dv/ui-kit`.
 
 ## Table of Contents
 
@@ -26,7 +26,7 @@ Use this package to let browser views read and change a DreamVerse project throu
 
 Mount the plugin after `@dv/project` and `@dv/asset-pool`, in a profile that also mounts `dsh-web-app` (for the `connection` and `webServer` services). Without `connection` the Fetch routes stay unregistered; without `webServer` the event stream does.
 
-The Fetch routes list, create, rename and delete projects, read the state of a branch as JSON, list the operation declarations, run an operation as the human, import a file into the asset pool, create, switch and rename branches, undo and redo, accept a stale record, list the history, keep the canvas layout, and link projects to DSH Workspaces. The event stream admits a browser through the same Connection cookie.
+The Fetch routes list, create, rename and delete projects, read the project's current state as JSON, list the operation declarations, run an operation as the human, import a file into the asset pool, undo, accept a stale record, list the history, keep the canvas layout, and link projects to DSH Workspaces. The event stream admits a browser through the same Connection cookie.
 
 ```yaml
 - id: dv-api
@@ -43,37 +43,33 @@ The Fetch routes list, create, rename and delete projects, read the state of a b
 
 | Route | Method | Request | Response |
 | --- | --- | --- | --- |
-| `/api/dv/projects` | GET | optional `session` (a chat session ID) | `WireProject[]` (`{id, title, created_at, heads, current}`), newest first; with `session`, the project that session is bound to comes first with `current: true` |
+| `/api/dv/projects` | GET | optional `session` (a chat session ID) | `WireProject[]` (`{id, title, created_at, current}`), newest first; with `session`, the project that session is bound to comes first with `current: true` |
 | `/api/dv/projects` | POST | `{title, surface}` | The project started from a view: `ProjectInfo` `{id, title, created_at}` |
 | `/api/dv/projects/rename` | POST | `{project, title}` | `{title}`, made unique with ` 2`, ` 3`, … |
 | `/api/dv/projects/delete` | POST | `{project}` | `{ok, workspace_id}`; the project moves into the Project store's trash and its canvas layout file is deleted |
-| `/api/dv/state` | GET | `project`, optional `branch` (default: the project's current branch) | `WireState`: `{project, branch, head, heads, branches, current, components, redo_steps, assets}`, with every branch and its `tip`, the current branch, every component slice as Project computed it, the steps that redo brings back on the branch, and the asset pool entry of every mentioned asset |
+| `/api/dv/state` | GET | `project` | `WireState`: `{project, head, components, assets}`: the project's last record, every component slice of the current state as Project computed it, and the asset pool entry of every asset that a record of the whole history created or names, plus every asset the current state references |
 | `/api/dv/operations` | GET | — | `WireOperation[]`: every registered operation that is not `readOnly`, without its executor |
 | `/api/dv/operation` | POST | `OperationRequest` `{project, operation, inputs?, params?, intent?, surface, session?, based_on?, supersedes?}`; `inputs` = `[{role, ref}]` with reference text | The `ProjectRecord`, finished or `pending` |
 | `/api/dv/assets/import` | POST | raw file body; query `project`, `name`, `mime`, `surface` (`canvas \| asset_pool`, anything else answers `400` `invalid_params`), `session?` | `{asset, record}`: the `AssetId` and the `asset.import` record; an import from the canvas runs with `place: true`, so the asset also goes on the canvas |
-| `/api/dv/branches/create` | POST | `{project, title?, branch?, to?, session?, surface}`: fork a branch from the current branch at its head's position, or with `branch` and `to` at that step of that branch's line, and make it current; `branch` and `to` go together (400 `invalid_params` otherwise) | `{branch, heads}` with the new branch |
-| `/api/dv/branches/switch` | POST | `{project, branch, to?, session?, surface}`: make a branch current and, with `to`, return it to that step of its line | `{branch, heads}` |
-| `/api/dv/branches/rename` | POST | `{project, branch, title}`; an empty title returns to the default label; a title over 40 characters is refused with 400 `invalid_params`, and a title another branch has with 409 `branch_exists` | `{branch, heads}` |
-| `/api/dv/undo` | POST | `{project, session?, surface, to?}`: one step back on the current branch, or back to the record `to` (a jump forward to a redo step writes `proj.redo`) | `{record, heads}` with the `proj.undo` record |
-| `/api/dv/redo` | POST | `{project, session?, surface}`: one step forward on the current branch | `{record, heads}` with the `proj.redo` record |
-| `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record, heads}` with the `proj.stale_accept` record |
-| `/api/dv/history` | POST | `{project, branch?, marks?, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`; `marks` and `records` are arrays; `limit` is 1 to 200, default 50 | `WireHistory` `{entries, assets}`: the `dvProject.listHistory` entries `{record, mark, branches}` newest first and every asset they name; a read that writes no record |
-| `/api/dv/layout` | GET / POST | GET: `project`; POST: `{project, positions?, viewport?}` | `{positions, viewport}`; POST merges positions keyed by canvas node ID and replaces the viewport. The layout is view state and writes no record; which assets are on the canvas is the `asset` slice of each branch, written by `asset.place` and `asset.unplace` through `/api/dv/operation` |
+| `/api/dv/undo` | POST | `{project, session?, surface, to?}`: one step back of the current state, or back to the state just after the record `to` (any finished record); the `proj.undo` record goes at the end of the history | `{record}` with the `proj.undo` record |
+| `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record}` with the `proj.stale_accept` record |
+| `/api/dv/history` | POST | `{project, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`; `records` is an array; `limit` is 1 to 200, default 50 | `WireHistory` `{entries, assets}`: the `dvProject.listHistory` entries `{record}`, every record of the project newest first, and every asset they name; a read that writes no record |
+| `/api/dv/layout` | GET / POST | GET: `project`; POST: `{project, positions?, viewport?}` | `{positions, viewport}`; POST merges positions keyed by canvas node ID and replaces the viewport. The layout is view state and writes no record; which assets are on the canvas is the `asset` slice of the current state, written by `asset.place` and `asset.unplace` through `/api/dv/operation` |
 | `/api/dv/workspaces` | GET / POST | POST: `{project, workspace_id}` | GET: `{entry_path, projects: [{id, title, created_at, path, workspace_id}], bindings}`; POST: `{ok}` |
 | `/api/dv/workspaces/bind` | POST | `{session, project}` | `{ok}` |
 | `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`, newest first; `updated_at` is ISO-8601 UTC |
-| `/dv/events?project=<id>` | GET | — | `text/event-stream`: `ready`, then `record`, `update`, and `branch` events, each carrying one `ProjectEvent` |
+| `/dv/events?project=<id>` | GET | — | `text/event-stream`: `ready`, then `record` and `update` events, each carrying one `ProjectEvent` |
 
-`surface` is `canvas`, `timeline`, `asset_pool` or `history`; anything else counts as `canvas`, except on the asset import, which takes `canvas` or `asset_pool` only. A run calls `dvProject.run` as the human, on the project's current branch (forked first after an undo), with the request's chat session as the record's `session`, or schedules the call when an input names a record that has not finished. Every error of every route, the event stream included, answers with the JSON body `{error, code, ...details}`: `error` is the message text and `code` is one of the codes below; `details` carries extra fields of a refusal.
+`surface` is `canvas`, `timeline`, `asset_pool` or `history`; anything else counts as `canvas`, except on the asset import, which takes `canvas` or `asset_pool` only. A run calls `dvProject.run` as the human, at the end of the project's history, with the request's chat session as the record's `session`, or schedules the call when an input names a record that has not finished. Every error of every route, the event stream included, answers with the JSON body `{error, code, ...details}`: `error` is the message text and `code` is one of the codes below; `details` carries extra fields of a refusal.
 
 | Code | Status | Meaning |
 | --- | --- | --- |
 | `invalid_params` | 400 | A malformed request: a missing or malformed field, query field, or file body |
 | `invalid_inputs` | 400 | Operation `inputs` that the operation refuses: an unknown role, a list on a single role, a missing required role, or an unknown version; the message names the operation |
 | `unknown_project` | 404 | The request names no existing project |
-| `unknown_branch`, `unknown_record`, `unknown_asset`, `unknown_operation` | 404 | The `ProjectError` code of another unknown resource |
+| `unknown_record`, `unknown_asset`, `unknown_operation` | 404 | The `ProjectError` code of another unknown resource |
 | `not_found` | 404 | An unknown resource without a `ProjectError` code; every resource this package reads has one |
-| Another `ProjectError` code | 400 or 409 | Project refused the change, such as `nothing_to_undo` or `nothing_to_redo` (409) |
+| Another `ProjectError` code | 400 or 409 | Project refused the change, such as `nothing_to_undo` (409) |
 | `internal_error` | 500 | An unexpected failure; `error` is the thrown error's text |
 
 -----
@@ -84,7 +80,7 @@ The Fetch routes list, create, rename and delete projects, read the state of a b
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`DvApi` builds one `ApiHandlers` over `dvProject` and `dvAssetPool`; the operation list and a run's operation come from `dvProject.listOperations()`, a run's `inputs` are parsed by `dvProject.parseInputs`, and the workspace routes bind a chat session to a project with `dvProject.bindSession` and read the binding files (`{"project": <ProjectId>}`) back for the listing. Inside `ctx.inject(['connection'])` it registers the Fetch routes with `connection.fetch.register`, and every route, including the asset import, layout, workspace and project admin routes, answers through one `answer` wrapper in `src/api.ts` that maps an `ApiRequestError` or a `ProjectError` to its status and code and anything else to 500 `internal_error`; `requireProject` there checks the project every route names. `/dv/events` writes the same error body. Inside `ctx.inject(['webServer'])` it registers the `/dv/events` prefix route, asks the Connection whether the request carries a valid cookie through `requestRejection`, and hands the response to `serveEventStream`, which subscribes to `dvProject.subscribe(projectId)` and writes one `event:`/`data:` frame per change until the request closes. `toWireState` sends `ProjectState` with its `components` as they are and adds the heads, the branches, and the asset list: the union of the created assets, every record's outputs and resolved inputs, the reference images of every character, location, and style version, and every timeline clip.
+`DvApi` builds one `ApiHandlers` over `dvProject` and `dvAssetPool`; the operation list and a run's operation come from `dvProject.listOperations()`, a run's `inputs` are parsed by `dvProject.parseInputs`, and the workspace routes bind a chat session to a project with `dvProject.bindSession` and read the binding files (`{"project": <ProjectId>}`) back for the listing. Inside `ctx.inject(['connection'])` it registers the Fetch routes with `connection.fetch.register`, and every route, including the asset import, layout, workspace and project admin routes, answers through one `answer` wrapper in `src/api.ts` that maps an `ApiRequestError` or a `ProjectError` to its status and code and anything else to 500 `internal_error`; `requireProject` there checks the project every route names. `/dv/events` writes the same error body. Inside `ctx.inject(['webServer'])` it registers the `/dv/events` prefix route, asks the Connection whether the request carries a valid cookie through `requestRejection`, and hands the response to `serveEventStream`, which subscribes to `dvProject.subscribe(projectId)` and writes one `event:`/`data:` frame per change until the request closes. `toWireState` sends `ProjectState` with its `components` as they are and adds the asset list: the union of the created assets, the outputs and resolved inputs of every record of the whole history, the reference images of every character, location, and style version, and every timeline clip.
 
 | File | Content |
 | --- | --- |
@@ -104,8 +100,8 @@ The Fetch routes list, create, rename and delete projects, read the state of a b
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [DreamVerse packages](../../../docs/subsystems/video-harness.md) — the record, branches, staleness, and the rules every view follows.
-- [`@dv/project`](../project/README.md) — records, branches, undo, and stale marks behind the routes, and the project summary that tells the model about the user records.
+- [DreamVerse packages](../../../docs/subsystems/video-harness.md) — the record, the history rules, staleness, and the rules every view follows.
+- [`@dv/project`](../project/README.md) — records, undo, and stale marks behind the routes, and the project summary that tells the model about the user records.
 - [`@dv/ui-canvas`](../ui-canvas/README.md) and [`@dv/ui-timeline`](../ui-timeline/README.md) — two of the browser consumers.
 
 -----

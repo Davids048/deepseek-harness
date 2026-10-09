@@ -41,7 +41,7 @@ export interface TrackClip {
 
 /**
  * The timelines of a state.
- * @param state - the branch state.
+ * @param state - the project state.
  * @returns the timelines in creation order.
  */
 export function timelinesOf(state: WireState): Timeline[] {
@@ -63,7 +63,7 @@ export function nextTimelineId(timelines: Timeline[]): string {
 /**
  * Place the clips of one timeline on the track in playback order. A placeholder clip (no asset yet) takes its length and
  * its status from the render record it waits for.
- * @param state - the branch state, for asset durations, thumbnails, and stale marks.
+ * @param state - the project state, for asset durations, thumbnails, and stale marks.
  * @param timeline - the timeline, or null when the project has none.
  * @returns the clips and the total length in seconds.
  */

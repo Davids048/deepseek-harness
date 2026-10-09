@@ -160,16 +160,6 @@
   min-width: 0;
 }
 
-.statusBar {
-  display: flex;
-  flex: none;
-  align-items: center;
-  min-height: 26px;
-  padding: 0 8px;
-  border-top: 0.5px solid var(--dsw-alias-border-l3);
-  color: var(--dsw-alias-label-secondary);
-}
-
 .viewArea {
   position: relative;
   display: flex;

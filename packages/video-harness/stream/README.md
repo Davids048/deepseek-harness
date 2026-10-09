@@ -1,5 +1,5 @@
 ---
-description: "The live media stream of DreamVerse: a Cordis service sends the fMP4 chunks of a rendering shot, and the project's record and branch changes, to browsers over the /vh/ws WebSocket route."
+description: "The live media stream of DreamVerse: a Cordis service sends the fMP4 chunks of a rendering shot, and the project's record changes, to browsers over the /vh/ws WebSocket route."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to let a browser watch a shot while `shot.render` is still rendering it. The package's Cordis service takes the fMP4 chunks of each rendering take from `@dv/shot-render` and sends them to every browser subscribed to the project over the `/vh/ws` WebSocket route, in the DreamVerse media framing (`media_init`, binary chunks, `media_segment_complete`). A browser that subscribes mid-shot first receives the chunks already sent, up to a byte budget. The same socket forwards the project's record and branch changes from `dvProject`, so one connection carries both media and state.
+Use this package to let a browser watch a shot while `shot.render` is still rendering it. The package's Cordis service takes the fMP4 chunks of each rendering take from `@dv/shot-render` and sends them to every browser subscribed to the project over the `/vh/ws` WebSocket route, in the DreamVerse media framing (`media_init`, binary chunks, `media_segment_complete`). A browser that subscribes mid-shot first receives the chunks already sent, up to a byte budget. The same socket forwards the project's record changes from `dvProject`, so one connection carries both media and state.
 
 ## Table of Contents
 
@@ -53,7 +53,6 @@ The `/vh/ws` route works as follows:
 | The shot ends | `{type: 'media_segment_complete', segment_idx, stream_id}` |
 | The shot fails | `{type: 'error', stream_id, message}` |
 | A record is written or updated | `{type: 'op', change: 'append' or 'patch', op}`, where `op` is the `ProjectRecord` |
-| A branch is created or moves, or the current branch changes | `{type: 'head', branch, to, current}`, where `to` is the branch head and `current` the project's current branch |
 | A bad message | `{type: 'error', message}` for text that is not JSON or not a subscribe command |
 
 -----
@@ -80,7 +79,7 @@ The `/vh/ws` route works as follows:
 ## Further Exploration
 
 - [`@dv/shot-render`](../../dv/shot-render/README.md) — the operation that renders a take and writes its chunks to this service.
-- [`@dv/project`](../../dv/project/README.md) — the records and branch events the socket forwards.
+- [`@dv/project`](../../dv/project/README.md) — the record events the socket forwards.
 - [DreamVerse packages](../../../docs/subsystems/video-harness.md) — how the DreamVerse packages fit together.
 - [`dsh-host-webserver`](../../host/webserver/README.md) — the web server that serves the upgrade route.
 

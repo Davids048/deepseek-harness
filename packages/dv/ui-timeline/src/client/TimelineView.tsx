@@ -1,7 +1,7 @@
 /**
- * The timeline editor for one project, without the branch bar: the center area's 时间线 view. It reads the state of the
- * project's current branch itself, refetches it after every project change and every write, and follows the current
- * branch when it changes; the view's edits land on that branch.
+ * The timeline editor for one project, without the project bar: the center area's 时间线 view. It reads the project's
+ * current state itself and refetches it after every project change and every write; the view's edits go at the end of
+ * the project's history.
  */
 import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -37,7 +37,7 @@ export function copyFor(language: DvLanguage): Translate<DvTimelineKey> {
 const sharedClient = new DvClient()
 
 /**
- * The timeline editor of a project's current branch.
+ * The timeline editor of a project's current state.
  * @param props - the project, and optionally the API client, the chat session, and copy.
  * @returns the element.
  */

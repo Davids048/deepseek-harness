@@ -1,8 +1,7 @@
 /**
- * Project's own agent tools, `dv_proj_*`: create and open projects, read state and history, create a branch, undo and
- * redo, accept a stale record, and wait for scheduled records. Every tool
- * except `dv_proj_history_list` returns the project summary of a branch: Project's fields (head, branch, branches,
- * record count, stale records, recent records) and the fields each component's reducer adds through
+ * Project's own agent tools, `dv_proj_*`: create and open projects, read state and history, undo, accept a stale
+ * record, and wait for scheduled records. Every tool except `dv_proj_history_list` returns the project summary of the
+ * current state: Project's fields (head, record count, stale records, recent records) and the fields each component's reducer adds through
  * `Reducer.agentSummary`. A tool that writes records leads its summary with `record`, the newest record the call wrote, and
  * names that record in its presentation metadata (`{record}`), as the operation tools do; a read tool has no metadata.
  * `dv_proj_create` and `dv_proj_open` bind the chat session to its project.
@@ -62,12 +61,12 @@ function originOf(deps: ProjToolDeps, exec: Pick<ToolRunContext, 'agent' | 'call
 }
 
 /**
- * The project summary of a branch state: the record a write wrote, Project's fields, then each component's
- * `agentSummary` fields, then the stale and recent records.
+ * The project summary of a state: the record a write wrote, Project's fields, then each component's `agentSummary`
+ * fields, then the stale and recent records.
  * @param project - the service.
  * @param deps - the asset store and the reducers' summaries.
  * @param projectId - the project.
- * @param state - the state of the branch.
+ * @param state - the project state.
  * @param written - the record the tool call wrote, or null for a read.
  * @returns the summary. Throws `invalid_params` when two summaries use the same field name.
  */
@@ -76,13 +75,10 @@ export function projectSummary(
 ): JsonValue {
   const { proj } = state.components
   const assets = deps.assets()
-  const branches = project.listBranches(projectId)
   const summary: Record<string, unknown> = {
     ...written === null ? {} : { record: written },
     project_id: projectId,
     head: state.head,
-    branch: state.branch,
-    branches: branches.map(branch => ({ name: branch.name, title: branch.title })),
     records: proj.records.length,
   }
   const stale = Object.keys(proj.stale)
@@ -127,13 +123,13 @@ function writtenMeta(value: JsonValue): JsonValue {
 export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinition[] {
   const projectParam = { project_id: { type: 'string', description: 'Defaults to this conversation\'s project.' } } as const
   const projectOf = (exec: ToolRunContext, projectId: unknown): ProjectId => callProject(projectId, project.sessionProject(sessionOf(exec)))
-  // The state of a branch, by default the project's current branch, led by the record a write wrote.
-  const summary = (projectId: ProjectId, branch?: string, record: RecordId | null = null): JsonValue =>
-    projectSummary(project, deps, projectId, project.getState(projectId, branch), record)
-  // The summary of the current branch after a write, led by the newest record the call wrote.
+  // The project's current state, led by the record a write wrote.
+  const summary = (projectId: ProjectId, record: RecordId | null = null): JsonValue =>
+    projectSummary(project, deps, projectId, project.getState(projectId), record)
+  // The summary after a write, led by the newest record the call wrote.
   const written = (exec: ToolRunContext, projectId: ProjectId): JsonValue => {
     const [entry] = project.listHistory({ project: projectId, tool_call: exec.callId, limit: 1 })
-    return summary(projectId, undefined, entry?.record.id ?? null)
+    return summary(projectId, entry?.record.id ?? null)
   }
   const stateOutput = {
     schema: STATE_SCHEMA, render: (_args: unknown, value: JsonValue): ContentBlock[] => [{ type: 'text', text: JSON.stringify(value, null, 1) }],
@@ -172,15 +168,15 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
     defineTool({
       name: 'dv_proj_state',
       description: 'Read the project: characters, locations and styles with their versions, the timelines, plans, stale records, '
-        + 'recent records, and the branches. Pass branch to read another branch.',
-      parameters: { ...projectParam, branch: { type: 'string', description: 'A branch name; defaults to the current branch.' } },
+        + 'and recent records.',
+      parameters: projectParam,
       output: stateOutput,
-      execute: (args, exec) => Promise.resolve(summary(projectOf(exec, args.project_id), args.branch)),
+      execute: (args, exec) => Promise.resolve(summary(projectOf(exec, args.project_id))),
     }),
     defineTool({
       name: 'dv_proj_history_list',
-      description: 'List the project history, newest first: each record with its operation, status, intent, '
-        + 'and mark (current, redo: undone steps redo brings back, branch: only on another branch, undone).',
+      description: 'List the project history, newest first: each record with its operation, status and intent. The history is '
+        + 'one line that only grows; a proj.undo record names in to the record whose state the project returned to.',
       parameters: {
         ...projectParam,
         limit: { type: 'integer', description: `At most this many records; default ${HISTORY_LIMIT}.` },
@@ -192,31 +188,20 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
         const entries = project.listHistory({
           project: projectId, limit: args.limit ?? HISTORY_LIMIT, ...args.operation === undefined ? {} : { operation: args.operation },
         })
-        return Promise.resolve(toJson(entries.map(({ record, mark, branches }) => ({
-          record: record.id, mark, operation: record.operation ?? record.kind, status: record.status, actor: record.actor,
-          intent: record.intent,
-          branches, outputs: record.outputs,
+        return Promise.resolve(toJson(entries.map(({ record }) => ({
+          record: record.id, operation: record.operation ?? record.kind, status: record.status, actor: record.actor,
+          intent: record.intent, outputs: record.outputs,
+          ...record.operation === 'proj.undo' ? { to: record.params['to'] } : {},
         }))))
       },
     }),
     defineTool({
-      name: 'dv_proj_branch_create',
-      description: 'Start a new branch from the current state and continue on it; the current branch keeps its steps. '
-        + 'Call it only when the user asks for a new branch.',
-      parameters: { ...projectParam, title: { type: 'string', description: 'The name the user gave the branch, if any.' } },
-      output: stateOutput,
-      execute: async (args, exec) => {
-        const projectId = projectOf(exec, args.project_id)
-        await project.createBranch(projectId, args.title ?? null)
-        return summary(projectId)
-      },
-    }),
-    defineTool({
       name: 'dv_proj_undo',
-      description: 'Go back in the project history on the current branch. Without to, undo '
-        + 'one step. With to, go back to a step from dv_proj_history_list: the project returns to its state just after '
-        + 'that record. When the user asks to roll back, return to an earlier version or undo several changes, use this tool '
-        + 'with to; never rebuild the old state with new edits. The records stay in the history; dv_proj_redo moves forward again.',
+      description: 'Go back to an earlier state of the project. Without to, undo one step. With to, return to a record from '
+        + 'dv_proj_history_list: the project returns to its state just after that record. The undo is a new record at the end '
+        + 'of the history; the records after the target stay in the history, so the project can return to them later with to. '
+        + 'When the user asks to roll back, return to an earlier version or undo several changes, use this tool with to; never '
+        + 'rebuild the old state with new edits.',
       parameters: {
         ...projectParam,
         to: { type: 'string', description: 'A record ID from dv_proj_history_list to go back to; omit to undo one step.' },
@@ -226,17 +211,6 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
         const projectId = projectOf(exec, args.project_id)
         const to = args.to === undefined ? undefined : brandString<RecordId>(args.to)
         await project.undo(projectId, originOf(deps, exec, args.to === undefined ? 'undo' : `go back to ${args.to}`), to)
-        return written(exec, projectId)
-      },
-    }),
-    defineTool({
-      name: 'dv_proj_redo',
-      description: 'Move forward one step that an undo removed on the current branch.',
-      parameters: projectParam,
-      output: writeOutput,
-      execute: async (args, exec) => {
-        const projectId = projectOf(exec, args.project_id)
-        await project.redo(projectId, originOf(deps, exec, 'redo'))
         return written(exec, projectId)
       },
     }),

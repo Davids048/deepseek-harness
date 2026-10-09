@@ -21,7 +21,7 @@ function record(
 ): ProjectRecord {
   const inputs: RecordInput[] = references.map(asset => ({ role: 'reference', ref: { asset }, resolved_asset: asset }))
   return {
-    id: brandString<RecordId>(id), parents: [], branch: 'main', kind: 'operation', component: operation.split('.')[0] ?? '', operation,
+    id: brandString<RecordId>(id), parents: [], kind: 'operation', component: operation.split('.')[0] ?? '', operation,
     operation_version: '1', actor: 'user', surface: 'canvas', turn: null, session: null, tool_call: null, intent: '', params, inputs,
     outputs: [], based_on: null, supersedes: [], deterministic: false, status, created_at: '2026-10-06T00:00:00.000Z',
   }

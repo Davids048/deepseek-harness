@@ -1,7 +1,7 @@
 /**
  * The DreamVerse chat references as the `dvChatReferences` Cordis service: what a user points at in a chat message
  * reaches the project. The `dv:` mentions of new user messages expand at `agent/pre-step` into a context message with
- * the concrete record and asset IDs, read from the current branch of the session's project; the images a user attaches
+ * the concrete record and asset IDs, read from the current state of the session's project; the images a user attaches
  * to a chat message are imported into the session's project as assets and put on its canvas, and the `dv:asset`
  * mentions a user sends put those assets on the canvas.
  *
@@ -83,7 +83,7 @@ export default class DvChatReferences extends Service {
     return match?.id ?? projects[0]?.id ?? null
   }
 
-  /** The Project reads expansion needs: mentions resolve against the project's current branch. */
+  /** The Project reads expansion needs: mentions resolve against the project's current state. */
   private expansionSources(): ExpansionSources {
     const project = this.ctx.dvProject
     return {
@@ -113,7 +113,7 @@ export default class DvChatReferences extends Service {
 
   /**
    * Put the assets a user message mentions (`dv:asset/<id>`) on the canvas of the session's project with one
-   * `asset.place` by the user, in the chat. Only assets created on the current branch and not on the canvas yet count; a
+   * `asset.place` by the user, in the chat. Only assets from a record of the current state and not on the canvas yet count; a
    * message without such a mention, or a session without a project, places nothing.
    * @param session - the chat session.
    * @param message - the appended user message, which the user typed.
@@ -154,7 +154,7 @@ export default class DvChatReferences extends Service {
 
   /**
    * Import chat images as assets of the session's project and put them on its canvas: one `asset.import` with `place`
-   * per image by the user, in the chat, on the project's current branch. The session's next tool call waits until the import finished
+   * per image by the user, in the chat, at the end of the project's history. The session's next tool call waits until the import finished
    * (`dvProject.holdToolCalls`). A session without a project, or a process without an attachment service, imports
    * nothing.
    * @param session - the chat session.

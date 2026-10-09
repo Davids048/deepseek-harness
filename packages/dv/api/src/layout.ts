@@ -2,7 +2,7 @@
  * Canvas node positions and the viewport per project, so a user's arrangement survives reloads. The layout is view
  * state, not project history: it lives in one JSON file per project under `<state root>/canvas-layout` and is never
  * written as records. The keys of `positions` are canvas node IDs. Which assets are on the canvas is project content:
- * the `asset` slice of each branch, written by `asset.place`, `asset.unplace` and `asset.import`.
+ * the `asset` slice of the project state, written by `asset.place`, `asset.unplace` and `asset.import`.
  *
  * Route: `GET /api/dv/layout?project=<id>` returns the stored layout; `POST /api/dv/layout` with
  * `{project, positions?, viewport?}` merges the given node positions into the stored ones and replaces the viewport.

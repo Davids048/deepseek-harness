@@ -2,7 +2,7 @@
  * The timeline editor: one tab per timeline of the project, a viewer that plays the selected timeline across its
  * clips, a toolbar, a ruler, the V1 track with clip thumbnails sized by duration, and a display-only A1 track. Every edit
  * is one `/api/dv/operation` call of a `timeline.*` operation with `surface: 'timeline'`; the clip operations name the
- * clip by its clip ID, and every edit lands on the project's current branch, the branch the state comes from. A selected
+ * clip by its clip ID, and every edit goes at the end of the project's history, after the state the editor shows. A selected
  * stale clip offers "仍然保留", which keeps the record that made its asset (`proj.stale_accept`). A
  * placeholder clip, whose render is still running (渲染中…) or failed (渲染失败), keeps its place and its planned length on
  * the track; it cannot be trimmed or split, playback skips it, and export waits until every clip is ready.
@@ -29,7 +29,7 @@ export interface TimelineEditorProps {
   project: string
   /** The chat session the editor sits beside, recorded as the `session` of the editor's writes. */
   session?: string | null
-  /** The state of the project's current branch. */
+  /** The project's current state. */
   state: WireState
   /** Run one write and refetch the state; resolves to whether the write succeeded. */
   run: (work: () => Promise<unknown>) => Promise<boolean>
@@ -196,11 +196,10 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
   const lane = useRef<HTMLDivElement | null>(null)
   const scrubbing = useRef(false)
 
-  // The clip selection, the asset picker, the tab menu, the rename box, and the export link belong to one timeline of
-  // one branch.
+  // The clip selection, the asset picker, the tab menu, the rename box, and the export link belong to one timeline.
   useEffect(() => {
     setChosenClip(null); setPicking(false); setExported(null); setMenu(null); setRenaming(null)
-  }, [timelineId, state.branch])
+  }, [timelineId])
 
   // Publish the timeline shown when the shared value names none or a timeline this project no longer has.
   useEffect(() => {
@@ -296,11 +295,9 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
     if (!window.confirm(t('tabs.deleteConfirm', { name }))) return
     void run(() => client.runOperation(request(project, session, { operation: 'timeline.delete', params: { timeline: id }, intent: t('intent.delete', { name }) })))
   }
-  // Undo and redo step the project's current branch, the branch this editor shows, through its history, whichever view
-  // made the step; redo is offered while the branch has steps to bring back.
-  const canRedo = state.redo_steps.length > 0
+  // Undo goes back one step of the whole project, whichever view made the step; the undo is a new step at the end of
+  // the history.
   const undo = (): void => { void run(() => client.undo(project, 'timeline', session)) }
-  const redo = (): void => { void run(() => client.redo(project, 'timeline', session)) }
   const remove = (position: number): void => {
     const clip = clips.find(placed => placed.position === position)
     if (clip === undefined) return
@@ -502,7 +499,6 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
   const toolbar = (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '6px 8px', borderTop: `1px solid ${palette.line}`, borderBottom: `1px solid ${palette.line}`, flexWrap: 'wrap' }}>
       <button type="button" style={button} onClick={undo}>{t('tool.undo')}</button>
-      <button type="button" style={buttonStyle(!canRedo)} disabled={!canRedo} onClick={redo}>{t('tool.redo')}</button>
       <button type="button" style={buttonStyle(playheadClip?.status !== 'ready')} disabled={playheadClip?.status !== 'ready'} onClick={splitAtPlayhead}>{t('tool.split')}</button>
       {staleRecord !== null
         ? <button type="button" style={{ ...button, color: palette.playhead }} onClick={keepStale}>{t('tool.keepAnyway')}</button>

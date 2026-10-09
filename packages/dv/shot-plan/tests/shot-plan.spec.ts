@@ -361,21 +361,26 @@ describe('dvShotPlan', () => {
     expect(spec(fixture, 'plan.approve')?.summarize(again)).toBe('plan p1 v2 approved')
   })
 
-  it('reuses only takes on the approving branch, makes shots without continue_previous reusable one by one, and renders a shot whose mode changed', async () => {
+  it('reuses only takes in the current state, makes shots without continue_previous reusable one by one, and renders a shot whose mode changed', async () => {
     const fixture = await start()
     const picture = fixture.put('face', 'image/png', 'face.png')
-    await fixture.record('plan.create', { references: [picture], shots: [ref('a'), ref('b'), { mode: 't2va', prompt: 'c' }] })
-    // The agent's approval lands on the forked branch b2; main holds none of the takes, so every shot would render there.
-    const branch = (await fixture.ctx.dvProject.createBranch(fixture.project, null)).name
+    const created = await fixture.record('plan.create', { references: [picture], shots: [ref('a'), ref('b'), { mode: 't2va', prompt: 'c' }] })
     value(await fixture.call('dv_plan_approve', { reason: 'go', plan: 'p1', user_approved: true }))
     await fixture.ctx.dvProject.wait(fixture.project)
-    expect(fixture.ctx.dvShotPlan.shotsToRender(fixture.ctx.dvProject.getState(fixture.project, branch), 'p1')).toEqual([])
-    expect(fixture.ctx.dvShotPlan.shotsToRender(fixture.ctx.dvProject.getState(fixture.project, 'main'), 'p1')).toEqual([1, 2, 3])
+    const toRender = (): number[] => fixture.ctx.dvShotPlan.shotsToRender(fixture.ctx.dvProject.getState(fixture.project), 'p1')
+    expect(toRender()).toEqual([])
+    // After going back to the plan's creation, the state holds none of the takes, so every shot would render again.
+    const [rendered] = fixture.ctx.dvProject.listHistory({ project: fixture.project, limit: 1 })
+    if (rendered === undefined) throw new Error('the approval wrote no record')
+    const origin = { actor: 'user', surface: 'history', session: null, turn: null, tool_call: null, intent: 'go back' } as const
+    await fixture.ctx.dvProject.undo(fixture.project, origin, created.id)
+    expect(toRender()).toEqual([1, 2, 3])
+    await fixture.ctx.dvProject.undo(fixture.project, origin, rendered.record.id)
     // Shot 2 changes, shot 3 changes its render mode with the same prompt, shot 4 is new; shot 1 keeps its take.
     value(await fixture.call('dv_plan_update', {
       reason: 'change', plan: 'p1', references: [picture], shots: [ref('a'), ref('B'), ref('c'), { mode: 't2va', prompt: 'd' }],
     }))
-    expect(fixture.ctx.dvShotPlan.shotsToRender(fixture.ctx.dvProject.getState(fixture.project, branch), 'p1')).toEqual([2, 3, 4])
+    expect(toRender()).toEqual([2, 3, 4])
   })
 
   it('updates the plan\'s timeline when the plan is approved again, and creates a timeline for another plan', async () => {

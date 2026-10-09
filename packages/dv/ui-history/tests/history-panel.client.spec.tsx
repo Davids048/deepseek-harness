@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** The History panel over a scripted API: action rows, approval folds, selection, actions, the branch tree, and empty states. */
+/** The History panel over a scripted API: one list of every record, approval folds, selection, undo, 回到这一步, and empty states. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/react'
 import { DvClient } from '@dv/ui-kit/api.ts'
@@ -10,7 +10,7 @@ import { HistoryPanel } from '../src/client/HistoryPanel.tsx'
 
 /**
  * Open a row's ⋮ menu.
- * @param element - a list row or a tree node.
+ * @param element - a list row.
  * @returns the labels of the menu's items.
  */
 function menuOf(element: HTMLElement): string[] {
@@ -19,48 +19,42 @@ function menuOf(element: HTMLElement): string[] {
 }
 
 // jsdom lays nothing out and has no scrollIntoView; the panel's scroll requests are recorded instead.
-const scrolled = vi.fn()
-Element.prototype.scrollIntoView = scrolled
+Element.prototype.scrollIntoView = vi.fn()
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
 const ENTRIES: HistoryEntry[] = [
-  {
-    record: record({ id: 'm1', turn: null, surface: 'timeline', operation: 'timeline.clip_move', params: { clip: 'cl1', to: 2 }, intent: 'move clip 1' }),
-    mark: 'current', branches: ['main'],
-  },
+  { record: record({ id: 'm1', turn: null, surface: 'timeline', operation: 'timeline.clip_move', params: { clip: 'cl1', to: 2 }, intent: 'move clip 1' }) },
   {
     record: record({
       id: 'g1', turn: 't3', actor: 'agent', session: 's5', tool_call: 'call-g1', operation: 'shot.render_ref2va', outputs: ['shot1.mp4'],
       intent: 'render the hero',
       inputs: [{ role: 'reference', ref: { asset: 'ref.png' }, resolved_asset: 'ref.png' }],
     }),
-    mark: 'current', branches: ['main'],
   },
-  { record: record({ id: 'p1', turn: 't3', actor: 'agent', session: 's5', tool_call: 'call-p1', operation: 'plan.create' }), mark: 'redo', branches: ['main'] },
+  { record: record({ id: 'p1', turn: 't3', actor: 'agent', session: 's5', tool_call: 'call-p1', operation: 'plan.create' }) },
 ]
 
 /**
  * Mount the panel over scripted routes; `/api/dv/history` answers from {@link ENTRIES}.
  * @param entries - the history the route serves.
- * @param adjust - changes to the fixture state that `/api/dv/state` serves for every branch.
+ * @param adjust - changes to the fixture state that `/api/dv/state` serves.
  * @returns the rendered panel and the recorded writes.
  */
 function mount(entries: HistoryEntry[] = ENTRIES, adjust: (state: WireState) => void = () => {}) {
   const queries: HistoryQuery[] = []
   const scripted = scriptedFetch({
-    // Timeline `t1` of the fixture holds clips cl1 and cl2, assigned by its create record.
+    // Timeline `t1` of the fixture holds clips cl1 and cl2, assigned by its create record; the clip move m1 is a record
+    // of the current state.
     state: () => {
       const state = fixtureState()
       state.components.proj.records = state.components.proj.records.map(item => item.id === 's1' ? { ...item, report: { clips: ['cl1', 'cl2'] } } : item)
+      state.components.proj.records.push(record({ id: 'm1', operation: 'timeline.clip_move', params: { clip: 'cl1', to: 2 } }))
       adjust(state)
       return state
     },
     post: (path, body) => {
-      if (path !== '/api/dv/history') {
-        const branch = { name: 'b3', title: null, head: 'b1', base: 'main', forked_at: 's1', tip: 'b1' }
-        return { status: 200, body: { record: record({ id: 'b1' }), branch, heads: { main: 'b1' } } }
-      }
+      if (path !== '/api/dv/history') return { status: 200, body: { record: record({ id: 'b1' }) } }
       const query = body as HistoryQuery
       queries.push(query)
       const shown = entries.filter(entry => query.tool_call === undefined || entry.record.tool_call === query.tool_call)
@@ -81,34 +75,31 @@ function mount(entries: HistoryEntry[] = ENTRIES, adjust: (state: WireState) => 
 }
 
 describe('HistoryPanel', () => {
-  it('shows one row per operation record of the current branch, newest first, with who, the agent\'s intent and one thumbnail', async () => {
+  it('shows one row per record of the project, newest first, with who, the agent\'s intent, one thumbnail, and 当前 on the newest', async () => {
     const { view, row } = mount()
     await waitFor(() => { expect(view.container.querySelectorAll('[data-testid="dv-history-row"]').length).toBe(3) })
     const ids = [...view.container.querySelectorAll('[data-testid="dv-history-row"]')].map(element => element.getAttribute('data-record'))
     expect(ids).toEqual(['m1', 'g1', 'p1'])
-    expect(view.container.querySelector('[data-testid="dv-history-turn"]')).toBeNull()
     expect(row('g1').textContent).toContain('render the hero')
     expect(row('g1').textContent).toContain('Agent')
     expect(row('m1').textContent).toContain('Move clip')
     expect(row('m1').textContent).toContain('You')
     expect(row('m1').textContent).not.toContain('render the hero')
     expect(row('g1').getAttribute('data-actor')).toBe('agent')
-    // A step that redo brings back is greyed, without a badge.
-    expect(row('p1').getAttribute('data-mark')).toBe('redo')
-    expect(row('p1').style.opacity).toBe('0.55')
+    expect(row('m1').querySelector('[data-testid="dv-history-current"]')?.textContent).toBe('Current')
+    expect(view.container.querySelectorAll('[data-testid="dv-history-current"]')).toHaveLength(1)
     expect(row('g1').querySelectorAll('[data-testid="dv-history-thumb"]').length).toBe(1)
     // A plan's JSON file has no thumbnail.
     expect(row('p1').querySelector('[data-testid="dv-history-thumb"]')).toBeNull()
+    // One list: no branch menu, no view switch, no redo.
+    for (const id of ['dv-kit-branch-menu', 'dv-history-view-toggle', 'dv-history-redo']) expect(view.queryByTestId(id)).toBeNull()
   })
 
   it('folds the renders a plan approval scheduled under its row until the toggle opens them', async () => {
     const approval: HistoryEntry[] = [
-      { record: record({ id: 'g2', actor: 'system', operation: 'shot.render_ref2va', params: { plan: 'p1', shot: 2 }, status: 'running' }), mark: 'current', branches: ['main'] },
-      { record: record({ id: 'g1', actor: 'system', operation: 'shot.render_ref2va', params: { plan: 'p1', shot: 1 }, outputs: ['shot1.mp4'] }), mark: 'current', branches: ['main'] },
-      {
-        record: record({ id: 'ap', actor: 'agent', operation: 'plan.approve', params: { plan: 'p1' }, report: { plan: 'p1', version: 1, scheduled: ['g1', 'g2'] } }),
-        mark: 'current', branches: ['main'],
-      },
+      { record: record({ id: 'g2', actor: 'system', operation: 'shot.render_ref2va', params: { plan: 'p1', shot: 2 }, status: 'running' }) },
+      { record: record({ id: 'g1', actor: 'system', operation: 'shot.render_ref2va', params: { plan: 'p1', shot: 1 }, outputs: ['shot1.mp4'] }) },
+      { record: record({ id: 'ap', actor: 'agent', operation: 'plan.approve', params: { plan: 'p1' }, report: { plan: 'p1', version: 1, scheduled: ['g1', 'g2'] } }) },
     ]
     const { view, row } = mount(approval)
     await waitFor(() => { row('ap') })
@@ -125,137 +116,57 @@ describe('HistoryPanel', () => {
     expect(folded).toEqual(['ap', 'g1', 'g2'])
   })
 
-  it('asks for the current branch\'s line', async () => {
+  it('asks for every record of the project', async () => {
     const { queries } = mount()
-    await waitFor(() => { expect(queries.at(0)).toEqual({ project: 'p1', marks: ['current', 'redo'], limit: 50 }) })
+    await waitFor(() => { expect(queries.at(0)).toEqual({ project: 'p1', limit: 50 }) })
   })
 
-  it('selecting a render row plays its output and focuses its node; a clip row focuses the timeline clip', async () => {
-    const { row } = mount()
+  it('selecting a render row plays its output and focuses its node, a clip row focuses the timeline clip, and a record off the current state focuses nothing', async () => {
+    const { row } = mount(ENTRIES, (state) => { state.components.proj.records = state.components.proj.records.filter(item => item.id !== 'p1') })
     await waitFor(() => { row('g1') })
     const focused: unknown[] = []
-    const onCanvas = (event: Event): void => { focused.push((event as CustomEvent).detail) }
-    const onTimeline = (event: Event): void => { focused.push((event as CustomEvent).detail) }
-    window.addEventListener(DV_CANVAS_FOCUS_EVENT, onCanvas)
-    window.addEventListener(DV_TIMELINE_FOCUS_EVENT, onTimeline)
+    const onFocus = (event: Event): void => { focused.push((event as CustomEvent).detail) }
+    window.addEventListener(DV_CANVAS_FOCUS_EVENT, onFocus)
+    window.addEventListener(DV_TIMELINE_FOCUS_EVENT, onFocus)
     fireEvent.click(row('g1'))
     expect(row('g1').getAttribute('aria-selected')).toBe('true')
     expect(row('g1').querySelector('[data-testid="dv-history-preview"] video')).not.toBeNull()
     fireEvent.click(row('m1'))
     fireEvent.click(row('p1'))
-    window.removeEventListener(DV_CANVAS_FOCUS_EVENT, onCanvas)
-    window.removeEventListener(DV_TIMELINE_FOCUS_EVENT, onTimeline)
-    expect(focused).toEqual([{ recordId: 'g1' }, { timelineId: 't1', clipId: 'cl1' }])
+    window.removeEventListener(DV_CANVAS_FOCUS_EVENT, onFocus)
+    window.removeEventListener(DV_TIMELINE_FOCUS_EVENT, onFocus)
+    await waitFor(() => { expect(focused).toEqual([{ recordId: 'g1' }, { timelineId: 't1', clipId: 'cl1' }]) })
   })
 
-  it('undoes, and redoes while the current branch has steps to bring back, with surface history', async () => {
-    const { view, writes } = mount(ENTRIES, (state) => { state.redo_steps = ['p1'] })
-    await waitFor(() => { expect(view.getByTestId('dv-history-redo').hasAttribute('disabled')).toBe(false) })
+  it('undoes the last step with surface history', async () => {
+    const { view, writes } = mount()
+    await waitFor(() => { view.getByTestId('dv-history-undo') })
     fireEvent.click(view.getByTestId('dv-history-undo'))
-    fireEvent.click(view.getByTestId('dv-history-redo'))
     await waitFor(() => {
       expect(writes.filter(write => write.path !== '/api/dv/history')).toEqual([
         { path: '/api/dv/undo', body: { project: 'p1', surface: 'history', session: 's5' } },
-        { path: '/api/dv/redo', body: { project: 'p1', surface: 'history', session: 's5' } },
       ])
     })
   })
 
-  it('marks the current step, offers 回到这一步 on the steps before it and 从这里新建分支 on every step, and greys the steps redo brings back', async () => {
-    const current: HistoryEntry = { record: record({ id: 'g3', session: 's5', operation: 'shot.render_ref2va' }), mark: 'current', branches: ['main'] }
-    const { writes, row } = mount([current, ...ENTRIES], (state) => {
-      state.components.proj.records = state.components.proj.records.filter(item => item.id !== 'p1')
-      state.redo_steps = ['p1']
-    })
-    await waitFor(() => { row('p1') })
-    expect(row('g3').getAttribute('data-step')).toBe('current')
-    expect(row('g3').querySelector('[data-testid="dv-history-current"]')?.textContent).toBe('Current')
-    expect(menuOf(row('g3'))).toEqual(['New branch from here'])
-    expect(row('p1').getAttribute('data-step')).toBe('after')
-    expect(row('p1').style.opacity).toBe('0.55')
-    expect(menuOf(row('p1'))).toEqual(['New branch from here'])
-    // A record off the current branch's chain is no step of it.
-    expect(row('m1').hasAttribute('data-step')).toBe(false)
-    expect(row('g1').getAttribute('data-step')).toBe('before')
-    expect(menuOf(row('g1'))).toEqual(['Go back to this step', 'New branch from here'])
-    fireEvent.click(within(row('g1')).getByTestId('dv-history-step-back'))
-    fireEvent.click(within(row('g1')).getByTestId('dv-history-step-actions'))
-    fireEvent.click(within(row('g1')).getByTestId('dv-history-step-fork'))
+  it('labels an undo row with the step it returned to and offers 回到这一步 on the rows the project can go back to', async () => {
+    const undo: HistoryEntry = { record: record({ id: 'u1', operation: 'proj.undo', params: { to: 'g1' } }) }
+    const running: HistoryEntry = { record: record({ id: 'r1', operation: 'shot.render_t2va', status: 'running' }) }
+    const { writes, row } = mount([undo, running, ...ENTRIES])
+    await waitFor(() => { row('u1') })
+    expect(row('u1').textContent).toContain('Go back to “Render shot from references”')
+    expect(row('u1').querySelector('[data-testid="dv-history-current"]')).not.toBeNull()
+    // No ⋮ on the newest row, on an unfinished record, or on the record the newest undo returned to.
+    for (const id of ['u1', 'r1', 'g1']) expect(row(id).querySelector('[data-testid="dv-history-step-actions"]')).toBeNull()
+    expect(menuOf(row('m1'))).toEqual(['Go back to this step'])
+    fireEvent.click(within(row('m1')).getByTestId('dv-history-step-back'))
     await waitFor(() => {
       expect(writes.filter(write => write.path !== '/api/dv/history')).toEqual([
-        { path: '/api/dv/undo', body: { project: 'p1', surface: 'history', session: 's5', to: 'g1' } },
-        { path: '/api/dv/branches/create', body: { project: 'p1', surface: 'history', branch: 'main', to: 'g1' } },
+        { path: '/api/dv/undo', body: { project: 'p1', surface: 'history', session: 's5', to: 'm1' } },
       ])
     })
-    // The menu's gestures do not select the row.
-    expect(row('g1').getAttribute('aria-selected')).toBe('false')
-  })
-
-  it('draws every branch as a lane in the branch tree, selects a clicked step, and moves the head with 回到这一步', async () => {
-    // The fixture's b2 forked from main at x1; r3 is its own step.
-    const tree: HistoryEntry[] = [
-      { record: record({ id: 'r3', branch: 'b2', operation: 'shot.render_ref2va' }), mark: 'branch', branches: ['b2'] },
-      { record: record({ id: 'y1', operation: 'timeline.clip_move' }), mark: 'current', branches: ['main'] },
-      { record: record({ id: 'x1', operation: 'asset.grab_still', outputs: ['export-last.png'] }), mark: 'current', branches: ['main', 'b2'] },
-      { record: record({ id: 'u1', operation: 'proj.undo' }), mark: 'current', branches: ['main'] },
-    ]
-    // y1 is the newest step of main, the current branch, so it is the head step.
-    const { view, queries, writes } = mount(tree, (state) => { state.components.proj.records.push(record({ id: 'y1', operation: 'timeline.clip_move' })) })
-    await waitFor(() => { expect(queries.length).toBeGreaterThan(0) })
-    scrolled.mockClear()
-    fireEvent.click(within(view.getByTestId('dv-history-view-toggle')).getByRole('tab', { name: 'Branch tree' }))
-    await waitFor(() => { expect(view.getAllByTestId('dv-history-tree-node')).toHaveLength(3) })
-    expect(within(view.getByTestId('dv-history-view-toggle')).getByRole('tab', { name: 'Branch tree' }).getAttribute('aria-selected')).toBe('true')
-    expect(queries.at(-1)).toEqual({ project: 'p1', marks: ['current', 'redo', 'branch'], limit: 50 })
-    const node = (id: string): HTMLElement => view.container.querySelector(`[data-testid="dv-history-tree-node"][data-record="${id}"]`) as HTMLElement
-    expect([node('r3'), node('y1'), node('x1')].map(element => element.getAttribute('data-lane'))).toEqual(['1', '0', '0'])
-    // b2's newest step carries its label; b2's lane bends into x1, the step it forked at.
-    expect(within(node('r3')).getByTestId('dv-history-tree-branch').textContent).toBe('Branch 2')
-    expect(node('r3').textContent).toBe('Branch 2Render shot from references')
-    expect(node('x1').querySelectorAll('path')).toHaveLength(1)
-    // The head step carries 当前 and the current branch's label, and the tree scrolls it into view.
-    expect(node('y1').getAttribute('data-head')).toBe('true')
-    expect(within(node('y1')).getByTestId('dv-history-tree-current').textContent).toBe('Current')
-    expect(within(node('y1')).getByTestId('dv-history-tree-branch').textContent).toBe('Main')
-    await waitFor(() => { expect(scrolled).toHaveBeenCalledWith({ block: 'center' }) })
-    // A click selects a step and writes nothing; 回到这一步 in a step's ⋮ menu moves the head there, and the head step
-    // offers only 从这里新建分支.
-    fireEvent.click(node('r3'))
-    expect(node('r3').getAttribute('aria-selected')).toBe('true')
-    expect(writes.filter(write => write.path !== '/api/dv/history')).toEqual([])
-    expect(menuOf(node('y1'))).toEqual(['New branch from here'])
-    fireEvent.keyDown(within(node('y1')).getByRole('menu'), { key: 'Escape' })
-    expect(menuOf(node('r3'))).toEqual(['Go back to this step', 'New branch from here'])
-    fireEvent.click(within(node('r3')).getByTestId('dv-history-step-back'))
-    menuOf(node('x1'))
-    fireEvent.click(within(node('x1')).getByTestId('dv-history-step-back'))
-    await waitFor(() => {
-      expect(writes.filter(write => write.path !== '/api/dv/history')).toEqual([
-        { path: '/api/dv/branches/switch', body: { project: 'p1', branch: 'b2', surface: 'history', to: 'r3', session: 's5' } },
-        { path: '/api/dv/branches/switch', body: { project: 'p1', branch: 'main', surface: 'history', to: 'x1', session: 's5' } },
-      ])
-    })
-    fireEvent.click(within(view.getByTestId('dv-history-view-toggle')).getByRole('tab', { name: 'List' }))
-    await waitFor(() => { expect(view.queryByTestId('dv-history-tree')).toBeNull() })
-  })
-
-  it('switches, forks and renames branches from the branch menu of the header, with surface history', async () => {
-    const { view, writes } = mount()
-    const menu = within(view.getByTestId('dv-kit-branch-menu'))
-    const button = await waitFor(() => menu.getByRole('button', { name: 'Main' }))
-    fireEvent.click(button)
-    fireEvent.click(menu.getAllByTestId('dv-kit-branch-option')[1] as HTMLElement)
-    fireEvent.click(button)
-    fireEvent.click(menu.getByTestId('dv-kit-branch-create'))
-    fireEvent.click(menu.getByRole('button', { name: 'Rename Main' }))
-    fireEvent.change(menu.getByTestId('dv-kit-branch-name'), { target: { value: 'night' } })
-    fireEvent.keyDown(menu.getByTestId('dv-kit-branch-name'), { key: 'Enter' })
-    await waitFor(() => { expect(writes.filter(write => write.path.startsWith('/api/dv/branches/'))).toHaveLength(3) })
-    expect(writes.filter(write => write.path.startsWith('/api/dv/branches/'))).toEqual([
-      { path: '/api/dv/branches/switch', body: { project: 'p1', branch: 'b2', surface: 'history' } },
-      { path: '/api/dv/branches/create', body: { project: 'p1', surface: 'history' } },
-      { path: '/api/dv/branches/rename', body: { project: 'p1', branch: 'main', title: 'night' } },
-    ])
+    // The menu's gesture does not select the row.
+    expect(row('m1').getAttribute('aria-selected')).toBe('false')
   })
 
   it('says what to do when the project has no records', async () => {

@@ -1,8 +1,8 @@
-/** The asset pool panel's listing over synthetic branch states: names, media-type groups, render stills, and assets of other branches. */
+/** The asset pool panel's listing over synthetic project states: names, media groups, render stills, and undone records. */
 import { describe, expect, it } from 'vitest'
-import type { Asset, HistoryEntry, ProjectRecord, WireState } from '../../ui-kit/src/client/types.ts'
+import type { Asset, ProjectRecord, WireState } from '../../ui-kit/src/client/types.ts'
 import { fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
-import { assetLibrary, otherBranchAssets } from '../src/client/library.ts'
+import { assetLibrary } from '../src/client/library.ts'
 
 describe('assetLibrary over a synthetic state', () => {
   /** A done record with one output. */
@@ -14,8 +14,8 @@ describe('assetLibrary over a synthetic state', () => {
   })
   /**
    * A state with the given records and assets and an empty story bible.
-   * @param records - the records of the branch.
-   * @param assets - the assets of the branch.
+   * @param records - the records of the current state.
+   * @param assets - the assets of the project.
    * @returns the state.
    */
   const stateOf = (records: ProjectRecord[], assets: Asset[]): WireState => {
@@ -69,24 +69,23 @@ describe('assetLibrary over a synthetic state', () => {
     expect(library.images.map(row => row.id)).toContain('ref.png')
   })
 
-  it('adds the assets of other branches and redo steps once, with the branch each comes from', () => {
-    const entry = (record: ProjectRecord, mark: HistoryEntry['mark'], branches: string[]): HistoryEntry => ({ record, mark, branches })
-    const history = {
-      entries: [
-        entry(done('o7', 'shot.render_ref2va', 'other-vid', {}, '2026-10-05T09:07:00.000Z'), 'branch', ['b2']),
-        entry(done('o8', 'asset.import', 'redo-img', { name: 'later.png' }, '2026-10-05T09:08:00.000Z'), 'redo', ['main', 'b3']),
-        // An output the current state already lists and an entry on no branch line add nothing.
-        entry(done('o9', 'asset.import', 'img', { name: 'again.png' }, '2026-10-05T09:09:00.000Z'), 'branch', ['b2']),
-        entry(done('o10', 'asset.import', 'lost', {}, '2026-10-05T09:10:00.000Z'), 'branch', []),
-      ],
-      assets: [asset('other-vid', 'video/mp4', 'other.mp4'), asset('redo-img', 'image/png', 'redo.png'), asset('img', 'image/png', 'ref.png'), asset('lost', 'image/png', 'lost.png')],
-    }
-    const others = otherBranchAssets(history, state)
-    expect([...others.branchOf]).toEqual([['other-vid', 'b2'], ['redo-img', 'main']])
-    const library = assetLibrary(state, others)
-    expect(library.videos.map(row => row.id).sort()).toEqual(['other-vid', 'out', 'vid'])
+  it('reads the records an undo went back past for the render stills and import names of the project\'s other assets', () => {
+    // The state lists every asset of the project; o7 and o8 are history records outside the current state.
+    const project = stateOf(records, [
+      ...assets, asset('later-vid', 'video/mp4', 'take.mp4'), asset('later-still', 'image/png', 'take-last.png'),
+      asset('later-img', 'image/png', 'pool.png'),
+    ])
+    const history = [
+      record({ id: 'o7', turn: null, surface: 'canvas', operation: 'shot.render_ref2va', params: {}, outputs: ['later-vid', 'later-still'] }),
+      done('o8', 'asset.import', 'later-img', { name: 'later.png' }, '2026-10-05T09:08:00.000Z'),
+      // A record of the state may repeat in the history list.
+      ...records,
+    ]
+    const library = assetLibrary(project, history)
+    expect(library.videos.map(row => row.id).sort()).toEqual(['later-vid', 'out', 'vid'])
+    expect(library.extracted.map(row => row.id)).toEqual(['later-still'])
     expect(library.images).toEqual([
-      expect.objectContaining({ id: 'redo-img', name: 'later.png' }), expect.objectContaining({ id: 'img', name: 'dropped.png' }),
+      expect.objectContaining({ id: 'later-img', name: 'later.png' }), expect.objectContaining({ id: 'img', name: 'dropped.png' }),
     ])
   })
 })

@@ -1,20 +1,16 @@
 /**
- * The History panel's pure readings: action rows and approval folds, labels with subjects, thumbnails, relative times,
- * timeline record sets, focus, the current branch's steps, and the lane layout of the branch tree.
+ * The History panel's pure readings: action rows and approval folds, labels with subjects (undo records included),
+ * thumbnails, relative times, focus, and the rows that offer 回到这一步.
  */
 import { describe, expect, it } from 'vitest'
-import type { Branch, HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
-import { entryBranch } from '@dv/ui-kit/state.ts'
+import type { HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
 import {
-  actionLabel, actionRows, branchSteps, branchTree, centerFocus, clipTimelines, operationLabel, relativeTime, stepPlace,
-  thumbnailOf,
+  actionLabel, actionRows, canGoBack, centerFocus, clipTimelines, operationLabel, relativeTime, thumbnailOf,
 } from '../src/client/rows.ts'
 
-/** An entry of a record with a mark and the branch lines that hold it. */
-const entry = (fields: Partial<ProjectRecord> & { id: string }, mark: HistoryEntry['mark'] = 'current', branches: string[] = ['main']): HistoryEntry => (
-  { record: record(fields), mark, branches }
-)
+/** An entry of a record. */
+const entry = (fields: Partial<ProjectRecord> & { id: string }): HistoryEntry => ({ record: record(fields) })
 
 describe('actionRows', () => {
   it('folds the loaded records an approval scheduled under its row, in scheduled order', () => {
@@ -30,9 +26,9 @@ describe('actionRows', () => {
     ])
   })
 
-  it('lists no row for undo and redo records', () => {
-    const rows = actionRows([entry({ id: 'u', operation: 'proj.undo' }), entry({ id: 'r', operation: 'proj.redo' }), entry({ id: 'h1', operation: 'timeline.clip_move' })])
-    expect(rows.map(row => row.entry.record.id)).toEqual(['h1'])
+  it('lists undo records as rows of their own', () => {
+    const rows = actionRows([entry({ id: 'u', operation: 'proj.undo', params: { to: 'h1' } }), entry({ id: 'h1', operation: 'timeline.clip_move' })])
+    expect(rows.map(row => row.entry.record.id)).toEqual(['u', 'h1'])
   })
 
   it('keeps scheduled records as rows of their own while their approval is not loaded', () => {
@@ -57,6 +53,17 @@ describe('labels, thumbnails and times', () => {
     expect(actionLabel(record({ id: 'tu', operation: 'timeline.update', params: { timeline: 't2' } }))).toEqual(['修改时间线', 'Update timeline'])
     expect(actionLabel(record({ id: 'g', component: 'bible', operation: 'bible.character_create', params: { character: 'c1', name: '阿明' } })))
       .toEqual(['新建角色「阿明」', 'Create character “阿明”'])
+  })
+
+  it('names the step an undo record returned to, through earlier undo records, and an unloaded target generically', () => {
+    const move = record({ id: 'm', operation: 'timeline.clip_move' })
+    const first = record({ id: 'u1', operation: 'proj.undo', params: { to: 'm' } })
+    const second = record({ id: 'u2', operation: 'proj.undo', params: { to: 'u1' } })
+    const loaded = new Map([move, first, second].map(item => [item.id, item]))
+    expect(actionLabel(first, loaded)).toEqual(['回到「移动片段」', 'Go back to “Move clip”'])
+    expect(actionLabel(second, loaded)).toEqual(['回到「移动片段」', 'Go back to “Move clip”'])
+    expect(actionLabel(record({ id: 'u3', operation: 'proj.undo', params: { to: 'gone' } }), loaded))
+      .toEqual(['回到之前的一步', 'Go back to an earlier step'])
   })
 
   it('shows an image first, a take\'s still for its video, a video frame without a still, and nothing for other files', () => {
@@ -107,76 +114,26 @@ describe('timelines and focus', () => {
 
   it('focuses a clip record on the timeline, a render on the canvas, and nothing for proj records or records off the current state', () => {
     const owner = clipTimelines(records)
-    expect(centerFocus({ record: records[3] as ProjectRecord, mark: 'current', branches: ['main'] }, owner))
-      .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl4' } })
-    expect(centerFocus({ record: records[0] as ProjectRecord, mark: 'current', branches: ['main'] }, owner))
-      .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl1' } })
     const render = fixtureState().components.proj.records.find(item => item.id === 'g1') as ProjectRecord
-    expect(centerFocus({ record: render, mark: 'current', branches: ['main'] }, owner)).toEqual({ event: 'dv:canvas-focus', detail: { recordId: 'g1' } })
-    for (const mark of ['redo', 'branch', 'undone'] as const) expect(centerFocus({ record: render, mark, branches: [] }, owner)).toBeNull()
-    expect(centerFocus(entry({ id: 'u', operation: 'proj.undo' }), owner)).toBeNull()
+    const inState = new Set(['m', 'c', 'g1', 'u'])
+    expect(centerFocus({ record: records[3] as ProjectRecord }, owner, inState))
+      .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl4' } })
+    expect(centerFocus({ record: records[0] as ProjectRecord }, owner, inState))
+      .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl1' } })
+    expect(centerFocus({ record: render }, owner, inState)).toEqual({ event: 'dv:canvas-focus', detail: { recordId: 'g1' } })
+    expect(centerFocus({ record: render }, owner, new Set())).toBeNull()
+    expect(centerFocus(entry({ id: 'u', operation: 'proj.undo' }), owner, inState)).toBeNull()
   })
 })
 
-describe('branchSteps', () => {
-  it('makes the newest step of the chain current, the older steps before it, and the redo steps after it', () => {
-    const chain = [
-      record({ id: 'c', operation: 'proj.create' }), record({ id: 'a', operation: 'timeline.create' }),
-      record({ id: 'b', operation: 'timeline.rename' }), record({ id: 'u', operation: 'proj.undo' }),
-    ]
-    const steps = branchSteps(chain, ['d', 'e'])
-    expect(steps.current).toBe('b')
-    expect(['c', 'a', 'b', 'u', 'd', 'x'].map(id => stepPlace(id, steps))).toEqual(['before', 'before', 'current', null, 'after', null])
-    expect(branchSteps([], []).current).toBeNull()
-  })
-})
-
-describe('branchTree', () => {
-  const branch = (name: string, forkedAt: string | null): Branch => ({ name, title: null, head: '', base: forkedAt === null ? null : 'main', forked_at: forkedAt, tip: '' })
-  // Newest first: b2 forked from main at a and wrote x1 and x2; b3 forked from main at m2 and has no step yet.
-  const entries = [
-    entry({ id: 'x2', branch: 'b2' }, 'branch', ['b2']),
-    entry({ id: 'x1', branch: 'b2' }, 'branch', ['b2']),
-    entry({ id: 'u', operation: 'proj.undo' }, 'current', ['main']),
-    entry({ id: 'z' }, 'undone', []),
-    entry({ id: 'm2' }, 'current', ['main', 'b3']),
-    entry({ id: 'a' }, 'current', ['main', 'b2', 'b3']),
-    entry({ id: 'c', operation: 'proj.create' }, 'current', ['main', 'b2', 'b3']),
-  ]
-
-  it('puts each step in its owner\'s lane, runs a forked lane down to its fork point, and marks a branch without steps', () => {
-    const tree = branchTree(entries, [branch('main', null), branch('b2', 'a'), branch('b3', 'm2')])
-    expect(tree.map(row => [row.entry.record.id, row.lane, row.column, row.lines, row.forks, row.refs])).toEqual([
-      ['x2', 1, 1, [{ lane: 1, column: 1, up: false, down: true }], [], ['b2']],
-      ['x1', 1, 1, [{ lane: 1, column: 1, up: true, down: true }], [], []],
-      ['m2', 0, 0, [{ lane: 0, column: 0, up: false, down: true }, { lane: 1, column: 1, up: true, down: true }], [{ lane: 2, column: 2, empty: true }], ['main', 'b3']],
-      ['a', 0, 0, [{ lane: 0, column: 0, up: true, down: true }], [{ lane: 1, column: 1, empty: false }], []],
-      ['c', 0, 0, [{ lane: 0, column: 0, up: true, down: false }], [], []],
-    ])
-  })
-
-  it('gives a lane the column of a lane that ended above it, and shares the last of six columns', () => {
-    // Newest first: b2 forked at m3 and wrote x1; b3 forked at m1, below b2's fork, and wrote y1.
-    const reused = branchTree([
-      entry({ id: 'x1', branch: 'b2' }, 'branch', ['b2']),
-      entry({ id: 'm3' }, 'current', ['main', 'b2']),
-      entry({ id: 'y1', branch: 'b3' }, 'branch', ['b3']),
-      entry({ id: 'm1' }, 'current', ['main', 'b2', 'b3']),
-    ], [branch('main', null), branch('b2', 'm3'), branch('b3', 'm1')])
-    expect(reused.map(row => [row.entry.record.id, row.column])).toEqual([['x1', 1], ['m3', 0], ['y1', 1], ['m1', 0]])
-    // Seven branches without steps fork at one row: they take columns 1 to 5, and the last three share column 5.
-    const forks = branchTree([entry({ id: 'm' }, 'current', ['main'])], [branch('main', null), ...[2, 3, 4, 5, 6, 7, 8].map(n => branch(`b${String(n)}`, 'm'))])
-    expect(forks[0]?.forks.map(fork => fork.column)).toEqual([1, 2, 3, 4, 5, 5, 5])
-  })
-
-  it('runs a lane to the bottom when its fork point is not loaded, and owns a step by the first line when its branch lost it', () => {
-    const tree = branchTree(entries.slice(0, 2), [branch('main', null), branch('b2', 'a')])
-    expect(tree.map(row => row.lines)).toEqual([
-      [{ lane: 1, column: 1, up: false, down: true }], [{ lane: 1, column: 1, up: true, down: true }],
-    ])
-    expect(entryBranch(entry({ id: 'r', branch: 'b9' }, 'current', ['main', 'b2']), null)).toBe('main')
-    expect(entryBranch(entry({ id: 'r', branch: 'b2' }, 'branch', ['main', 'b2']), null)).toBe('b2')
-    expect(entryBranch(entry({ id: 'r', branch: 'b2' }, 'branch', ['main', 'b2']), 'main')).toBe('main')
-    expect(entryBranch(entry({ id: 'r' }, 'undone', []), 'main')).toBeNull()
+describe('canGoBack', () => {
+  it('offers 回到这一步 on finished records except the newest one and the one the newest undo returned to', () => {
+    const done = record({ id: 'a', operation: 'timeline.clip_move' })
+    const running = record({ id: 'r', operation: 'shot.render_ref2va', status: 'running' })
+    const newest = record({ id: 'n', operation: 'timeline.rename' })
+    expect([done, running, newest].map(item => canGoBack(item, newest))).toEqual([true, false, false])
+    const undo = record({ id: 'u', operation: 'proj.undo', params: { to: 'a' } })
+    expect([done, newest].map(item => canGoBack(item, undo))).toEqual([false, true])
+    expect(canGoBack(done, undefined)).toBe(false)
   })
 })

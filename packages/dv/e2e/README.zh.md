@@ -39,10 +39,10 @@ DSH_PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome-linux/chrome \
 
 | 故事文件 | 故事覆盖的内容 |
 | --- | --- |
-| [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | 画布的适配、平移、缩放和浮动编辑器；版本和分镜计划的版本；时间线标签、播放、拆分、裁剪、重排、撤销和导出；分支（底栏的分支菜单切换、新建和重命名）和过期标记 |
-| [`tests/stories/assets.e2e.ts`](tests/stories/assets.e2e.ts) | 素材库面板：经文件选择器、拖放区和对话导入；当前分支的素材，以及带分支名称的其他分支素材；预览；插入时间线和画布 |
-| [`tests/stories/history.e2e.ts`](tests/stories/history.e2e.ts) | 历史面板：行的顺序、名称、标记、批准折叠、在画布或时间线上定位、实时更新、撤销之后的分叉，以及分支树 |
-| [`tests/stories/chat.e2e.ts`](tests/stories/chat.e2e.ts) | 对话及其输入框：跨轮次落在当前分支上的智能体修改、撤销之后的分叉、在对话中确认、附上的图片、`@` 提及，以及模型请求收到的内容 |
+| [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | 画布的适配、平移、缩放和浮动编辑器；版本和分镜计划的版本；时间线标签、播放、拆分、裁剪、重排、撤销（没有重做）和导出；没有分支控件、回到这一步 回到更早的状态且之后的状态仍可回到，以及过期标记 |
+| [`tests/stories/assets.e2e.ts`](tests/stories/assets.e2e.ts) | 素材库面板：经文件选择器、拖放区和对话导入；项目的每个素材，包括被撤销的导入的素材；预览；插入时间线和画布 |
+| [`tests/stories/history.e2e.ts`](tests/stories/history.e2e.ts) | 历史面板：行的顺序、名称、批准折叠、在画布或时间线上定位、实时更新、撤销和 回到这一步 作为唯一一条历史线末尾的 回到「…」 行，以及 Ctrl+Z |
+| [`tests/stories/chat.e2e.ts`](tests/stories/chat.e2e.ts) | 对话及其输入框：跨轮次加在历史末尾的智能体修改、撤销之后智能体的修改、在对话中确认、附上的图片、`@` 提及，以及模型请求收到的内容 |
 | [`tests/stories/navigation.e2e.ts`](tests/stories/navigation.e2e.ts) | 项目、对话、面板、重新加载、项目链接、浏览器历史和语言切换 |
 
 -----

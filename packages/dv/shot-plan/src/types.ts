@@ -50,7 +50,7 @@ export interface PlanVersion extends Plan {
   approved_by: RecordId | null
 }
 
-/** The `plan` slice: the versions of every plan of the branch, oldest first. */
+/** The `plan` slice: the versions of every plan in the state, oldest first. */
 export interface PlanState {
   plans: Record<PlanId, PlanVersion[]>
 }

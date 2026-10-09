@@ -1,21 +1,18 @@
 /**
- * The Project component as the `dvProject` Cordis service. Project owns the records of every project, its branches,
- * undo and redo, the operation runner and scheduler, the reducer registry, history queries, and change subscriptions.
+ * The Project component as the `dvProject` Cordis service. Project owns the records of every project, undo, the
+ * operation runner and scheduler, the reducer registry, history queries, and change subscriptions.
  * Every change to a project's records goes through this service and is written as a record:
  * - operations of every component go through {@link DvProject.run}, the single change path;
  * - Project's own actions (`proj.*`) go through the methods named after them, which write `proj.*` records.
- * Reads (`getState`, `getRecord`, `listHistory`, `listBranches`, `currentBranch`, `openProject`, `listProjects`)
- * write no record.
+ * Reads (`getState`, `getRecord`, `listHistory`, `openProject`, `listProjects`) write no record.
  *
- * Current branch. A project has one current branch, which every view and every chat session reads and every write of
- * every actor goes to at once. A write while the current branch's head stands before its tip (after an undo) first
- * forks a new branch at the head's position and makes it current, so the steps after that position stay on the old
- * branch. The human, or the agent when the human asks, can also fork a branch (`createBranch`), switch to another one
- * (`switchBranch`) and name one (`renameBranch`); these change `branches.json` only. Branches are never merged.
+ * One history line. The records of a project form one line in write order: every write of every actor goes after the
+ * last record, and nothing is removed or forked. Undo also appends a record (`proj.undo`), which returns the project
+ * to an earlier state; the steps after that state stay on the line, so the project can return to them later.
  *
  * Concurrency: one lock per project. A run holds it while it checks and appends its record and while it writes each
- * update line, and releases it while the operation executes. Branch changes, undo, redo and project creation hold it
- * for their whole duration.
+ * update line, and releases it while the operation executes. Undo and project creation hold it for their whole
+ * duration.
  *
  * Agent tools. While the DSH `tools` registry is mounted, every registered operation also has its agent tool
  * `dv_<operation name with _>`, built by the `agent-tools` module. A tool call runs the operation as the agent on the
@@ -23,13 +20,13 @@
  * for the user's agreement refuses a call without it (`OperationSpec.confirm`). Project also registers its own
  * `dv_proj_*` tools (the `proj-tools` module); they bind the session to its project and return the project summary,
  * to which each component's reducer adds its fields through `Reducer.agentSummary`. While the DSH `systemPrompt`
- * service is mounted, Project's rules and the summary of the project's current branch reach the agent at every step
+ * service is mounted, Project's rules and the summary of the project's current state reach the agent at every step
  * as the `dv:project` prompt section (the `agent-context` module).
  *
  * The asset pool registers itself with {@link DvProject.registerAssetStore}; until it does, a run that names an input
  * asset or imports an output fails.
  *
- * The internal modules (`record-store`, `runner`, `scheduler`, `branches`, `history`, `reducers`, `subscriptions`,
+ * The internal modules (`record-store`, `runner`, `scheduler`, `history`, `reducers`, `subscriptions`,
  * `sessions`, `agent-tools`, `proj-tools`, `agent-context`) are private; `CONTRACTS.md` in this package specifies each of them.
  *
  * @module @dv/project
@@ -42,29 +39,28 @@ import type {} from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
 import { PROMPT_SECTION, projectContext } from './agent-context.ts'
 import { AgentTools, parseInputs, turnOf } from './agent-tools.ts'
-import { Branches } from './branches.ts'
 import { History } from './history.ts'
 import { projTools, type ProjToolDeps } from './proj-tools.ts'
 import { RecordStore } from './record-store.ts'
 import { projReducer, ReducerRegistry } from './reducers.ts'
 import { Runner } from './runner.ts'
 import { Scheduler } from './scheduler.ts'
-import { MAIN_BRANCH, ProjectError } from './shared.ts'
+import { ProjectError } from './shared.ts'
 import { Sessions } from './sessions.ts'
 import { Subscriptions } from './subscriptions.ts'
 import type {
-  AssetId, AssetStore, Branch, ComponentStates, HistoryEntry, HistoryQuery, OperationSpec,
+  AssetId, AssetStore, ComponentStates, HistoryEntry, HistoryQuery, OperationSpec,
   ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId, RecordInputRef, RecordOrigin, Reducer,
   RunRequest, RunResult, SessionId,
 } from './types.ts'
 
 export * from './types.ts'
-export { MAIN_BRANCH, ProjectError } from './shared.ts'
+export { ProjectError } from './shared.ts'
 export { formatInputRef, sessionOf, toolNameOf, type OperationToolValue } from './agent-tools.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** The Project component: records, branches, undo and redo, operations, state and history. */
+    /** The Project component: records, undo, operations, state and history. */
     dvProject: DvProject
   }
 }
@@ -102,7 +98,6 @@ export default class DvProject extends Service {
   private readonly subscriptions = new Subscriptions()
   private readonly store: RecordStore
   private readonly reducers: ReducerRegistry
-  private readonly branches: Branches
   private readonly history: History
   private readonly runner: Runner
   private readonly scheduler: Scheduler
@@ -128,14 +123,13 @@ export default class DvProject extends Service {
     })
     this.reducers = new ReducerRegistry(this.store)
     this.history = new History(this.store)
-    this.branches = new Branches(this.store, this.history)
     // The scheduler runs ready records through the runner, which is created next; the callback reads it at call time.
     this.scheduler = new Scheduler(this.store, (project, record) => this.runner.execute(project, record), {
       cpu: config.cpuConcurrency, gpu: config.gpuConcurrency,
     })
     // The runner reaches the asset pool through the registered store, read at call time.
     this.runner = new Runner({
-      store: this.store, branches: this.branches, reducers: this.reducers, scheduler: this.scheduler,
+      store: this.store, reducers: this.reducers, scheduler: this.scheduler,
       assets: {
         has: asset => this.requireAssetStore().has(asset),
         importAsset: (source, meta, createdBy) => this.requireAssetStore().importAsset(source, meta, createdBy),
@@ -202,7 +196,7 @@ export default class DvProject extends Service {
     const info: ProjectInfo = { id: brandString<ProjectId>(randomUUID()), title, created_at: new Date().toISOString() }
     this.store.createProject(info)
     await this.store.lock(info.id, () => this.store.append(info.id, {
-      parents: [], branch: MAIN_BRANCH, kind: 'operation', component: 'proj', operation: 'proj.create', operation_version: '1',
+      parents: [], kind: 'operation', component: 'proj', operation: 'proj.create', operation_version: '1',
       ...origin, params: { title }, inputs: [], outputs: [], based_on: null, supersedes: [], deterministic: true, status: 'done',
     }))
     return info
@@ -242,8 +236,8 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Run one operation call: the single change path for every component's operations. The record goes to the project's
-   * current branch (forked first when an undo left redo steps on it; see the module comment). With `after`,
+   * Run one operation call: the single change path for every component's operations. The record goes after the
+   * project's last record (see the module comment). With `after`,
    * the call is scheduled and the result holds the `pending` record. A read-only operation writes no record and
    * returns its answer in `report`.
    * @param request - the call.
@@ -255,71 +249,19 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Fork a branch from the current branch at its head's position and make it current; when the head stands before the
-   * tip (after an undo), the old branch returns to its tip. With `from`, the fork starts at that step of that branch's
-   * line instead, and the source branch does not move. Changes `branches.json` only.
-   * @param project - the project.
-   * @param title - the name the human gave the branch; null for the view's default label of `b<n>`.
-   * @param from - the branch and the step to fork at.
-   * @returns the new branch. Throws `invalid_params` for a title over 40 characters or a record that is no step of the
-   *   branch's line, `branch_exists` for a title another branch has, `unknown_branch` and `unknown_record`.
-   */
-  createBranch(project: ProjectId, title: string | null, from?: { branch: string; record: RecordId }): Promise<Branch> {
-    return this.store.lock(project, () => this.branches.create(project, title, from))
-  }
-
-  /**
-   * Make a branch the project's current branch and, with `to`, return it to that step (a `proj.undo`, or `proj.redo`
-   * for a redo step, on that branch, unless it already stands there).
-   * @param project - the project.
-   * @param branch - the branch name.
-   * @param origin - who switches, from where, for the jump record.
-   * @param to - a step on the branch's line; undefined keeps the branch's head.
-   * @returns the branch after the switch. Throws `unknown_branch`, `unknown_record`, or `invalid_params`.
-   */
-  switchBranch(project: ProjectId, branch: string, origin: RecordOrigin, to?: RecordId): Promise<Branch> {
-    return this.store.lock(project, () => this.branches.switch(project, branch, origin, to))
-  }
-
-  /**
-   * Give a branch the name the human chose. Changes `branches.json` only.
-   * @param project - the project.
-   * @param branch - the branch name.
-   * @param title - the title; an empty string returns to the default label.
-   * @returns the branch after the change. Throws `unknown_branch`, `invalid_params` for a title over 40 characters, and
-   *   `branch_exists` for a title another branch has.
-   */
-  renameBranch(project: ProjectId, branch: string, title: string): Promise<Branch> {
-    return this.store.lock(project, () => this.branches.rename(project, branch, title))
-  }
-
-  /**
-   * Move the current branch back by one step, or jump it to a step: writes a `proj.undo` record on that branch whose
-   * `params.to` names the record whose state the branch returns to (a jump forward to a redo step writes `proj.redo`).
-   * Rules in the history module.
+   * Return the project to an earlier state: write a `proj.undo` record after the last record whose `params.to` names
+   * the record whose state the project returns to. Rules in the history module.
    * @param project - the project.
    * @param origin - who undoes, from where.
-   * @param to - a record on the branch's effective chain or one of its redo steps; undefined for one step back.
+   * @param to - any finished record of the project; undefined for one step back.
    * @returns the written record. Throws `nothing_to_undo`, `unknown_record`, or `invalid_params`.
    */
   undo(project: ProjectId, origin: RecordOrigin, to?: RecordId): Promise<ProjectRecord> {
-    return this.store.lock(project, () =>
-      this.history.undo(project, this.branches.current(project).name, origin, to))
+    return this.store.lock(project, () => this.history.undo(project, origin, to))
   }
 
   /**
-   * Move the current branch forward by one redo step: writes a `proj.redo` record with `params.to` on that branch. Any
-   * other write after an undo forks a new branch, so the redo steps stay on this one.
-   * @param project - the project.
-   * @param origin - who redoes, from where.
-   * @returns the `proj.redo` record. Throws `nothing_to_redo`.
-   */
-  redo(project: ProjectId, origin: RecordOrigin): Promise<ProjectRecord> {
-    return this.store.lock(project, () => this.history.redo(project, this.branches.current(project).name, origin))
-  }
-
-  /**
-   * Accept a stale record's result: write a `proj.stale_accept` record with `params {record}` on the current branch,
+   * Accept a stale record's result: write a `proj.stale_accept` record with `params {record}` after the last record,
    * which removes the record's stale mark from then on.
    * @param project - the project.
    * @param record - a stale record.
@@ -331,13 +273,12 @@ export default class DvProject extends Service {
   }
 
   /**
-   * The state of a branch at its head: one slice per registered reducer, and the branch's redo steps.
+   * The project's current state: one slice per registered reducer, computed at the last record.
    * @param project - the project.
-   * @param branch - a branch name; defaults to the project's current branch.
-   * @returns the state. Throws `unknown_project` or `unknown_branch`.
+   * @returns the state. Throws `unknown_project`.
    */
-  getState(project: ProjectId, branch: string = this.store.currentBranch(project)): ProjectState {
-    return { ...this.reducers.getState(project, branch), redo_steps: this.history.redoSteps(project, branch) }
+  getState(project: ProjectId): ProjectState {
+    return this.reducers.getState(project)
   }
 
   /**
@@ -350,30 +291,12 @@ export default class DvProject extends Service {
   }
 
   /**
-   * List a project's records, newest first, with their marks (`current`, `redo`, `branch`, `undone`) and the branches
-   * whose line holds each one.
+   * List a project's records, newest first.
    * @param query - the project and the filters.
    * @returns the entries.
    */
   listHistory(query: HistoryQuery): HistoryEntry[] {
     return this.history.list(query)
-  }
-
-  /**
-   * @param project - the project.
-   * @returns every branch with its tip; `main` first, then by name.
-   */
-  listBranches(project: ProjectId): Branch[] {
-    return this.branches.list(project)
-  }
-
-  /**
-   * The branch every view and chat session of the project reads and every write goes to.
-   * @param project - the project.
-   * @returns the branch with its tip.
-   */
-  currentBranch(project: ProjectId): Branch {
-    return this.branches.current(project)
   }
 
   /**
@@ -387,7 +310,7 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Receive a project's record appends, record updates and branch changes, after each is on disk.
+   * Receive a project's record appends and record updates, after each is on disk.
    * @param project - the project.
    * @param listener - called synchronously for each change.
    * @returns a function that removes the listener.
@@ -431,7 +354,7 @@ export default class DvProject extends Service {
 
   /**
    * The assets a character, location or style version stands for, read through `assetsOf` of the reducer that defines it.
-   * @param state - the state to read the version in, normally the project's current branch.
+   * @param state - the state to read the version in, normally the project's current state.
    * @param ref - a versioned input reference.
    * @returns the version's assets, or null for an unknown version or when no reducer answers.
    */
@@ -444,7 +367,7 @@ export default class DvProject extends Service {
    * record, `<id>@<n>` a character, location or style version, anything else an asset.
    * @param operation - a registered operation name.
    * @param raw - role → reference text or a list of them; undefined for none.
-   * @param state - the state the references are read against, normally the project's current branch.
+   * @param state - the state the references are read against, normally the project's current state.
    * @param callerName - the name the error messages give the call: the tool name for an agent tool call, the operation
    *   name (the default) for a view request or a call made by another operation.
    * @returns the inputs. Throws `unknown_operation`, or an `Error` naming the role and `callerName` for an unknown role,

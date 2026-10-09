@@ -15,7 +15,7 @@
  * - `asset.place` and `asset.unplace`: assets go on the canvas or come off it, and stay in the pool either way.
  *
  * `dvProject` turns each operation into its agent tool (`dv_asset_import`, `dv_asset_grab_still`, `dv_asset_place`,
- * `dv_asset_unplace`). The `asset` reducer keeps the branch's canvas placements; the `proj` slice's `created_by` names
+ * `dv_asset_unplace`). The `asset` reducer keeps the canvas placements of the state; the `proj` slice's `created_by` names
  * the record that created each asset. While the DSH web server is mounted, the service serves `GET /dv/assets/<AssetId>`.
  *
  * @module @dv/asset-pool
@@ -294,7 +294,7 @@ export default class DvAssetPool extends Service {
   }
 
   /**
-   * The `asset.place` or `asset.unplace` operation: put assets created on the branch on the canvas, or take assets off
+   * The `asset.place` or `asset.unplace` operation: put assets that a record of the current state created on the canvas, or take assets off
    * it. A call that changes nothing (every asset already placed, or none of them placed) is refused before any record.
    * @param name - which of the two operations.
    * @returns the operation spec.
@@ -306,7 +306,7 @@ export default class DvAssetPool extends Service {
       component: 'asset',
       version: '1',
       description: place
-        ? 'Put assets of the project on the canvas, where the user sees each one as a node. The assets must have been created on the current branch.'
+        ? 'Put assets of the project on the canvas, where the user sees each one as a node. The assets must come from a record in the current state of the project.'
         : 'Take assets off the canvas. The assets stay in the asset pool.',
       inputs: { asset: { type: 'any', required: true, many: true, description: place ? 'The assets to put on the canvas.' : 'The assets to take off the canvas.' } },
       params: {},
@@ -320,7 +320,7 @@ export default class DvAssetPool extends Service {
         const placed = new Set(state.components.asset.placed)
         if (place) {
           const missing = assets.filter(asset => !(asset in state.components.proj.created_by))
-          if (missing.length > 0) throw new ProjectError('invalid_inputs', `Asset ${missing.join(', ')} was not created on this branch.`)
+          if (missing.length > 0) throw new ProjectError('invalid_inputs', `Asset ${missing.join(', ')} comes from no record in the current state.`)
           if (assets.every(asset => placed.has(asset))) throw new ProjectError('invalid_params', 'Every asset is already on the canvas.')
         } else if (!assets.some(asset => placed.has(asset))) {
           throw new ProjectError('invalid_params', 'None of the assets is on the canvas.')

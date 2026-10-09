@@ -37,7 +37,7 @@ function planCall(view: TurnView, title: string): ScriptedStep {
  * The scripted agent. `只回复<X>` answers `收到<X>`; `慢慢想` streams for six seconds; `加人物` registers a character;
  * `慢慢做` imports an image and then streams for eight seconds, so a stop lands while the turn runs; `新建项目` creates a
  * project as the agent does from the entry page; `做两个镜头的广告` imports a reference, plans two shots, approves, and
- * waits; every record lands on the project's current branch at once; `先给我看计划` imports a reference, plans two shots,
+ * waits; every record goes at the end of the project's history at once; `先给我看计划` imports a reference, plans two shots,
  * calls the plan approval without the user's agreement (Project refuses it), and asks in bold; `可以渲染` approves that
  * plan with the user's agreement and waits; `两段渲染` renders two shots at once.
  */
@@ -292,7 +292,7 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('a turn that only looks at an image writes no record and forks no branch', async () => {
+  it('a turn that only looks at an image writes no record', async () => {
     const { projectId, assetId } = await seedProject('只看图', 'look.png', RED_PNG)
     const before = await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
     const { page, errors } = await openPage('zh', `#project=${projectId}`)
@@ -304,11 +304,11 @@ describe('chat with the agent', () => {
     await page.waitForTimeout(2000)
     const after = await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
     expect(after.components.proj.records.map(record => record.id)).toEqual(before.components.proj.records.map(record => record.id))
-    expect(after.branches.map(branch => branch.name)).toEqual(['main'])
+    expect(after.head).toBe(before.head)
     expect(errors).toEqual([])
   })
 
-  it('the agent\'s changes of two turns land on the current branch at once, with no accept step', async () => {
+  it('the agent\'s changes of two turns go at the end of the project\'s history at once, with no accept step', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await send(page, '加人物')
@@ -316,21 +316,20 @@ describe('chat with the agent', () => {
     await send(page, '点名渲染一段')
     await waitChat(page, '渲染好了', 60_000)
     const state = await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
-    expect(state.current).toBe('main')
-    expect(state.branches.map(branch => branch.name)).toEqual(['main'])
     const agentRecords = state.components.proj.records.filter(record => record.actor === 'agent' && record.operation !== 'proj.create')
     expect(agentRecords.map(record => record.operation))
       .toEqual(['asset.import', 'bible.character_create', 'asset.import', 'shot.render_ref2va'])
-    expect(agentRecords.every(record => record.branch === 'main')).toBe(true)
     expect(new Set(agentRecords.map(record => record.turn)).size).toBe(2)
-    // Nothing waits for the user: the workspace offers no accept and names the current branch in its bottom bar.
+    // One line: each record follows the record written just before it.
+    const records = state.components.proj.records
+    expect(records.slice(1).every((record, index) => record.parents[0] === records[index]?.id)).toBe(true)
+    // Nothing waits for the user: the workspace offers no accept.
     const workspace = page.locator('[data-dv-workspace]')
     expect(await workspace.getByRole('button', { name: '接受', exact: true }).count()).toBe(0)
-    expect(await workspace.locator('[data-testid="dv-kit-branch-menu"]').first().getAttribute('data-branch')).toBe('main')
     expect(errors).toEqual([])
   })
 
-  it('after 停止生成 the image the agent already imported stays on the current branch, and the composer sends after a reload', async () => {
+  it('after 停止生成 the image the agent already imported stays in the project, and the composer sends after a reload', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await send(page, '慢慢做')
@@ -404,7 +403,7 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('the agent\'s plan shows on the canvas at once, and the agent reads the current branch', async () => {
+  it('the agent\'s plan shows on the canvas at once, and the agent reads the project\'s current state', async () => {
     const { page, errors } = await openPage()
     await newProject(page)
     await send(page, '做两个镜头的广告')
@@ -415,38 +414,37 @@ describe('chat with the agent', () => {
     await send(page, '只回复八')
     await waitChat(page, '收到八')
     const prompt = promptOf(requestFor('只回复八') as ChatRequest)
-    expect(prompt).toContain('Project summary of the current branch (main)')
-    expect(prompt).toContain('"branches": [')
+    expect(prompt).toContain('Project summary of the current state')
+    expect(prompt).not.toContain('"branches"')
     expect(errors).toEqual([])
   })
 
-  it('撤销 in the timeline view takes back a step, and the agent\'s next change continues on 分支 2', async () => {
+  it('撤销 in the timeline view takes back a step, and the agent\'s next change continues from that state with the step still in the history', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await send(page, '做两个镜头的广告')
     await waitChat(page, '两个镜头已渲染', 60_000)
-    const stateOf = async (branch?: string): Promise<WireState> =>
-      await harness.api.get(`/api/dv/state?project=${projectId}${branch === undefined ? '' : `&branch=${branch}`}`) as WireState
-    const tip = (await stateOf()).head
+    const stateOf = async (): Promise<WireState> => await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
+    const historyIds = async (): Promise<string[]> =>
+      (await harness.api.post('/api/dv/history', { project: projectId, limit: 200 }) as { entries: Array<{ record: { id: string } }> }).entries
+        .map(entry => entry.record.id)
+    const before = await stateOf()
+    const last = before.components.proj.records.at(-1)?.id ?? ''
     await page.getByRole('tab', { name: '时间线' }).click()
     const editor = page.locator('[data-testid="dv-timeline-editor"]')
     await editor.waitFor({ timeout: 15_000 })
     await editor.getByRole('button', { name: '撤销', exact: true }).click()
-    await waitFor(async () => (await stateOf()).redo_steps.length > 0, 'the undo', 10_000)
-    // The agent writes after the undo, so its change forks 分支 2; 主线 keeps every step it had.
+    await waitFor(async () => (await stateOf()).components.proj.records.every(record => record.id !== last), 'the undo', 10_000)
+    // The agent writes after the undo: its change continues from the earlier state, and the undone step stays listed.
     await send(page, '加人物')
     await waitChat(page, '人物小橘已登记', 30_000)
-    const forked = await stateOf()
-    expect(forked.current).toBe('b2')
-    expect(forked.components.proj.records.filter(record => record.operation === 'bible.character_create')).toHaveLength(1)
-    const main = await stateOf('main')
-    expect(main.head).toBe(tip)
-    expect(main.components.proj.records.some(record => record.operation === 'bible.character_create')).toBe(false)
-    const status = page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-menu"]').first()
-    await waitFor(async () => await status.getAttribute('data-branch') === 'b2', 'the bottom bar on 分支 2', 10_000)
+    const after = await stateOf()
+    expect(after.components.proj.records.filter(record => record.operation === 'bible.character_create')).toHaveLength(1)
+    expect(after.components.proj.records.some(record => record.id === last)).toBe(false)
+    expect(await historyIds()).toContain(last)
     await send(page, '只回复九')
     await waitChat(page, '收到九')
-    expect(promptOf(requestFor('只回复九') as ChatRequest)).toContain('Project summary of the current branch (b2)')
+    expect(promptOf(requestFor('只回复九') as ChatRequest)).toContain('Project summary of the current state')
     expect(errors).toEqual([])
   })
 
@@ -511,13 +509,13 @@ describe('chat with the agent', () => {
     await page.keyboard.press('Enter')
     await waitChat(page, '收到图')
     const state = await waitFor(async () => {
-      const value = await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as { assets: Array<{ id: string; name: string; mime: string }> }
+      const value = await harness.api.get(`/api/dv/state?project=${projectId}`) as { assets: Array<{ id: string; name: string; mime: string }> }
       return value.assets.some(asset => asset.mime.startsWith('image/')) ? value : null
     }, 'the attachment as a project asset', 15_000).catch(() => null)
     expect(state, 'the chat attachment is recorded as a project asset').not.toBeNull()
-    // The import of a sent image also puts it on the branch's canvas, so the canvas draws it.
+    // The import of a sent image also puts it on the canvas, so the canvas draws it.
     const imageId = state?.assets.find(asset => asset.mime.startsWith('image/'))?.id
-    await expect.poll(async () => (await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as WireState).components.asset.placed, { timeout: 10_000 })
+    await expect.poll(async () => (await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState).components.asset.placed, { timeout: 10_000 })
       .toEqual([imageId])
     await page.locator('[data-dv-workspace] [data-node-kind="asset"]').first().waitFor({ timeout: 15_000 })
     expect(errors).toEqual([])
@@ -583,7 +581,7 @@ describe('chat with the agent', () => {
     })
     await runOperation(projectId, 'plan.approve', { plan: plan.report?.['plan'] })
     const done = await waitFor(async () => {
-      const state = await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as WireState
+      const state = await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
       return state.components.proj.records.find(record => record.operation === 'shot.render_ref2va' && record.status === 'done')
     }, 'the take to render', 60_000)
     // Visit another project first, so a stale composer from it would be a wrong target.
@@ -617,7 +615,7 @@ describe('chat with the agent', () => {
     await waitChat(page, '人物小橘已登记')
     const first = locationOf(page).session
     await page.locator('[data-dv-workspace] [data-node-kind="bible"]').first().waitFor({ timeout: 15_000 })
-    // The character is on the project's current branch, which every chat session of the project reads.
+    // The character is in the project's current state, which every chat session of the project reads.
     // The project row's ＋ starts a second chat session in the same project.
     await page.locator('[data-dv-navigator] [data-active]').filter({ hasText: '＋' }).first().locator('button', { hasText: '＋' }).click()
     await waitFor(() => Promise.resolve(locationOf(page).session !== first && locationOf(page).session !== null), 'a second session', 15_000)

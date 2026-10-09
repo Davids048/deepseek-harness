@@ -45,7 +45,7 @@ The `bible` slice of `ProjectState` is `StoryBibleState`: `characters`, `locatio
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The reducer reads only finished `bible.*` records. A version's reference images are the resolved assets of the record's `reference` inputs, so the runner checks that they exist and the record lists them as what it read. Project calls two optional reducer members of the `bible` key: `assetsOf` resolves an `<id>@<version>` input to its reference images, and `createdBy` names the record that wrote a version (Project treats it as the input's producer for stale marks and for parsing `<id>@<version>`). Each branch has its own versions: a version written on one branch does not exist on the branch it was forked from.
+The reducer reads only finished `bible.*` records. A version's reference images are the resolved assets of the record's `reference` inputs, so the runner checks that they exist and the record lists them as what it read. Project calls two optional reducer members of the `bible` key: `assetsOf` resolves an `<id>@<version>` input to its reference images, and `createdBy` names the record that wrote a version (Project treats it as the input's producer for stale marks and for parsing `<id>@<version>`). The versions follow the current state: an undo that goes back before a version takes that version off the state, and its ID is free again in that state.
 
 | File | Content |
 | --- | --- |
@@ -58,7 +58,7 @@ The reducer reads only finished `bible.*` records. A version's reference images 
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`@dv/project`](../project/README.md): operations, reducers, stale marks and branches.
+- [`@dv/project`](../project/README.md): operations, reducers, stale marks and undo.
 - [`COMPONENT-TEMPLATE.md`](../COMPONENT-TEMPLATE.md): the layout this package follows.
 
 -----

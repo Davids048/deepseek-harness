@@ -1,6 +1,6 @@
 // User stories of the canvas (画布) and the timeline editor (时间线), walked in Chromium against the shipped profile with a
 // fake video backend that renders playable VP9 videos and a scripted agent model. Projects are seeded through the
-// `/api/dv` routes, so each story starts from plans, takes, branches, and several timelines without waiting for an agent. Every story
+// `/api/dv` routes, so each story starts from plans, takes, and several timelines without waiting for an agent. Every story
 // asserts what the creator must see after the action; a story whose expected behavior is not built yet fails.
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
@@ -42,9 +42,9 @@ async function runOperation(
   return await harness.api.post('/api/dv/operation', { project, operation, params, inputs, surface: 'canvas', intent: `seed: ${operation}` }) as ProjectRecord
 }
 
-/** @returns the folded state of one branch of a project, `main` by default. */
-async function stateOf(project: string, branch = 'main'): Promise<WireState> {
-  return await harness.api.get(`/api/dv/state?project=${project}&branch=${encodeURIComponent(branch)}`) as WireState
+/** @returns the project's current state. */
+async function stateOf(project: string): Promise<WireState> {
+  return await harness.api.get(`/api/dv/state?project=${project}`) as WireState
 }
 
 /**
@@ -714,7 +714,7 @@ describe('canvas stories', () => {
       return box !== null && box.x <= point.x && point.x <= box.x + box.width && box.y <= point.y && point.y <= box.y + box.height
     }, { timeout: 5000 }).toBe(true)
     expect(await page.locator('[data-node-id]').count()).toBe(nodes + 1)
-    // The placement is an asset.place record of the branch, so the node is still there after a reload.
+    // The placement is an asset.place record of the project, so the node is still there after a reload.
     await expect.poll(async () => (await stateOf(project.id)).components.asset.placed, { timeout: 5000 }).toEqual([extra.outputs[0]])
     await gotoProject(page, project.id)
     await node.waitFor({ timeout: 15_000 })
@@ -1030,7 +1030,7 @@ describe('timeline stories', () => {
     await expect.poll(() => trackClips(page)).toEqual(['1'])
   })
 
-  it('undo reverts the last edit and redo brings it back', async () => {
+  it('undo reverts the last edit, and the editor offers no redo', async () => {
     const project = await seedProject('timeline-undo', 3)
     const page = await openPage()
     await gotoProject(page, project.id, 'timeline')
@@ -1042,10 +1042,8 @@ describe('timeline stories', () => {
     await page.getByRole('button', { name: '撤销' }).click()
     await expect.poll(() => timelineClips(project.id)).toEqual(original)
     await expect.poll(() => trackClips(page)).toHaveLength(3)
-    const redo = page.getByRole('button', { name: '重做' })
-    expect(await redo.isEnabled()).toBe(true)
-    await redo.click()
-    await expect.poll(() => timelineClips(project.id)).toEqual(edited)
+    expect(edited).toHaveLength(2)
+    expect(await page.getByRole('button', { name: '重做' }).count()).toBe(0)
   })
 
   it('export produces one playable video as long as the timeline', async () => {
@@ -1196,18 +1194,13 @@ describe('timeline stories', () => {
   })
 })
 
-/** The branch menu of the workspace's bottom bar. */
-function branchStatus(page: Page): Locator {
-  return page.locator('[data-dv-workspace] [data-testid="dv-kit-branch-menu"]').first()
-}
-
-/** The branch menu in the History panel header; a replaced panel can linger for a moment, so only the visible one counts. */
-function switcher(page: Page): Locator {
-  return page.locator('[data-testid="dv-history-panel"]:visible [data-testid="dv-kit-branch-menu"]').first()
+/** The visible History panel; a replaced panel can linger for a moment, so only the visible one counts. */
+function historyPanel(page: Page): Locator {
+  return page.locator('[data-testid="dv-history-panel"]:visible').first()
 }
 
 /**
- * Open the History tab of the right panel; 面板 reopens a collapsed panel.
+ * Open the History tab of the right panel; the right-panel button reopens a collapsed panel.
  * @param page - a page showing a project workspace.
  */
 async function openHistory(page: Page): Promise<void> {
@@ -1218,60 +1211,52 @@ async function openHistory(page: Page): Promise<void> {
   for (let attempt = 0; attempt < 4; attempt++) {
     if (await tab.click({ timeout: 3000 }).then(() => true, () => false)) break
   }
-  await expect.poll(() => switcher(page).count(), { timeout: 15_000 }).toBe(1)
+  await expect.poll(() => historyPanel(page).count(), { timeout: 15_000 }).toBe(1)
 }
 
-/** @returns the labels of the branches the bottom bar's menu offers, the current branch first; the menu is closed again after. */
-async function branchOptions(page: Page): Promise<string[]> {
-  await branchStatus(page).getByRole('button').first().click()
-  const options = branchStatus(page).locator('[data-testid="dv-kit-branch-option"]')
-  await options.first().waitFor()
-  const labels = await options.evaluateAll(elements => elements.map(element => (element.textContent ?? '').replace(/^[✓\u2003]\s?/, '').trim()))
-  await page.keyboard.press('Escape')
-  return labels
+/**
+ * Choose 回到这一步 in the ⋮ menu of one record's History row, and wait until the list shows the undo row it adds.
+ * @param page - a page showing the History panel.
+ * @param record - the record to go back to.
+ */
+async function goBackTo(page: Page, record: string): Promise<void> {
+  const newest = (): Promise<string | null> => historyPanel(page).locator('[data-testid="dv-history-row"]').first().getAttribute('data-record')
+  const before = await newest()
+  const row = historyPanel(page).locator(`[data-testid="dv-history-row"][data-record="${record}"]`)
+  await row.locator('[data-testid="dv-history-step-actions"]').click()
+  await row.locator('[data-testid="dv-history-step-back"]').click()
+  await expect.poll(newest, { timeout: 15_000 }).not.toBe(before)
 }
 
-describe('branches and keep anyway', () => {
-  it('the bottom bar\'s branch menu names, forks and names branches, History shows the same branch, and switching shows each branch on the canvas and the timeline', async () => {
-    const project = await seedProject('branch-switch', 1)
+describe('going back and keep anyway', () => {
+  it('the workspace has no branch controls; 回到这一步 shows an earlier state on the canvas and the timeline, and the later state stays reachable', async () => {
+    const project = await seedProject('go-back', 1)
     const page = await openPage()
     await gotoProject(page, project.id)
-    await expect.poll(() => branchStatus(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
-    expect(await branchStatus(page).innerText()).toBe('主线')
-    expect(await branchOptions(page)).toEqual(['主线'])
-    // The top bar has no branch controls.
-    expect(await page.locator('[data-dv-workspace] header [data-testid="dv-kit-branch-menu"]').count()).toBe(0)
     const takes = page.locator('[data-node-kind="take"]')
-    await expect.poll(() => takes.count()).toBe(1)
-    // 新建分支 forks 分支 2 at once and opens its name in place, without a browser dialog.
-    await branchStatus(page).getByRole('button').first().click()
-    await branchStatus(page).locator('[data-testid="dv-kit-branch-create"]').click()
-    await expect.poll(() => branchStatus(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('b2')
-    const name = branchStatus(page).locator('[data-testid="dv-kit-branch-name"]')
-    await expect.poll(() => name.inputValue()).toBe('分支 2')
-    await name.fill('夜景')
-    await name.press('Enter')
-    await expect.poll(() => branchOptions(page)).toEqual(['夜景', '主线'])
-    // The History panel's header holds the same menu on the same branch.
-    await openHistory(page)
-    await expect.poll(() => switcher(page).getAttribute('data-branch')).toBe('b2')
-    expect(await switcher(page).innerText()).toBe('夜景')
-    // Edits on the new branch: one more take on the canvas and a second timeline.
-    const take = await runOperation(project.id, RENDER_OPERATION, { prompt: 'branch-switch b2 shot', duration_sec: 1 }, [{ role: 'reference', ref: 'c1@1' }])
-    expect(take.branch).toBe('b2')
+    await expect.poll(() => takes.count(), { timeout: 15_000 }).toBe(1)
+    expect(await page.locator('[data-testid="dv-kit-branch-menu"]').count()).toBe(0)
+    // A plain edit is the step to come back to; the seeded renders fold under the plan approval's row.
+    const earlier = (await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: 'go-back base' })).id
+    // Two more edits: one more take on the canvas and a second timeline.
+    await runOperation(project.id, RENDER_OPERATION, { prompt: 'go-back shot', duration_sec: 1 }, [{ role: 'reference', ref: 'c1@1' }])
     await expect.poll(() => takes.count(), { timeout: 30_000 }).toBe(2)
     await viewToggle(page, '时间线').click()
     await page.locator('[data-testid="dv-timeline-editor"]').getByRole('button', { name: '＋ 新建' }).click()
     await expect.poll(() => timelineTabs(page)).toHaveLength(2)
-    // Back on 主线, chosen from the bottom bar, the canvas and the timeline show 主线 as it was.
-    await branchStatus(page).getByRole('button').first().click()
-    await branchStatus(page).locator('[data-testid="dv-kit-branch-option"][data-branch="main"]').click()
-    await expect.poll(() => branchStatus(page).getAttribute('data-branch'), { timeout: 15_000 }).toBe('main')
-    await expect.poll(() => timelineTabs(page)).toHaveLength(1)
+    const later = (await stateOf(project.id)).head
+    // Back to the step before the two edits: the timeline and the canvas show that state.
+    await openHistory(page)
+    await expect.poll(() => historyPanel(page).locator('[data-testid="dv-history-row"]').first().getAttribute('data-record')).toBe(later)
+    await goBackTo(page, earlier)
+    await expect.poll(() => timelineTabs(page), { timeout: 15_000 }).toHaveLength(1)
     await viewToggle(page, '画布').click()
     await expect.poll(() => takes.count()).toBe(1)
     expect((await stateOf(project.id)).components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1'])
-    expect((await stateOf(project.id, 'b2')).components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1', 't2'])
+    // The later steps stay in the history, so the project can return to them.
+    await goBackTo(page, later)
+    await expect.poll(() => takes.count(), { timeout: 15_000 }).toBe(2)
+    expect((await stateOf(project.id)).components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1', 't2'])
     expect(page.errors).toEqual([])
   })
 

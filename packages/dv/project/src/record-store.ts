@@ -5,13 +5,14 @@
  * ```
  * <root>/<ProjectId>/project.json    ProjectInfo
  * <root>/<ProjectId>/records.jsonl   record lines and update lines, appended in write order
- * <root>/<ProjectId>/branches.json   BranchesFile: branch pointers and the current branch
  * ```
  *
- * The store keeps every project in memory and mirrors each change to disk before it returns. It enforces the record
- * format rules (append only to a branch head, status only forward, no update after a record finished) and reports
- * every change to the `onChange` callback after the change is on disk. It does not interpret records, choose branches,
- * or take decisions; the other modules do that and call it while they hold the project lock it provides.
+ * The records of a project form one line: each record's parent is the record written just before it, and the last
+ * record is the project's head. The store keeps every project in memory and mirrors each change to disk before it
+ * returns. It enforces the record format rules (append only after the head, status only forward, no update after a
+ * record finished) and reports every change to the `onChange` callback after the change is on disk. It does not
+ * interpret records or take decisions; the other modules do that and call it while they hold the project lock it
+ * provides.
  *
  * @module @dv/project/record-store
  */
@@ -19,33 +20,19 @@ import { randomUUID } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { MAIN_BRANCH, ProjectError } from './shared.ts'
-import type {
-  Branch, ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordStatus, RecordUpdate,
-} from './types.ts'
-
-/** A branch as `branches.json` stores it: every field of {@link Branch} except the computed `tip`. */
-export type StoredBranch = Omit<Branch, 'tip'>
-
-/** The contents of `branches.json`. */
-export interface BranchesFile {
-  /** Branch name → branch. */
-  branches: Record<string, StoredBranch>
-  /** The branch every view shows and every write goes to. */
-  current: string
-}
+import { ProjectError } from './shared.ts'
+import type { ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordStatus, RecordUpdate } from './types.ts'
 
 /** A record line as a caller hands it to {@link RecordStore.append}: the store assigns `id` and `created_at`. */
 export type RecordLineInput = Omit<ProjectRecord, 'id' | 'created_at' | 'started_at' | 'finished_at' | 'error' | 'cost' | 'report'>
 
-/** One project in memory: its metadata, its records with every update line applied, and its `branches.json`. */
+/** One project in memory: its metadata and its records with every update line applied. */
 interface LoadedProject {
   info: ProjectInfo
   /** Record ID → the record line with its update lines applied; `resolved_asset` values are as written on disk. */
   records: Map<RecordId, ProjectRecord>
-  /** Record IDs in write order. */
+  /** Record IDs in write order; the last one is the head. */
   order: RecordId[]
-  branches: BranchesFile
 }
 
 /** The order of statuses: an update may only move to a higher rank. */
@@ -70,15 +57,7 @@ function writeAtomic(file: string, text: string): void {
   renameSync(temporary, file)
 }
 
-/**
- * @param branch - a branch, possibly carrying extra fields such as `tip`.
- * @returns exactly the stored fields of the branch.
- */
-function storedBranch(branch: StoredBranch): StoredBranch {
-  return { name: branch.name, title: branch.title, head: branch.head, base: branch.base, forked_at: branch.forked_at }
-}
-
-/** Append-only storage of every project's records, branch pointers and metadata. */
+/** Append-only storage of every project's records and metadata. */
 export class RecordStore {
   private readonly projects = new Map<ProjectId, LoadedProject>()
   /** Project → the settled tail of its lock chain; the next `lock` call starts after it. */
@@ -103,12 +82,7 @@ export class RecordStore {
       const dir = join(this.root, entry.name)
       if (!existsSync(join(dir, 'project.json'))) continue
       const info = JSON.parse(readFileSync(join(dir, 'project.json'), 'utf8')) as ProjectInfo
-      const loaded: LoadedProject = {
-        info,
-        records: new Map(),
-        order: [],
-        branches: JSON.parse(readFileSync(join(dir, 'branches.json'), 'utf8')) as BranchesFile,
-      }
+      const loaded: LoadedProject = { info, records: new Map(), order: [] }
       for (const line of readFileSync(join(dir, 'records.jsonl'), 'utf8').split('\n')) {
         if (line === '') continue
         const parsed = JSON.parse(line) as ProjectRecord | RecordUpdate
@@ -145,8 +119,7 @@ export class RecordStore {
   }
 
   /**
-   * Create a project directory with `project.json`, an empty `records.jsonl`, and a `branches.json` with no branches.
-   * The first appended record creates `main`.
+   * Create a project directory with `project.json` and an empty `records.jsonl`.
    * @param info - the project's metadata; `info.id` must be new.
    */
   createProject(info: ProjectInfo): void {
@@ -155,12 +128,10 @@ export class RecordStore {
       throw new ProjectError('invalid_params', `A project with ID ${info.id} already exists.`)
     }
     const stored: ProjectInfo = { id: info.id, title: info.title, created_at: info.created_at }
-    const branches: BranchesFile = { branches: {}, current: MAIN_BRANCH }
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'project.json'), `${JSON.stringify(stored, null, 2)}\n`)
     writeFileSync(join(dir, 'records.jsonl'), '')
-    writeFileSync(join(dir, 'branches.json'), `${JSON.stringify(branches)}\n`)
-    this.projects.set(info.id, { info: stored, records: new Map(), order: [], branches })
+    this.projects.set(info.id, { info: stored, records: new Map(), order: [] })
   }
 
   /** @returns every project's metadata, oldest first. */
@@ -204,49 +175,32 @@ export class RecordStore {
   }
 
   /**
-   * Append a record line. Rules: `parents` must be `[head of record.branch]`, else `parent_not_head` (or
-   * `unknown_branch` when the branch does not exist); the one exception is the first record of a project, which has
-   * `parents: []`, must be on `main`, and creates the `main` branch pointing at itself. After the append the branch
-   * points at the new record.
+   * Append a record line. Rule: `parents` must be `[head]`, else `parent_not_head`; the first record of a project has
+   * `parents: []`. The new record becomes the head.
    * @param project - the project.
    * @param line - the record without `id` and `created_at`.
    * @returns the stored record.
    */
   append(project: ProjectId, line: RecordLineInput): ProjectRecord {
     const loaded = this.loaded(project)
-    const existing = loaded.branches.branches[line.branch]
-    const first = loaded.order.length === 0
+    const head = loaded.order.at(-1)
     // Check the parent rule before anything is written.
-    if (existing === undefined) {
-      if (!first || line.branch !== MAIN_BRANCH) {
-        throw new ProjectError('unknown_branch', `Project ${project} has no branch ${line.branch}.`)
-      }
-      if (line.parents.length !== 0) {
-        throw new ProjectError('parent_not_head', `The first record of project ${project} must have no parent.`)
-      }
-    } else if (line.parents.length !== 1 || line.parents[0] !== existing.head) {
-      throw new ProjectError('parent_not_head',
-        `Cannot append to ${line.branch} of project ${project}: the record's parent is not the branch head ${existing.head}.`)
+    if (head === undefined ? line.parents.length !== 0 : line.parents.length !== 1 || line.parents[0] !== head) {
+      throw new ProjectError('parent_not_head', `Cannot append to project ${project}: the record's parent is not the head ${head ?? '(none)'}.`)
     }
     // Exactly the record-line fields, in record-format order.
     const record: ProjectRecord = {
-      id: brandString<RecordId>(randomUUID()), parents: [...line.parents], branch: line.branch, kind: line.kind,
+      id: brandString<RecordId>(randomUUID()), parents: [...line.parents], kind: line.kind,
       component: line.component, operation: line.operation, operation_version: line.operation_version, actor: line.actor,
       surface: line.surface, turn: line.turn, session: line.session, tool_call: line.tool_call, intent: line.intent,
       params: line.params, inputs: line.inputs, outputs: line.outputs, based_on: line.based_on, supersedes: line.supersedes,
       deterministic: line.deterministic, status: line.status, created_at: new Date().toISOString(),
     }
     const stored = structuredClone(record)
-    const branch: StoredBranch = existing === undefined
-      ? { name: MAIN_BRANCH, title: null, head: stored.id, base: null, forked_at: null }
-      : { ...existing, head: stored.id }
     appendFileSync(join(this.root, project, 'records.jsonl'), `${JSON.stringify(stored)}\n`)
     loaded.records.set(stored.id, stored)
     loaded.order.push(stored.id)
-    loaded.branches.branches[branch.name] = branch
-    this.writeBranches(project, loaded)
     this.onChange(project, { kind: 'record', record: this.currentForm(loaded, stored) })
-    this.onChange(project, { kind: 'branch', name: branch.name, head: branch.head, current: loaded.branches.current })
     return this.currentForm(loaded, stored)
   }
 
@@ -324,61 +278,10 @@ export class RecordStore {
 
   /**
    * @param project - the project.
-   * @param name - a branch name.
-   * @returns the branch, or undefined when it does not exist.
+   * @returns the project's last record, or undefined for a project without records.
    */
-  getBranch(project: ProjectId, name: string): StoredBranch | undefined {
-    const branch = this.loaded(project).branches.branches[name]
-    return branch === undefined ? undefined : { ...branch }
-  }
-
-  /**
-   * @param project - the project.
-   * @returns every branch, `main` first, then by name with numbers in numeric order (`b2` before `b10`).
-   */
-  listBranches(project: ProjectId): StoredBranch[] {
-    return Object.values(this.loaded(project).branches.branches).map(branch => ({ ...branch })).sort((a, b) => {
-      if (a.name === MAIN_BRANCH) return -1
-      if (b.name === MAIN_BRANCH) return 1
-      return a.name.localeCompare(b.name, 'en', { numeric: true })
-    })
-  }
-
-  /**
-   * Create a branch or move its pointer, and rewrite `branches.json` atomically. `branch.head` must be an existing
-   * record (`unknown_record`).
-   * @param project - the project.
-   * @param branch - the branch after the change.
-   */
-  setBranch(project: ProjectId, branch: StoredBranch): void {
-    const loaded = this.loaded(project)
-    this.storedRecord(project, loaded, branch.head)
-    const stored = storedBranch(branch)
-    loaded.branches.branches[stored.name] = stored
-    this.writeBranches(project, loaded)
-    this.onChange(project, { kind: 'branch', name: stored.name, head: stored.head, current: loaded.branches.current })
-  }
-
-  /**
-   * @param project - the project.
-   * @returns the name of the project's current branch.
-   */
-  currentBranch(project: ProjectId): string {
-    return this.loaded(project).branches.current
-  }
-
-  /**
-   * Make a branch the project's current branch, and rewrite `branches.json` atomically.
-   * @param project - the project.
-   * @param name - an existing branch name; throws `unknown_branch`.
-   */
-  setCurrent(project: ProjectId, name: string): void {
-    const loaded = this.loaded(project)
-    const branch = loaded.branches.branches[name]
-    if (branch === undefined) throw new ProjectError('unknown_branch', `Project ${project} has no branch ${name}.`)
-    loaded.branches.current = name
-    this.writeBranches(project, loaded)
-    this.onChange(project, { kind: 'branch', name, head: branch.head, current: name })
+  head(project: ProjectId): RecordId | undefined {
+    return this.loaded(project).order.at(-1)
   }
 
   /**
@@ -418,15 +321,6 @@ export class RecordStore {
       if (producer?.status === 'done') input.resolved_asset = producer.outputs[input.ref.output] ?? null
     }
     return current
-  }
-
-  /**
-   * Rewrite a project's `branches.json` atomically from memory.
-   * @param project - the project.
-   * @param loaded - the project in memory.
-   */
-  private writeBranches(project: ProjectId, loaded: LoadedProject): void {
-    writeAtomic(join(this.root, project, 'branches.json'), `${JSON.stringify(loaded.branches)}\n`)
   }
 }
 

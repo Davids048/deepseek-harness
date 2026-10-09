@@ -9,13 +9,10 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { describe, expect, it, vi } from 'vitest'
 import type { ProjectModules } from './support.ts'
 import { agentOrigin, createTestProject, readLines, startModules, userOrigin } from './support.ts'
-import { Branches } from '../src/branches.ts'
-import { History } from '../src/history.ts'
 import { RecordStore } from '../src/record-store.ts'
 import { projReducer, ReducerRegistry } from '../src/reducers.ts'
 import { Runner } from '../src/runner.ts'
 import { Scheduler } from '../src/scheduler.ts'
-import { MAIN_BRANCH } from '../src/shared.ts'
 import type {
   AssetId, OperationSpec, ProjectId, ProjectRecord, RecordOrigin, RunRequest,
 } from '../src/types.ts'
@@ -56,10 +53,10 @@ function gate<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } 
 /**
  * @param m - the modules.
  * @param project - the project.
- * @returns the text of the project's `records.jsonl` and `branches.json`.
+ * @returns the text of the project's `records.jsonl`.
  */
 function files(m: ProjectModules, project: ProjectId): string {
-  return readFileSync(join(m.root, project, 'records.jsonl'), 'utf8') + readFileSync(join(m.root, project, 'branches.json'), 'utf8')
+  return readFileSync(join(m.root, project, 'records.jsonl'), 'utf8')
 }
 
 /**
@@ -108,7 +105,7 @@ describe('Runner', () => {
     const first = (await m.runner.run(request(project, 'timeline.clip_insert'))).record!
     const second = (await m.runner.run(request(project, 'timeline.clip_insert'))).record!
     const seen: string[] = []
-    // The spec replaces the head of the state it is given, which is the working branch before the call.
+    // The spec replaces the head of the state it is given, which is the project's state before the call.
     m.runner.registerOperation(operation({
       name: 'bible.character_update', component: 'bible',
       supersedes: (params, state) => {
@@ -163,13 +160,14 @@ describe('Runner', () => {
     const m = startModules()
     const project = await createTestProject(m)
     const seen: string[] = []
-    const precondition = (call: RunRequest, state: { branch: string }): Promise<void> => {
-      seen.push(state.branch)
+    const precondition = (call: RunRequest, state: { head: string }): Promise<void> => {
+      seen.push(state.head)
       return call.params['prompt'] === 'refuse' ? Promise.reject(new Error('This shot has no reference image.')) : Promise.resolve()
     }
     m.runner.registerOperation(operation({ name: 'shot.render', component: 'shot', precondition }))
     m.runner.registerOperation(operation({ name: 'inspect.image', component: 'inspect', readOnly: true, precondition }))
     const before = files(m, project)
+    const head = m.store.head(project)
     const eventCount = m.events.length
 
     // An agent call that is refused writes nothing; a read-only call is refused the same way.
@@ -179,7 +177,7 @@ describe('Runner', () => {
     }
     expect(files(m, project)).toBe(before)
     expect(m.events).toHaveLength(eventCount)
-    expect(seen).toEqual([MAIN_BRANCH, MAIN_BRANCH])
+    expect(seen).toEqual([head, head])
     expect((await m.runner.run(request(project, 'shot.render'))).record?.status).toBe('done')
   })
 
@@ -300,9 +298,9 @@ describe('Runner', () => {
     const project = await createTestProject(m)
     // An earlier process wrote one pending and one running record, then stopped.
     const unfinished = await m.store.lock(project, () => ['pending', 'running'].map((status) => {
-      const head = m.store.getBranch(project, MAIN_BRANCH)?.head as ProjectRecord['id']
+      const head = m.store.head(project) as ProjectRecord['id']
       const record = m.store.append(project, {
-        parents: [head], branch: MAIN_BRANCH, kind: 'operation', component: 'shot', operation: 'shot.render', operation_version: '1',
+        parents: [head], kind: 'operation', component: 'shot', operation: 'shot.render', operation_version: '1',
         ...userOrigin(), params: {}, inputs: [], outputs: [], based_on: null, supersedes: [], deterministic: false, status: 'pending',
       })
       return status === 'running' ? m.store.update(project, { update: record.id, status: 'running' }) : record
@@ -313,7 +311,7 @@ describe('Runner', () => {
     const reducers = new ReducerRegistry(store)
     const holder: { runner: Runner | null } = { runner: null }
     const scheduler = new Scheduler(store, (id, record) => (holder.runner as Runner).execute(id, record), { cpu: 1, gpu: 1 })
-    holder.runner = new Runner({ store, branches: new Branches(store, new History(store)), reducers, scheduler, assets: m.assets })
+    holder.runner = new Runner({ store, reducers, scheduler, assets: m.assets })
     store.load()
     reducers.register('proj', projReducer)
     await holder.runner.recover()

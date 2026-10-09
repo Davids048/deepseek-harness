@@ -32,7 +32,7 @@ export interface Asset {
 /** Where `asset.grab_still` takes the still: the first frame, the last frame, or a time in seconds. */
 export type StillAt = 'first' | 'last' | number
 
-/** The `asset` slice: the assets on the canvas of the branch. */
+/** The `asset` slice: the assets on the canvas in the state. */
 export interface AssetState {
   /** The assets placed on the canvas, in the order they were placed. */
   placed: AssetId[]
