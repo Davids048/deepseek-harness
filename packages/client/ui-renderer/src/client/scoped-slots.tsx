@@ -1083,11 +1083,13 @@ function SlotOutlet({ slotKey, ownerProps, opts }: {
   // target — and `display:contents` keeps it layout-neutral. The wrapper
   // rides the outlet, not the dispatch outcome: fallback, crash-face, and
   // undeclared-empty states all render inside it, so the anchor's presence
-  // never flickers with registration churn.
+  // never flickers with registration churn. An inline chain outlet sits in
+  // phrasing content, where only a `<span>` anchor is valid HTML.
+  const Anchor = opts?.inline === true ? 'span' : 'div'
   return (
-    <div data-slot={slotKey} style={ANCHOR_STYLE}>
+    <Anchor data-slot={slotKey} style={ANCHOR_STYLE}>
       {renderOutletContent(host, slotKey, ownerProps, opts, scopeBinding)}
-    </div>
+    </Anchor>
   )
 }
 

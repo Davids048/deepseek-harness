@@ -9,7 +9,9 @@
  * absolute HTTP(S), raw HTML renders as literal text (no HTML enters the
  * DOM), and KaTeX runs without trusted commands. Fragment-anchor URLs fail
  * the allowlist, so footnote references and back-references render as plain
- * text rather than in-page links.
+ * text rather than in-page links. Settled links, images outside links, and
+ * tables pass their parsed data and default rendering to the delegate's
+ * optional element renderer.
  *
  * Merge-extensible node unions fall through the documented default (render
  * nothing) rather than ending in assertNever: grammars registered elsewhere
@@ -28,6 +30,7 @@ import { parseFileLink } from './file-link.ts'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIconMedium, classifyLinkPath } from '../LinkIcon.tsx'
 import { useMarkdownDelegate } from './MarkdownDelegate.tsx'
+import type { MarkdownElement, MarkdownTableCell, MarkdownTableLink } from './MarkdownDelegate.tsx'
 import { HoverCard } from '../HoverCard.tsx'
 import { ImageLightbox } from '../ImageLightbox.tsx'
 import { ImagePreview } from '../ImagePreview.tsx'
@@ -346,10 +349,7 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'table':
       return renderTable(node, key, context)
     case 'link':
-      return renderAnchor(
-        node.url, renderChildren(node.children, { ...context, inLink: true }), key,
-        !anchorWrapsOnlyImages(node.children), context.streaming,
-      )
+      return renderLink(node.url, node.children, key, context)
     case 'linkReference':
       return renderLinkReference(node, key, context)
     case 'image':
@@ -481,7 +481,9 @@ function renderTable(node: Md.Table, key: Key, context: MarkdownRenderContext): 
   // column. Narrower tables — and any table inside a blockquote — fill the
   // column and wrap instead (deepsuite chat TableWrapper parity).
   const wide = columns >= 4 && context.inBlockquote !== true
-  return (
+  // The default table renders during the pass even when a renderer replaces
+  // it, so footnote numbering stays in document order.
+  const table = (
     // Wide tables rest with overflow-x hidden (the hover-revealed bar in
     // MarkdownText.module.css), which drops Chromium's implicit scroller
     // focusability — the explicit tabindex keeps them keyboard-reachable,
@@ -501,6 +503,70 @@ function renderTable(node: Md.Table, key: Key, context: MarkdownRenderContext): 
       </table>
     </div>
   )
+  return <DelegatedElement key={key} element={context.streaming ? undefined : tableElement(node, context)} fallback={table} />
+}
+
+/** Authored cells of a table's body rows. */
+function tableElement(node: Md.Table, context: MarkdownRenderContext): MarkdownElement {
+  const bodyRows = node.children.slice(1)
+  return { kind: 'table', rows: bodyRows.map(row => row.children.map(cell => tableCell(cell, context))) }
+}
+
+function tableCell(cell: Md.TableCell, context: MarkdownRenderContext): MarkdownTableCell {
+  const links: MarkdownTableLink[] = []
+  collectLinks(cell.children, context, links)
+  return { text: plainText(cell.children), links }
+}
+
+/** Append every link and resolved link reference under `nodes`, depth-first in source order. */
+function collectLinks(nodes: readonly Md.RootContent[], context: MarkdownRenderContext, links: MarkdownTableLink[]): void {
+  for (const node of nodes) {
+    if (node.type === 'link') {
+      links.push({ href: node.url })
+    } else if (node.type === 'linkReference') {
+      const definition = context.targets.definitions.get(node.identifier.toUpperCase())
+      if (definition !== undefined) links.push({ href: definition.url })
+    } else if ('children' in node) {
+      collectLinks(node.children, context, links)
+    }
+  }
+}
+
+/** Plain text of phrasing content: labels and code keep their text, images their alt text. */
+function plainText(nodes: readonly Md.RootContent[]): string {
+  return nodes.map(nodeText).join('').replace(/\s+/g, ' ').trim()
+}
+
+function nodeText(node: Md.RootContent): string {
+  switch (node.type) {
+    case 'text':
+    case 'inlineCode':
+    case 'inlineMath':
+    case 'html':
+      return node.value
+    case 'image':
+    case 'imageReference':
+      return node.alt ?? ''
+    case 'break':
+      return ' '
+    default:
+      // Merge-extensible union: other parents contribute their children's text; other leaves contribute none.
+      return 'children' in node ? node.children.map(nodeText).join('') : ''
+  }
+}
+
+/**
+ * Offer one settled element to the nearest delegate's element renderer.
+ * Without a renderer the default rendering returns unchanged, adding no DOM.
+ * Streaming renders pass no element and keep this wrapper, so the default
+ * rendering keeps its React identity, and its state, when the message settles.
+ */
+function DelegatedElement({ element, fallback }: {
+  readonly element: MarkdownElement | undefined
+  readonly fallback: ReactNode
+}): ReactNode {
+  const { renderElement } = useMarkdownDelegate()
+  return element === undefined || renderElement === undefined ? fallback : renderElement(element, fallback)
 }
 
 function renderTableRow(
@@ -568,6 +634,20 @@ function MarkdownAnchor({ href, glyph, children }: {
   )
 }
 
+/** A link node or resolved link reference; settled links also reach the delegate's element renderer. */
+function renderLink(
+  url: string,
+  label: Md.PhrasingContent[],
+  key: Key,
+  context: MarkdownRenderContext,
+): ReactNode {
+  const anchor = renderAnchor(
+    url, renderChildren(label, { ...context, inLink: true }), key, !anchorWrapsOnlyImages(label), context.streaming,
+  )
+  const element: MarkdownElement | undefined = context.streaming ? undefined : { kind: 'link', href: url }
+  return <DelegatedElement key={key} element={element} fallback={anchor} />
+}
+
 /** Local destinations use the scoped file delegate after settlement. */
 function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true, streaming = false): ReactNode {
   const file = streaming ? undefined : parseFileLink(url)
@@ -622,8 +702,12 @@ function inlineCodeHttpUrl(value: string): string | undefined {
 }
 
 function renderImage(url: string, alt: string, key: Key, context: MarkdownRenderContext): ReactNode {
-  return <MarkdownImage key={`${key}:${url}`} destination={url} alt={alt}
+  const image = <MarkdownImage key={`${key}:${url}`} destination={url} alt={alt}
     pathImages={context.pathImages} streaming={context.streaming} inLink={context.inLink === true} />
+  // An image inside a link stays part of that link's label.
+  if (context.inLink === true) return image
+  const element: MarkdownElement | undefined = context.streaming ? undefined : { kind: 'image', src: url, alt }
+  return <DelegatedElement key={`${key}:${url}`} element={element} fallback={image} />
 }
 
 function MarkdownImage({ destination, alt, pathImages, streaming, inLink }: {
@@ -681,8 +765,7 @@ function renderLinkReference(
     // not an anchor, so mentions inside it stay live.
     return <Fragment key={key}>{'['}{renderChildren(node.children, context)}{referenceSuffix(node)}</Fragment>
   }
-  const rendered = renderChildren(node.children, { ...context, inLink: true })
-  return renderAnchor(definition.url, rendered, key, !anchorWrapsOnlyImages(node.children), context.streaming)
+  return renderLink(definition.url, node.children, key, context)
 }
 
 function renderImageReference(
