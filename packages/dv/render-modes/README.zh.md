@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse 生成方式 seam 的 Service Definition：dvRef2va（Ref2vaRenderer，提示词和参考图）和 dvT2va（T2vaRenderer，只有提示词），以及它们的请求、模型事实和渲染流类型。"
+description: "DreamVerse 生成方式 seam 的 Service Definition：按名字登记渲染器的注册表 dvRef2va（Ref2vaRenderer，提示词和参考图）和 dvT2va（T2vaRenderer，只有提示词），以及它们的请求、模型事实和渲染流类型。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包添加或替换渲染镜头的方式。生成方式（render mode）是镜头由其输入渲染出来的方式，每种生成方式都是独立的能力 seam。本包定义两个 Cordis 服务：`dvRef2va`（抽象类 `Ref2vaRenderer`：一段提示词、1 到 `maxReferenceImages` 张参考图，以及可选的首帧）和 `dvT2va`（抽象类 `T2vaRenderer`：只有提示词）。每种生成方式都以 `RenderStreamEvent` 流返回一段带音频的视频及其最后一帧。`@dv/shot-render` 是 Consumer；`@dv/fasth3-ref2va` 和 `@dv/fasth3-t2va` 是 Service Provider。
+使用本包添加渲染镜头的方式。生成方式（render mode）是镜头由其输入渲染出来的方式，每种生成方式都是独立的能力 seam。本包提供两个 Cordis 服务，每个都是按后端名字登记渲染器的注册表：`dvRef2va`（接口 `Ref2vaRenderer`：一段提示词、1 到 `maxReferenceImages` 张参考图，以及可选的首帧）和 `dvT2va`（接口 `T2vaRenderer`：只有提示词）。任意数量的 provider 插件都可以向同一种生成方式登记渲染器。每个渲染器都以 `RenderStreamEvent` 流返回一段带音频的视频及其最后一帧。`@dv/shot-render` 是 Consumer；`@dv/fasth3-ref2va` 和 `@dv/fasth3-t2va` 是 Service Provider。
 
 ## 目录
 
@@ -24,7 +24,22 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-要添加 provider，继承 `Ref2vaRenderer` 或 `T2vaRenderer` 并把子类作为插件加载；每个 context 中每种生成方式只有一个 provider。Consumer 注入 `dvRef2va` 或 `dvT2va` 并调用三个方法，每个 provider 都按以下语义实现它们：
+只挂载本插件一次（[`@dv/bundle`](../../bundle/dv/README.zh.md) 的行 `dv-render-modes`）；它提供 `dvRef2va` 和 `dvT2va`。要添加一个后端，写一个插件：注入其生成方式的注册表，并在 `ctx.effect` 内以一个后端名字登记一个实现 `Ref2vaRenderer` 或 `T2vaRenderer` 的对象，这样卸载该插件时渲染器随之移除：
+
+```ts
+ctx.effect(() => ctx.dvRef2va.register(config.backend, new MyRef2vaRenderer(config)))
+```
+
+每个注册表有以下方法：
+
+| 方法 | 返回值 | 语义 |
+| --- | --- | --- |
+| `register(backend, renderer)` | `() => void` | 以 `backend` 登记渲染器，并返回移除它的函数；`backend` 已在本生成方式中登记时抛出错误 |
+| `get(backend)` | 渲染器或 `undefined` | 以 `backend` 登记的渲染器 |
+| `backends()` | `string[]` | 已登记的后端名字，按登记顺序 |
+| `onChanged(listener)` | `() => void` | 每次登记和移除后调用 `listener`；返回移除该 listener 的函数 |
+
+Consumer 注入 `dvRef2va` 或 `dvT2va`，按后端名字选出一个渲染器，并调用三个方法，每个渲染器都按以下语义实现它们：
 
 | 方法 | 返回值 | 语义 |
 | --- | --- | --- |
@@ -44,11 +59,11 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-每种生成方式是一个单独的服务，所以挂载一个 provider 恰好增加一种生成方式。`dvRef2va` 挂载期间，`@dv/shot-render` 注册 `shot.render_ref2va`；`dvT2va` 挂载期间，注册 `shot.render_t2va`。镜头渲染读取 `model()`，把镜头的 `duration_sec`、`aspect_ratio` 和 `resolution` 参数换算成画面尺寸和帧数，用 `maxReferenceImages` 检查 `ref2va` 调用的参考图数量，在渲染运行前用镜头时长乘以 `gpuSecondsPerVideoSecond` 得到 GPU 估算，并把渲染流存为一个版本的两个输出 `video` 和 `last_still`。本包只包含类型和两个抽象类，抽象类的构造函数注册服务名。
+每种生成方式是一个单独的注册表，所以一个 provider 恰好向一种生成方式增加一个后端。`dvRef2va` 中有渲染器期间，`@dv/shot-render` 注册 `shot.render_ref2va`；`dvT2va` 中有渲染器期间，注册 `shot.render_t2va`；每次 `onChanged` 回调时它都重新注册操作，使其 `backend` 参数列出已登记的后端。镜头渲染读取调用所指定渲染器的 `model()`，把镜头的 `duration_sec`、`aspect_ratio` 和 `resolution` 参数换算成画面尺寸和帧数，用 `maxReferenceImages` 检查 `ref2va` 调用的参考图数量，在渲染运行前用镜头时长乘以 `gpuSecondsPerVideoSecond` 得到 GPU 估算，并把渲染流存为一个版本的两个输出 `video` 和 `last_still`。本包包含类型、渲染器接口、通用的 `RendererRegistry` 类，以及挂载 `Ref2vaRegistry` 和 `T2vaRegistry` 的函数插件。
 
 | 文件 | 内容 |
 | --- | --- |
-| [`src/index.ts`](src/index.ts) | `Ref2vaRenderer`、`T2vaRenderer`，以及 Cordis `Context` 上的 `dvRef2va` 和 `dvT2va` 属性 |
+| [`src/index.ts`](src/index.ts) | `Ref2vaRenderer`、`T2vaRenderer`、`RendererRegistry`、`Ref2vaRegistry`、`T2vaRegistry`、插件的 `apply`，以及 Cordis `Context` 上的 `dvRef2va` 和 `dvT2va` 属性 |
 | [`src/types.ts`](src/types.ts) | `RenderModelFacts`、`Ref2vaRequest`、`T2vaRequest`、`RenderStreamEvent` |
 
 -----
@@ -57,9 +72,9 @@ kind: "package-reference"
 ## 进一步探索
 
 - [`@dv/shot-render`](../shot-render/README.zh.md)：Consumer 及其操作 `shot.render_ref2va` 和 `shot.render_t2va`。
-- [`@dv/fasth3-ref2va`](../fasth3-ref2va/README.zh.md)：`dvRef2va` 的 Service Provider。
-- [`@dv/fasth3-t2va`](../fasth3-t2va/README.zh.md)：`dvT2va` 的 Service Provider。
-- [`@dv/bundle`](../../bundle/dv/README.zh.md)：挂载这些 provider 的行 `dv-fasth3-ref2va` 和 `dv-fasth3-t2va`。
+- [`@dv/fasth3-ref2va`](../fasth3-ref2va/README.zh.md)：向 `dvRef2va` 登记一个渲染器的 Service Provider。
+- [`@dv/fasth3-t2va`](../fasth3-t2va/README.zh.md)：向 `dvT2va` 登记一个渲染器的 Service Provider。
+- [`@dv/bundle`](../../bundle/dv/README.zh.md)：挂载注册表的行 `dv-render-modes`，以及挂载这些 provider 的行 `dv-fasth3-ref2va` 和 `dv-fasth3-t2va`。
 
 -----
 
@@ -70,7 +85,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-本包不注册工具、提示词段落或 skill。它的两个服务决定 `@dv/shot-render` 列出哪些渲染工具：`dvRef2va` 挂载期间列出 `dv_shot_render_ref2va`，`dvT2va` 挂载期间列出 `dv_shot_render_t2va`。已挂载 provider 的 `RenderModelFacts` 出现在这些工具的结果中（`model`、`frame_width`、`frame_height`、`num_frames`，`ref2va` 还有请求图片的 `image_labels`），也出现在它们的拒绝文本中（允许的宽高比、分辨率和时长，参考图上限，以及渲染需要用户同意时由 `gpuSecondsPerVideoSecond` 得出的 GPU 估算）。
+本包不注册工具、提示词段落或 skill。它的两个注册表决定 `@dv/shot-render` 列出哪些渲染工具，以及这些工具的 `backend` 参数可取哪些值：`dvRef2va` 中有渲染器期间列出 `dv_shot_render_ref2va`，`dvT2va` 中有渲染器期间列出 `dv_shot_render_t2va`，各自以已登记的后端名字作为 `backend` 的取值。调用所指定渲染器的 `RenderModelFacts` 出现在这些工具的结果中（`model`、`frame_width`、`frame_height`、`num_frames`，`ref2va` 还有请求图片的 `image_labels`），也出现在它们的拒绝文本中（允许的宽高比、分辨率和时长，参考图上限，以及渲染需要用户同意时由 `gpuSecondsPerVideoSecond` 得出的 GPU 估算）。
 
 #### Token 影响
 
@@ -78,11 +93,10 @@ kind: "package-reference"
 
 #### KV Cache 影响
 
-挂载或移除一个 provider 会增加或移除它的渲染工具，这会改变工具列表，使缓存前缀从工具部分起失效。
+登记或移除一个渲染器会改变渲染工具的 `backend` 取值，或者增加或移除该工具，这会改变工具列表，使缓存前缀从工具部分起失效。
 
 ## 已知限制与延期工作
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **每种生成方式一个 provider**：每个 context 只有一个 `dvRef2va` provider 和一个 `dvT2va` provider，所以同一生成方式的两个模型不能并列挂载。
 - **`fl2va` 是保留名**：生成方式名 `fl2va` 在本包中没有服务，也没有类。

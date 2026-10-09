@@ -1,5 +1,5 @@
 ---
-description: "Service Provider of the DreamVerse ref2va render mode (dvRef2va) for a FastH3 Ref2VA model behind a FastVideo streaming_v2 server, with its prompt skill fasth3-ref2va-prompting."
+description: "Service Provider of the DreamVerse ref2va render mode: registers a renderer into dvRef2va for a FastH3 Ref2VA model behind a FastVideo streaming_v2 server, with its prompt skill fasth3-ref2va-prompting."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to render `ref2va` shots, from a prompt and reference images, with a FastH3 Ref2VA model behind a FastVideo streaming_v2 server. Class `FastH3Ref2vaRenderer` is the Service Provider of `dvRef2va` from `@dv/render-modes`: it reads the model facts from the server, reports whether the server is ready, and sends each render with the reference images first and the first frame after them. While the DSH skill registry is mounted, it registers the skill `fasth3-ref2va-prompting`: the model's limits and prompt rules for `dv_shot_render_ref2va`.
+Use this package to render `ref2va` shots, from a prompt and reference images, with a FastH3 Ref2VA model behind a FastVideo streaming_v2 server. The plugin is a Service Provider of `dvRef2va` from `@dv/render-modes`: it registers a `FastH3Ref2vaRenderer` under its `backend` name, and the renderer reads the model facts from the server, reports whether the server is ready, and sends each render with the reference images first and the first frame after them. While the DSH skill registry is mounted, it registers the skill `fasth3-ref2va-prompting`: the model's limits and prompt rules for `dv_shot_render_ref2va`.
 
 ## Table of Contents
 
@@ -35,21 +35,22 @@ Mount the plugin with the base URL of the streaming_v2 server. The DreamVerse bu
 
 | Field | Default | Meaning |
 | --- | --- | --- |
+| `backend` | `fasth3` | The backend name the renderer is registered under in `dvRef2va`; the `backend` argument of `dv_shot_render_ref2va` names it. Give each row of this plugin its own name to serve several servers side by side |
 | `baseUrl` | required | HTTP base URL of the FastVideo streaming_v2 server; the bundle reads `DV_BACKEND_URL` and falls back to `http://127.0.0.1:8029` |
 | `gpuSecondsPerVideoSecond` | `4` | GPU seconds per rendered video second on this server; `model()` reports it for the GPU estimate before a render |
 
-While the provider is mounted, `@dv/shot-render` registers `shot.render_ref2va` (tool `dv_shot_render_ref2va`). Mount the DSH skill registry (`@deepseek-ai/dsh-skill`) as well so that the agent can load the prompt skill.
+Mount [`@dv/render-modes`](../render-modes/README.md) first. While the renderer is registered, `@dv/shot-render` registers `shot.render_ref2va` (tool `dv_shot_render_ref2va`) with this backend among the values of its `backend` argument. Mount the DSH skill registry (`@deepseek-ai/dsh-skill`) as well so that the agent can load the prompt skill.
 
 -----
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The streaming_v2 client of `@dreamverse/generation-client` does the HTTP work: `model()` reads `GET /v1/streamv2/capabilities`, `ready()` reads `GET /v1/streamv2/health`, and `render()` sends one streaming_v2 render request and returns the server's event stream. The server counts the first frame among its request images, so `model()` reports `maxReferenceImages` as one fewer than the server's `max_reference_images` and keeps one `imageLabels` entry per server image (`Picture 1` to `Picture N`); the first frame takes the label after the last reference image. `render()` sends the reference images in input order, appends the first frame when the request carries one, asks for the server's last frame, and passes `signal` on to cancel the HTTP request. The client lives in an isolated `dreamverseGeneration` scope, so the host gains no `dreamverseGeneration` service. The skill registers through `ctx.skills.register` inside `ctx.inject(['skills'], …)`, so it appears when the skill registry mounts and leaves when the provider or the registry is removed.
+The streaming_v2 client of `@dreamverse/generation-client` does the HTTP work: `model()` reads `GET /v1/streamv2/capabilities`, `ready()` reads `GET /v1/streamv2/health`, and `render()` sends one streaming_v2 render request and returns the server's event stream. The server counts the first frame among its request images, so `model()` reports `maxReferenceImages` as one fewer than the server's `max_reference_images` and keeps one `imageLabels` entry per server image (`Picture 1` to `Picture N`); the first frame takes the label after the last reference image. `render()` sends the reference images in input order, appends the first frame when the request carries one, asks for the server's last frame, and passes `signal` on to cancel the HTTP request. The client lives in an isolated `dreamverseGeneration` scope, so the host gains no `dreamverseGeneration` service. The plugin registers the renderer through `ctx.dvRef2va.register` inside `ctx.effect`, so disposing the plugin removes the renderer. The skill registers through `ctx.skills.register` inside `ctx.inject(['skills'], …)`, so it appears when the skill registry mounts and leaves when the provider or the registry is removed.
 
 | File | Content |
 | --- | --- |
-| [`src/index.ts`](src/index.ts) | `FastH3Ref2vaRenderer`, `Config`, and the skill registration |
+| [`src/index.ts`](src/index.ts) | `FastH3Ref2vaRenderer`, `Config`, and the plugin `apply`, which registers the renderer and the skill |
 | [`skills/fasth3-ref2va-prompting.md`](skills/fasth3-ref2va-prompting.md) | The skill body: the DreamVerse connection section, then the official MiniMax-H3 full-reference prompt guide copied unchanged |
 | [`tests/fasth3-ref2va.spec.ts`](tests/fasth3-ref2va.spec.ts) | A Loader composition with the skill registry against a fake streaming_v2 server; an opt-in test renders against the server named by `DV_BACKEND_URL` |
 
@@ -58,7 +59,7 @@ The streaming_v2 client of `@dreamverse/generation-client` does the HTTP work: `
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`@dv/render-modes`](../render-modes/README.md): the `dvRef2va` service that this package provides.
+- [`@dv/render-modes`](../render-modes/README.md): the `dvRef2va` registry that this package registers into.
 - [`@dv/shot-render`](../shot-render/README.md): the Consumer, with the tool `dv_shot_render_ref2va`.
 - [`@dreamverse/generation-client`](../../dreamverse/generation-client/README.md): the streaming_v2 client.
 - [`dsh-tool-skill`](../../skill/tool-skill/README.md): how the agent sees the skill catalog and loads a skill.
@@ -100,7 +101,7 @@ This package adds no tokens beyond the tool results and refusals that `@dv/shot-
 
 #### KV Cache effect
 
-Mounting or removing the provider adds or removes `dv_shot_render_ref2va` and invalidates the cached prefix from the tool section on.
+Registering or removing the renderer changes the values of the `backend` argument of `dv_shot_render_ref2va`, or adds or removes the tool, and invalidates the cached prefix from the tool section on.
 
 ## Known Limitations and Deferred Work
 
@@ -108,3 +109,4 @@ Mounting or removing the provider adds or removes `dv_shot_render_ref2va` and in
 
 - **Fixed limits in the skill**: `skills/fasth3-ref2va-prompting.md` states 5 to 15 seconds and at most 8 reference images, while `model()` reads the limits from the server; a server with other limits makes the skill disagree with the refusals of `dv_shot_render_ref2va`.
 - **Reference aspect ratio**: `model()` drops the server's `max_reference_aspect_ratio` because `RenderModelFacts` has no field for it, so Shot render sends reference images to the server without an aspect ratio check.
+- **One skill for several rows**: two rows of this plugin register the same skill name; the skill registry keeps the first and ignores the second, so removing the first row removes the skill while the second row's renderer stays registered.

@@ -1,5 +1,5 @@
 ---
-description: "Service Definitions of the DreamVerse render mode seams: dvRef2va (Ref2vaRenderer, a prompt and reference images) and dvT2va (T2vaRenderer, a prompt only), with their request, model-fact and render-stream types."
+description: "Service Definitions of the DreamVerse render mode seams: the registries dvRef2va (Ref2vaRenderer, a prompt and reference images) and dvT2va (T2vaRenderer, a prompt only) of named renderers, with their request, model-fact and render-stream types."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to add or replace a way of rendering shots. A render mode is how a shot is rendered from its inputs, and each render mode is its own capability seam. The package defines two Cordis services: `dvRef2va` (abstract class `Ref2vaRenderer`: a prompt, 1 to `maxReferenceImages` reference images, and an optional first frame) and `dvT2va` (abstract class `T2vaRenderer`: a prompt only). Every render mode returns one video with audio and its last frame as a `RenderStreamEvent` stream. `@dv/shot-render` is the Consumer; `@dv/fasth3-ref2va` and `@dv/fasth3-t2va` are the Service Providers.
+Use this package to add a way of rendering shots. A render mode is how a shot is rendered from its inputs, and each render mode is its own capability seam. The package provides two Cordis services, each a registry of renderers by backend name: `dvRef2va` (interface `Ref2vaRenderer`: a prompt, 1 to `maxReferenceImages` reference images, and an optional first frame) and `dvT2va` (interface `T2vaRenderer`: a prompt only). Any number of provider plugins register renderers into the same render mode. Every renderer returns one video with audio and its last frame as a `RenderStreamEvent` stream. `@dv/shot-render` is the Consumer; `@dv/fasth3-ref2va` and `@dv/fasth3-t2va` are the Service Providers.
 
 ## Table of Contents
 
@@ -24,7 +24,22 @@ Use this package to add or replace a way of rendering shots. A render mode is ho
 <a id="use-this-package"></a>
 ## Use this package
 
-To add a provider, subclass `Ref2vaRenderer` or `T2vaRenderer` and load the subclass as a plugin; each context holds one provider per render mode. A Consumer injects `dvRef2va` or `dvT2va` and calls three methods, which every provider implements with these semantics:
+Mount this plugin once (row `dv-render-modes` of [`@dv/bundle`](../../bundle/dv/README.md)); it provides `dvRef2va` and `dvT2va`. To add a backend, write a plugin that injects the registry of its render mode and registers an object implementing `Ref2vaRenderer` or `T2vaRenderer` under a backend name inside `ctx.effect`, so disposing the plugin removes the renderer:
+
+```ts
+ctx.effect(() => ctx.dvRef2va.register(config.backend, new MyRef2vaRenderer(config)))
+```
+
+Each registry has these methods:
+
+| Method | Returns | Semantics |
+| --- | --- | --- |
+| `register(backend, renderer)` | `() => void` | Adds the renderer under `backend` and returns the function that removes it; throws when `backend` is already registered in this render mode |
+| `get(backend)` | the renderer or `undefined` | The renderer registered under `backend` |
+| `backends()` | `string[]` | The registered backend names, in registration order |
+| `onChanged(listener)` | `() => void` | Calls `listener` after every registration and removal; returns the function that removes the listener |
+
+A Consumer injects `dvRef2va` or `dvT2va`, picks a renderer by backend name, and calls three methods, which every renderer implements with these semantics:
 
 | Method | Returns | Semantics |
 | --- | --- | --- |
@@ -44,11 +59,11 @@ To add a provider, subclass `Ref2vaRenderer` or `T2vaRenderer` and load the subc
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-Each render mode is a separate service, so mounting a provider adds exactly one render mode. `@dv/shot-render` registers `shot.render_ref2va` while `dvRef2va` is mounted and `shot.render_t2va` while `dvT2va` is mounted. Shot render reads `model()` to turn the `duration_sec`, `aspect_ratio` and `resolution` params of a shot into a frame size and a frame count, checks the reference image count of a `ref2va` call against `maxReferenceImages`, multiplies the shot duration by `gpuSecondsPerVideoSecond` for the GPU estimate before the render runs, and stores the render stream as the two outputs of a take, `video` and `last_still`. The package holds only the types and the two abstract classes, whose constructors register the service names.
+Each render mode is a separate registry, so a provider adds a backend to exactly one render mode. `@dv/shot-render` registers `shot.render_ref2va` while `dvRef2va` holds a renderer and `shot.render_t2va` while `dvT2va` holds one, and registers the operation again on every `onChanged` call so its `backend` param lists the registered backends. Shot render reads `model()` of the renderer a call names to turn the `duration_sec`, `aspect_ratio` and `resolution` params of a shot into a frame size and a frame count, checks the reference image count of a `ref2va` call against `maxReferenceImages`, multiplies the shot duration by `gpuSecondsPerVideoSecond` for the GPU estimate before the render runs, and stores the render stream as the two outputs of a take, `video` and `last_still`. The package holds the types, the renderer interfaces, the generic `RendererRegistry` class, and the function plugin that mounts `Ref2vaRegistry` and `T2vaRegistry`.
 
 | File | Content |
 | --- | --- |
-| [`src/index.ts`](src/index.ts) | `Ref2vaRenderer`, `T2vaRenderer`, and the `dvRef2va` and `dvT2va` properties of the Cordis `Context` |
+| [`src/index.ts`](src/index.ts) | `Ref2vaRenderer`, `T2vaRenderer`, `RendererRegistry`, `Ref2vaRegistry`, `T2vaRegistry`, the plugin `apply`, and the `dvRef2va` and `dvT2va` properties of the Cordis `Context` |
 | [`src/types.ts`](src/types.ts) | `RenderModelFacts`, `Ref2vaRequest`, `T2vaRequest`, `RenderStreamEvent` |
 
 -----
@@ -57,9 +72,9 @@ Each render mode is a separate service, so mounting a provider adds exactly one 
 ## Further Exploration
 
 - [`@dv/shot-render`](../shot-render/README.md): the Consumer and its operations `shot.render_ref2va` and `shot.render_t2va`.
-- [`@dv/fasth3-ref2va`](../fasth3-ref2va/README.md): the Service Provider of `dvRef2va`.
-- [`@dv/fasth3-t2va`](../fasth3-t2va/README.md): the Service Provider of `dvT2va`.
-- [`@dv/bundle`](../../bundle/dv/README.md): the rows `dv-fasth3-ref2va` and `dv-fasth3-t2va` that mount the providers.
+- [`@dv/fasth3-ref2va`](../fasth3-ref2va/README.md): a Service Provider that registers a renderer into `dvRef2va`.
+- [`@dv/fasth3-t2va`](../fasth3-t2va/README.md): a Service Provider that registers a renderer into `dvT2va`.
+- [`@dv/bundle`](../../bundle/dv/README.md): the row `dv-render-modes` that mounts the registries and the rows `dv-fasth3-ref2va` and `dv-fasth3-t2va` that mount the providers.
 
 -----
 
@@ -70,7 +85,7 @@ Each render mode is a separate service, so mounting a provider adds exactly one 
 
 #### What the model sees
 
-This package registers no tool, prompt section, or skill. Its two services decide which render tools `@dv/shot-render` lists: `dv_shot_render_ref2va` while `dvRef2va` is mounted, and `dv_shot_render_t2va` while `dvT2va` is mounted. The `RenderModelFacts` of the mounted provider appear in the results of those tools (`model`, `frame_width`, `frame_height`, `num_frames`, and for `ref2va` the `image_labels` of the request images) and in their refusals (the allowed aspect ratios, resolutions and durations, the reference image limit, and the GPU estimate from `gpuSecondsPerVideoSecond` when a render needs the user's agreement).
+This package registers no tool, prompt section, or skill. Its two registries decide which render tools `@dv/shot-render` lists and which values their `backend` argument takes: `dv_shot_render_ref2va` while `dvRef2va` holds a renderer, and `dv_shot_render_t2va` while `dvT2va` holds one, each with the registered backend names as the values of `backend`. The `RenderModelFacts` of the renderer a call names appear in the results of those tools (`model`, `frame_width`, `frame_height`, `num_frames`, and for `ref2va` the `image_labels` of the request images) and in their refusals (the allowed aspect ratios, resolutions and durations, the reference image limit, and the GPU estimate from `gpuSecondsPerVideoSecond` when a render needs the user's agreement).
 
 #### Token effect
 
@@ -78,11 +93,10 @@ The package adds no tokens of its own; each provider package owns the tokens of 
 
 #### KV Cache effect
 
-Mounting or removing a provider adds or removes its render tool, which changes the tool list and invalidates the cached prefix from the tool section on.
+Registering or removing a renderer changes the render tool's `backend` values, or adds or removes the tool, which changes the tool list and invalidates the cached prefix from the tool section on.
 
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **One provider per render mode**: each context holds one provider of `dvRef2va` and one of `dvT2va`, so two models of the same render mode cannot be mounted side by side.
 - **`fl2va` is reserved**: the render mode name `fl2va` has no service and no class in this package.

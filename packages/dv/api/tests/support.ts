@@ -15,7 +15,8 @@ import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import DvAssetPool from '@dv/asset-pool'
 import DvFfmpeg from '@dv/ffmpeg'
 import DvProject from '@dv/project'
-import { Ref2vaRenderer, type Ref2vaRequest, type RenderModelFacts, type RenderStreamEvent } from '@dv/render-modes'
+import * as RenderModes from '@dv/render-modes'
+import type { Ref2vaRenderer, Ref2vaRequest, RenderModelFacts, RenderStreamEvent } from '@dv/render-modes'
 import DvShotPlan from '@dv/shot-plan'
 import DvShotRender from '@dv/shot-render'
 import DvStoryBible from '@dv/story-bible'
@@ -62,8 +63,8 @@ export async function encodeClip(dir: string, width: number, height: number, num
   return { video: readFileSync(video), lastFrame: readFileSync(frame) }
 }
 
-/** A `ref2va` provider (`dvRef2va`) that renders a solid-color clip for every request and remembers the requests. */
-export class FakeRef2vaRenderer extends Ref2vaRenderer {
+/** A `ref2va` renderer that renders a solid-color clip for every request and remembers the requests. */
+export class FakeRef2vaRenderer implements Ref2vaRenderer {
   facts = testFacts()
   readonly requests: Ref2vaRequest[] = []
 
@@ -93,6 +94,15 @@ export class FakeRef2vaRenderer extends Ref2vaRenderer {
   }
 }
 
+/** A `ref2va` provider plugin that registers one `FakeRef2vaRenderer` into `dvRef2va` under the backend name `fasth3`. */
+export const FakeRef2vaProvider = {
+  name: 'fake-ref2va',
+  inject: ['dvRef2va'],
+  apply(ctx: Context): void {
+    ctx.effect(() => ctx.dvRef2va.register('fasth3', new FakeRef2vaRenderer()))
+  },
+}
+
 /** A stable color for a prompt. */
 function colorFor(prompt: string): string {
   let hash = 7
@@ -105,7 +115,7 @@ export interface BaseFixture {
   context: Context
   project: DvProject
   assets: DvAssetPool
-  /** The fake `ref2va` provider, or null when the fixture mounts none. */
+  /** The fake `ref2va` renderer, or null when the fixture registers none. */
   renderer: FakeRef2vaRenderer | null
   root: string
   /** Write a file with the given content and return its path, for imports. */
@@ -118,7 +128,7 @@ export interface BaseFixture {
 /** What a fixture mounts beside the components. */
 export interface BaseFixtureOptions {
   root?: string
-  /** `fake` mounts the fake `ref2va` provider; `none` mounts no render mode provider. */
+  /** `fake` registers the fake `ref2va` renderer; `none` registers no renderer. */
   generation?: 'fake' | 'none'
   /** Whether the DSH system prompt and tool registry are mounted. */
   dsh?: boolean
@@ -135,9 +145,11 @@ export async function startBase(options: BaseFixtureOptions = {}): Promise<BaseF
   const root = options.root ?? mkdtempSync(join(tmpdir(), 'dv-base-'))
   const context = new Context()
   let renderer: FakeRef2vaRenderer | null = null
+  await context.plugin({ name: RenderModes.name, apply: RenderModes.apply }).await()
   if ((options.generation ?? 'fake') === 'fake') {
-    await context.plugin(FakeRef2vaRenderer).await()
-    renderer = context.dvRef2va as FakeRef2vaRenderer
+    const fake = new FakeRef2vaRenderer()
+    context.effect(() => context.dvRef2va.register('fake', fake))
+    renderer = fake
   }
   if (options.dsh !== false) {
     await context.plugin(SystemPrompt, {}).await()

@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse t2va 生成方式（dvT2va）的 Service Provider，面向 FastVideo streaming_v2 服务器后的 FastH3 8-Step V2 文字生成视频模型，附带提示词 skill fasth3-t2va-prompting。"
+description: "DreamVerse t2va 生成方式的 Service Provider：向 dvT2va 登记一个渲染器，面向 FastVideo streaming_v2 服务器后的 FastH3 8-Step V2 文字生成视频模型，附带提示词 skill fasth3-t2va-prompting。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包以文字生成（`t2va`）方式渲染镜头：由 FastVideo streaming_v2 服务器后的 FastH3 8-Step V2 文字生成视频模型（`FastVideo/FastVideo-FastH3-8-Step-V2`），只根据提示词渲染。类 `FastH3T2vaRenderer` 是 `@dv/render-modes` 中 `dvT2va` 的 Service Provider：它从服务器读取不含参考图的模型事实，报告服务器是否就绪，并在每次渲染时不发送图片。DSH skill 注册表挂载期间，它注册 skill `fasth3-t2va-prompting`：模型的限制和 `dv_shot_render_t2va` 的提示词规则。
+使用本包以文字生成（`t2va`）方式渲染镜头：由 FastVideo streaming_v2 服务器后的 FastH3 8-Step V2 文字生成视频模型（`FastVideo/FastVideo-FastH3-8-Step-V2`），只根据提示词渲染。本插件是 `@dv/render-modes` 中 `dvT2va` 的 Service Provider：它以自己的 `backend` 名字登记一个 `FastH3T2vaRenderer`，该渲染器从服务器读取不含参考图的模型事实，报告服务器是否就绪，并在每次渲染时不发送图片。DSH skill 注册表挂载期间，它注册 skill `fasth3-t2va-prompting`：模型的限制和 `dv_shot_render_t2va` 的提示词规则。
 
 ## 目录
 
@@ -36,21 +36,22 @@ kind: "package-reference"
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
+| `backend` | `fasth3` | 渲染器在 `dvT2va` 中登记所用的后端名字；`dv_shot_render_t2va` 的 `backend` 参数用它指定该渲染器。给本插件的每一行取不同的名字，即可并列服务多台服务器 |
 | `baseUrl` | 必填 | 服务文字生成视频模型的 FastVideo streaming_v2 服务器的 HTTP 基础 URL；bundle 读取 `DV_T2VA_BACKEND_URL` |
 | `gpuSecondsPerVideoSecond` | `1.5` | 该服务器每渲染一秒视频所用的 GPU 秒数；`model()` 报告它，用于渲染前的 GPU 估算 |
 
-provider 挂载期间，`@dv/shot-render` 注册 `shot.render_t2va`（工具 `dv_shot_render_t2va`）。同时挂载 DSH skill 注册表（`@deepseek-ai/dsh-skill`），智能体才能加载提示词 skill。
+先挂载 [`@dv/render-modes`](../render-modes/README.zh.md)。渲染器登记期间，`@dv/shot-render` 注册 `shot.render_t2va`（工具 `dv_shot_render_t2va`），本后端是其 `backend` 参数的取值之一。同时挂载 DSH skill 注册表（`@deepseek-ai/dsh-skill`），智能体才能加载提示词 skill。
 
 -----
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-HTTP 工作由 `@dreamverse/generation-client` 的 streaming_v2 客户端完成：`model()` 读取 `GET /v1/streamv2/capabilities`，`ready()` 读取 `GET /v1/streamv2/health`，`render()` 发送一个 streaming_v2 渲染请求并返回服务器的事件流。`model()` 复制服务器的事实，并报告 `maxReferenceImages` 为 0、`imageLabels` 为空，因为文字生成视频模型不接受参考图。`render()` 以空图片列表发送提示词，向服务器请求最后一帧，并传递 `signal` 以取消 HTTP 请求。客户端位于隔离的 `dreamverseGeneration` 作用域中，所以宿主不会多出 `dreamverseGeneration` 服务。skill 在 `ctx.inject(['skills'], …)` 内通过 `ctx.skills.register` 注册，所以 skill 注册表挂载时出现，provider 或注册表移除时消失。
+HTTP 工作由 `@dreamverse/generation-client` 的 streaming_v2 客户端完成：`model()` 读取 `GET /v1/streamv2/capabilities`，`ready()` 读取 `GET /v1/streamv2/health`，`render()` 发送一个 streaming_v2 渲染请求并返回服务器的事件流。`model()` 复制服务器的事实，并报告 `maxReferenceImages` 为 0、`imageLabels` 为空，因为文字生成视频模型不接受参考图。`render()` 以空图片列表发送提示词，向服务器请求最后一帧，并传递 `signal` 以取消 HTTP 请求。客户端位于隔离的 `dreamverseGeneration` 作用域中，所以宿主不会多出 `dreamverseGeneration` 服务。插件在 `ctx.effect` 内通过 `ctx.dvT2va.register` 登记渲染器，所以卸载插件时渲染器随之移除。skill 在 `ctx.inject(['skills'], …)` 内通过 `ctx.skills.register` 注册，所以 skill 注册表挂载时出现，provider 或注册表移除时消失。
 
 | 文件 | 内容 |
 | --- | --- |
-| [`src/index.ts`](src/index.ts) | `FastH3T2vaRenderer`、`Config` 和 skill 注册 |
+| [`src/index.ts`](src/index.ts) | `FastH3T2vaRenderer`、`Config`，以及登记渲染器和 skill 的插件 `apply` |
 | [`skills/fasth3-t2va-prompting.md`](skills/fasth3-t2va-prompting.md) | skill 正文：DreamVerse 对接说明，后接原样复制的 MiniMax-H3 官方提示词指南（T2VA / I2VA / FL2VA / L2VA） |
 | [`tests/fasth3-t2va.spec.ts`](tests/fasth3-t2va.spec.ts) | 一个包含 skill 注册表的 Loader 组合，连接假的 streaming_v2 服务器；一个需显式启用的测试对 `DV_T2VA_BACKEND_URL` 指定的服务器真实渲染 |
 
@@ -59,7 +60,7 @@ HTTP 工作由 `@dreamverse/generation-client` 的 streaming_v2 客户端完成�
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [`@dv/render-modes`](../render-modes/README.zh.md)：本包提供的 `dvT2va` 服务。
+- [`@dv/render-modes`](../render-modes/README.zh.md)：本包向其登记渲染器的 `dvT2va` 注册表。
 - [`@dv/shot-render`](../shot-render/README.zh.md)：Consumer，提供工具 `dv_shot_render_t2va`。
 - [`@dreamverse/generation-client`](../../dreamverse/generation-client/README.zh.md)：streaming_v2 客户端。
 - [`dsh-tool-skill`](../../skill/tool-skill/README.zh.md)：智能体如何看到 skill 目录并加载 skill。
@@ -93,7 +94,7 @@ provider 和 skill 注册表挂载期间，目录中约 40 个 token；智能体
 
 #### 模型看到什么
 
-本 provider 的模型事实影响 `dv_shot_render_t2va`：它的结果报告 `model`（服务器的模型 ID）、`frame_width`、`frame_height` 和 `num_frames`，它的拒绝文本列出允许的宽高比、分辨率和时长，以及由 `gpuSecondsPerVideoSecond` 得出的 GPU 估算。本 provider 挂载期间，没有参考图的 `dv_shot_render_ref2va` 调用的拒绝文本也会指引智能体使用 `dv_shot_render_t2va`。
+本 provider 的模型事实影响 `dv_shot_render_t2va`：它的结果报告 `model`（服务器的模型 ID）、`frame_width`、`frame_height` 和 `num_frames`，它的拒绝文本列出允许的宽高比、分辨率和时长，以及由 `gpuSecondsPerVideoSecond` 得出的 GPU 估算。有 `t2va` 渲染器登记期间，没有参考图的 `dv_shot_render_ref2va` 调用的拒绝文本也会指引智能体使用 `dv_shot_render_t2va`。
 
 #### Token 影响
 
@@ -101,7 +102,7 @@ provider 和 skill 注册表挂载期间，目录中约 40 个 token；智能体
 
 #### KV Cache 影响
 
-挂载或移除 provider 会增加或移除 `dv_shot_render_t2va`，使缓存前缀从工具部分起失效。
+登记或移除渲染器会改变 `dv_shot_render_t2va` 的 `backend` 参数取值，或者增加或移除该工具，使缓存前缀从工具部分起失效。
 
 ## 已知限制与延期工作
 
@@ -110,3 +111,4 @@ provider 和 skill 注册表挂载期间，目录中约 40 个 token；智能体
 - **跨镜头没有身份一致性**：模型只看到提示词，所以主体只有在相同文字描述的范围内保持外观；必须保持同一张脸时，需要带参考图的 `dv_shot_render_ref2va`。
 - **不能从较早的镜头开始**：`T2vaRequest` 不带图片，所以只有 `dv_shot_render_ref2va`（`continue_from`）能从较早镜头的最后静帧开始一个镜头。
 - **skill 中的固定限制**：`skills/fasth3-t2va-prompting.md` 写明 5 到 15 秒，而 `model()` 从服务器读取时长范围；服务器的范围不同时，skill 会与 `dv_shot_render_t2va` 的拒绝文本不一致。
+- **多行共用一个 skill**：本插件的两行登记同一个 skill 名字；skill 注册表保留第一个、忽略第二个，所以移除第一行会移除该 skill，而第二行的渲染器仍然登记着。

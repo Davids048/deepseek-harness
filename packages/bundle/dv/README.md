@@ -1,5 +1,5 @@
 ---
-description: "The DreamVerse profile layer: the render mode providers, the components, the chat references, the API, the interface plugins, the video-directing skill, and the model routes, stacked on dsh-base and dsh-web-app or dsh-headless."
+description: "The DreamVerse profile layer: the render mode registries and providers, the components, the chat references, the API, the interface plugins, the video-directing skill, and the model routes, stacked on dsh-base and dsh-web-app or dsh-headless."
 kind: "package-bundle"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this bundle to run DreamVerse as a `dsh` profile. It inserts the render mode providers (the `t2va` row only when `DV_T2VA_BACKEND_URL` is set), the DreamVerse components with `@dv/ffmpeg`, the chat references, the API and the `@dv/ui-*` interface plugins; ships the `video-directing` skill, which both `skill-filesystem` rows read; declares the `deepseek-local` route to the cluster's SGLang server; and selects the agent model from the environment. `scripts/video-harness/setup-profile.sh` stacks it on `dsh-base` plus `dsh-web-app` as profile `video-harness` and on `dsh-base` plus `dsh-headless` as `video-harness-headless`; `scripts/video-harness/launch.sh web|headless` runs either from source.
+Use this bundle to run DreamVerse as a `dsh` profile. It inserts the render mode registries (`dv-render-modes`) and providers (the `t2va` row only when `DV_T2VA_BACKEND_URL` is set; add a provider row with its own `backend` name to serve another backend of a render mode), the DreamVerse components with `@dv/ffmpeg`, the chat references, the API and the `@dv/ui-*` interface plugins; ships the `video-directing` skill, which both `skill-filesystem` rows read; declares the `deepseek-local` route to the cluster's SGLang server; and selects the agent model from the environment. `scripts/video-harness/setup-profile.sh` stacks it on `dsh-base` plus `dsh-web-app` as profile `video-harness` and on `dsh-base` plus `dsh-headless` as `video-harness-headless`; `scripts/video-harness/launch.sh web|headless` runs either from source.
 
 ## Table of Contents
 
@@ -32,7 +32,7 @@ Environment the patch reads: `DV_BACKEND_URL` (the `ref2va` backend; default `ht
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-[`cordis.patch.yml`](cordis.patch.yml) has one `insert` list for the DreamVerse rows and three overrides: `skill-filesystem` (the skills directory, which holds `video-directing`; the model prompt skills and `timeline-editing` are registered by their own plugins through `ctx.skills`), `llm-pi-ai` (the hand-declared `deepseek-local` route: `openai-completions` at `DV_DEEPSEEK_BASE_URL` with one model `deepseek-v4.1` declared as text and image input, plus the Groq route), and `agent-default-model` (provider, model, and reasoning effort from the environment). No web server row is included: the web profile takes its page from `dsh-web-app`, and `dvAssetPool` registers `/dv/assets` on that server. [`tests/composition.spec.ts`](tests/composition.spec.ts) boots the render mode provider rows (each loading a fake provider of its render mode), the component rows, the `dv-chat-references` row and the `dv-api` row of the patch, with their `!!js` configuration and `disabled` flags, through the Loader, checks that the disabled `t2va` row leaves no `dv_shot_render_t2va` tool, and turns a model tool call into a record.
+[`cordis.patch.yml`](cordis.patch.yml) has one `insert` list for the DreamVerse rows and three overrides: `skill-filesystem` (the skills directory, which holds `video-directing`; the model prompt skills and `timeline-editing` are registered by their own plugins through `ctx.skills`), `llm-pi-ai` (the hand-declared `deepseek-local` route: `openai-completions` at `DV_DEEPSEEK_BASE_URL` with one model `deepseek-v4.1` declared as text and image input, plus the Groq route), and `agent-default-model` (provider, model, and reasoning effort from the environment). No web server row is included: the web profile takes its page from `dsh-web-app`, and `dvAssetPool` registers `/dv/assets` on that server. [`tests/composition.spec.ts`](tests/composition.spec.ts) boots the render mode registry row and provider rows (each provider row loading a fake provider that registers a renderer of its render mode), the component rows, the `dv-chat-references` row and the `dv-api` row of the patch, with their `!!js` configuration and `disabled` flags, through the Loader, checks that the disabled `t2va` row leaves no `dv_shot_render_t2va` tool, and turns a model tool call into a record.
 
 <a id="further-exploration"></a>
 ## Further Exploration

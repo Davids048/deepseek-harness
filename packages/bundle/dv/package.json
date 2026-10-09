@@ -23,6 +23,7 @@
     "@dv/ffmpeg": "workspace:*",
     "@dv/inspector": "workspace:*",
     "@dv/project": "workspace:*",
+    "@dv/render-modes": "workspace:*",
     "@dv/shot-plan": "workspace:*",
     "@dv/shot-render": "workspace:*",
     "@dv/story-bible": "workspace:*",
@@ -40,7 +41,6 @@
     "@deepseek-ai/cordis-plugin-loader": "workspace:~",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
-    "@deepseek-ai/dsh-tools": "workspace:*",
-    "@dv/render-modes": "workspace:*"
+    "@deepseek-ai/dsh-tools": "workspace:*"
   }
 }

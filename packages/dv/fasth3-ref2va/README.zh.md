@@ -1,5 +1,5 @@
 ---
-description: "DreamVerse ref2va 生成方式（dvRef2va）的 Service Provider，面向 FastVideo streaming_v2 服务器后的 FastH3 Ref2VA 模型，附带提示词 skill fasth3-ref2va-prompting。"
+description: "DreamVerse ref2va 生成方式的 Service Provider：向 dvRef2va 登记一个渲染器，面向 FastVideo streaming_v2 服务器后的 FastH3 Ref2VA 模型，附带提示词 skill fasth3-ref2va-prompting。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包以参考图生成（`ref2va`）方式渲染镜头：由 FastVideo streaming_v2 服务器后的 FastH3 Ref2VA 模型，根据提示词和参考图渲染。类 `FastH3Ref2vaRenderer` 是 `@dv/render-modes` 中 `dvRef2va` 的 Service Provider：它从服务器读取模型事实，报告服务器是否就绪，并在每次渲染时先发送参考图，再发送首帧。DSH skill 注册表挂载期间，它注册 skill `fasth3-ref2va-prompting`：模型的限制和 `dv_shot_render_ref2va` 的提示词规则。
+使用本包以参考图生成（`ref2va`）方式渲染镜头：由 FastVideo streaming_v2 服务器后的 FastH3 Ref2VA 模型，根据提示词和参考图渲染。本插件是 `@dv/render-modes` 中 `dvRef2va` 的 Service Provider：它以自己的 `backend` 名字登记一个 `FastH3Ref2vaRenderer`，该渲染器从服务器读取模型事实，报告服务器是否就绪，并在每次渲染时先发送参考图，再发送首帧。DSH skill 注册表挂载期间，它注册 skill `fasth3-ref2va-prompting`：模型的限制和 `dv_shot_render_ref2va` 的提示词规则。
 
 ## 目录
 
@@ -35,21 +35,22 @@ kind: "package-reference"
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
+| `backend` | `fasth3` | 渲染器在 `dvRef2va` 中登记所用的后端名字；`dv_shot_render_ref2va` 的 `backend` 参数用它指定该渲染器。给本插件的每一行取不同的名字，即可并列服务多台服务器 |
 | `baseUrl` | 必填 | FastVideo streaming_v2 服务器的 HTTP 基础 URL；bundle 读取 `DV_BACKEND_URL`，未设置时使用 `http://127.0.0.1:8029` |
 | `gpuSecondsPerVideoSecond` | `4` | 该服务器每渲染一秒视频所用的 GPU 秒数；`model()` 报告它，用于渲染前的 GPU 估算 |
 
-provider 挂载期间，`@dv/shot-render` 注册 `shot.render_ref2va`（工具 `dv_shot_render_ref2va`）。同时挂载 DSH skill 注册表（`@deepseek-ai/dsh-skill`），智能体才能加载提示词 skill。
+先挂载 [`@dv/render-modes`](../render-modes/README.zh.md)。渲染器登记期间，`@dv/shot-render` 注册 `shot.render_ref2va`（工具 `dv_shot_render_ref2va`），本后端是其 `backend` 参数的取值之一。同时挂载 DSH skill 注册表（`@deepseek-ai/dsh-skill`），智能体才能加载提示词 skill。
 
 -----
 
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-HTTP 工作由 `@dreamverse/generation-client` 的 streaming_v2 客户端完成：`model()` 读取 `GET /v1/streamv2/capabilities`，`ready()` 读取 `GET /v1/streamv2/health`，`render()` 发送一个 streaming_v2 渲染请求并返回服务器的事件流。服务器把首帧算作一张请求图片，所以 `model()` 报告的 `maxReferenceImages` 比服务器的 `max_reference_images` 少一，并为服务器的每张图片保留一个 `imageLabels` 条目（`Picture 1` 到 `Picture N`）；首帧使用最后一张参考图之后的标签。`render()` 按输入顺序发送参考图，请求带首帧时把首帧追加在后，向服务器请求最后一帧，并传递 `signal` 以取消 HTTP 请求。客户端位于隔离的 `dreamverseGeneration` 作用域中，所以宿主不会多出 `dreamverseGeneration` 服务。skill 在 `ctx.inject(['skills'], …)` 内通过 `ctx.skills.register` 注册，所以 skill 注册表挂载时出现，provider 或注册表移除时消失。
+HTTP 工作由 `@dreamverse/generation-client` 的 streaming_v2 客户端完成：`model()` 读取 `GET /v1/streamv2/capabilities`，`ready()` 读取 `GET /v1/streamv2/health`，`render()` 发送一个 streaming_v2 渲染请求并返回服务器的事件流。服务器把首帧算作一张请求图片，所以 `model()` 报告的 `maxReferenceImages` 比服务器的 `max_reference_images` 少一，并为服务器的每张图片保留一个 `imageLabels` 条目（`Picture 1` 到 `Picture N`）；首帧使用最后一张参考图之后的标签。`render()` 按输入顺序发送参考图，请求带首帧时把首帧追加在后，向服务器请求最后一帧，并传递 `signal` 以取消 HTTP 请求。客户端位于隔离的 `dreamverseGeneration` 作用域中，所以宿主不会多出 `dreamverseGeneration` 服务。插件在 `ctx.effect` 内通过 `ctx.dvRef2va.register` 登记渲染器，所以卸载插件时渲染器随之移除。skill 在 `ctx.inject(['skills'], …)` 内通过 `ctx.skills.register` 注册，所以 skill 注册表挂载时出现，provider 或注册表移除时消失。
 
 | 文件 | 内容 |
 | --- | --- |
-| [`src/index.ts`](src/index.ts) | `FastH3Ref2vaRenderer`、`Config` 和 skill 注册 |
+| [`src/index.ts`](src/index.ts) | `FastH3Ref2vaRenderer`、`Config`，以及登记渲染器和 skill 的插件 `apply` |
 | [`skills/fasth3-ref2va-prompting.md`](skills/fasth3-ref2va-prompting.md) | skill 正文：DreamVerse 对接说明，后接原样复制的 MiniMax-H3 官方全参考提示词指南 |
 | [`tests/fasth3-ref2va.spec.ts`](tests/fasth3-ref2va.spec.ts) | 一个包含 skill 注册表的 Loader 组合，连接假的 streaming_v2 服务器；一个需显式启用的测试对 `DV_BACKEND_URL` 指定的服务器真实渲染 |
 
@@ -58,7 +59,7 @@ HTTP 工作由 `@dreamverse/generation-client` 的 streaming_v2 客户端完成�
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [`@dv/render-modes`](../render-modes/README.zh.md)：本包提供的 `dvRef2va` 服务。
+- [`@dv/render-modes`](../render-modes/README.zh.md)：本包向其登记渲染器的 `dvRef2va` 注册表。
 - [`@dv/shot-render`](../shot-render/README.zh.md)：Consumer，提供工具 `dv_shot_render_ref2va`。
 - [`@dreamverse/generation-client`](../../dreamverse/generation-client/README.zh.md)：streaming_v2 客户端。
 - [`dsh-tool-skill`](../../skill/tool-skill/README.zh.md)：智能体如何看到 skill 目录并加载 skill。
@@ -100,7 +101,7 @@ provider 和 skill 注册表挂载期间，目录中约 40 个 token；智能体
 
 #### KV Cache 影响
 
-挂载或移除 provider 会增加或移除 `dv_shot_render_ref2va`，使缓存前缀从工具部分起失效。
+登记或移除渲染器会改变 `dv_shot_render_ref2va` 的 `backend` 参数取值，或者增加或移除该工具，使缓存前缀从工具部分起失效。
 
 ## 已知限制与延期工作
 
@@ -108,3 +109,4 @@ provider 和 skill 注册表挂载期间，目录中约 40 个 token；智能体
 
 - **skill 中的固定限制**：`skills/fasth3-ref2va-prompting.md` 写明 5 到 15 秒、最多 8 张参考图，而 `model()` 从服务器读取限制；服务器的限制不同时，skill 会与 `dv_shot_render_ref2va` 的拒绝文本不一致。
 - **参考图宽高比**：`RenderModelFacts` 没有对应字段，所以 `model()` 丢弃服务器的 `max_reference_aspect_ratio`，镜头渲染把参考图发给服务器前不检查宽高比。
+- **多行共用一个 skill**：本插件的两行登记同一个 skill 名字；skill 注册表保留第一个、忽略第二个，所以移除第一行会移除该 skill，而第二行的渲染器仍然登记着。

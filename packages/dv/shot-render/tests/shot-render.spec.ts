@@ -1,8 +1,8 @@
 /**
  * The Shot render component in a REAL composition: a test-only `cordis.yml` boots the DSH tool registry, the asset
- * pool, `dvProject`, `dvFfmpeg` and `dvShotRender` through the Loader. The render mode providers are the only fakes:
- * an in-process `dvRef2va` and `dvT2va` that render solid-color clips with ffmpeg. A test-only `bible` reducer stands
- * for the Story bible, so references can name character versions.
+ * pool, `dvProject`, `dvFfmpeg`, the render mode registries and `dvShotRender` through the Loader. The renderers are
+ * the only fakes: in-process renderers registered into `dvRef2va` and `dvT2va` that render solid-color clips with
+ * ffmpeg. A test-only `bible` reducer stands for the Story bible, so references can name character versions.
  */
 import { execFile } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -23,6 +23,7 @@ import DvProject, {
   type AssetId, type CharacterId, type OperationSpec, type OperationToolValue, type ProjectId, type ProjectRecord, type RecordId,
   type RecordInputRef, type Reducer, type RunRequest, type SessionId,
 } from '@dv/project'
+import * as RenderModes from '@dv/render-modes'
 import type { RenderModelFacts, RenderStreamEvent, Ref2vaRequest, T2vaRequest } from '@dv/render-modes'
 import { afterEach, describe, expect, it } from 'vitest'
 import DvShotRender from '../src/index.ts'
@@ -153,7 +154,10 @@ const bibleReducer: Reducer<never> & { initial(): BibleSlice } = {
 } as never
 
 /** The plugin classes the fixture rows resolve through `globalThis`, because Node imports the rows outside Vite. */
-const PLUGINS = { SystemPrompt, ToolRuntime, DvProject, DvFfmpeg, DvAssetPool, DvShotRender }
+const PLUGINS = {
+  SystemPrompt, ToolRuntime, DvProject, DvFfmpeg, DvAssetPool, DvShotRender,
+  RenderModes: { name: RenderModes.name, apply: RenderModes.apply },
+}
 
 interface Fixture {
   ctx: Context
@@ -198,19 +202,20 @@ async function start(options: { modes?: Array<'ref2va' | 't2va'>; live?: FakeLiv
   ])
   row('dv-ffmpeg', 'DvFfmpeg', [`ffmpegPath: ${FFMPEG}`, `ffprobePath: ${FFPROBE}`])
   row('dv-asset-pool', 'DvAssetPool', [`root: ${join(dir, 'assets')}`])
+  row('dv-render-modes', 'RenderModes', [])
   row('dv-shot-render', 'DvShotRender', [])
   writeFileSync(join(dir, 'cordis.yml'), `${rows.join('\n')}\n`)
 
   const ctx = new Context()
   const ref2va = new FakeRenderer<Ref2vaRequest>(testFacts('ref2va'))
   const t2va = new FakeRenderer<T2vaRequest>(testFacts('t2va'))
-  if (modes.includes('ref2va')) ctx.provide('dvRef2va', ref2va)
-  if (modes.includes('t2va')) ctx.provide('dvT2va', t2va)
   if (options.live !== undefined) ctx.provide('vhStream', options.live) // names:allow (the live stream service keeps its name)
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(join(dir, 'cordis.yml')).href } })
   await ctx.loader.await()
+  if (modes.includes('ref2va')) ctx.effect(() => ctx.dvRef2va.register('fake', ref2va))
+  if (modes.includes('t2va')) ctx.effect(() => ctx.dvT2va.register('fake', t2va))
   disposers.push(async () => {
     await ctx.fiber.dispose()
     rmSync(dir, { recursive: true, force: true })
@@ -308,8 +313,34 @@ describe.skipIf(!existsSync(FFMPEG))('dvShotRender', () => {
     expect(fixture.ctx.tools.schemas().filter(tool => tool.name.startsWith('dv_shot_render'))).toEqual([])
     expect(fixture.ctx.dvProject.getState(fixture.project).components.shot).toEqual({ takes: {}, roots: {} })
     const call = (operation: string) => ({ record: { operation }, params: { prompt: 'x' } }) as never
-    await expect(fixture.ctx.dvShotRender.renderShot(call('shot.render_ref2va'))).rejects.toThrow('needs the dvRef2va service')
-    await expect(fixture.ctx.dvShotRender.renderShot(call('shot.render_t2va'))).rejects.toThrow('needs the dvT2va service')
+    await expect(fixture.ctx.dvShotRender.renderShot(call('shot.render_ref2va'))).rejects.toThrow('shot.render_ref2va has no backend ""')
+    await expect(fixture.ctx.dvShotRender.renderShot(call('shot.render_t2va'))).rejects.toThrow('shot.render_t2va has no backend ""')
+  })
+
+  it('lists every registered backend, renders with the backend a call names, and follows registrations and removals', async () => {
+    const fixture = await start({ modes: ['ref2va'] })
+    const backendParam = (): unknown => renderSpec(fixture)?.params['backend']
+    expect(backendParam()).toMatchObject({ type: 'string', enum: ['fake'] })
+    const other = new FakeRenderer<Ref2vaRequest>({ ...testFacts('ref2va'), modelId: 'other-ref2va', gpuSecondsPerVideoSecond: 10 })
+    const remove = fixture.ctx.dvRef2va.register('other', other)
+    expect(backendParam()).toMatchObject({ enum: ['fake', 'other'] })
+    expect(JSON.stringify(fixture.ctx.tools.schemas().find(tool => tool.name === 'dv_shot_render_ref2va')?.parameters)).toContain('"other"')
+    expect(() => fixture.ctx.dvRef2va.register('other', other)).toThrow('backend "other" is already registered')
+    await withCharacter(fixture)
+    const named = await fixture.record('shot.render_ref2va', { prompt: 'Picture 1 waves', backend: 'other' }, [c1()])
+    expect(named.report).toMatchObject({ backend: 'other', model: 'other-ref2va' })
+    expect(other.requests).toHaveLength(1)
+    expect(fixture.ref2va.requests).toHaveLength(0)
+    // Each backend's estimate uses its own GPU rate; a call without `backend` uses the first registered backend.
+    expect(renderSpec(fixture)?.estimate?.({ backend: 'other', duration_sec: 2 })).toEqual({ gpu_seconds: 20 })
+    const first = await fixture.record('shot.render_ref2va', { prompt: 'Picture 1 waves' }, [c1()])
+    expect(first.report).toMatchObject({ backend: 'fake', model: 'test-ref2va' })
+    // Project checks the param against the registered backends before the call reaches Shot render.
+    await expect(fixture.record('shot.render_ref2va', { prompt: 'x', backend: 'missing' }, [c1()]))
+      .rejects.toThrow('"backend" must be one of ["fake","other"]')
+    remove()
+    expect(backendParam()).toMatchObject({ enum: ['fake'] })
+    expect(renderSpec(fixture)?.estimate?.({ backend: 'other', duration_sec: 2 })).toEqual({ gpu_seconds: 0 })
   })
 
   it('renders a ref2va take with references and a first frame, keeps the seed, and stores both outputs', async () => {
@@ -323,7 +354,7 @@ describe.skipIf(!existsSync(FFMPEG))('dvShotRender', () => {
     expect(pool.get(shot.outputs[0] as AssetId)).toMatchObject({ mime: 'video/mp4', duration_sec: 2, created_by: shot.id, ...size })
     expect(pool.get(shot.outputs[1] as AssetId)).toMatchObject({ mime: 'image/png', name: `${shot.id.slice(0, 8)}-last.png`, ...size })
     expect((await fixture.ctx.dvFfmpeg.probe(pool.path(shot.outputs[0] as AssetId))).durationSec).toBeCloseTo(2, 0)
-    expect(shot.report).toMatchObject({ seed: 42, model: 'test-ref2va', frame_width: 192, num_frames: 49, image_labels: { referenceLabels: ['Picture 1'], firstFrameLabel: null } })
+    expect(shot.report).toMatchObject({ seed: 42, backend: 'fake', model: 'test-ref2va', frame_width: 192, num_frames: 49, image_labels: { referenceLabels: ['Picture 1'], firstFrameLabel: null } })
     expect(shot.report).not.toHaveProperty('generation_mode')
     expect(shot.cost).toMatchObject({ gpu_seconds: 0.25, reused: false })
     expect(fixture.ref2va.requests[0]).toMatchObject({ prompt: 'Picture 1 waves', frameWidth: 192, frameHeight: 112, numFrames: 49, seed: 42, firstFrame: null })
@@ -347,7 +378,7 @@ describe.skipIf(!existsSync(FFMPEG))('dvShotRender', () => {
     expect(shot).toMatchObject({ status: 'done', component: 'shot', operation: 'shot.render_t2va', inputs: [] })
     expect(fixture.t2va.requests).toEqual([{ prompt: 'A baker opens the shutters', frameWidth: 112, frameHeight: 192, numFrames: 73, seed: 5 }])
     expect(fixture.ref2va.requests).toHaveLength(0)
-    expect(shot.report).toMatchObject({ seed: 5, model: 'test-t2va', aspect_ratio: '9:16', resolution: '720p', duration_sec: 3, frame_width: 112 })
+    expect(shot.report).toMatchObject({ seed: 5, backend: 'fake', model: 'test-t2va', aspect_ratio: '9:16', resolution: '720p', duration_sec: 3, frame_width: 112 })
     expect(shot.report).not.toHaveProperty('image_labels')
     expect(fixture.ctx.dvAssetPool.get(shot.outputs[1] as AssetId)).toMatchObject({ mime: 'image/png', width: 112, height: 192 })
     expect(renderSpec(fixture, 'shot.render_t2va')?.summarize(shot)).toBe('shot "A baker opens the shutters" (3s, seed 5)')

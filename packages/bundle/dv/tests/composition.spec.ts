@@ -25,10 +25,11 @@ import DvStoryBible from '@dv/story-bible'
 import DvTimeline from '@dv/timeline'
 import DvApi from '@dv/api'
 import DvChatReferences from '@dv/chat-references'
-import { T2vaRenderer, type RenderModelFacts, type RenderStreamEvent } from '@dv/render-modes'
+import * as RenderModes from '@dv/render-modes'
+import type { RenderModelFacts, RenderStreamEvent, T2vaRenderer } from '@dv/render-modes'
 import * as yaml from 'js-yaml'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { FakeRef2vaRenderer, FFMPEG, FFPROBE } from '../../../dv/api/tests/support.ts'
+import { FakeRef2vaProvider, FakeRef2vaRenderer, FFMPEG, FFPROBE } from '../../../dv/api/tests/support.ts'
 
 const disposers: Array<() => Promise<void> | void> = []
 
@@ -36,8 +37,8 @@ afterEach(async () => {
   for (const dispose of disposers.splice(0).reverse()) await dispose()
 })
 
-/** A `t2va` provider that fails every call; the composition only checks whether its row mounts it. */
-class FakeT2vaRenderer extends T2vaRenderer {
+/** A `t2va` renderer that fails every call; the composition only checks whether its row registers it. */
+class FakeT2vaRenderer implements T2vaRenderer {
   model(): Promise<RenderModelFacts> {
     return Promise.reject(new Error('the composition test renders no t2va shot'))
   }
@@ -51,6 +52,15 @@ class FakeT2vaRenderer extends T2vaRenderer {
   }
 }
 
+/** A `t2va` provider plugin that registers one `FakeT2vaRenderer` into `dvT2va` under the backend name `fasth3`. */
+const FakeT2vaProvider = {
+  name: 'fake-t2va',
+  inject: ['dvT2va'],
+  apply(ctx: Context): void {
+    ctx.effect(() => ctx.dvT2va.register('fasth3', new FakeT2vaRenderer()))
+  },
+}
+
 /**
  * The plugin of each package a bundle row names, resolved through `globalThis` because Node imports the rows outside
  * Vite. Each render mode provider row loads a fake provider of its render mode.
@@ -60,7 +70,8 @@ const PLUGINS: Record<string, object> = {
   '@dv/ffmpeg': DvFfmpeg, '@dv/asset-pool': DvAssetPool, '@dv/inspector': DvInspector, '@dv/story-bible': DvStoryBible,
   '@dv/shot-plan': DvShotPlan, '@dv/shot-render': DvShotRender, '@dv/timeline': DvTimeline, '@dv/deliver': DvDeliver,
   '@dv/api': DvApi, '@dv/chat-references': DvChatReferences,
-  '@dv/fasth3-ref2va': FakeRef2vaRenderer, '@dv/fasth3-t2va': FakeT2vaRenderer,
+  '@dv/render-modes': { name: RenderModes.name, apply: RenderModes.apply },
+  '@dv/fasth3-ref2va': FakeRef2vaProvider, '@dv/fasth3-t2va': FakeT2vaProvider,
 }
 
 /** One row of a Loader entry list. */
@@ -92,7 +103,7 @@ describe('DreamVerse bundle composition', () => {
     disposers.push(() => { delete globals.__dvComposition })
     const rows = bundleRows()
     expect(rows.map(row => row.id)).toEqual(expect.arrayContaining([
-      'dv-fasth3-ref2va', 'dv-fasth3-t2va', 'dv-project', 'dv-shot-plan', 'dv-shot-render', 'dv-timeline', 'dv-chat-references', 'dv-api',
+      'dv-render-modes', 'dv-fasth3-ref2va', 'dv-fasth3-t2va', 'dv-project', 'dv-shot-plan', 'dv-shot-render', 'dv-timeline', 'dv-chat-references', 'dv-api',
     ]))
     // Each row keeps its id and `!!js` config; its package name points at a module that re-exports the plugin class.
     const entries = [
@@ -118,10 +129,12 @@ describe('DreamVerse bundle composition', () => {
     expect(ctx.get('dvProject')?.listOperations().map(spec => spec.name))
       .toEqual(expect.arrayContaining(['plan.create', 'shot.render_ref2va', 'timeline.create', 'timeline.update']))
     expect(ctx.get('tools')?.get('dv_shot_render_ref2va')).toBeDefined()
-    // The disabled t2va row mounts no provider, so Shot render registers no t2va operation and the agent has no t2va tool.
-    expect(ctx.get('dvT2va')).toBeUndefined()
+    // The disabled t2va row registers no renderer, so Shot render registers no t2va operation and the agent has no t2va tool.
+    expect(ctx.dvRef2va.backends()).toEqual(['fasth3'])
+    expect(ctx.dvT2va.backends()).toEqual([])
     expect(ctx.get('tools')?.get('dv_shot_render_t2va')).toBeUndefined()
-    const renderer = ctx.dvRef2va as FakeRef2vaRenderer
+    const renderer = ctx.dvRef2va.get('fasth3')
+    if (!(renderer instanceof FakeRef2vaRenderer)) throw new Error('The ref2va row registered no fake renderer.')
 
     const signal = new AbortController().signal
     const call = async (name: string, args: Record<string, unknown>) => {

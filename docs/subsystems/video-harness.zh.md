@@ -21,8 +21,8 @@ components     @dv/asset-pool @dv/story-bible      chat references   @dv/chat-re
                @dv/timeline @dv/deliver @dv/inspector
   │ ctx.dvRef2va, ctx.dvT2va (Consumer: @dv/shot-render)
   ▼
-render modes   @dv/render-modes           Service Definitions dvRef2va, dvT2va
-  ▲ subclass and register the service
+render modes   @dv/render-modes           Service Definitions dvRef2va, dvT2va: registries of named renderers
+  ▲ register a renderer under a backend name
   │
 providers      @dv/fasth3-ref2va @dv/fasth3-t2va   each with its prompt skill
 
@@ -35,7 +35,7 @@ bundle         @dv/bundle                 the cordis.patch.yml rows of every pac
 | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | 注册表    | [`@dv/project`](../../packages/dv/project/README.zh.md)                                                                                                                                                                                                               | `dvProject` 服务：组件向它注册操作和归约函数，就像工具向 `ctx.tools` 注册一样。它是项目文件唯一的写入者，把每个操作变成一个 DSH 工具，并注册 `dv:project` 系统提示词段。          |
 | 组件     | `@dv/asset-pool`、`@dv/story-bible`、`@dv/shot-plan`、`@dv/shot-render`、`@dv/timeline`、`@dv/deliver`、`@dv/inspector`                                                                                                                                                     | 各自拥有一项能力的插件：它的数据（一个状态切片及其归约函数）、它的操作，以及智能体读到的关于它们的文字。外部程序经 [`@dv/ffmpeg`](../../packages/dv/ffmpeg/README.zh.md) 运行。 |
-| 生成方式   | [`@dv/render-modes`](../../packages/dv/render-modes/README.zh.md)、[`@dv/fasth3-ref2va`](../../packages/dv/fasth3-ref2va/README.zh.md)、[`@dv/fasth3-t2va`](../../packages/dv/fasth3-t2va/README.zh.md)、[`@dv/shot-render`](../../packages/dv/shot-render/README.zh.md) | 每种生成方式一个能力 seam：`@dv/render-modes` 持有 Service Definition，两个 FastH3 包是 Service Provider，镜头渲染是 Consumer。              |
+| 生成方式   | [`@dv/render-modes`](../../packages/dv/render-modes/README.zh.md)、[`@dv/fasth3-ref2va`](../../packages/dv/fasth3-ref2va/README.zh.md)、[`@dv/fasth3-t2va`](../../packages/dv/fasth3-t2va/README.zh.md)、[`@dv/shot-render`](../../packages/dv/shot-render/README.zh.md) | 每种生成方式一个能力 seam：`@dv/render-modes` 持有注册表，两个 FastH3 包是 Service Provider，镜头渲染是 Consumer。                              |
 | API    | [`@dv/api`](../../packages/dv/api/README.zh.md)                                                                                                                                                                                                                       | DSH `connection` 服务上的 Fetch 路由和 `webServer` 上的事件流；视图读取或修改项目的唯一途径。                                                   |
 | 对话引用   | [`@dv/chat-references`](../../packages/dv/chat-references/README.zh.md)                                                                                                                                                                                               | `agent/pre-step` 和 `session/event` 上的监听器，把用户在对话消息中指向的东西变成项目 ID 和素材。                                                 |
 | 视图     | `@dv/ui-*`                                                                                                                                                                                                                                                            | DSH Web 客户端的右侧栏标签类型和中央视图；`@dv/ui-kit` 是它们共用的库。                                                                      |
@@ -50,7 +50,7 @@ bundle         @dv/bundle                 the cordis.patch.yml rows of every pac
 
 生成方式是镜头由其输入渲染出来的方式。`ref2va` 由一段提示词、1 到模型 `maxReferenceImages` 张参考图和一张可选的首帧渲染；`t2va` 只由一段提示词渲染。每种生成方式都返回一段带音频的视频及其最后一张静帧，镜头渲染把两者存为一个版本的两个输出。
 
-每种生成方式各自是一个能力 seam。Service Definition 是 `@dv/render-modes` 中的抽象类（`Ref2vaRenderer` 即 `ctx.dvRef2va`，`T2vaRenderer` 即 `ctx.dvT2va`），方法为 `model()`、`ready()` 和 `render(request, signal)`。Service Provider 为一个后端继承该抽象类：`@dv/fasth3-ref2va` 和 `@dv/fasth3-t2va` 服务 FastVideo streaming_v2 服务器背后的 FastH3 模型，并各自用 `ctx.skills` 注册自己的提示词 skill（`fasth3-ref2va-prompting`、`fasth3-t2va-prompting`）。Consumer 是 `@dv/shot-render`：它只在 `dvRef2va` 挂载时注册 `shot.render_ref2va`，只在 `dvT2va` 挂载时注册 `shot.render_t2va`，因此只有部署所服务的生成方式才有对应的 `dv_shot_render_<mode>` 工具。`DV_T2VA_BACKEND_URL` 未设置时，bundle 禁用 `dv-fasth3-t2va` 这一行。
+每种生成方式各自是一个能力 seam。`@dv/render-modes` 中的 Service Definition 是按后端名字登记渲染器的注册表（`ctx.dvRef2va` 存放 `Ref2vaRenderer` 对象，`ctx.dvT2va` 存放 `T2vaRenderer` 对象），每个渲染器都有方法 `model()`、`ready()` 和 `render(request, signal)`。Service Provider 以一个后端名字为一个后端登记一个渲染器，任意数量的 provider 都可以登记到同一种生成方式：`@dv/fasth3-ref2va` 和 `@dv/fasth3-t2va` 以默认名字 `fasth3` 服务 FastVideo streaming_v2 服务器背后的 FastH3 模型，并各自用 `ctx.skills` 注册自己的提示词 skill（`fasth3-ref2va-prompting`、`fasth3-t2va-prompting`）。Consumer 是 `@dv/shot-render`：它只在 `dvRef2va` 中有渲染器时注册 `shot.render_ref2va`，只在 `dvT2va` 中有渲染器时注册 `shot.render_t2va`，因此只有部署所服务的生成方式才有对应的 `dv_shot_render_<mode>` 工具；工具的 `backend` 参数列出已登记的后端，默认为第一个。`DV_T2VA_BACKEND_URL` 未设置时，bundle 禁用 `dv-fasth3-t2va` 这一行。
 
 `shot.render_ref2va` 的 precondition 对每个调用方都拒绝没有参考图的调用；这条规则属于 `ref2va` 生成方式，`t2va` 渲染则完全没有参考图。分镜计划的每个镜头在 `mode` 中写明自己的生成方式，`continue_previous: true` 让一个 `ref2va` 镜头从上一个镜头的最后一张静帧开始。`plan.create`、`plan.update` 和 `plan.approve` 拒绝生成方式没有已注册渲染操作的镜头、带参考图的 `t2va` 镜头，以及镜头 1 或 `t2va` 镜头上的 `continue_previous`。
 
@@ -192,7 +192,7 @@ DreamVerse 的新行为挂在某个包已拥有的扩展点上，就像 DeepSeek
 
 1. 类别：一种生成方式，即一项可替换能力。
 2. 主人：`t2va` seam；由模型支持 `t2va` 的 Service Provider 实现。
-3. 扩展点：`@dv/render-modes` 定义 `dvT2va`，`@dv/fasth3-t2va` 提供它，`@dv/shot-render` 注册 `shot.render_t2va`，于是智能体得到工具 `dv_shot_render_t2va`。
+3. 扩展点：`@dv/render-modes` 定义 `dvT2va`，`@dv/fasth3-t2va` 向它登记一个渲染器，`@dv/shot-render` 注册 `shot.render_t2va`，于是智能体得到工具 `dv_shot_render_t2va`。
 4. 可替换：是；每种生成方式各自是一个 seam。
 5. 文字：`t2va` 的提示词规则是该 Service Provider 的 skill `fasth3-t2va-prompting`；“每个镜头必须有参考图”只是 `ref2va` 的输入要求，写在 `dv_shot_render_ref2va` 的说明和 `ref2va` Service Provider 的 skill 里。
 
@@ -249,7 +249,7 @@ DreamVerse 的新行为挂在某个包已拥有的扩展点上，就像 DeepSeek
 | Asset pool 素材库   | `asset`    | `@dv/asset-pool`  | `dvAssetPool`  | `asset.import` `asset.grab_still` `asset.place` `asset.unplace`                                                                                                                                               |
 | Story bible 设定库  | `bible`    | `@dv/story-bible` | `dvStoryBible` | `bible.character_create` `bible.character_update` `bible.location_create` `bible.location_update` `bible.style_create` `bible.style_update`                                                                   |
 | Shot plan 分镜     | `plan`     | `@dv/shot-plan`   | `dvShotPlan`   | `plan.create` `plan.update` `plan.approve`                                                                                                                                                                    |
-| Shot render 镜头渲染 | `shot`     | `@dv/shot-render` | `dvShotRender` | `shot.render_ref2va`（`dvRef2va` 挂载时）`shot.render_t2va`（`dvT2va` 挂载时）                                                                                                                                          |
+| Shot render 镜头渲染 | `shot`     | `@dv/shot-render` | `dvShotRender` | `shot.render_ref2va`（`dvRef2va` 中有渲染器时）`shot.render_t2va`（`dvT2va` 中有渲染器时）                                                                                                                                    |
 | Timeline 时间线     | `timeline` | `@dv/timeline`    | `dvTimeline`   | `timeline.create` `timeline.update` `timeline.rename` `timeline.delete` `timeline.clip_insert` `timeline.clip_move` `timeline.clip_remove` `timeline.clip_split` `timeline.clip_trim` `timeline.clip_replace` |
 | Deliver 交付       | `deliver`  | `@dv/deliver`     | `dvDeliver`    | `deliver.timeline_export`                                                                                                                                                                                     |
 | Inspector 检查器    | `inspect`  | `@dv/inspector`   | `dvInspector`  | 读取 `inspect.image` `inspect.asset`                                                                                                                                                                            |
