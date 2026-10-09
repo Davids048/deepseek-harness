@@ -7,7 +7,7 @@
  * @module @dv/ui-asset-pool/AssetsPanel
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, DragEvent, ReactNode } from 'react'
+import type { DragEvent, ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
@@ -20,6 +20,7 @@ import { useText } from '@dv/ui-kit/locale.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import { DV_ASSET_DRAG_TYPE, DV_TIMELINE_INSERT_EVENT, dispatchWorkspaceEvent } from '@dv/ui-kit/workspace-events.ts'
 import { assetLibrary } from './library.ts'
+import css from './AssetsPanel.module.css'
 
 /** Props of {@link AssetsPanel}. */
 export interface AssetsPanelProps {
@@ -29,11 +30,6 @@ export interface AssetsPanelProps {
   /** The API client; defaults to one over the page's fetch. */
   client?: DvClient
 }
-
-const line = 'var(--dv-line, rgba(127, 127, 127, 0.25))'
-const muted = 'var(--dv-muted, rgba(127, 127, 127, 0.95))'
-const accent = 'var(--dv-accent, #7c5cff)'
-const button: CSSProperties = { border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '5px 12px', fontSize: 13, cursor: 'pointer' }
 
 /**
  * The asset pool panel of one project.
@@ -48,9 +44,9 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
   const library = useMemo(() => state.value === null ? null : assetLibrary(state.value), [state.value])
 
   let body: ReactNode
-  if (library === null) body = <p style={{ color: muted, fontSize: 12 }}>{state.error === null ? t('正在读取…', 'Loading…') : t(`读取失败：${state.error}`, `Failed to load: ${state.error}`)}</p>
+  if (library === null) body = <p className={css.note}>{state.error === null ? t('正在读取…', 'Loading…') : t(`读取失败：${state.error}`, `Failed to load: ${state.error}`)}</p>
   else if (library.images.length + library.videos.length + library.extracted.length === 0) {
-    body = <p style={{ color: muted, fontSize: 12, margin: 0 }}>{t('暂无', 'None yet')}</p>
+    body = <p className={css.note}>{t('暂无', 'None yet')}</p>
   } else {
     body = (
       <>
@@ -61,9 +57,9 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
     )
   }
   return (
-    <div data-testid="dv-asset-pool-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: 12, gap: 10 }}>
+    <div data-testid="dv-asset-pool-panel" className={css.panel}>
       <ImportZone client={client} projectId={props.projectId} session={props.session} />
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{body}</div>
+      <div className={css.scroll}>{body}</div>
       {preview === null
         ? null
         : <Preview key={preview.id} asset={preview} onClose={() => { setPreview(null) }} />}
@@ -103,14 +99,14 @@ function ImportZone(props: { client: DvClient; projectId: string; session: strin
       onDragOver={(event) => { if (isFileDrag(event)) { event.preventDefault(); setOver(true) } }}
       onDragLeave={() => { setOver(false) }}
       onDrop={(event) => { if (!isFileDrag(event)) return; event.preventDefault(); setOver(false); importFiles(event.dataTransfer.files) }}
-      style={{ border: `1px dashed ${over ? accent : line}`, borderRadius: 8, padding: '12px 8px', textAlign: 'center', fontSize: 12, color: muted, cursor: 'pointer' }}
+      className={css.importZone} data-over={over ? '' : undefined}
     >
       {pending > 0
         ? t(`导入中（${String(pending)}）…`, `Importing (${String(pending)})…`)
         : t('拖入图片或视频导入，或点击选择文件', 'Drop images or videos here to import, or click to choose files')}
-      {error === null ? null : <div style={{ color: 'var(--dv-danger, #e5484d)', marginTop: 4 }}>{error}</div>}
+      {error === null ? null : <div className={css.error}>{error}</div>}
       {refused.map(name => (
-        <div key={name} style={{ color: 'var(--dv-danger, #e5484d)', marginTop: 4 }}>
+        <div key={name} className={css.error}>
           {t(`「${name}」不是图片或视频，没有导入。`, `"${name}" is not an image or a video, so it was not imported.`)}
         </div>
       ))}
@@ -127,12 +123,10 @@ function ImportZone(props: { client: DvClient; projectId: string; session: strin
 function Section(props: { title: string; assets: Asset[]; onOpen: (asset: Asset) => void }): ReactNode {
   if (props.assets.length === 0) return null
   return (
-    <section style={{ marginBottom: 14 }}>
-      <h3 style={{ fontSize: 12, fontWeight: 600, color: muted, margin: '0 0 6px' }}>{props.title} · {props.assets.length}</h3>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 6 }}>
-        {props.assets.map(asset => (
-          <Thumb key={asset.id} asset={asset} onOpen={props.onOpen} />
-        ))}
+    <section className={css.section}>
+      <h3 className={css.sectionTitle}>{props.title} · {props.assets.length}</h3>
+      <div className={css.grid}>
+        {props.assets.map(asset => <Thumb key={asset.id} asset={asset} onOpen={props.onOpen} />)}
       </div>
     </section>
   )
@@ -146,19 +140,18 @@ function Section(props: { title: string; assets: Asset[]; onOpen: (asset: Asset)
 function Thumb(props: { asset: Asset; onOpen: (asset: Asset) => void }): ReactNode {
   const { asset } = props
   const video = asset.mime.startsWith('video/')
-  const media: CSSProperties = { width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }
   return (
     <button
       type="button" draggable title={asset.name} data-asset-id={asset.id}
       onDragStart={(event) => { event.dataTransfer.setData(DV_ASSET_DRAG_TYPE, asset.id); event.dataTransfer.effectAllowed = 'copy' }}
       onClick={() => { props.onOpen(asset) }}
-      style={{ position: 'relative', padding: 0, border: `1px solid ${line}`, borderRadius: 6, overflow: 'hidden', aspectRatio: '1', background: '#0002', cursor: 'grab' }}
+      className={css.thumb}
     >
       {video
-        ? <video src={`${assetUrl(asset.id)}#t=0.1`} muted preload="metadata" style={media} />
-        : asset.mime.startsWith('image/') ? <img src={assetUrl(asset.id)} alt={asset.name} loading="lazy" style={media} /> : <span style={{ fontSize: 11 }}>{asset.name}</span>}
+        ? <video src={`${assetUrl(asset.id)}#t=0.1`} muted preload="metadata" className={css.thumbMedia} />
+        : asset.mime.startsWith('image/') ? <img src={assetUrl(asset.id)} alt={asset.name} loading="lazy" className={css.thumbMedia} /> : <span className={css.thumbName}>{asset.name}</span>}
       {video && asset.duration_sec !== null
-        ? <span style={{ position: 'absolute', right: 3, bottom: 3, fontSize: 10, background: '#000a', color: '#fff', borderRadius: 3, padding: '0 3px' }}>{asset.duration_sec.toFixed(0)}s</span>
+        ? <span className={css.duration}>{asset.duration_sec.toFixed(0)}s</span>
         : null}
     </button>
   )
@@ -189,18 +182,30 @@ function Preview(props: { asset: Asset; onClose: () => void }): ReactNode {
     asset.size_bytes < 1024 * 1024 ? `${(asset.size_bytes / 1024).toFixed(1)} KB` : `${(asset.size_bytes / 1024 / 1024).toFixed(1)} MB`,
   ].filter((fact): fact is string => fact !== null)
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-label={asset.name} onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 1000, background: '#000c', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div onClick={(event) => { event.stopPropagation() }} style={{ maxWidth: '80vw', maxHeight: '86vh', display: 'flex', flexDirection: 'column', gap: 10, color: '#eee' }}>
+    <div role="dialog" aria-modal="true" aria-label={asset.name} onClick={onClose} className={css.overlay}>
+      <div onClick={(event) => { event.stopPropagation() }} className={css.dialog}>
         {video
-          ? <video src={assetUrl(asset.id)} controls autoPlay onLoadedMetadata={(event) => { setLoadedSize({ width: event.currentTarget.videoWidth, height: event.currentTarget.videoHeight }) }} style={{ maxWidth: '80vw', maxHeight: '70vh', borderRadius: 8 }} />
-          : <img src={assetUrl(asset.id)} alt={asset.name} onLoad={(event) => { setLoadedSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }) }} style={{ maxWidth: '80vw', maxHeight: '70vh', objectFit: 'contain', borderRadius: 8 }} />}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
-          <span style={{ fontWeight: 600 }}>{asset.name}</span>
-          <span style={{ opacity: 0.7 }}>{facts.join(' · ')}</span>
+          ? (
+            <video
+              src={assetUrl(asset.id)} controls autoPlay className={css.previewMedia}
+              onLoadedMetadata={(event) => {
+                setLoadedSize({ width: event.currentTarget.videoWidth, height: event.currentTarget.videoHeight })
+              }}
+            />
+          )
+          : (
+            <img
+              src={assetUrl(asset.id)} alt={asset.name} className={css.previewMedia}
+              onLoad={(event) => { setLoadedSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }) }}
+            />
+          )}
+        <div className={css.facts}>
+          <span className={css.name}>{asset.name}</span>
+          <span className={css.factText}>{facts.join(' · ')}</span>
           <span style={{ flex: 1 }} />
-          {video ? <button type="button" style={button} onClick={() => { dispatchWorkspaceEvent(DV_TIMELINE_INSERT_EVENT, { assetId: asset.id }); onClose() }}>{t('插入片段', 'Insert clip')}</button> : null}
-          <button type="button" style={button} onClick={() => { dispatchCompose({ text: t('使用这个素材：', 'Use this asset: '), refs: [{ kind: 'asset', id: asset.id, label: asset.name, assetId: asset.id }] }); onClose() }}>{t('让智能体使用', 'Ask the agent to use it')}</button>
-          <button type="button" style={button} onClick={onClose}>{t('关闭', 'Close')}</button>
+          {video ? <button type="button" className={css.button} onClick={() => { dispatchWorkspaceEvent(DV_TIMELINE_INSERT_EVENT, { assetId: asset.id }); onClose() }}>{t('插入片段', 'Insert clip')}</button> : null}
+          <button type="button" className={css.button} onClick={() => { dispatchCompose({ text: t('使用这个素材：', 'Use this asset: '), refs: [{ kind: 'asset', id: asset.id, label: asset.name, assetId: asset.id }] }); onClose() }}>{t('让智能体使用', 'Ask the agent to use it')}</button>
+          <button type="button" className={css.button} onClick={onClose}>{t('关闭', 'Close')}</button>
         </div>
       </div>
     </div>,
@@ -217,7 +222,7 @@ function Preview(props: { asset: Asset; onClose: () => void }): ReactNode {
 export function AssetsTabBody(props: PropsRuntime<'sidebar.right.pane.tab'> & { client: DvClient }): ReactNode {
   const project = useCurrentProject()
   const t = useText()
-  if (project === null) return <p style={{ padding: 12, fontSize: 12, color: muted }}>{t('先打开一个项目', 'Open a project first')}</p>
+  if (project === null) return <p className={css.note} style={{ padding: 16 }}>{t('先打开一个项目', 'Open a project first')}</p>
   // Keyed by project so a switch starts from an empty panel instead of showing the previous project's assets.
   return <AssetsPanel key={project} projectId={project} session={props.sessionId} client={props.client} />
 }
