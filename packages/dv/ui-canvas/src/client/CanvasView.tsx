@@ -90,6 +90,26 @@ if (typeof window !== 'undefined') {
 
 const clampZoom = (zoom: number): number => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
 
+/** Zoom change per pixel of a mouse wheel's deltaY: one notch (about 100 px) zooms by about 14%. */
+const WHEEL_ZOOM_RATE = 0.0015
+/**
+ * Zoom change per pixel of a touchpad pinch's deltaY. Browsers report a pinch as wheel events with `ctrlKey` and
+ * deltas of a few pixels each, so the pinch needs a larger rate than a mouse wheel to follow the fingers.
+ */
+const PINCH_ZOOM_RATE = 0.01
+/** Pixels per line for wheel events that report `deltaMode` in lines (Firefox mouse wheels). */
+const LINE_HEIGHT_PX = 16
+
+/**
+ * The factor one wheel event multiplies the canvas zoom by.
+ * @param event - the wheel event's deltaY, deltaMode, and ctrlKey (set for a touchpad pinch).
+ * @returns the zoom factor; above 1 zooms in.
+ */
+export function wheelZoomFactor(event: Pick<WheelEvent, 'deltaY' | 'deltaMode' | 'ctrlKey'>): number {
+  const pixels = event.deltaMode === 1 ? event.deltaY * LINE_HEIGHT_PX : event.deltaY
+  return Math.exp(-pixels * (event.ctrlKey ? PINCH_ZOOM_RATE : WHEEL_ZOOM_RATE))
+}
+
 /** An in-progress pointer gesture. */
 type Gesture =
   | { kind: 'pan'; startX: number; startY: number; origin: CanvasViewport; moved: boolean }
@@ -326,7 +346,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
       const py = event.clientY - rect.top
       autoFit.current = false
       setViewport((current) => {
-        const zoom = clampZoom(current.zoom * Math.exp(-event.deltaY * 0.0015))
+        const zoom = clampZoom(current.zoom * wheelZoomFactor(event))
         return { zoom, x: px - (px - current.x) / current.zoom * zoom, y: py - (py - current.y) / current.zoom * zoom }
       })
       scheduleSave()
