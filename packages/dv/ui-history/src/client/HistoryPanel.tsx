@@ -458,8 +458,10 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean }):
   const t = useText()
   const selected = props.selected === record.id
   const status = t(...STATUSES[record.status])
-  // Only a render row shows a thumbnail, its take's frame; other rows stay text so the list reads cleanly.
-  const thumbnail = record.operation?.startsWith('shot.render_') === true ? thumbnailOf(record, assets, props.records) : null
+  // Only a render row has a thumbnail column, so render rows line up even when one rendered nothing (an empty square);
+  // other rows stay text so the list reads cleanly.
+  const render = record.operation?.startsWith('shot.render_') === true
+  const thumbnail = render ? thumbnailOf(record, assets, props.records) : null
   // The intent the agent gave for its call; a call without one records the operation name, which the label already shows.
   // A human action's intent repeats its label, so it stays in the tooltip.
   const words = record.actor === 'agent' && record.intent !== record.operation ? record.intent : ''
@@ -478,10 +480,10 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean }):
     >
       <div
         className={css.rowGrid}
-        style={{ gridTemplateColumns: thumbnail === null ? 'minmax(0, 1fr) auto' : `${String(size)}px minmax(0, 1fr) auto` }}
+        style={{ gridTemplateColumns: render ? `${String(size)}px minmax(0, 1fr) auto` : 'minmax(0, 1fr) auto' }}
       >
         {/* A step after the current one is greyed; the ⋮ menu is not, so it is not trapped under the next row. */}
-        {thumbnail === null
+        {!render
           ? null
           : <div style={{ opacity: dim, filter: after ? 'grayscale(1)' : undefined }}><Thumb thumbnail={thumbnail} size={size} /></div>}
         <div style={{ minWidth: 0, opacity: dim }}>

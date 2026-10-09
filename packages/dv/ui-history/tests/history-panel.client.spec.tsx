@@ -159,6 +159,18 @@ describe('HistoryPanel', () => {
     })
   })
 
+  it('keeps the thumbnail column on a render row that produced nothing, and gives other rows none', async () => {
+    const failed: HistoryEntry = {
+      record: record({ id: 'f1', operation: 'shot.render_t2va', status: 'failed', outputs: [] }), place: 'before',
+    }
+    const { row } = mount([failed, ...ENTRIES])
+    await waitFor(() => { row('f1') })
+    const columns = (id: string): string => row(id).querySelector<HTMLElement>('[style*="grid-template-columns"]')?.style.gridTemplateColumns ?? ''
+    expect(columns('f1')).toMatch(/^40px /)
+    expect(row('f1').querySelector('[data-testid="dv-history-thumb"]')).toBeNull()
+    expect(columns('m1')).toBe('minmax(0, 1fr) auto')
+  })
+
   it('greys a render step after the current one with a faded, black-and-white thumbnail', async () => {
     const { row } = mount(ENTRIES.map(entry => entry.record.id === 'g1' ? { ...entry, place: 'after' as const } : entry))
     await waitFor(() => { row('g1') })
