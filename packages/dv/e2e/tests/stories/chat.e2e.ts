@@ -419,15 +419,15 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('撤销 in the timeline view takes back a step, and the agent\'s next change continues from that state with the step still in the history', async () => {
+  it('撤销 in the timeline view takes back a step, and the agent\'s next change continues from that state and discards the undone step', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await send(page, '做两个镜头的广告')
     await waitChat(page, '两个镜头已渲染', 60_000)
     const stateOf = async (): Promise<WireState> => await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
-    const historyIds = async (): Promise<string[]> =>
-      (await harness.api.post('/api/dv/history', { project: projectId, limit: 200 }) as { entries: Array<{ record: { id: string } }> }).entries
-        .map(entry => entry.record.id)
+    const history = async (): Promise<Array<{ id: string; place: string }>> =>
+      (await harness.api.post('/api/dv/history', { project: projectId, limit: 200 }) as { entries: Array<{ record: { id: string }; place: string }> })
+        .entries.map(entry => ({ id: entry.record.id, place: entry.place }))
     const before = await stateOf()
     const last = before.components.proj.records.at(-1)?.id ?? ''
     await page.getByRole('tab', { name: '时间线' }).click()
@@ -435,13 +435,16 @@ describe('chat with the agent', () => {
     await editor.waitFor({ timeout: 15_000 })
     await editor.getByRole('button', { name: '撤销', exact: true }).click()
     await waitFor(async () => (await stateOf()).components.proj.records.every(record => record.id !== last), 'the undo', 10_000)
-    // The agent writes after the undo: its change continues from the earlier state, and the undone step stays listed.
+    // The undone step stays in the history after the current step until a new change; the editor offers redo.
+    expect((await history()).find(entry => entry.id === last)?.place).toBe('after')
+    await expect.poll(() => editor.getByRole('button', { name: '重做', exact: true }).isEnabled()).toBe(true)
+    // The agent writes after the undo: its change continues from the earlier state and discards the undone step.
     await send(page, '加人物')
     await waitChat(page, '人物小橘已登记', 30_000)
     const after = await stateOf()
     expect(after.components.proj.records.filter(record => record.operation === 'bible.character_create')).toHaveLength(1)
     expect(after.components.proj.records.some(record => record.id === last)).toBe(false)
-    expect(await historyIds()).toContain(last)
+    expect((await history()).map(entry => entry.id)).not.toContain(last)
     await send(page, '只回复九')
     await waitChat(page, '收到九')
     expect(promptOf(requestFor('只回复九') as ChatRequest)).toContain('Project summary of the current state')

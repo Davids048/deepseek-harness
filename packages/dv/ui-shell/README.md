@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to turn the DSH web app into DreamVerse. With no project open, the center shows the entry page: the chat composer and recent projects. With a project open, it shows the canvas or the timeline editor, switched by 画布 | 时间线 / Canvas | Timeline in the top bar. The left sidebar shows the navigator: 新建项目 / Create project, 首页 / Home, and the project → chat session tree. The right panel gets the 对话 / Chat and 轨迹 / Trajectory tabs. Outside text fields, Ctrl+Z (Cmd+Z on macOS) undoes the last step of the open project, with an undo record at the end of its history.
+Use this package to turn the DSH web app into DreamVerse. With no project open, the center shows the entry page: the chat composer and recent projects. With a project open, it shows the canvas or the timeline editor, switched by 画布 | 时间线 / Canvas | Timeline in the top bar. The left sidebar shows the navigator: 新建项目 / Create project, 首页 / Home, and the project → chat session tree. The right panel gets the 对话 / Chat and 轨迹 / Trajectory tabs. Outside text fields, Ctrl+Z (Cmd+Z on macOS) moves the open project one step back and Shift+Ctrl+Z (Shift+Cmd+Z) one step forward; these keys move the current position of the history list and write no record.
 
 ## Table of Contents
 
@@ -70,7 +70,7 @@ The workspace sends the chat session to the canvas and the timeline editor only 
 | [`src/client/Center.tsx`](src/client/Center.tsx) | The center: URL restore, the entry page, recent projects, the workspace top bar, the views, and the window event listeners |
 | [`src/client/Navigator.tsx`](src/client/Navigator.tsx) | The left navigator and the brand name |
 | [`src/client/tabs.tsx`](src/client/tabs.tsx) | The 对话 and 轨迹 tab types and bodies |
-| [`src/client/undo-keys.ts`](src/client/undo-keys.ts) | `isUndoKey` and `listenUndoKey`: the Ctrl+Z (Cmd+Z) window listener that calls `/api/dv/undo` |
+| [`src/client/undo-keys.ts`](src/client/undo-keys.ts) | `historyKey` and `listenHistoryKeys`: the window listener that calls `/api/dv/undo` on Ctrl+Z (Cmd+Z) and `/api/dv/redo` on Shift+Ctrl+Z (Shift+Cmd+Z) |
 | [`src/client/chrome.tsx`](src/client/chrome.tsx) | Hidden and reworded DSH chrome, the right-panel guide, and tab titles that follow the interface language |
 | [`src/client/InlineRename.tsx`](src/client/InlineRename.tsx) | The inline title field and the ⋯ row menu |
 | [`src/client/views.ts`](src/client/views.ts) | The canvas and timeline views, imported from their packages' sources into this bundle |

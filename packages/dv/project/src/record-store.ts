@@ -5,11 +5,13 @@
  * ```
  * <root>/<ProjectId>/project.json    ProjectInfo
  * <root>/<ProjectId>/records.jsonl   record lines and update lines, appended in write order
+ * <root>/<ProjectId>/line.json       ProjectLine: the last step of the history list and the current position
  * ```
  *
- * The records of a project form one line: each record's parent is the record written just before it, and the last
- * record is the project's head. The store keeps every project in memory and mirrors each change to disk before it
- * returns. It enforces the record format rules (append only after the head, status only forward, no update after a
+ * The history list of a project is the `parents[0]` ancestry of its last step (`tip`); `at` is the current position on
+ * that list. A new record follows `at` and becomes both `tip` and `at`, so the steps that were after `at` leave the list
+ * (they are discarded and stay on disk). The store keeps every project in memory and mirrors each change to disk before
+ * it returns. It enforces the record format rules (append only after `at`, status only forward, no update after a
  * record finished) and reports every change to the `onChange` callback after the change is on disk. It does not
  * interpret records or take decisions; the other modules do that and call it while they hold the project lock it
  * provides.
@@ -21,18 +23,20 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renam
 import { join } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { ProjectError } from './shared.ts'
-import type { ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordStatus, RecordUpdate } from './types.ts'
+import type { ProjectEvent, ProjectId, ProjectInfo, ProjectLine, ProjectRecord, RecordId, RecordStatus, RecordUpdate } from './types.ts'
 
 /** A record line as a caller hands it to {@link RecordStore.append}: the store assigns `id` and `created_at`. */
 export type RecordLineInput = Omit<ProjectRecord, 'id' | 'created_at' | 'started_at' | 'finished_at' | 'error' | 'cost' | 'report'>
 
-/** One project in memory: its metadata and its records with every update line applied. */
+/** One project in memory: its metadata, its records with every update line applied, and its `line.json`. */
 interface LoadedProject {
   info: ProjectInfo
   /** Record ID → the record line with its update lines applied; `resolved_asset` values are as written on disk. */
   records: Map<RecordId, ProjectRecord>
-  /** Record IDs in write order; the last one is the head. */
+  /** Record IDs in write order. */
   order: RecordId[]
+  /** The last step and the current position; null before the first record. */
+  line: ProjectLine | null
 }
 
 /** The order of statuses: an update may only move to a higher rank. */
@@ -82,7 +86,7 @@ export class RecordStore {
       const dir = join(this.root, entry.name)
       if (!existsSync(join(dir, 'project.json'))) continue
       const info = JSON.parse(readFileSync(join(dir, 'project.json'), 'utf8')) as ProjectInfo
-      const loaded: LoadedProject = { info, records: new Map(), order: [] }
+      const loaded: LoadedProject = { info, records: new Map(), order: [], line: null }
       for (const line of readFileSync(join(dir, 'records.jsonl'), 'utf8').split('\n')) {
         if (line === '') continue
         const parsed = JSON.parse(line) as ProjectRecord | RecordUpdate
@@ -95,6 +99,10 @@ export class RecordStore {
           loaded.order.push(parsed.id)
         }
       }
+      const linePath = join(dir, 'line.json')
+      const last = loaded.order.at(-1)
+      if (existsSync(linePath)) loaded.line = JSON.parse(readFileSync(linePath, 'utf8')) as ProjectLine
+      else if (last !== undefined) loaded.line = { tip: last, at: last }
       this.projects.set(info.id, loaded)
     }
   }
@@ -131,7 +139,7 @@ export class RecordStore {
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'project.json'), `${JSON.stringify(stored, null, 2)}\n`)
     writeFileSync(join(dir, 'records.jsonl'), '')
-    this.projects.set(info.id, { info: stored, records: new Map(), order: [] })
+    this.projects.set(info.id, { info: stored, records: new Map(), order: [], line: null })
   }
 
   /** @returns every project's metadata, oldest first. */
@@ -175,18 +183,18 @@ export class RecordStore {
   }
 
   /**
-   * Append a record line. Rule: `parents` must be `[head]`, else `parent_not_head`; the first record of a project has
-   * `parents: []`. The new record becomes the head.
+   * Append a record line. Rule: `parents` must be `[at]`, else `parent_not_head`; the first record of a project has
+   * `parents: []`. The new record becomes both the last step and the current position.
    * @param project - the project.
    * @param line - the record without `id` and `created_at`.
    * @returns the stored record.
    */
   append(project: ProjectId, line: RecordLineInput): ProjectRecord {
     const loaded = this.loaded(project)
-    const head = loaded.order.at(-1)
+    const at = loaded.line?.at
     // Check the parent rule before anything is written.
-    if (head === undefined ? line.parents.length !== 0 : line.parents.length !== 1 || line.parents[0] !== head) {
-      throw new ProjectError('parent_not_head', `Cannot append to project ${project}: the record's parent is not the head ${head ?? '(none)'}.`)
+    if (at === undefined ? line.parents.length !== 0 : line.parents.length !== 1 || line.parents[0] !== at) {
+      throw new ProjectError('parent_not_head', `Cannot append to project ${project}: the record's parent is not the current position ${at ?? '(none)'}.`)
     }
     // Exactly the record-line fields, in record-format order.
     const record: ProjectRecord = {
@@ -200,7 +208,10 @@ export class RecordStore {
     appendFileSync(join(this.root, project, 'records.jsonl'), `${JSON.stringify(stored)}\n`)
     loaded.records.set(stored.id, stored)
     loaded.order.push(stored.id)
+    loaded.line = { tip: stored.id, at: stored.id }
+    writeAtomic(join(this.root, project, 'line.json'), `${JSON.stringify(loaded.line)}\n`)
     this.onChange(project, { kind: 'record', record: this.currentForm(loaded, stored) })
+    this.onChange(project, { kind: 'line', ...loaded.line })
     return this.currentForm(loaded, stored)
   }
 
@@ -278,10 +289,26 @@ export class RecordStore {
 
   /**
    * @param project - the project.
-   * @returns the project's last record, or undefined for a project without records.
+   * @returns the last step of the history list and the current position, or undefined before the first record.
    */
-  head(project: ProjectId): RecordId | undefined {
-    return this.loaded(project).order.at(-1)
+  line(project: ProjectId): ProjectLine | undefined {
+    const line = this.loaded(project).line
+    return line === null ? undefined : { ...line }
+  }
+
+  /**
+   * Move the current position, and rewrite `line.json` atomically. `at` must be a record of the history list; the
+   * caller checks that.
+   * @param project - the project.
+   * @param at - the new current position.
+   */
+  moveTo(project: ProjectId, at: RecordId): void {
+    const loaded = this.loaded(project)
+    if (loaded.line === null) throw new ProjectError('unknown_record', `Project ${project} has no record ${at}.`)
+    this.storedRecord(project, loaded, at)
+    loaded.line = { tip: loaded.line.tip, at }
+    writeAtomic(join(this.root, project, 'line.json'), `${JSON.stringify(loaded.line)}\n`)
+    this.onChange(project, { kind: 'line', ...loaded.line })
   }
 
   /**

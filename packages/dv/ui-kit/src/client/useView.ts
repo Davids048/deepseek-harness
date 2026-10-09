@@ -80,7 +80,7 @@ export function useViewSession(client: DvClient, surface: ViewSurface, session: 
     projects: projects.value ?? [],
     project,
     onProject: setProject,
-    onUndo: () => { if (project !== null) void run(() => client.undo(project, surface, session)) },
+    onUndo: () => { if (project !== null) void run(() => client.undo(project)) },
     onCreate: (title) => {
       void run(() => client.createProject(title, surface)).then((ok) => {
         if (!ok) return

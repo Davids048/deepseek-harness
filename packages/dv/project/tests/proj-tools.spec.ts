@@ -1,6 +1,6 @@
 /**
  * Project's own `dv_proj_*` tools through the `dvProject` service with the real DSH tool registry: session binding,
- * the project summary with the reducers' `agentSummary` fields, the one-line history, undo by one step and to a record,
+ * the project summary with the reducers' `agentSummary` fields, the history list, undo and redo, moves to a step,
  * stale acceptance, and waiting for scheduled records.
  */
 import { join } from 'node:path'
@@ -24,7 +24,7 @@ declare module '@dv/project' {
 
 /** Every `dv_proj_*` tool. */
 const PROJ_TOOLS = [
-  'dv_proj_create', 'dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_undo', 'dv_proj_stale_accept', 'dv_proj_wait',
+  'dv_proj_create', 'dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_undo', 'dv_proj_redo', 'dv_proj_stale_accept', 'dv_proj_wait',
 ]
 
 interface Fixture {
@@ -190,9 +190,9 @@ describe('dv_proj_* tools', () => {
     removeStill()
     expect((json(await fixture.call('dv_proj_state', {}))['recent'] as Array<{ summary: string }>)[1]?.summary).toBe('asset.grab_still')
     expect(json(await fixture.call('dv_proj_history_list', { limit: 3 }))).toEqual([
-      expect.objectContaining({ operation: 'asset.import', status: 'failed', actor: 'agent' }),
+      expect.objectContaining({ operation: 'asset.import', status: 'failed', actor: 'agent', place: 'current' }),
       {
-        record: made.record, operation: 'asset.grab_still', status: 'done', actor: 'agent', intent: 'a still',
+        record: made.record, place: 'before', operation: 'asset.grab_still', status: 'done', actor: 'agent', intent: 'a still',
         outputs: [made.outputs[0]?.asset_id],
       },
       expect.objectContaining({ operation: 'proj.create', actor: 'agent' }),
@@ -201,25 +201,31 @@ describe('dv_proj_* tools', () => {
     expect(json(await fixture.call('dv_proj_history_list', { project_id: projectId }))).toHaveLength(3)
   })
 
-  it('undoes one step and to a record as records at the end of the history, and accepts a stale record only when called', async () => {
+  it('moves back and forward without writing a record, discards the later steps on a write, and accepts a stale record only when called', async () => {
     const fixture = await start()
     fixture.project.registerOperation(still())
     const projectId = brandString<ProjectId>(String(json(await fixture.call('dv_proj_create', { title: 'edits' }))['project_id']))
     const first = value(await fixture.call('dv_asset_grab_still', { reason: 'first', prompt: 'one' }))
-    expect(json(await fixture.call('dv_proj_state', {}))).toMatchObject({ records: 2 })
-    expect(json(await fixture.call('dv_proj_undo', {}))).toMatchObject({ records: 2 })
-    // `to` goes back to a record from the history, an undone one too; the project returns to its state just after it.
-    expect(json(await fixture.call('dv_proj_undo', { to: first.record }))).toMatchObject({ records: 3 })
+    const dropped = value(await fixture.call('dv_asset_grab_still', { reason: 'dropped', prompt: 'drop' }))
+    expect(json(await fixture.call('dv_proj_state', {}))).toMatchObject({ records: 3 })
+    expect(json(await fixture.call('dv_proj_undo', {}))).toMatchObject({ records: 2, head: first.record })
+    expect(json(await fixture.call('dv_proj_redo', {}))).toMatchObject({ records: 3, head: dropped.record })
+    expect(errorOf(await fixture.call('dv_proj_redo', {}))).toContain('no step to redo')
+    // `to` moves to a step of the history, before or after the current one; a move writes no record.
     const create = fixture.project.listHistory({ project: projectId, operation: 'proj.create' })[0]!.record.id
-    expect(json(await fixture.call('dv_proj_undo', { to: create }))).toMatchObject({ records: 2 })
-    expect(fixture.project.listHistory({ project: projectId, operation: 'proj.undo' })[0]?.record).toMatchObject({
-      params: { to: create }, intent: `go back to ${create}`,
-    })
-    expect(json(await fixture.call('dv_proj_history_list', { limit: 1 }))).toEqual([expect.objectContaining({ operation: 'proj.undo', to: create })])
-    // A write after the undo continues from the earlier state; the undone steps stay in the history.
+    expect(json(await fixture.call('dv_proj_undo', { to: create }))).toMatchObject({ records: 1 })
+    expect(json(await fixture.call('dv_proj_undo', { to: first.record }))).toMatchObject({ records: 2 })
+    expect(fixture.project.listRecords(projectId)).toHaveLength(3)
+    expect(json(await fixture.call('dv_proj_history_list', {}))).toEqual([
+      expect.objectContaining({ record: dropped.record, place: 'after' }),
+      expect.objectContaining({ record: first.record, place: 'current' }),
+      expect.objectContaining({ record: create, place: 'before' }),
+    ])
+    // A write after the move discards the step after the current one for good.
     const second = value(await fixture.call('dv_asset_grab_still', { reason: 'second', prompt: 'two' }))
     expect(json(await fixture.call('dv_proj_state', {}))).toMatchObject({ records: 3 })
     expect(json(await fixture.call('dv_proj_history_list', { operation: 'asset.grab_still' }))).toHaveLength(2)
+    expect(errorOf(await fixture.call('dv_proj_undo', { to: dropped.record }))).toContain('discarded')
     // A consumer of a superseded output is stale until the agent accepts it.
     const consumer = value(await fixture.call('dv_asset_grab_still', { reason: 'from the second', prompt: 'three', inputs: { reference: `${second.record}#0` } }))
     value(await fixture.call('dv_asset_grab_still', { reason: 'retake', prompt: 'two again', supersedes: [second.record] }))
@@ -238,12 +244,14 @@ describe('dv_proj_* tools', () => {
     const newest = (operation: string): string | undefined => fixture.project.listHistory({ project: projectId, operation })[0]?.record.id
     expect(metaOf('dv_proj_create', created)).toEqual({ record: newest('proj.create') })
     value(await fixture.call('dv_asset_grab_still', { reason: 'first', prompt: 'one' }))
+    const accepted = json(await fixture.call('dv_proj_stale_accept', { record: newest('asset.grab_still') }))
+    expect(metaOf('dv_proj_stale_accept', accepted)).toEqual({ record: newest('proj.stale_accept') })
+    // Undo and redo move the current position and write no record, so they are read tools.
     const undone = json(await fixture.call('dv_proj_undo', {}))
-    expect(undone['record']).toBe(newest('proj.undo'))
-    expect(metaOf('dv_proj_undo', undone)).toEqual({ record: newest('proj.undo') })
+    expect(undone['record']).toBeUndefined()
     const state = json(await fixture.call('dv_proj_state', {}))
     expect(state['record']).toBeUndefined()
-    for (const name of ['dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_wait']) {
+    for (const name of ['dv_proj_open', 'dv_proj_state', 'dv_proj_history_list', 'dv_proj_wait', 'dv_proj_undo', 'dv_proj_redo']) {
       expect(fixture.context.tools.get(name)?.output?.presentationMeta, name).toBeUndefined()
     }
   })

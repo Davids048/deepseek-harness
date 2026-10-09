@@ -548,7 +548,7 @@ describe('canvas stories', () => {
     expect(await editor.getByText('待批准').count()).toBe(0)
     await page.keyboard.press('Escape')
     // A jump back to the v2 approval's timeline update shows plan v2 and its four takes again.
-    await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas', to: v2Layout.id })
+    await harness.api.post('/api/dv/undo', { project: project.id, to: v2Layout.id })
     await expect.poll(() => plans.textContent(), { timeout: 15_000 }).toContain('v2')
     await expect.poll(() => takes.count()).toBe(4)
     expect(await page.locator(`[data-node-id="${shot4.id}"]`).count()).toBe(1)
@@ -1030,7 +1030,7 @@ describe('timeline stories', () => {
     await expect.poll(() => trackClips(page)).toEqual(['1'])
   })
 
-  it('undo reverts the last edit, and the editor offers no redo', async () => {
+  it('undo reverts the last edit, and redo brings it back', async () => {
     const project = await seedProject('timeline-undo', 3)
     const page = await openPage()
     await gotoProject(page, project.id, 'timeline')
@@ -1043,7 +1043,12 @@ describe('timeline stories', () => {
     await expect.poll(() => timelineClips(project.id)).toEqual(original)
     await expect.poll(() => trackClips(page)).toHaveLength(3)
     expect(edited).toHaveLength(2)
-    expect(await page.getByRole('button', { name: '重做' }).count()).toBe(0)
+    const redo = page.getByRole('button', { name: '重做', exact: true })
+    await expect.poll(() => redo.isEnabled()).toBe(true)
+    await redo.click()
+    await expect.poll(() => timelineClips(project.id)).toEqual(edited)
+    await expect.poll(() => trackClips(page)).toHaveLength(2)
+    await expect.poll(() => redo.isEnabled()).toBe(false)
   })
 
   it('export produces one playable video as long as the timeline', async () => {
@@ -1215,21 +1220,19 @@ async function openHistory(page: Page): Promise<void> {
 }
 
 /**
- * Choose 回到这一步 in the ⋮ menu of one record's History row, and wait until the list shows the undo row it adds.
+ * Choose 回到这一步 in the ⋮ menu of one record's History row, and wait until the list marks that row as the current step.
  * @param page - a page showing the History panel.
- * @param record - the record to go back to.
+ * @param record - the record to go to.
  */
 async function goBackTo(page: Page, record: string): Promise<void> {
-  const newest = (): Promise<string | null> => historyPanel(page).locator('[data-testid="dv-history-row"]').first().getAttribute('data-record')
-  const before = await newest()
   const row = historyPanel(page).locator(`[data-testid="dv-history-row"][data-record="${record}"]`)
   await row.locator('[data-testid="dv-history-step-actions"]').click()
   await row.locator('[data-testid="dv-history-step-back"]').click()
-  await expect.poll(newest, { timeout: 15_000 }).not.toBe(before)
+  await expect.poll(() => row.getAttribute('data-place'), { timeout: 15_000 }).toBe('current')
 }
 
 describe('going back and keep anyway', () => {
-  it('the workspace has no branch controls; 回到这一步 shows an earlier state on the canvas and the timeline, and the later state stays reachable', async () => {
+  it('the workspace has no branch controls; 回到这一步 shows an earlier state on the canvas and the timeline, and moves forward to the later step again', async () => {
     const project = await seedProject('go-back', 1)
     const page = await openPage()
     await gotoProject(page, project.id)
@@ -1253,7 +1256,8 @@ describe('going back and keep anyway', () => {
     await viewToggle(page, '画布').click()
     await expect.poll(() => takes.count()).toBe(1)
     expect((await stateOf(project.id)).components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1'])
-    // The later steps stay in the history, so the project can return to them.
+    // Until a new edit, the later steps stay greyed in the history, so the project can move forward to them.
+    expect(await historyPanel(page).locator(`[data-testid="dv-history-row"][data-record="${later}"]`).getAttribute('data-place')).toBe('after')
     await goBackTo(page, later)
     await expect.poll(() => takes.count(), { timeout: 15_000 }).toBe(2)
     expect((await stateOf(project.id)).components.timeline.timelines.map(timeline => timeline.id)).toEqual(['t1', 't2'])

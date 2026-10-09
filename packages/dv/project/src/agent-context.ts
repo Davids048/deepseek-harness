@@ -1,6 +1,6 @@
 /**
  * The `dv:project` system-prompt section: what the agent of a chat session reads about its project at every step.
- * The section holds Project's general rules (the one history line, undo, confirmation, stale records, and how to name
+ * The section holds Project's general rules (the history list, undo and redo, confirmation, stale records, and how to name
  * records, assets, versions and clips), then the project summary of the current state: the same summary
  * that `dv_proj_state` returns, with the fields each component's reducer adds through `Reducer.agentSummary`. It holds
  * nothing that the user cannot see in the views or the conversation.
@@ -21,12 +21,12 @@ export const PROMPT_SECTION = 'dv:project'
 /** Project's rules, which apply whether or not a project is bound. */
 const RULES = [
   'DreamVerse project rules:',
-  '- The project has one history line. Every call of yours and every edit of the user is added at its end at once; '
-    + 'the user does not accept changes, and nothing is removed from the history.',
-  '- To roll back ("撤销 / 回到之前 / 撤销到… / 回到上一版 / roll back / go back to"), call dv_proj_undo: without to it undoes one step; '
-    + 'with to = a record ID from dv_proj_history_list the project returns to its state just after that record. '
-    + 'The undo is a new record at the end of the history, so a later change continues from the earlier state, and the user can '
-    + 'still return to any record. Never rebuild an earlier state with new edits when the user asked to go back.',
+  '- Every call of yours and every edit of the user is a step of the project history at once; the user does not accept changes.',
+  '- To roll back ("撤销 / 回到之前 / 撤销到… / 回到上一版 / roll back / go back to"), call dv_proj_undo: without to it goes back one '
+    + 'step; with to = a record ID from dv_proj_history_list the project shows its state just after that step. dv_proj_redo goes '
+    + 'forward one step. These moves add no step. A new change after a move discards the steps after the current one for good, '
+    + 'so when the user may still want them, ask before you change anything. Never rebuild an earlier state with new edits when '
+    + 'the user asked to go back.',
   '- Name things by the IDs in the project summary: a record by its record ID, an output of a record as <record>#<n>, '
     + 'a character, location or style version as <id>@<version>, an asset by its asset ID, a clip by its clip ID. '
     + 'The user points at things with + → 引用 or dv: mentions, which reach you as these IDs. '

@@ -167,7 +167,7 @@ describe('dvApi', () => {
 
     const state = fixture.handlers.getState(projectId)
     expect(state.project).toMatchObject({ id: projectId, title: 'demo' })
-    expect(Object.keys(state)).toEqual(['project', 'head', 'components', 'assets'])
+    expect(Object.keys(state)).toEqual(['project', 'head', 'tip', 'components', 'assets'])
     expect(state.head).toBe(imported.id)
     expect(state.components.proj.records.map(record => record.operation)).toEqual(['proj.create', 'asset.import'])
     expect(state.assets.map(asset => asset.id)).toEqual(imported.outputs)
@@ -253,29 +253,30 @@ describe('dvApi', () => {
     expect(fixture.project.getRecord(projectId, other).parents).toEqual([human.id])
     const history = await fixture.handlers.listHistory({ project: projectId })
     expect(history.entries.map(entry => entry.record.id).slice(0, 3)).toEqual([other, human.id, agent])
-    expect(Object.keys(history.entries[0] ?? {})).toEqual(['record'])
+    expect(history.entries[0]).toEqual({ record: expect.objectContaining({ id: other }), place: 'current' })
   })
 
-  it('undoes as records at the end of the history, continues from the earlier state, and keeps every asset in the state', async () => {
+  it('moves the current position on undo and redo, discards the later steps on a write, and keeps every import in the state', async () => {
     const fixture = await start()
     const projectId = await fixture.newProject('demo')
     const first = await fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('u1.png', 'U1'), mime: 'image/png' } })
     const second = await fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('u2.png', 'U2'), mime: 'image/png' } })
-    const undone = await fixture.handlers.undo({ project: projectId, surface: 'timeline' })
-    expect(undone).toEqual({ record: expect.objectContaining({ operation: 'proj.undo', params: { to: first.id }, actor: 'user', surface: 'timeline', parents: [second.id] }) })
+    expect(await fixture.handlers.undo({ project: projectId })).toEqual({ tip: second.id, at: first.id })
     const state = fixture.handlers.getState(projectId)
+    expect(Object.keys(state)).toEqual(['project', 'head', 'tip', 'components', 'assets'])
+    expect(state).toMatchObject({ head: first.id, tip: second.id })
     expect(state.components.proj.records.map(record => record.id)).not.toContain(second.id)
     // An imported asset stays listed through the whole history, so the state still lists the undone import's asset.
     expect(state.assets.map(asset => asset.id)).toEqual([...first.outputs, ...second.outputs])
-    // A write after the undo continues from the earlier state; going back to the undone step brings it back.
+    expect(await fixture.handlers.redo({ project: projectId })).toEqual({ tip: second.id, at: second.id })
+    await expect(fixture.handlers.redo({ project: projectId })).rejects.toMatchObject({ status: 409, code: 'nothing_to_redo' })
+    expect(await fixture.handlers.undo({ project: projectId, to: first.id })).toEqual({ tip: second.id, at: first.id })
+    // A write after the move follows the current position and discards the later step; its import stays in the state.
     const third = await fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('u3.png', 'U3'), mime: 'image/png' } })
-    expect(third.parents).toEqual([undone.record.id])
-    const chain = fixture.handlers.getState(projectId).components.proj.records.map(record => record.id)
-    expect(chain).toEqual([expect.any(String), first.id, undone.record.id, third.id])
-    const back = await fixture.handlers.undo({ project: projectId, surface: 'history', to: second.id })
-    expect(back.record).toMatchObject({ operation: 'proj.undo', params: { to: second.id }, surface: 'history', intent: `go back to ${second.id}` })
-    expect(fixture.handlers.getState(projectId).components.proj.records.map(record => record.id)).toContain(second.id)
-    await expect(fixture.handlers.undo({ project: projectId, to: second.id })).rejects.toMatchObject({ status: 409, code: 'nothing_to_undo' })
+    expect(third.parents).toEqual([first.id])
+    expect(fixture.handlers.getState(projectId)).toMatchObject({ head: third.id, tip: third.id })
+    expect(fixture.handlers.getState(projectId).assets.map(asset => asset.id)).toContain(second.outputs[0])
+    await expect(fixture.handlers.undo({ project: projectId, to: second.id })).rejects.toMatchObject({ status: 400, code: 'invalid_params' })
     await expect(fixture.handlers.undo({ project: projectId, to: 7 })).rejects.toMatchObject({ status: 400, code: 'invalid_params' })
     await expect(fixture.handlers.undo({ project: projectId, to: 'missing' })).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
   })
@@ -308,19 +309,22 @@ describe('dvApi', () => {
     expect(Array.isArray(operations.json)).toBe(true)
     expect(await call(fixture, ROUTES.operation, { method: 'POST', body: { project: projectId, operation: 'no.such', surface: 'canvas' } }))
       .toMatchObject({ status: 404, json: { code: 'unknown_operation' } })
-    expect(Object.keys(ROUTES)).toEqual(['projects', 'state', 'operations', 'operation', 'undo', 'acceptStale', 'history'])
-    for (const gone of ['/api/dv/redo', '/api/dv/branches/create', '/api/dv/branches/switch', '/api/dv/branches/rename']) {
+    expect(Object.keys(ROUTES)).toEqual(['projects', 'state', 'operations', 'operation', 'undo', 'redo', 'acceptStale', 'history'])
+    for (const gone of ['/api/dv/branches/create', '/api/dv/branches/switch', '/api/dv/branches/rename']) {
       expect(fixture.connection.routes.has(gone)).toBe(false)
     }
     const noBody = await call(fixture, ROUTES.undo, { method: 'POST' })
     expect(noBody.status).toBe(400)
-    expect(await call(fixture, ROUTES.undo, { method: 'POST', body: { project: projectId, surface: 'history' } }))
-      .toMatchObject({ status: 200, json: { record: { operation: 'proj.undo' } } })
+    const importId = (invoked.json as { id: string }).id
+    expect(await call(fixture, ROUTES.undo, { method: 'POST', body: { project: projectId } }))
+      .toMatchObject({ status: 200, json: { tip: importId } })
+    expect(await call(fixture, ROUTES.redo, { method: 'POST', body: { project: projectId } }))
+      .toEqual({ status: 200, json: { tip: importId, at: importId } })
     const keep = (record: string) => call(fixture, ROUTES.acceptStale, {
       method: 'POST', body: { project: projectId, record, surface: 'canvas' },
     })
     expect(await keep('nope')).toMatchObject({ status: 404, json: { code: 'unknown_record' } })
-    const kept = await keep((invoked.json as { id: string }).id)
+    const kept = await keep(importId)
     expect(kept).toMatchObject({ status: 200, json: { record: { operation: 'proj.stale_accept', actor: 'user' } } })
   })
 
@@ -354,9 +358,8 @@ describe('dvApi', () => {
     const undone = await fixture.handlers.runOperation({
       project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('u.png', 'U'), mime: 'image/png' },
     })
-    const undo = await fixture.handlers.undo({ project: projectId, surface: 'history' })
-    expect(undo.record.surface).toBe('history')
-    // The agent's write after the undo follows the undo record; the undone record stays in the history.
+    await fixture.handlers.undo({ project: projectId })
+    // The agent's write after the undo follows the current position and discards the undone record.
     const agent = await fixture.agentImport(projectId, 's1', 'a.png')
     const history = async (body: Record<string, unknown>) => {
       const answer = await call(fixture, ROUTES.history, { method: 'POST', body: { project: projectId, ...body } })
@@ -372,15 +375,17 @@ describe('dvApi', () => {
 
     const all = await history({ kind: 'operation' })
     expect(all.status).toBe(200)
-    expect(ids(all)).toEqual([agent, undo.record.id, undone.id, human.id, expect.any(String)])
-    expect(Object.keys(all.json.entries[0] ?? {})).toEqual(['record'])
-    const named = [...human.outputs, ...undone.outputs, ...fixture.project.getRecord(projectId, agent).outputs]
+    expect(ids(all)).toEqual([agent, human.id, expect.any(String)])
+    expect(Object.keys(all.json.entries[0] ?? {})).toEqual(['record', 'place'])
+    const named = [...human.outputs, ...fixture.project.getRecord(projectId, agent).outputs]
     expect(all.json.assets.map(asset => asset.id).sort()).toEqual(named.sort())
 
-    expect(ids(await history({ limit: 2 }))).toEqual([agent, undo.record.id])
-    expect(ids(await history({ operation: 'proj.undo' }))).toEqual([undo.record.id])
+    expect(ids(await history({ limit: 2 }))).toEqual([agent, human.id])
+    expect(ids(await history({ operation: 'asset.import' }))).toEqual([agent, human.id])
     expect(ids(await history({ tool_call: 'call-1' }))).toEqual([agent])
-    expect(ids(await history({ actor: 'user', component: 'asset', before: undone.id }))).toEqual([human.id])
+    expect(ids(await history({ actor: 'user', component: 'asset', before: agent }))).toEqual([human.id])
+    // A discarded record is not in the history, so it cannot page it.
+    expect(await history({ before: undone.id })).toMatchObject({ status: 404, json: { code: 'unknown_record' } })
     expect(ids(await history({ records: [human.id, agent] }))).toEqual([agent, human.id])
     expect((await history({ actor: 'agent', kind: 'operation', session: 's9' })).json).toEqual({ entries: [], assets: [] })
 

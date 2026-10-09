@@ -160,12 +160,19 @@ describe('TimelineView', () => {
     expect(requests()[1]).toMatchObject({ operation: 'timeline.delete', params: { timeline: 't2' } })
   })
 
-  it('edits the project at once, with the chat session beside it recorded on each edit, and offers undo without redo', async () => {
-    const { fetch, writes } = scriptedFetch({ state: () => fixtureState() })
+  it('edits the project at once, with the chat session beside it recorded on each edit; undo and redo move the current position', async () => {
+    const { fetch, writes } = scriptedFetch({ state: () => ({ ...fixtureState(), tip: 'later' }) })
     const editing = render(<TimelineView projectId="p1" session="s5" client={new DvClient(fetch)} />)
     await waitFor(() => { expect((editing.getByText('拆分') as HTMLButtonElement).disabled).toBe(false) })
-    expect(editing.getByText('撤销')).toBeTruthy()
-    expect(editing.queryByText('重做')).toBeNull()
+    // Redo is enabled while a step lies after the current position.
+    expect((editing.getByText('重做') as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(editing.getByText('撤销'))
+    fireEvent.click(editing.getByText('重做'))
+    await waitFor(() => {
+      expect(writes.filter(write => write.path === '/api/dv/undo' || write.path === '/api/dv/redo')).toEqual([
+        { path: '/api/dv/undo', body: { project: 'p1' } }, { path: '/api/dv/redo', body: { project: 'p1' } },
+      ])
+    })
     fireEvent.contextMenu(editing.getAllByRole('tab')[0] as HTMLElement)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     fireEvent.click(editing.getByRole('menuitem', { name: '删除时间线' }))

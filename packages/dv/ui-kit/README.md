@@ -34,8 +34,8 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 
 | Module | Content |
 | --- | --- |
-| `types.ts` | `WireState`, `ProjectRecord`, `Asset`, `ProjectAsset` (an asset with this project's import name and time and `made_by`), `Timeline`, `Clip`, `WireOperation`, `WireProject`, `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry`, `WireHistory`, `PlanVersion`, `Shot` (with its render `mode`, `ref2va` or `t2va`, and `continue_previous`): the JSON `@dv/api` sends and receives, as structural types |
-| `api.ts` | `DvClient` (`listProjects`, `getState` (the current state), `listOperations`, `runOperation`, `importAsset`, `undo` (one step, or with `to` back to a record), `acceptStale`, `listHistory`, `placeOnCanvas` (`asset.place` or `asset.unplace` on the canvas surface), project, layout (positions and viewport), workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
+| `types.ts` | `WireState` (`head` is the current position, `tip` the last step of the history list), `WireLine` (`{tip, at}`, the answer of undo and redo), `ProjectRecord`, `Asset`, `ProjectAsset` (an asset with this project's import name and time and `made_by`), `Timeline`, `Clip`, `WireOperation`, `WireProject`, `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry` (`{record, place}`), `WireHistory`, `PlanVersion`, `Shot` (with its render `mode`, `ref2va` or `t2va`, and `continue_previous`): the JSON `@dv/api` sends and receives, as structural types |
+| `api.ts` | `DvClient` (`listProjects`, `getState` (the current state), `listOperations`, `runOperation`, `importAsset`, `undo` (one step back, or with `to` to a step of the history list), `redo` (one step forward), `acceptStale`, `listHistory`, `placeOnCanvas` (`asset.place` or `asset.unplace` on the canvas surface), project, layout (positions and viewport), workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`, `paramsOf(fields)`, `FieldParseError`: one control per schema property, typed coercion |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`, `timelineName(timeline, numbered)`, `formatSeconds` |
 | `references.ts` | `shotReferences(version, shot)`, `referenceImages(state, references)`, `pictureParts(prompt)`: the reference images a shot sends to the video model in the order its prompt names them `Picture 1`, `Picture 2`, …, and the prompt split at those tokens; a `t2va` shot has no reference images |
@@ -58,7 +58,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`DvClient` decodes every error body into a `DvApiError` that keeps the HTTP status and the `ProjectError` code. `useLoader` keeps the last value while a reload is in flight and ignores a response whose inputs changed; `useProjectState` reads the project's current state and folds several project events of one burst into one refetch, so an undo made anywhere refreshes every view. The types in `types.ts` copy the `@dv/project` and component types by hand because host packages cannot be imported into a browser bundle; a record arrives as `ProjectRecord` with its inputs' `ref` as the stored object.
+`DvClient` decodes every error body into a `DvApiError` that keeps the HTTP status and the `ProjectError` code. `useLoader` keeps the last value while a reload is in flight and ignores a response whose inputs changed; `useProjectState` reads the project's current state and folds several project events of one burst into one refetch, so an undo or redo made anywhere refreshes every view. The types in `types.ts` copy the `@dv/project` and component types by hand because host packages cannot be imported into a browser bundle; a record arrives as `ProjectRecord` with its inputs' `ref` as the stored object.
 
 | File | Content |
 | --- | --- |

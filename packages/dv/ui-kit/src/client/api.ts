@@ -6,7 +6,7 @@
  */
 import type {
   CanvasLayout, HistoryQuery, OperationRequest, ProjectEvent,
-  ProjectInfo, ProjectRecord, WireHistory, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
+  ProjectInfo, ProjectRecord, WireHistory, WireLine, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
   WireWorkspaces,
 } from './types.ts'
 
@@ -72,7 +72,7 @@ function releaseEventSource(project: string, shared: SharedEventSource): void {
 }
 
 /** The SSE event names of `/dv/events`: the kinds of a project change. */
-const EVENT_KINDS: ReadonlyArray<ProjectEvent['kind']> = ['record', 'update']
+const EVENT_KINDS: ReadonlyArray<ProjectEvent['kind']> = ['record', 'update', 'line']
 
 /** The surface a view sends with its writes: a subset of the record field `Surface`. */
 export type ViewSurface = 'canvas' | 'timeline' | 'asset_pool' | 'history'
@@ -110,7 +110,7 @@ async function decode<T>(response: Response): Promise<T> {
   return body as T
 }
 
-/** Every `/api/dv` call of the browser: project state, operations, history, undo, layout, workspaces. */
+/** Every `/api/dv` call of the browser: project state, operations, history, undo and redo, layout, workspaces. */
 export class DvClient {
   constructor(private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init)) {}
 
@@ -207,16 +207,23 @@ export class DvClient {
   }
 
   /**
-   * Return the project to an earlier state: one step back, or to the state just after the record `to`. The undo is a
-   * new record at the end of the history.
+   * Move the current position one step back, or with `to` to that step of the history list (before or after the
+   * current position). Writes no record.
    * @param project - the project.
-   * @param surface - where the gesture came from.
-   * @param session - the chat session the view sits beside, or null.
-   * @param to - any finished record of the project; omit for one step back.
-   * @returns the undo record.
+   * @param to - a step of the history list; omit for one step back.
+   * @returns the last step and the current position afterwards.
    */
-  undo(project: string, surface: ViewSurface, session: string | null = null, to?: string): Promise<WireRecordResult> {
-    return this.post('/api/dv/undo', { project, surface, ...session === null ? {} : { session }, ...to === undefined ? {} : { to } })
+  undo(project: string, to?: string): Promise<WireLine> {
+    return this.post('/api/dv/undo', { project, ...to === undefined ? {} : { to } })
+  }
+
+  /**
+   * Move the current position one step forward. Writes no record.
+   * @param project - the project.
+   * @returns the last step and the current position afterwards.
+   */
+  redo(project: string): Promise<WireLine> {
+    return this.post('/api/dv/redo', { project })
   }
 
   /**

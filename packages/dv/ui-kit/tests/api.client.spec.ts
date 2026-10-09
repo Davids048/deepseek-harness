@@ -16,8 +16,9 @@ describe('DvClient', () => {
     expect((await client.listOperations()).map(operation => operation.name)).toContain('shot.render_ref2va')
     const record = await client.runOperation({ project: 'p1', operation: 'timeline.clip_move', params: { clip: 'cl2', to: 1 }, surface: 'timeline' })
     expect(record.operation).toBe('timeline.clip_move')
-    await client.undo('p1', 'canvas')
-    await client.undo('p1', 'history', 's5', 'g1')
+    expect(await client.undo('p1')).toEqual({ tip: 'g3', at: 'g3' })
+    await client.undo('p1', 'g1')
+    expect(await client.redo('p1')).toEqual({ tip: 'g3', at: 'g3' })
     await client.acceptStale('p1', 'g2', 'timeline', 's5')
     await client.renameProject('p1', 'Demo 3')
     await client.deleteProject('p1')
@@ -27,19 +28,20 @@ describe('DvClient', () => {
     await client.linkWorkspace('p1', 'w1')
     await client.bindSession('s5', 'p1')
     expect(writes.map(write => write.path)).toEqual([
-      '/api/dv/projects', '/api/dv/operation', '/api/dv/undo', '/api/dv/undo', '/api/dv/stale/accept',
+      '/api/dv/projects', '/api/dv/operation', '/api/dv/undo', '/api/dv/undo', '/api/dv/redo', '/api/dv/stale/accept',
       '/api/dv/projects/rename', '/api/dv/projects/delete', '/api/dv/layout', '/api/dv/operation', '/api/dv/operation', '/api/dv/workspaces',
       '/api/dv/workspaces/bind',
     ])
     expect(writes[0]?.body).toEqual({ title: 'Demo 2', surface: 'canvas' })
-    expect(writes[2]?.body).toEqual({ project: 'p1', surface: 'canvas' })
-    expect(writes[3]?.body).toEqual({ project: 'p1', surface: 'history', session: 's5', to: 'g1' })
-    expect(writes[4]?.body).toEqual({ project: 'p1', record: 'g2', surface: 'timeline', session: 's5' })
-    expect(writes[7]?.body).toEqual({ project: 'p1', positions: { g1: { x: 1, y: 2 } } })
-    expect(writes[8]?.body).toEqual({ project: 'p1', operation: 'asset.place', surface: 'canvas', inputs: [{ role: 'asset', ref: 'a1' }], session: 's5' })
-    expect(writes[9]?.body).toEqual({ project: 'p1', operation: 'asset.unplace', surface: 'canvas', inputs: [{ role: 'asset', ref: 'a1' }] })
-    expect(writes[10]?.body).toEqual({ project: 'p1', workspace_id: 'w1' })
-    expect(writes[11]?.body).toEqual({ session: 's5', project: 'p1' })
+    expect(writes[2]?.body).toEqual({ project: 'p1' })
+    expect(writes[3]?.body).toEqual({ project: 'p1', to: 'g1' })
+    expect(writes[4]?.body).toEqual({ project: 'p1' })
+    expect(writes[5]?.body).toEqual({ project: 'p1', record: 'g2', surface: 'timeline', session: 's5' })
+    expect(writes[8]?.body).toEqual({ project: 'p1', positions: { g1: { x: 1, y: 2 } } })
+    expect(writes[9]?.body).toEqual({ project: 'p1', operation: 'asset.place', surface: 'canvas', inputs: [{ role: 'asset', ref: 'a1' }], session: 's5' })
+    expect(writes[10]?.body).toEqual({ project: 'p1', operation: 'asset.unplace', surface: 'canvas', inputs: [{ role: 'asset', ref: 'a1' }] })
+    expect(writes[11]?.body).toEqual({ project: 'p1', workspace_id: 'w1' })
+    expect(writes[12]?.body).toEqual({ session: 's5', project: 'p1' })
     expect(assetUrl('a/b')).toBe('/dv/assets/a%2Fb')
   })
 
@@ -81,7 +83,7 @@ describe('DvClient', () => {
     const unknown: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({
       error: 'Project p1 has no record r9.', code: 'unknown_record',
     }), { status: 404 }))
-    await expect(new DvClient(unknown).undo('p1', 'canvas', null, 'r9')).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
+    await expect(new DvClient(unknown).undo('p1', 'r9')).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
   })
 
   it('follows the project changes through EventSource when the browser has it', () => {
@@ -96,7 +98,7 @@ describe('DvClient', () => {
     vi.stubGlobal('EventSource', FakeEventSource)
     const seen: unknown[] = []
     const stop = new DvClient().subscribe('p1', (event) => { seen.push(event) })
-    expect([...listeners.keys()]).toEqual(['ready', 'record', 'update'])
+    expect([...listeners.keys()]).toEqual(['ready', 'record', 'update', 'line'])
     listeners.get('record')?.(new MessageEvent('record', { data: JSON.stringify({ kind: 'record', record: fixtureState().components.proj.records[1] }) }))
     listeners.get('update')?.(new MessageEvent('update', { data: 'not json' }))
     expect(seen).toEqual([{ kind: 'record', record: fixtureState().components.proj.records[1] }, null])

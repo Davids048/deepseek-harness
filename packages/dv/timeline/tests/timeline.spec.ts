@@ -18,7 +18,7 @@ import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import DvAssetPool from '@dv/asset-pool'
 import DvFfmpeg from '@dv/ffmpeg'
 import DvProject, {
-  type OperationToolValue, type ProjectId, type ProjectRecord, type RecordId, type RecordOrigin, type RunRequest, type RunResult,
+  type OperationToolValue, type ProjectId, type ProjectRecord, type RecordId, type RunRequest, type RunResult,
   type SessionId,
 } from '@dv/project'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -26,9 +26,6 @@ import DvTimeline from '../src/index.ts'
 
 /** The plugin classes the fixture rows resolve through `globalThis`, because Node imports the rows outside Vite. */
 const PLUGINS = { SystemPrompt, ToolRuntime, DvProject, DvFfmpeg, DvAssetPool, DvTimeline }
-
-/** The human on the timeline panel, outside any chat session; undoes in the tests. */
-const HUMAN: RecordOrigin = { actor: 'user', surface: 'timeline', session: null, turn: null, tool_call: null, intent: 'switch' }
 
 /** The ten operations in registration order. */
 const OPERATIONS = [
@@ -215,20 +212,19 @@ describe('dvTimeline', () => {
     expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before + cases.length + 1)
   })
 
-  it('keeps clip IDs unique across an undo', async () => {
+  it('keeps clip IDs unique across an undo, and a discarded insert does not come back', async () => {
     const fixture = await start()
     await fixture.run('timeline.create', { assets: ['a1', 'a2'] })
     // The agent adds a clip, the human undoes it and adds another; the project-wide numbering gives them different IDs.
     const added = value(await fixture.call('dv_timeline_clip_insert', { reason: 'add', at: 3, asset: 'd1' }))
     expect(added.report).toEqual({ clips: ['cl3'] })
-    await fixture.ctx.dvProject.undo(fixture.project, HUMAN)
+    await fixture.ctx.dvProject.undo(fixture.project)
     expect(await fixture.run('timeline.clip_insert', { at: 3, asset: 'm1' })).toMatchObject({ report: { clips: ['cl4'] } })
     const clips = (): unknown => fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines[0]?.clips
       .map(clip => [clip.id, clip.asset])
     expect(clips()).toEqual([['cl1', 'a1'], ['cl2', 'a2'], ['cl4', 'm1']])
-    // Going back to the agent's insert brings cl3 back.
-    await fixture.ctx.dvProject.undo(fixture.project, HUMAN, brandString<RecordId>(added.record))
-    expect(clips()).toEqual([['cl1', 'a1'], ['cl2', 'a2'], ['cl3', 'd1']])
+    // The human's insert discarded the agent's insert, so the project cannot go back to it.
+    await expect(fixture.ctx.dvProject.undo(fixture.project, brandString<RecordId>(added.record))).rejects.toMatchObject({ code: 'invalid_params' })
   })
 
   it('lays out a render that is not done as a placeholder clip that becomes ready when the render is done', async () => {
@@ -297,17 +293,17 @@ describe('dvTimeline', () => {
       if (found === undefined) throw new Error('the render wrote no record')
       return found.record.id
     })
-    // The agent lays the render out while it runs; the human undoes that and makes another timeline, then goes back.
+    // The agent lays the render out while it runs; the human undoes that, then redoes it.
     const laidOut = value(await fixture.call('dv_timeline_create', { reason: 'lay out', inputs: { clip: [`${render}#0`] } }))
     expect(laidOut).toMatchObject({ status: 'done', scheduled: [], report: { clips: ['cl1'] } })
     const timelines = (): Array<{ id: string; clips: unknown[] }> =>
       fixture.ctx.dvProject.getState(fixture.project).components.timeline.timelines
     const t1 = (): unknown => timelines().find(entry => entry.id === 't1')?.clips
     expect(t1()).toEqual([{ id: 'cl1', asset: null, source: { record: render, output: 0 }, in_sec: null, out_sec: null }])
-    await fixture.ctx.dvProject.undo(fixture.project, HUMAN)
-    await fixture.run('timeline.create', { timeline: 't2', assets: ['m1'] })
-    expect(timelines().map(entry => entry.id)).toEqual(['t2'])
-    await fixture.ctx.dvProject.undo(fixture.project, HUMAN, brandString<RecordId>(laidOut.record))
+    await fixture.ctx.dvProject.undo(fixture.project)
+    expect(timelines()).toEqual([])
+    await fixture.ctx.dvProject.redo(fixture.project)
+    expect(fixture.ctx.dvProject.getState(fixture.project).head).toBe(laidOut.record)
     held.resolve()
     await running
     const [take] = fixture.ctx.dvProject.getRecord(fixture.project, render).outputs

@@ -370,7 +370,7 @@ export interface OperationSpec {
  */
 export interface ComponentStates {
   proj: {
-    /** The records of the effective chain, oldest first (undo records jump; see the history module). */
+    /** The records of the history list up to the current position, oldest first. */
     records: ProjectRecord[]
     /** Stale records: record → the record whose change made it stale. */
     stale: Record<RecordId, RecordId>
@@ -385,7 +385,7 @@ export interface ComponentStates {
 type ComponentKey = keyof ComponentStates
 
 /**
- * A component's reducer: it turns the records of the effective chain into the component's state slice. Reducers are pure: they
+ * A component's reducer: it turns the records up to the current position into the component's state slice. Reducers are pure: they
  * read only their arguments and return a new slice or the same slice unchanged.
  */
 export interface Reducer<K extends ComponentKey = ComponentKey> {
@@ -394,7 +394,7 @@ export interface Reducer<K extends ComponentKey = ComponentKey> {
    */
   initial(): ComponentStates[K]
   /**
-   * Apply one record. The reducer receives every record of the effective chain, of every component, in order, and
+   * Apply one record. The reducer receives every record of the chain, of every component, in order, and
    * ignores the records it does not interpret.
    * @param slice - the slice before the record.
    * @param record - the record in its current form.
@@ -431,10 +431,10 @@ export interface Reducer<K extends ComponentKey = ComponentKey> {
   agentSummary?(slice: ComponentStates[K], assets: Pick<AssetStore, 'url'>, state: ProjectState): Record<string, JsonValue>
 }
 
-/** The state of a project at one record: the result of the effective chain that ends there. */
+/** The state of a project at one record: the result of the chain that ends there. */
 export interface ProjectState {
   project: ProjectInfo
-  /** The record the state is computed at; for the current state, the project's last record. */
+  /** The record the state is computed at; for the current state, the current position. */
   head: RecordId
   /** One slice per registered reducer. */
   components: ComponentStates
@@ -460,9 +460,11 @@ export interface HistoryQuery {
   limit?: number
 }
 
-/** One entry of the history list: one record of the project. */
+/** One entry of the history list: one step and where it stands relative to the current position. */
 export interface HistoryEntry {
   record: ProjectRecord
+  /** `current` for the current position, `before` for a step before it, `after` for a step redo brings back. */
+  place: 'before' | 'current' | 'after'
 }
 
 /** One operation call through `dvProject.run`. */
@@ -491,10 +493,20 @@ export interface RunResult {
   report: Record<string, unknown> | null
 }
 
+/** The history list's last step and the current position, as `line.json` stores them. */
+export interface ProjectLine {
+  /** The last step of the history list; the list is its `parents[0]` ancestry. */
+  tip: RecordId
+  /** The current position: a record of the history list; the project state is the state at it. */
+  at: RecordId
+}
+
 /** What a subscriber learns about a project change. */
 export type ProjectEvent =
   | { kind: 'record'; record: ProjectRecord }
   | { kind: 'update'; record: ProjectRecord }
+  /** The current position or the last step changed (an append, undo, redo, or a move to a step). */
+  | ({ kind: 'line' } & ProjectLine)
 
 /**
  * The asset pool as Project sees it: Project checks that input assets exist, imports the files operations produce,

@@ -45,12 +45,12 @@ describe('useViewSession', () => {
     expect(result.current.state.value?.head).toBe('g3')
     act(() => { result.current.bar.onUndo() })
     await waitFor(() => { expect(writes).toHaveLength(1) })
-    expect(writes).toEqual([{ path: '/api/dv/undo', body: { project: 'p1', surface: 'canvas' } }])
+    expect(writes).toEqual([{ path: '/api/dv/undo', body: { project: 'p1' } }])
     act(() => { result.current.bar.onProject('p2') })
     expect(result.current.project).toBe('p2')
   })
 
-  it('undoes the project\'s last step on behalf of the chat session beside the view', async () => {
+  it('keeps the chat session beside the view, and undoes by moving the project\'s current position', async () => {
     const { fetch, writes } = scriptedFetch()
     const client = new DvClient(fetch)
     const { result } = renderHook(() => useViewSession(client, 'canvas', 's5'))
@@ -58,7 +58,7 @@ describe('useViewSession', () => {
     expect(result.current.session).toBe('s5')
     act(() => { result.current.bar.onUndo() })
     await waitFor(() => { expect(writes).toHaveLength(1) })
-    expect(writes[0]).toEqual({ path: '/api/dv/undo', body: { project: 'p1', surface: 'canvas', session: 's5' } })
+    expect(writes[0]).toEqual({ path: '/api/dv/undo', body: { project: 'p1' } })
   })
 
   it('keeps the failure message of a write and clears it on the next success', async () => {

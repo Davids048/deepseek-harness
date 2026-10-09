@@ -17,7 +17,7 @@ import { applyChrome } from './chrome.tsx'
 import { BrandName, Navigator } from './Navigator.tsx'
 import { getShell, refreshLinks } from './store.ts'
 import { CHAT_ID, ChatTab, chatDefinition, TRAJECTORY_ID, TrajectoryTab, trajectoryDefinition } from './tabs.tsx'
-import { listenUndoKey } from './undo-keys.ts'
+import { listenHistoryKeys } from './undo-keys.ts'
 
 export type { ShellActions } from './actions.ts'
 export type { ShellInjected } from './Center.tsx'
@@ -85,7 +85,7 @@ export function apply(ctx: ClientContext): void {
     const timer = setInterval(read, LINKS_POLL_MS)
     return () => { clearInterval(timer) }
   }, 'ui-shell: links poll')
-  ctx.effect(listenUndoKey, 'ui-shell: Ctrl+Z undo of the open project')
+  ctx.effect(listenHistoryKeys, 'ui-shell: Ctrl+Z undo and Shift+Ctrl+Z redo of the open project')
   ctx.effect(() => {
     const seat = injected.shell.mountedSeat
     let stopWaiting = (): void => {}

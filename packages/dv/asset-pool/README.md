@@ -42,7 +42,7 @@ Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvA
 | --- | --- | --- | --- |
 | `asset.import` | `dv_asset_import` | params `path` (a file on this machine) or `base64` (the bytes), `mime` (required), `name` (default: the file name), `place` (true also puts the asset on the canvas) | `asset` |
 | `asset.grab_still` | `dv_asset_grab_still` | input `video`, param `at`: `first`, `last` (default), or a time in seconds | `still` (PNG) |
-| `asset.place` | `dv_asset_place` | input `asset` (one or more); refused with `invalid_inputs` for an asset that is neither imported anywhere in the project's history nor made by a step of the current state, and with `invalid_params` when every asset is already on the canvas | none |
+| `asset.place` | `dv_asset_place` | input `asset` (one or more); refused with `invalid_inputs` for an asset that is neither imported by a record of the project (discarded records included) nor made by a step of the current state, and with `invalid_params` when every asset is already on the canvas | none |
 | `asset.unplace` | `dv_asset_unplace` | input `asset` (one or more); refused with `invalid_params` when none of the assets is on the canvas; the assets stay in the pool | none |
 
 | Method | Behavior |

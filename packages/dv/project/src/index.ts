@@ -1,17 +1,18 @@
 /**
- * The Project component as the `dvProject` Cordis service. Project owns the records of every project, undo, the
- * operation runner and scheduler, the reducer registry, history queries, and change subscriptions.
- * Every change to a project's records goes through this service and is written as a record:
+ * The Project component as the `dvProject` Cordis service. Project owns the records of every project, the history
+ * list with its current position, the operation runner and scheduler, the reducer registry, history queries, and
+ * change subscriptions. Every change to a project's content goes through this service and is written as a record:
  * - operations of every component go through {@link DvProject.run}, the single change path;
  * - Project's own actions (`proj.*`) go through the methods named after them, which write `proj.*` records.
  * Reads (`getState`, `getRecord`, `listHistory`, `openProject`, `listProjects`) write no record.
  *
- * One history line. The records of a project form one line in write order: every write of every actor goes after the
- * last record, and nothing is removed or forked. Undo also appends a record (`proj.undo`), which returns the project
- * to an earlier state; the steps after that state stay on the line, so the project can return to them later.
+ * History, as in the History panel of an image editor. Each record is a step of the project's history list; the
+ * current position is one step of it, and the project state is the state at that step. `undo`, `redo` and `moveTo`
+ * only move the current position and write no record. A write follows the current position, so the steps that were
+ * after it are discarded; a discarded step that has not finished is cancelled.
  *
  * Concurrency: one lock per project. A run holds it while it checks and appends its record and while it writes each
- * update line, and releases it while the operation executes. Undo and project creation hold it for their whole
+ * update line, and releases it while the operation executes. Moves and project creation hold it for their whole
  * duration.
  *
  * Agent tools. While the DSH `tools` registry is mounted, every registered operation also has its agent tool
@@ -49,7 +50,7 @@ import { ProjectError } from './shared.ts'
 import { Sessions } from './sessions.ts'
 import { Subscriptions } from './subscriptions.ts'
 import type {
-  AssetId, AssetStore, ComponentStates, HistoryEntry, HistoryQuery, OperationSpec,
+  AssetId, AssetStore, ComponentStates, ProjectLine, HistoryEntry, HistoryQuery, OperationSpec,
   ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId, RecordInputRef, RecordOrigin, Reducer,
   RunRequest, RunResult, SessionId,
 } from './types.ts'
@@ -237,7 +238,7 @@ export default class DvProject extends Service {
 
   /**
    * Run one operation call: the single change path for every component's operations. The record goes after the
-   * project's last record (see the module comment). With `after`,
+   * project's current position (see the module comment). With `after`,
    * the call is scheduled and the result holds the `pending` record. A read-only operation writes no record and
    * returns its answer in `report`.
    * @param request - the call.
@@ -249,19 +250,38 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Return the project to an earlier state: write a `proj.undo` record after the last record whose `params.to` names
-   * the record whose state the project returns to. Rules in the history module.
+   * Move the current position one step back, or with `to` to that step of the history list (before or after the
+   * current position). Writes no record. Rules in the history module.
    * @param project - the project.
-   * @param origin - who undoes, from where.
-   * @param to - any finished record of the project; undefined for one step back.
-   * @returns the written record. Throws `nothing_to_undo`, `unknown_record`, or `invalid_params`.
+   * @param to - a step of the history list; undefined for one step back.
+   * @returns the last step and the current position afterwards. Throws `nothing_to_undo`, `unknown_record`, or
+   *   `invalid_params` for a discarded record.
    */
-  undo(project: ProjectId, origin: RecordOrigin, to?: RecordId): Promise<ProjectRecord> {
-    return this.store.lock(project, () => this.history.undo(project, origin, to))
+  undo(project: ProjectId, to?: RecordId): Promise<ProjectLine> {
+    return this.store.lock(project, () => to === undefined ? this.history.undo(project) : this.history.moveTo(project, to))
   }
 
   /**
-   * Accept a stale record's result: write a `proj.stale_accept` record with `params {record}` after the last record,
+   * Move the current position one step forward, toward the last step. Writes no record.
+   * @param project - the project.
+   * @returns the last step and the current position afterwards. Throws `nothing_to_redo`.
+   */
+  redo(project: ProjectId): Promise<ProjectLine> {
+    return this.store.lock(project, () => this.history.redo(project))
+  }
+
+  /**
+   * @param project - the project.
+   * @returns the last step of the history list and the current position. Throws `unknown_project`.
+   */
+  line(project: ProjectId): ProjectLine {
+    const line = this.store.line(project)
+    if (line === undefined) throw new ProjectError('unknown_project', `Project ${project} has no record.`)
+    return line
+  }
+
+  /**
+   * Accept a stale record's result: write a `proj.stale_accept` record with `params {record}` after the current position,
    * which removes the record's stale mark from then on.
    * @param project - the project.
    * @param record - a stale record.
@@ -273,7 +293,7 @@ export default class DvProject extends Service {
   }
 
   /**
-   * The project's current state: one slice per registered reducer, computed at the last record.
+   * The project's current state: one slice per registered reducer, computed at the current position.
    * @param project - the project.
    * @returns the state. Throws `unknown_project`.
    */
@@ -291,7 +311,18 @@ export default class DvProject extends Service {
   }
 
   /**
-   * List a project's records, newest first.
+   * Every record of a project in write order, discarded records included (a discarded import keeps its asset in the
+   * asset pool). A read: it writes no record.
+   * @param project - the project.
+   * @returns the records in their current form.
+   */
+  listRecords(project: ProjectId): ProjectRecord[] {
+    return this.store.listRecords(project)
+  }
+
+  /**
+   * List the steps of a project's history list, newest first, each with its place relative to the current position;
+   * discarded records are not listed.
    * @param query - the project and the filters.
    * @returns the entries.
    */

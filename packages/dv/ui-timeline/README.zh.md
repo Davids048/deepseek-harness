@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在叠了 `dsh-web-app` 和 `@dv/api` 的 profile 里挂载插件，先用 `pnpm run build` 构建浏览器 bundle。
 
-编辑器还有一条工具栏和一把标尺，每个片段带生产它的记录的最后一帧。拖动片段即移动，拖动片段边缘即裁剪，工具栏在播放头处拆分片段，其 撤销 用历史末尾的一条撤销记录让项目的当前状态后退一步（不论这一步是哪个视图做的），Delete 键移除选中的片段。
+编辑器还有一条工具栏和一把标尺，每个片段带生产它的记录的最后一帧。拖动片段即移动，拖动片段边缘即裁剪，工具栏在播放头处拆分片段，其 撤销 和 重做 把项目的当前位置往回或往前移一步（不论这一步是哪个视图做的），不写记录，当前位置是最后一步时 重做 不可用，Delete 键移除选中的片段。
 
 ```yaml
 - id: dv-ui-timeline
@@ -46,7 +46,7 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-timeline` 标签类
 | 导出 | 一次 `deliver.timeline_export {timeline}` 调用；链接打开导出的视频 |
 | 对选中的过期片段点"仍然保留" | 对创建该片段素材的记录调用 `POST /api/dv/stale/accept`（`proj.stale_accept`） |
 
-每条记录都带 `surface: 'timeline'`、视图旁边的对话（存为记录的 `session`；记录加在项目历史的末尾），以及一句用 DSH 界面语言说明手势的意图。所选时间线经 `@dv/ui-kit/current-timeline.ts` 共享，shell 因此把它写进 URL。`TimelineView` 通过 `@dv/ui-kit/locale.ts` 跟随 `<html lang>`；切换时间线标签会停止播放，并重置预览和播放头。点一个片段会选中它，不发送任何请求。素材没有时长时片段按五秒画。
+每条记录都带 `surface: 'timeline'`、视图旁边的对话（存为记录的 `session`；记录是项目当前位置之后的一步），以及一句用 DSH 界面语言说明手势的意图。所选时间线经 `@dv/ui-kit/current-timeline.ts` 共享，shell 因此把它写进 URL。`TimelineView` 通过 `@dv/ui-kit/locale.ts` 跟随 `<html lang>`；切换时间线标签会停止播放，并重置预览和播放头。点一个片段会选中它，不发送任何请求。素材没有时长时片段按五秒画。
 
 DOM 带测试 ID `dv-timeline-body`、`dv-timeline-editor`、`dv-timeline-viewer`、`dv-timeline-viewer-empty`、`dv-timeline-time`、`dv-timeline-exported`、`dv-timeline-ruler` 和 `dv-timeline-playhead`；每个片段带 `data-clip`（片段 ID）、`data-clip-position` 和 `data-clip-stale`，每个标签带 `data-timeline`。
 

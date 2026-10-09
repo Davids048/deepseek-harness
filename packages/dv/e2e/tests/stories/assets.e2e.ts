@@ -289,12 +289,12 @@ describe('The asset pool panel', () => {
       expect(errors).toEqual([])
     })
 
-    it('lists an import through the whole history and a render only while its step is in the current state; the canvas takes a drop of the undone import', async () => {
+    it('lists an import also after its step is discarded, and a render only while its step is at or before the current step; the canvas takes a drop of an undone import', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
       const video = await seedVideo(project.id, 'kept prompt')
       const undone = await seedImage(project.id, 'undone-import.png')
-      await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas' })
+      await harness.api.post('/api/dv/undo', { project: project.id })
       // The current state no longer has the import, and the panel still lists its asset.
       const state = await stateOf(project.id)
       expect(state.components.proj.created_by[undone]).toBeUndefined()
@@ -303,15 +303,19 @@ describe('The asset pool panel', () => {
       await openAssets(page)
       await expect.poll(() => assetsPanel(page).locator(`[data-asset-id="${video}"]`).count(), { timeout: 15_000 }).toBe(1)
       await expect.poll(() => assetsPanel(page).locator(`[data-asset-id="${undone}"]`).count(), { timeout: 15_000 }).toBe(1)
-      // The canvas takes a drop of the undone import: an asset.place record and a node for the asset.
+      // The canvas takes a drop of the undone import: an asset.place step and a node for the asset. The new step discards
+      // the import's step, and the panel still lists the imported asset.
       const canvas = page.locator('[data-testid="dv-canvas-view"]')
       await canvas.waitFor()
       await assetsPanel(page).locator(`[data-asset-id="${undone}"]`).first().dragTo(canvas)
       await expect.poll(async () => (await stateOf(project.id)).components.asset.placed, { timeout: 10_000 }).toEqual([undone])
       await expect.poll(() => page.locator(`[data-node-id="asset:${undone}"]`).count(), { timeout: 15_000 }).toBe(1)
-      // Undo the drop and then the render: the render's video leaves the panel, the undone import stays.
-      await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas' })
-      await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas' })
+      const listed = (await harness.api.post('/api/dv/history', { project: project.id, limit: 200 }) as { entries: Array<{ record: ProjectRecord }> }).entries
+      expect(listed.some(entry => entry.record.outputs.includes(undone))).toBe(false)
+      expect(await assetsPanel(page).locator(`[data-asset-id="${undone}"]`).count()).toBe(1)
+      // Undo the drop and then the render: the render's video leaves the panel, the imported asset stays.
+      await harness.api.post('/api/dv/undo', { project: project.id })
+      await harness.api.post('/api/dv/undo', { project: project.id })
       await expect.poll(() => assetsPanel(page).locator(`[data-asset-id="${video}"]`).count(), { timeout: 15_000 }).toBe(0)
       expect(await assetsPanel(page).locator(`[data-asset-id="${undone}"]`).count()).toBe(1)
       expect(errors).toEqual([])

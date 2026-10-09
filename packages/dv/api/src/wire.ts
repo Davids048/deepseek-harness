@@ -7,7 +7,7 @@
  */
 import type { Asset } from '@dv/asset-pool'
 import type {
-  AssetId, ComponentStates, HistoryEntry, OperationSpec, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId,
+  AssetId, ComponentStates, HistoryEntry, OperationSpec, ProjectId, ProjectInfo, ProjectLine, ProjectRecord, ProjectState, RecordId,
 } from '@dv/project'
 import type {} from '@dv/shot-plan'
 import type {} from '@dv/shot-render'
@@ -17,8 +17,10 @@ import type {} from '@dv/timeline'
 /** The project's current state as the browser reads it. */
 export interface WireState {
   project: ProjectInfo
-  /** The project's last record. */
+  /** The current position: the step whose state this is. */
   head: RecordId
+  /** The last step of the history list; redo can move the current position up to it. */
+  tip: RecordId
   /** One slice per registered reducer, as Project computed them. */
   components: ComponentStates
   /**
@@ -66,8 +68,8 @@ export interface WireOperation {
 /**
  * Collect the assets of a project as the views read them: every asset the current state mentions (the outputs and
  * resolved inputs of its records, its created assets, the character, location and style references, and the timeline
- * clips), and every asset that an `asset.import` record anywhere in the history output. A generated asset of a step
- * that an undo went back past is left out; an imported asset never is.
+ * clips), and every asset that an `asset.import` record of the project output, discarded steps included. A generated
+ * asset of a step after the current position, or of a discarded step, is left out; an imported asset never is.
  * @param state - the project's current state.
  * @param records - every record of the project.
  * @returns the asset IDs, each once, in first-mention order.
@@ -93,11 +95,14 @@ export function mentionedAssets(state: ProjectState, records: readonly ProjectRe
 /**
  * Turn the project's current state into the wire form.
  * @param state - the current state.
- * @param records - every record of the project, oldest first, for the imports of the whole history.
+ * @param line - the last step and the current position.
+ * @param records - every record of the project, oldest first, discarded records included, for the imports.
  * @param asset - looks an asset up; unknown IDs return null and are left out.
  * @returns the wire state.
  */
-export function toWireState(state: ProjectState, records: readonly ProjectRecord[], asset: (id: AssetId) => Asset | null): WireState {
+export function toWireState(
+  state: ProjectState, line: ProjectLine, records: readonly ProjectRecord[], asset: (id: AssetId) => Asset | null,
+): WireState {
   // This project's first finished import of each asset, oldest first; the pool keeps the first import in any project.
   const imported = new Map<AssetId, ProjectRecord>()
   for (const record of records) {
@@ -120,7 +125,7 @@ export function toWireState(state: ProjectState, records: readonly ProjectRecord
       made_by: madeBy ?? (importRecord === undefined ? null : 'asset.import'),
     }]
   })
-  return { project: state.project, head: state.head, components: state.components, assets }
+  return { project: state.project, head: line.at, tip: line.tip, components: state.components, assets }
 }
 
 /**

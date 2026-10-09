@@ -1,5 +1,5 @@
 /**
- * Project's own agent tools, `dv_proj_*`: create and open projects, read state and history, undo, accept a stale
+ * Project's own agent tools, `dv_proj_*`: create and open projects, read state and history, undo and redo, accept a stale
  * record, and wait for scheduled records. Every tool except `dv_proj_history_list` returns the project summary of the
  * current state: Project's fields (head, record count, stale records, recent records) and the fields each component's reducer adds through
  * `Reducer.agentSummary`. A tool that writes records leads its summary with `record`, the newest record the call wrote, and
@@ -175,8 +175,8 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
     }),
     defineTool({
       name: 'dv_proj_history_list',
-      description: 'List the project history, newest first: each record with its operation, status and intent. The history is '
-        + 'one line that only grows; a proj.undo record names in to the record whose state the project returned to.',
+      description: 'List the project history, newest first: each step with its operation, status, intent, and place: current '
+        + '(the state the project shows), before, or after (a step that dv_proj_redo or dv_proj_undo with to brings back).',
       parameters: {
         ...projectParam,
         limit: { type: 'integer', description: `At most this many records; default ${HISTORY_LIMIT}.` },
@@ -188,30 +188,39 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
         const entries = project.listHistory({
           project: projectId, limit: args.limit ?? HISTORY_LIMIT, ...args.operation === undefined ? {} : { operation: args.operation },
         })
-        return Promise.resolve(toJson(entries.map(({ record }) => ({
-          record: record.id, operation: record.operation ?? record.kind, status: record.status, actor: record.actor,
+        return Promise.resolve(toJson(entries.map(({ record, place }) => ({
+          record: record.id, place, operation: record.operation ?? record.kind, status: record.status, actor: record.actor,
           intent: record.intent, outputs: record.outputs,
-          ...record.operation === 'proj.undo' ? { to: record.params['to'] } : {},
         }))))
       },
     }),
     defineTool({
       name: 'dv_proj_undo',
-      description: 'Go back to an earlier state of the project. Without to, undo one step. With to, return to a record from '
-        + 'dv_proj_history_list: the project returns to its state just after that record. The undo is a new record at the end '
-        + 'of the history; the records after the target stay in the history, so the project can return to them later with to. '
-        + 'When the user asks to roll back, return to an earlier version or undo several changes, use this tool with to; never '
-        + 'rebuild the old state with new edits.',
+      description: 'Move the project back to an earlier state. Without to, go back one step. With to, go to that step of '
+        + 'dv_proj_history_list, before or after the current one: the project shows its state just after that step. A move adds '
+        + 'no step. The steps after the current one stay until a new change is made; a new change discards them for good. '
+        + 'When the user asks to roll back, return to an earlier version or undo several changes, use this tool; never rebuild '
+        + 'the old state with new edits.',
       parameters: {
         ...projectParam,
-        to: { type: 'string', description: 'A record ID from dv_proj_history_list to go back to; omit to undo one step.' },
+        to: { type: 'string', description: 'A record ID from dv_proj_history_list to go to; omit to go back one step.' },
       },
-      output: writeOutput,
+      output: stateOutput,
       execute: async (args, exec) => {
         const projectId = projectOf(exec, args.project_id)
-        const to = args.to === undefined ? undefined : brandString<RecordId>(args.to)
-        await project.undo(projectId, originOf(deps, exec, args.to === undefined ? 'undo' : `go back to ${args.to}`), to)
-        return written(exec, projectId)
+        await project.undo(projectId, args.to === undefined ? undefined : brandString<RecordId>(args.to))
+        return summary(projectId)
+      },
+    }),
+    defineTool({
+      name: 'dv_proj_redo',
+      description: 'Move the project one step forward again, after an undo. A move adds no step.',
+      parameters: projectParam,
+      output: stateOutput,
+      execute: async (args, exec) => {
+        const projectId = projectOf(exec, args.project_id)
+        await project.redo(projectId)
+        return summary(projectId)
       },
     }),
     defineTool({

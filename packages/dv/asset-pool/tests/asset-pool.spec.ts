@@ -205,7 +205,7 @@ describe('dvAssetPool', () => {
     const outside = fixture.ctx.dvAssetPool.importAsset(Buffer.from('outside'), { mime: 'image/png', name: 'o.png' }, null)
     await expect(fixture.run('asset.place', {}, [assetInput(outside)])).rejects.toMatchObject({ code: 'invalid_inputs' })
     expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before + 1)
-    await fixture.ctx.dvProject.undo(fixture.project, { actor: 'user', surface: 'history', session: null, turn: null, tool_call: null, intent: 'undo' })
+    await fixture.ctx.dvProject.undo(fixture.project)
     expect(placed()).toEqual([b, a])
   })
 
@@ -326,9 +326,8 @@ describe('dvAssetPool', () => {
       const input = (asset: AssetId): RecordInput => ({ role: 'asset', ref: { asset }, resolved_asset: asset })
       const imported = (await fixture.run('asset.import', { base64: Buffer.from('later').toString('base64'), mime: 'image/png', name: 'later.png' })).outputs[0] as AssetId
       const still = (await fixture.run('asset.grab_still', { at: 'first' }, [videoInput(red)])).outputs[0] as AssetId
-      const origin = { actor: 'user' as const, surface: 'history' as const, session: null, turn: null, tool_call: null, intent: 'undo' }
-      await fixture.ctx.dvProject.undo(fixture.project, origin)
-      await fixture.ctx.dvProject.undo(fixture.project, origin)
+      await fixture.ctx.dvProject.undo(fixture.project)
+      await fixture.ctx.dvProject.undo(fixture.project)
       // Both steps are undone: the import still belongs to the project, the still does not.
       await expect(fixture.run('asset.place', {}, [input(still)])).rejects.toMatchObject({ code: 'invalid_inputs' })
       expect((await fixture.run('asset.place', {}, [input(imported)])).status).toBe('done')

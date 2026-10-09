@@ -34,7 +34,7 @@ export {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** The browser API: project state, operation declarations, human operation calls, undo, and the history. */
+    /** The browser API: project state, operation declarations, human operation calls, undo and redo, and the history. */
     dvApi: DvApi
   }
 }
@@ -66,6 +66,7 @@ export const ROUTES = {
   operations: '/api/dv/operations',
   operation: '/api/dv/operation',
   undo: '/api/dv/undo',
+  redo: '/api/dv/redo',
   acceptStale: '/api/dv/stale/accept',
   history: '/api/dv/history',
 } as const
@@ -135,6 +136,7 @@ export default class DvApi extends Service {
       { path: ROUTES.operations, methods: ['GET'], requestBody: 'buffered', fetch: () => answer(() => api.listOperations()) },
       { path: ROUTES.operation, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.runOperation(body)) },
       { path: ROUTES.undo, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.undo(body)) },
+      { path: ROUTES.redo, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.redo(body)) },
       { path: ROUTES.acceptStale, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.acceptStale(body)) },
       { path: ROUTES.history, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.listHistory(body)) },
       ...layoutRoutes(this.ctx.dvProject, layouts),

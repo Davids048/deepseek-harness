@@ -194,14 +194,14 @@ describe('dvStoryBible', () => {
     }))
     const bible = () => fixture.ctx.dvProject.getState(fixture.project).components.bible
     expect(Object.keys(bible().characters)).toEqual(['c1'])
-    await fixture.ctx.dvProject.undo(fixture.project, HUMAN)
+    await fixture.ctx.dvProject.undo(fixture.project)
     // After the undo the ID c1 is free again, so a location may take it.
     await fixture.ctx.dvProject.run({
       ...HUMAN, project: fixture.project, operation: 'bible.location_create', params: { location: 'c1', name: 'Cave' }, inputs: [],
     })
     expect([Object.keys(bible().characters), Object.keys(bible().locations)]).toEqual([[], ['c1']])
-    // The character's record stays in the history.
-    expect(fixture.ctx.dvProject.listHistory({ project: fixture.project, operation: 'bible.character_create' }).map(entry => entry.record.id))
-      .toEqual([created.record])
+    // The new step discarded the character's step: it leaves the history and stays on disk.
+    expect(fixture.ctx.dvProject.listHistory({ project: fixture.project, operation: 'bible.character_create' })).toEqual([])
+    expect(fixture.ctx.dvProject.listRecords(fixture.project).map(record => record.id)).toContain(created.record)
   })
 })

@@ -122,7 +122,7 @@ describe('mention expansion', () => {
     expect(textOf(messages[1])).toContain('character c1@2 "Lead renamed"')
     expect(textOf(messages[1])).toContain('pass it as input c1@2')
     // After an undo of the update, the mention reads version 1 again.
-    await fixture.project.undo(info.id, user)
+    await fixture.project.undo(info.id)
     expect(fixture.project.getState(info.id).components.bible.characters[brandString<CharacterId>('c1')]).toHaveLength(1)
     expect(textOf((await preStep('make @[Lead](dv:character/c1) wave'))[1])).toContain('character c1@1 "Lead"')
     expect(update.record?.status).toBe('done')

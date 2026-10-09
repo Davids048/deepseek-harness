@@ -156,7 +156,9 @@ export default class VhStream extends Service {
     if (project !== undefined) {
       try {
         stops.push(project.subscribe(projectId, (event: ProjectEvent) => {
-          const message = { type: 'op', change: event.kind === 'record' ? 'append' : 'patch', op: event.record }
+          const message = event.kind === 'line'
+            ? { type: 'line', tip: event.tip, at: event.at }
+            : { type: 'op', change: event.kind === 'record' ? 'append' : 'patch', op: event.record }
           server.sendText(JSON.stringify(message))
         }))
       } catch (error) {

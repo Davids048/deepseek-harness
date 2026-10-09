@@ -347,8 +347,8 @@ export default class DvAssetPool extends Service {
         const placed = new Set(state.components.asset.placed)
         if (place) {
           // Imported assets count from the whole history; generated assets only from the current state.
-          const imported = new Set(this.ctx.dvProject.listHistory({ project: request.project, operation: 'asset.import', status: 'done' })
-            .flatMap(entry => entry.record.outputs))
+          const imported = new Set(this.ctx.dvProject.listRecords(request.project)
+            .flatMap(record => record.operation === 'asset.import' && record.status === 'done' ? record.outputs : []))
           const missing = assets.filter(asset => !imported.has(asset) && !(asset in state.components.proj.created_by))
           if (missing.length > 0) {
             throw new ProjectError('invalid_inputs', `Asset ${missing.join(', ')} is neither an import of this project nor made by a step of its current state.`)

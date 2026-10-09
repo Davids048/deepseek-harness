@@ -24,6 +24,7 @@ export type ProjectErrorCode =
   | 'status_backwards'
   | 'record_finished'
   | 'nothing_to_undo'
+  | 'nothing_to_redo'
 
 /** A Project call was refused before it changed anything; `code` says why. */
 export class ProjectError extends Error {

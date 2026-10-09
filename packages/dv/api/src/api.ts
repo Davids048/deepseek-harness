@@ -1,10 +1,10 @@
 /**
  * The handlers behind the browser routes, independent of transport: list and create projects, read the project
- * state, list operations, run an operation as the human, undo, accept a stale record, and list the history. The Fetch
+ * state, list operations, run an operation as the human, undo and redo, accept a stale record, and list the history. The Fetch
  * routes and the tests call these methods directly.
  *
  * Every write goes through `dvProject` with actor `user`, the surface the request names, and the chat session the view
- * sits beside (`session`, when the request names one); it goes at the end of the project's history.
+ * sits beside (`session`, when the request names one); it becomes a step after the project's current position.
  *
  * @module @dv/api/api
  */
@@ -13,7 +13,7 @@ import type DvAssetPool from '@dv/asset-pool'
 import { ProjectError } from '@dv/project'
 import type DvProject from '@dv/project'
 import type {
-  AssetId, HistoryEntry, HistoryQuery, ProjectId, ProjectInfo, ProjectRecord, RecordId, RecordOrigin, RunRequest, SessionId,
+  AssetId, HistoryEntry, HistoryQuery, ProjectId, ProjectInfo, ProjectLine, ProjectRecord, RecordId, RecordOrigin, RunRequest, SessionId,
   Surface,
 } from '@dv/project'
 import {
@@ -292,9 +292,7 @@ export class ApiHandlers {
   getState(project: unknown): WireState {
     const projectId = this.requireProject(project)
     const { project: service } = this.services
-    // The history list is newest first; the wire state reads it oldest first.
-    const records = service.listHistory({ project: projectId }).map(entry => entry.record).reverse()
-    return toWireState(service.getState(projectId), records, id => this.assetOrNull(id))
+    return toWireState(service.getState(projectId), service.line(projectId), service.listRecords(projectId), id => this.assetOrNull(id))
   }
 
   /** @returns the declaration of every registered operation that a view can run: every operation that is not `readOnly`. */
@@ -340,17 +338,26 @@ export class ApiHandlers {
   }
 
   /**
-   * Return the project to an earlier state: one step back, or to the record `to` (any finished record of the project).
-   * The `proj.undo` record goes at the end of the history.
-   * @param raw - `{project, session?, surface, to?}`.
-   * @returns the `proj.undo` record.
+   * Move the current position one step back, or with `to` to that step of the history list. Writes no record.
+   * @param raw - `{project, to?}`.
+   * @returns the last step and the current position afterwards.
    */
-  async undo(raw: unknown): Promise<{ record: ProjectRecord }> {
+  async undo(raw: unknown): Promise<ProjectLine> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
     const to = body['to'] === undefined ? undefined : brandString<RecordId>(stringOf(body['to'], 'to'))
-    const record = await refused(() => this.services.project.undo(projectId, humanOrigin(body, to === undefined ? 'undo' : `go back to ${to}`), to))
-    return { record }
+    return await refused(() => this.services.project.undo(projectId, to))
+  }
+
+  /**
+   * Move the current position one step forward. Writes no record.
+   * @param raw - `{project}`.
+   * @returns the last step and the current position afterwards.
+   */
+  async redo(raw: unknown): Promise<ProjectLine> {
+    const body = objectOf(raw)
+    const projectId = this.requireProject(body['project'])
+    return await refused(() => this.services.project.redo(projectId))
   }
 
   /**

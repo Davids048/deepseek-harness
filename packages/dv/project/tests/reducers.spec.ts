@@ -34,7 +34,7 @@ type RecordLineFields = Pick<RecordLineInput, 'component' | 'operation'> & Parti
  */
 function append(m: ProjectModules, project: ProjectId, fields: RecordLineFields): Promise<ProjectRecord> {
   return m.store.lock(project, () => m.store.append(project, {
-    parents: [m.store.head(project)!], kind: 'operation', operation_version: '1',
+    parents: [m.store.line(project)!.at], kind: 'operation', operation_version: '1',
     ...userOrigin({ session: null }), params: {}, inputs: [], outputs: [], based_on: null, supersedes: [], deterministic: false,
     status: 'done', ...fields,
   }))

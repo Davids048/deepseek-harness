@@ -14,7 +14,7 @@
  *   whenever a scheduled run ends.
  *
  * Calls: reads record status through the record store and writes the `input_failed` update under the project lock;
- * runs ready records through the `execute` callback (the runner's `execute`). Called by the runner (`enqueue`) and by
+ * runs ready records through the `execute` callback (the runner's `execute`). Called by the runner (`enqueue`, `cancel`) and by
  * the service (`wait`, `recordFinished`, `dispose`).
  *
  * @module @dv/project/scheduler
@@ -121,6 +121,21 @@ export class Scheduler {
         return true
       })
     })
+  }
+
+  /**
+   * Take a queued record that has not started out of the queue; the caller ends it. Waiters and the records that
+   * depend on it re-check after the caller's update.
+   * @param project - the project.
+   * @param record - a record.
+   * @returns whether the record was queued.
+   */
+  cancel(project: ProjectId, record: RecordId): boolean {
+    const index = this.queue.findIndex(item => item.project === project && item.record === record)
+    if (index < 0) return false
+    this.queue.splice(index, 1)
+    void Promise.resolve().then(() => { this.pump() })
+    return true
   }
 
   /** Stop starting queued records; records already running finish. Queued records stay `pending` on disk. */

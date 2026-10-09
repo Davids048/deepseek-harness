@@ -39,7 +39,7 @@ kind: "package-reference"
 | `plan.update` | `dv_plan_update` | `plan`（PlanId）和 `plan.create` 的参数：完整的下一个版本 | `plan`（`plan.json`）；报告 `{plan, version, shots, gpu_seconds}` | `never` |
 | `plan.approve` | `dv_plan_approve` | `plan`（PlanId）、`version?`（默认最新版本） | 无；报告 `{plan, version, scheduled}`（按镜头顺序调度的镜头渲染，然后是时间线记录） | `always`，带 `confirmSummary` |
 
-`PlanId` 是 `p<n>`：`plan.create` 分配的编号比项目整个历史中（包括已撤销的记录）任何分镜记录在 `report.plan` 中存过的最大编号大一，所以 ID 不会重复使用。版本从 1 编号，镜头由它在版本中从 1 开始的位置标识，所以六个镜头之后添加的镜头是镜头 7。参考是角色、场景或风格的版本（`c1@1`）或素材 ID。切片 `components.plan` 是 `{plans: Record<PlanId, PlanVersion[]>}`，最早的版本在前；`PlanVersion` 是 `Plan` 的字段加上 `version`、`created_by`（`plan.create` 或 `plan.update` 记录）和 `approved_by`（该版本最新一条已完成的 `plan.approve` 记录，或 null）。服务方法 `getPlan(state, plan, version?)` 返回某个项目状态中的一个 `PlanVersion`，`shotsToRender(state, plan, version?)` 返回批准该版本会生成的镜头位置。`approvePlan(context)` 为一次正在运行的 `plan.approve` 调用调度生成。
+`PlanId` 是 `p<n>`：`plan.create` 分配的编号比项目历史列表中（包括当前位置之后的步骤）任何分镜记录在 `report.plan` 中存过的最大编号大一，所以历史列表中不会有两个分镜计划共用一个 ID。版本从 1 编号，镜头由它在版本中从 1 开始的位置标识，所以六个镜头之后添加的镜头是镜头 7。参考是角色、场景或风格的版本（`c1@1`）或素材 ID。切片 `components.plan` 是 `{plans: Record<PlanId, PlanVersion[]>}`，最早的版本在前；`PlanVersion` 是 `Plan` 的字段加上 `version`、`created_by`（`plan.create` 或 `plan.update` 记录）和 `approved_by`（该版本最新一条已完成的 `plan.approve` 记录，或 null）。服务方法 `getPlan(state, plan, version?)` 返回某个项目状态中的一个 `PlanVersion`，`shotsToRender(state, plan, version?)` 返回批准该版本会生成的镜头位置。`approvePlan(context)` 为一次正在运行的 `plan.approve` 调用调度生成。
 
 -----
 

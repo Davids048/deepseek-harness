@@ -1,10 +1,10 @@
 // User stories of the History panel (历史), walked in Chromium against the shipped profile with a fake video backend that
 // renders playable VP9 videos and a scripted agent model. Projects are seeded through the `/api/dv` routes; agent turns
 // go through the chat. Every story checks the action rows the creator sees: their order, labels, who, thumbnails, the
-// 当前 mark of the newest row, the renders folded under a plan approval, the focus a selected row gives the canvas or the
-// timeline, and live updates. The history is one line that only grows: an undo (Ctrl+Z, the undo button, 回到这一步 in a
-// row's ⋮ menu) adds a 回到「…」 row, the steps after its target stay listed, and a later edit continues from the earlier
-// state.
+// 当前 mark of the current step, the renders folded under a plan approval, the focus a selected row gives the canvas or
+// the timeline, and live updates. The history works like an image editor's History panel: undo (Ctrl+Z, the undo
+// button), redo (Shift+Ctrl+Z, the redo button) and 回到这一步 in a row's ⋮ menu only move 当前 and add no row; the rows
+// after 当前 are greyed; a new edit after a move discards them.
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import type { ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
@@ -209,7 +209,16 @@ async function timelineTabs(page: Page): Promise<string[]> {
 }
 
 /**
- * Rename timeline t1 three times on `main`, as three user steps.
+ * @param page - a page showing the History panel.
+ * @param record - a record.
+ * @returns the place the record's row shows: `before`, `current` or `after` the current step.
+ */
+async function placeOf(page: Page, record: string): Promise<string | null> {
+  return await rowOf(page, record).getAttribute('data-place')
+}
+
+/**
+ * Rename timeline t1 three times, as three user steps.
  * @param project - the project.
  * @returns the three rename records, oldest first.
  */
@@ -219,7 +228,7 @@ async function threeRenames(project: string): Promise<ProjectRecord[]> {
   return renames
 }
 
-/** @returns the record ID of the row that carries 当前: the newest record of the project. */
+/** @returns the record ID of the row that carries 当前: the project's current step. */
 async function currentRow(page: Page): Promise<string | null> {
   const marked = historyPanel(page).locator('[data-testid="dv-history-row"]:has([data-testid="dv-history-current"])')
   return await marked.count() === 1 ? await marked.getAttribute('data-record') : null
@@ -292,7 +301,7 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
-  it('undo adds a 回到「…」 row and keeps the undone step listed; a write after it continues from the earlier state on the same line', async () => {
+  it('undo and redo move 当前 without adding a row and grey the steps after it; a new edit discards the greyed steps', async () => {
     const project = await seedProject('history-undo')
     const page = await openPage()
     await gotoProject(page, project.id)
@@ -300,28 +309,33 @@ describe('History panel', () => {
     const records = (await stateOf(project.id)).components.proj.records
     await expect.poll(() => rows(page).count()).toBe(records.length)
     const before = await shownRecords(page)
+    const previous = before[1] ?? ''
     expect(await currentRow(page)).toBe(project.timeline.id)
-    const { record: undo } = await harness.api.post('/api/dv/undo', { project: project.id, surface: 'canvas' }) as { record: ProjectRecord }
-    // The undo is the newest row, named after the step it returned to; the step it took back stays listed.
-    await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(undo.id)
-    expect(await rowOf(page, undo.id).innerText()).toContain('回到「')
-    expect(await shownRecords(page)).toEqual([undo.id, ...before])
+    // Undo moves 当前 one step back and writes no record; the step it took back is greyed.
+    const line = await harness.api.post('/api/dv/undo', { project: project.id }) as { tip: string; at: string }
+    expect(line).toEqual({ tip: project.timeline.id, at: previous })
+    await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(previous)
+    expect(await shownRecords(page)).toEqual(before)
+    expect(await placeOf(page, project.timeline.id)).toBe('after')
     expect((await stateOf(project.id)).components.timeline.timelines).toEqual([])
-    // A write after the undo continues from the earlier state, after the undo on the same line.
+    // Redo moves it forward again.
+    const redo = historyPanel(page).locator('[data-testid="dv-history-redo"]')
+    await expect.poll(() => redo.isEnabled()).toBe(true)
+    await redo.click()
+    await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(project.timeline.id)
+    expect((await stateOf(project.id)).components.timeline.timelines[0]?.clips).toHaveLength(2)
+    // Undo again, then edit: the edit follows 当前 and discards the greyed step for good.
+    await historyPanel(page).locator('[data-testid="dv-history-undo"]').click()
+    await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(previous)
     const again = await runOperation(project.id, 'timeline.create', { timeline: 't1', assets: [project.renders[0]?.outputs[0] ?? ''] })
-    expect(again.parents).toEqual([undo.id])
+    expect(again.parents).toEqual([previous])
     await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(again.id)
-    expect(await shownRecords(page)).toEqual([again.id, undo.id, ...before])
+    expect(await shownRecords(page)).toEqual([again.id, ...before.slice(1)])
+    expect(await rowOf(page, project.timeline.id).count()).toBe(0)
+    await expect.poll(() => redo.isEnabled()).toBe(false)
     expect((await stateOf(project.id)).components.timeline.timelines[0]?.clips).toHaveLength(1)
-    // 回到这一步 on the undone step returns the project to it with one more 回到「新建时间线」 row.
-    await stepBack(rowOf(page, project.timeline.id))
-    await expect.poll(async () => (await stateOf(project.id)).components.timeline.timelines[0]?.clips.length, { timeout: 15_000 }).toBe(2)
-    await expect.poll(() => shownRecords(page)).toHaveLength(before.length + 3)
-    const back = (await shownRecords(page))[0] ?? ''
-    expect(await currentRow(page)).toBe(back)
-    expect(await rowOf(page, back).innerText()).toContain('回到「新建时间线」')
-    // The newest row offers no 回到这一步; the project already shows it.
-    expect(await rowOf(page, back).locator('[data-testid="dv-history-step-actions"]').count()).toBe(0)
+    // The current row offers no 回到这一步; the project already shows it.
+    expect(await rowOf(page, again.id).locator('[data-testid="dv-history-step-actions"]').count()).toBe(0)
     expect(page.errors).toEqual([])
   })
 
@@ -425,7 +439,7 @@ describe('History panel', () => {
     expect(page.errors).toEqual([])
   })
 
-  it('回到这一步 returns to the first of three edits: a 回到「…」 row is added, the later rows stay, and the timeline shows that state', async () => {
+  it('回到这一步 moves 当前 to the first of three edits and then forward to the third, without adding a row', async () => {
     const project = await seedProject('history-jump')
     const [first, second, third] = await threeRenames(project.id)
     const page = await openPage()
@@ -433,23 +447,27 @@ describe('History panel', () => {
     await openHistory(page)
     await expect.poll(() => currentRow(page)).toBe(third?.id)
     expect(await rowOf(page, third?.id ?? '').locator('[data-testid="dv-history-current"]').innerText()).toBe('当前')
-    // The header holds only the undo button.
+    // The header holds the undo and the redo button.
     expect(await historyPanel(page).locator('[data-testid="dv-history-undo"]').count()).toBe(1)
+    expect(await historyPanel(page).locator('[data-testid="dv-history-redo"]').count()).toBe(1)
+    const listed = await shownRecords(page)
     await stepBack(rowOf(page, first?.id ?? ''))
     await expect.poll(() => timelineName(project.id), { timeout: 15_000 }).toBe('first')
-    // The list refetches shortly after the state changed; the undo row then leads it and carries 当前.
-    await expect.poll(async () => (await shownRecords(page))[0], { timeout: 15_000 }).not.toBe(third?.id)
-    const back = (await shownRecords(page))[0] ?? ''
-    await expect.poll(() => currentRow(page)).toBe(back)
-    expect(await rowOf(page, back).innerText()).toContain('回到「')
-    for (const later of [second, third]) expect(await rowOf(page, later?.id ?? '').count()).toBe(1)
+    await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(first?.id)
+    expect(await shownRecords(page)).toEqual(listed)
+    for (const later of [second, third]) expect(await placeOf(page, later?.id ?? '')).toBe('after')
     await viewToggle(page, '时间线').click()
     await page.locator('[data-testid="dv-timeline-editor"]').waitFor({ timeout: 15_000 })
     await expect.poll(() => timelineTabs(page)).toEqual(['first'])
+    // 回到这一步 on a greyed step moves 当前 forward to it.
+    await stepBack(rowOf(page, third?.id ?? ''))
+    await expect.poll(() => timelineName(project.id), { timeout: 15_000 }).toBe('third')
+    await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(third?.id)
+    expect(await shownRecords(page)).toEqual(listed)
     expect(page.errors).toEqual([])
   })
 
-  it('Ctrl+Z undoes the last step of the whole project outside text fields; repeated presses go further back', async () => {
+  it('Ctrl+Z undoes and Shift+Ctrl+Z redoes the last step of the whole project outside text fields', async () => {
     const project = await seedProject('history-keys')
     const [, , third] = await threeRenames(project.id)
     const page = await openPage()
@@ -463,12 +481,11 @@ describe('History panel', () => {
     await expect.poll(() => timelineName(project.id)).toBe('second')
     await page.keyboard.press('Control+Z')
     await expect.poll(() => timelineName(project.id)).toBe('first')
-    // There is no redo: Shift+Ctrl+Z changes nothing.
     await page.keyboard.press('Control+Shift+Z')
-    await page.waitForTimeout(500)
-    expect(await timelineName(project.id)).toBe('first')
-    // Each undo is one more row; the renames stay listed.
-    await expect.poll(async () => (await shownRecords(page)).length).toBe(listed + 2)
+    await expect.poll(() => timelineName(project.id)).toBe('second')
+    // The moves add no row.
+    await expect.poll(() => currentRow(page), { timeout: 15_000 }).not.toBe(third?.id)
+    expect((await shownRecords(page)).length).toBe(listed)
     // In the chat composer Ctrl+Z edits the text and leaves the project alone.
     await page.locator('[role="tab"]', { hasText: /^对话$/ }).filter({ visible: true }).first().click()
     const composer = page.locator('[data-dv-chat] [contenteditable="true"]:visible').first()
@@ -476,11 +493,11 @@ describe('History panel', () => {
     await page.keyboard.type('history-keys')
     await page.keyboard.press('Control+Z')
     await page.waitForTimeout(500)
-    expect(await timelineName(project.id)).toBe('first')
+    expect(await timelineName(project.id)).toBe('second')
     expect(page.errors).toEqual([])
   })
 
-  it('a new edit after going back continues from that state, and the steps after it stay listed and reachable', async () => {
+  it('a new edit after going back discards the later steps: they leave History and redo is off', async () => {
     const project = await seedProject('history-drop')
     const [first, second, third] = await threeRenames(project.id)
     const page = await openPage()
@@ -490,12 +507,13 @@ describe('History panel', () => {
     await stepBack(rowOf(page, first?.id ?? ''))
     await expect.poll(() => timelineName(project.id), { timeout: 15_000 }).toBe('first')
     const fourth = await runOperation(project.id, 'timeline.rename', { timeline: 't1', name: 'fourth' })
+    expect(fourth.parents).toEqual([first?.id])
     await expect.poll(() => currentRow(page), { timeout: 15_000 }).toBe(fourth.id)
     expect(await timelineName(project.id)).toBe('fourth')
-    // Nothing was lost: the second and third renames are still rows, and the project can return to the third.
-    for (const kept of [second, third]) expect(await rowOf(page, kept?.id ?? '').count()).toBe(1)
-    await stepBack(rowOf(page, third?.id ?? ''))
-    await expect.poll(() => timelineName(project.id), { timeout: 15_000 }).toBe('third')
+    // The second and third renames are discarded: no rows, no redo, and the API refuses a move to them.
+    for (const dropped of [second, third]) expect(await rowOf(page, dropped?.id ?? '').count()).toBe(0)
+    await expect.poll(() => historyPanel(page).locator('[data-testid="dv-history-redo"]').isEnabled()).toBe(false)
+    await expect(harness.api.post('/api/dv/undo', { project: project.id, to: third?.id })).rejects.toThrow(/invalid_params|400/)
     expect(page.errors).toEqual([])
   })
 

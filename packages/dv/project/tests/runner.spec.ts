@@ -167,7 +167,7 @@ describe('Runner', () => {
     m.runner.registerOperation(operation({ name: 'shot.render', component: 'shot', precondition }))
     m.runner.registerOperation(operation({ name: 'inspect.image', component: 'inspect', readOnly: true, precondition }))
     const before = files(m, project)
-    const head = m.store.head(project)
+    const head = m.store.line(project)?.at
     const eventCount = m.events.length
 
     // An agent call that is refused writes nothing; a read-only call is refused the same way.
@@ -298,7 +298,7 @@ describe('Runner', () => {
     const project = await createTestProject(m)
     // An earlier process wrote one pending and one running record, then stopped.
     const unfinished = await m.store.lock(project, () => ['pending', 'running'].map((status) => {
-      const head = m.store.head(project) as ProjectRecord['id']
+      const head = m.store.line(project)!.at
       const record = m.store.append(project, {
         parents: [head], kind: 'operation', component: 'shot', operation: 'shot.render', operation_version: '1',
         ...userOrigin(), params: {}, inputs: [], outputs: [], based_on: null, supersedes: [], deterministic: false, status: 'pending',

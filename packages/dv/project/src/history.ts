@@ -1,99 +1,49 @@
 /**
- * History: the project's one line of records, the effective chain that `proj.undo` records define, undo, and the
- * history list.
+ * History: the history list of a project, the current position on it, undo, redo, moves to a step, and the history
+ * query. It works like the History panel of an image editor.
  *
- * The line. Every record follows the record written just before it, so the records of a project form one line in
- * write order, and the last record is the head. Nothing is removed from the line and nothing forks from it.
+ * The list. The history list is the `parents[0]` ancestry of the project's last step (`tip` in `line.json`), oldest
+ * first; its first record is `proj.create`. The current position (`at`) is a record of the list, and the project state
+ * is the state of the list up to `at`.
  *
- * Effective chain. The raw chain of a record is its `parents[0]` ancestry. The effective chain differs at `proj.undo`
- * records: such a record U with `params.to = X` continues the effective chain of X, so
- * `effectiveChain(U) = effectiveChain(X) + [U]`, and the records between X and U drop out. Every other record R gives
- * `effectiveChain(R) = effectiveChain(parents[0] of R) + [R]`. The project's state is computed from the effective chain
- * of the head, so an undo makes the state equal to the state at X, and the records after the undo continue from it.
+ * Moves. Undo moves `at` to its parent, redo moves it to the next record toward `tip`, and a move to a step sets it to
+ * that record. A move writes no record. A write after a move follows `at` (the record store's append rule), so the
+ * steps that were after `at` leave the list: they are discarded and cannot come back.
  *
- * Steps. Every record is one step, except `proj.create` and `proj.undo`. Undo without a target returns to the state
- * before the last step of the effective chain, so repeated undos go further back.
- *
- * Calls: reads and appends through the record store. The service calls `undo` while it holds the project lock; the
- * reducers call `effectiveChain`.
+ * Calls: reads records, the line and moves through the record store. The service calls `undo`, `redo` and `moveTo`
+ * while it holds the project lock; the reducers call `chainTo`; the runner calls `discardedSteps` before each write.
  *
  * @module @dv/project/history
  */
-import { brandString } from '@deepseek-ai/dsh-brand'
 import type { RecordStore } from './record-store.ts'
 import { ProjectError } from './shared.ts'
-import type { HistoryEntry, HistoryQuery, ProjectId, ProjectRecord, RecordId, RecordOrigin } from './types.ts'
-
-/** `proj.*` operations whose records are not steps (see the module comment). */
-const NOT_A_STEP = new Set(['proj.create', 'proj.undo'])
+import type { HistoryEntry, HistoryQuery, ProjectId, ProjectLine, ProjectRecord, RecordId } from './types.ts'
 
 /**
- * @param record - a record.
- * @returns whether undo counts the record as one step.
- */
-export function isStep(record: ProjectRecord): boolean {
-  return !NOT_A_STEP.has(record.operation ?? '')
-}
-
-/**
- * The record that an undo record continues from.
- * @param record - a record.
- * @returns `params.to` of a `proj.undo` record, else null.
- */
-export function undoTarget(record: ProjectRecord): RecordId | null {
-  if (record.operation !== 'proj.undo') return null
-  const to = record.params.to
-  return typeof to === 'string' ? brandString<RecordId>(to) : null
-}
-
-/**
- * The six origin fields that every record copies from its call.
- * @param origin - the call's origin; extra fields are dropped.
- * @returns the origin fields.
- */
-function originFields(origin: RecordOrigin): RecordOrigin {
-  const { actor, surface, session, turn, tool_call, intent } = origin
-  return { actor, surface, session, turn, tool_call, intent }
-}
-
-/**
- * The effective chain ending at a record (see the module comment). Every undo target and parent was written before the
- * record that names it, so the walk visits each record at most once and ends at the project's first record.
+ * The records from a project's first record to a record, by `parents[0]`.
  * @param store - the record store.
  * @param project - the project.
- * @param head - the last record of the chain.
+ * @param record - the last record of the chain.
  * @returns the records, oldest first; the first is the project's `proj.create` record.
  */
-export function effectiveChain(store: RecordStore, project: ProjectId, head: RecordId): ProjectRecord[] {
-  const kept: ProjectRecord[] = []
-  let current: RecordId | undefined = head
-  while (current !== undefined) {
-    const record = store.getRecord(project, current)
-    kept.push(record)
-    current = undoTarget(record) ?? record.parents[0]
-  }
-  return kept.reverse()
+export function chainTo(store: RecordStore, project: ProjectId, record: RecordId): ProjectRecord[] {
+  return store.ancestors(project, record)
 }
 
 /**
- * The record whose state a record shows: the record itself, or for an undo record the target it returns to, followed
- * through undo records until a record that is not one.
+ * The steps that a write now discards: the records of the history list after the current position.
  * @param store - the record store.
  * @param project - the project.
- * @param record - a record.
- * @returns the record ID.
+ * @returns the records, oldest first; empty when the current position is the last step.
  */
-export function position(store: RecordStore, project: ProjectId, record: RecordId): RecordId {
-  let at = record
-  let target = undoTarget(store.getRecord(project, at))
-  while (target !== null) {
-    at = target
-    target = undoTarget(store.getRecord(project, at))
-  }
-  return at
+export function discardedSteps(store: RecordStore, project: ProjectId): ProjectRecord[] {
+  const line = store.line(project)
+  if (line === undefined || line.at === line.tip) return []
+  const list = chainTo(store, project, line.tip)
+  return list.slice(list.findIndex(record => record.id === line.at) + 1)
 }
 
-/** Undo and the history list of every project. */
+/** Undo, redo, moves to a step, and the history list of every project. */
 export class History {
   /**
    * @param store - the record store.
@@ -101,77 +51,105 @@ export class History {
   constructor(private readonly store: RecordStore) {}
 
   /**
-   * Return the project to an earlier state by appending a `proj.undo` record with `parents: [head]` and `params.to` =
-   * the target. Without `to`, the target is the effective-chain record just before the last step. With `to`, the
-   * target is that record, any finished record of the project, so the state becomes the state just after it. The
-   * caller holds the project lock.
+   * Move the current position one step back. The caller holds the project lock.
    * @param project - the project.
-   * @param origin - who undoes, from where.
-   * @param to - a record to return to, or undefined for one step back.
-   * @returns the appended record. Throws `unknown_record`, `nothing_to_undo` (no step to undo, or the project already
-   * shows the state of `to`), or `invalid_params` (`to` has not finished).
+   * @returns the line after the move. Throws `nothing_to_undo` at the project's first record.
    */
-  undo(project: ProjectId, origin: RecordOrigin, to?: RecordId): ProjectRecord {
-    const head = this.store.head(project)
-    if (head === undefined) throw new ProjectError('nothing_to_undo', `Project ${project} has no record.`)
-    if (to === undefined) {
-      const chain = effectiveChain(this.store, project, head)
-      const last = chain.findLastIndex(isStep)
-      const target = last > 0 ? chain[last - 1] : undefined
-      if (target === undefined) throw new ProjectError('nothing_to_undo', `Project ${project} has no step to undo.`)
-      return this.appendUndo(project, head, target.id, origin)
-    }
-    const record = this.store.getRecord(project, to)
-    if (record.status === 'pending' || record.status === 'running') {
-      throw new ProjectError('invalid_params', `Record ${to} has not finished, so the project cannot return to it.`)
-    }
-    if (position(this.store, project, record.id) === position(this.store, project, head)) {
-      throw new ProjectError('nothing_to_undo', `Project ${project} already shows the state of record ${to}.`)
-    }
-    return this.appendUndo(project, head, record.id, origin)
+  undo(project: ProjectId): ProjectLine {
+    const line = this.requireLine(project)
+    const parent = this.store.getRecord(project, line.at).parents[0]
+    if (parent === undefined) throw new ProjectError('nothing_to_undo', `Project ${project} has no step to undo.`)
+    this.store.moveTo(project, parent)
+    return { tip: line.tip, at: parent }
   }
 
   /**
-   * List records newest first (reverse write order), after the query's filters. Takes no lock.
+   * Move the current position one step forward, toward the last step. The caller holds the project lock.
+   * @param project - the project.
+   * @returns the line after the move. Throws `nothing_to_redo` at the last step.
+   */
+  redo(project: ProjectId): ProjectLine {
+    const line = this.requireLine(project)
+    const list = chainTo(this.store, project, line.tip)
+    const next = list[list.findIndex(record => record.id === line.at) + 1]
+    if (line.at === line.tip || next === undefined) throw new ProjectError('nothing_to_redo', `Project ${project} has no step to redo.`)
+    this.store.moveTo(project, next.id)
+    return { tip: line.tip, at: next.id }
+  }
+
+  /**
+   * Move the current position to a step of the history list, before or after it. A move to the current position
+   * changes nothing. The caller holds the project lock.
+   * @param project - the project.
+   * @param to - a record of the history list.
+   * @returns the line after the move. Throws `unknown_record`, or `invalid_params` for a discarded record.
+   */
+  moveTo(project: ProjectId, to: RecordId): ProjectLine {
+    const line = this.requireLine(project)
+    this.store.getRecord(project, to)
+    if (to === line.at) return line
+    if (!chainTo(this.store, project, line.tip).some(record => record.id === to)) {
+      throw new ProjectError('invalid_params', `Record ${to} was discarded and is not in the history of project ${project}.`)
+    }
+    this.store.moveTo(project, to)
+    return { tip: line.tip, at: to }
+  }
+
+  /**
+   * The steps that a write now discards: the records of the history list after the current position. Takes no lock.
+   * @param project - the project.
+   * @returns the records, oldest first; empty when the current position is the last step.
+   */
+  discardedBy(project: ProjectId): ProjectRecord[] {
+    return discardedSteps(this.store, project)
+  }
+
+  /**
+   * List the steps of the history list newest first, after the query's filters, each with its place relative to the
+   * current position. Discarded records are not listed. Takes no lock.
    * @param query - the project and the filters.
    * @returns the entries.
    */
   list(query: HistoryQuery): HistoryEntry[] {
-    const records = this.store.listRecords(query.project)
+    const line = this.store.line(query.project)
+    if (line === undefined) return []
+    const records = chainTo(this.store, query.project, line.tip)
+    const atIndex = records.findIndex(record => record.id === line.at)
     let end = records.length
     if (query.before !== undefined) {
       end = records.findIndex(record => record.id === query.before)
-      if (end < 0) throw new ProjectError('unknown_record', `Project ${query.project} has no record ${query.before}.`)
+      if (end < 0) throw new ProjectError('unknown_record', `The history of project ${query.project} has no record ${query.before}.`)
     }
     const only = query.records === undefined ? null : new Set(query.records)
-    // Every filter that the query sets must match; unset filters match every record.
-    const selected = records.slice(0, end).filter(record =>
-      (query.actor === undefined || record.actor === query.actor)
-      && (query.component === undefined || record.component === query.component)
-      && (query.operation === undefined || record.operation === query.operation)
-      && (query.kind === undefined || record.kind === query.kind)
-      && (query.status === undefined || record.status === query.status)
-      && (query.session === undefined || record.session === query.session)
-      && (query.turn === undefined || record.turn === query.turn)
-      && (query.tool_call === undefined || record.tool_call === query.tool_call)
-      && (only === null || only.has(record.id)))
-    const entries = selected.reverse().map(record => ({ record }))
+    const entries: HistoryEntry[] = []
+    // Newest first; every filter that the query sets must match; unset filters match every record.
+    for (let index = end - 1; index >= 0; index -= 1) {
+      const record = records[index]
+      if (record === undefined) continue
+      if ((query.actor !== undefined && record.actor !== query.actor)
+        || (query.component !== undefined && record.component !== query.component)
+        || (query.operation !== undefined && record.operation !== query.operation)
+        || (query.kind !== undefined && record.kind !== query.kind)
+        || (query.status !== undefined && record.status !== query.status)
+        || (query.session !== undefined && record.session !== query.session)
+        || (query.turn !== undefined && record.turn !== query.turn)
+        || (query.tool_call !== undefined && record.tool_call !== query.tool_call)
+        || (only !== null && !only.has(record.id))) continue
+      let place: HistoryEntry['place'] = 'before'
+      if (index === atIndex) place = 'current'
+      else if (index > atIndex) place = 'after'
+      entries.push({ record, place })
+    }
     return query.limit === undefined ? entries : entries.slice(0, Math.max(0, query.limit))
   }
 
   /**
-   * Append a `proj.undo` record after the head.
    * @param project - the project.
-   * @param head - the project's head, the record's parent.
-   * @param to - the record whose state the project returns to.
-   * @param origin - who acts, from where.
-   * @returns the appended record.
+   * @returns the project's line; throws `nothing_to_undo` for a project without records.
    */
-  private appendUndo(project: ProjectId, head: RecordId, to: RecordId, origin: RecordOrigin): ProjectRecord {
-    return this.store.append(project, {
-      parents: [head], kind: 'operation', component: 'proj', operation: 'proj.undo', operation_version: '1',
-      ...originFields(origin), params: { to }, inputs: [], outputs: [], based_on: null, supersedes: [], deterministic: true,
-      status: 'done',
-    })
+  private requireLine(project: ProjectId): ProjectLine {
+    const line = this.store.line(project)
+    if (line === undefined) throw new ProjectError('nothing_to_undo', `Project ${project} has no record.`)
+    return line
   }
 }

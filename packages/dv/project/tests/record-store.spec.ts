@@ -1,6 +1,7 @@
 /**
- * Record store tests: the record format on disk, the append rule (one line, the head is the last record) and the update
- * rules, the current form of records, reload from disk, the project lock, project rename and delete, and change events.
+ * Record store tests: the record format on disk, the append rule (a record follows the current position and becomes the
+ * last step and the current position, kept in `line.json`), moves of the current position, the update rules, the
+ * current form of records, reload from disk, the project lock, project rename and delete, and change events.
  * The record store calls no other module, so these tests build it alone on a temporary root.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
@@ -33,7 +34,7 @@ function openStore(root = tempRoot()): OpenStore {
 
 /**
  * A record line for an operation of the `timeline` component.
- * @param parent - the project's head, or null for the first record.
+ * @param parent - the project's current position, or null for the first record.
  * @param overrides - fields to change.
  * @returns the line.
  */
@@ -107,11 +108,12 @@ describe('RecordStore', () => {
     expect(store.getRecord(project, record.id)).toEqual({
       ...record, status: 'done', started_at: startedAt, finished_at: startedAt, outputs: [ASSET_X], cost,
     })
-    expect(store.head(project)).toBe(record.id)
-    expect(readdirSync(join(root, project)).sort()).toEqual(['project.json', 'records.jsonl'])
+    expect(store.line(project)).toEqual({ tip: record.id, at: record.id })
+    expect(JSON.parse(readFileSync(join(root, project, 'line.json'), 'utf8'))).toEqual({ tip: record.id, at: record.id })
+    expect(readdirSync(join(root, project)).sort()).toEqual(['line.json', 'project.json', 'records.jsonl'])
   })
 
-  it('refuses an append whose parent is not the head', () => {
+  it('refuses an append whose parent is not the current position', () => {
     const { root, store, events } = openStore()
     const { project, first } = createProject(store)
     store.append(project, line(first.id))
@@ -148,17 +150,37 @@ describe('RecordStore', () => {
     expect(errorCode(() => store.update(project, { update: brandString<RecordId>('missing'), status: 'done' }))).toBe('unknown_record')
   })
 
-  it('reloads records, updates and the head from disk', () => {
+  it('reloads records, updates and the line from disk', () => {
     const { root, store } = openStore()
     const { project, first } = createProject(store)
     const record = store.append(project, line(first.id))
     store.update(project, { update: record.id, status: 'done', outputs: [ASSET_X] })
     const last = store.append(project, line(record.id))
+    store.moveTo(project, record.id)
 
     const reloaded = openStore(root).store
     expect(reloaded.listProjects()).toEqual(store.listProjects())
     expect(reloaded.listRecords(project)).toEqual(store.listRecords(project))
-    expect(reloaded.head(project)).toBe(last.id)
+    expect(reloaded.line(project)).toEqual({ tip: last.id, at: record.id })
+  })
+
+  it('moves the current position without writing a record, and appends after it', () => {
+    const { root, store, events } = openStore()
+    const { project, first } = createProject(store)
+    const second = store.append(project, line(first.id))
+    const before = readFileSync(join(root, project, 'records.jsonl'), 'utf8')
+    store.moveTo(project, first.id)
+    expect(readFileSync(join(root, project, 'records.jsonl'), 'utf8')).toBe(before)
+    expect(store.line(project)).toEqual({ tip: second.id, at: first.id })
+    expect(events.at(-1)).toEqual({ project, event: { kind: 'line', tip: second.id, at: first.id } })
+    // A write follows the current position, not the last step, and becomes both.
+    expect(errorCode(() => store.append(project, line(second.id)))).toBe('parent_not_head')
+    const third = store.append(project, line(first.id))
+    expect(store.line(project)).toEqual({ tip: third.id, at: third.id })
+    expect(errorCode(() => { store.moveTo(project, brandString<RecordId>('missing')) })).toBe('unknown_record')
+    const empty = brandString<ProjectId>('project-empty')
+    store.createProject({ id: empty, title: 'Empty', created_at: new Date().toISOString() })
+    expect(store.line(empty)).toBeUndefined()
   })
 
   it('fills resolved_asset of an output input once the producer is done', () => {
@@ -231,7 +253,7 @@ describe('RecordStore', () => {
     expect(openStore(root).store.listProjects().map(info => info.id)).toEqual([older])
   })
 
-  it('emits record and update events after the write', () => {
+  it('emits record, line and update events after the write', () => {
     const { root, store, events } = openStore()
     const project = brandString<ProjectId>('project-1')
     store.createProject({ id: project, title: 'Events', created_at: new Date().toISOString() })
@@ -250,10 +272,12 @@ describe('RecordStore', () => {
     const record = checked.append(project, line(first.id))
     const done = checked.update(project, { update: record.id, status: 'done', outputs: [ASSET_X] })
 
-    expect(seen).toEqual(['record', 'record', 'update'])
+    expect(seen).toEqual(['record', 'line', 'record', 'line', 'update'])
     expect(events.map(entry => entry.event)).toEqual([
       { kind: 'record', record: first },
+      { kind: 'line', tip: first.id, at: first.id },
       { kind: 'record', record },
+      { kind: 'line', tip: record.id, at: record.id },
       { kind: 'update', record: done },
     ])
     expect(done.outputs).toEqual([ASSET_X])

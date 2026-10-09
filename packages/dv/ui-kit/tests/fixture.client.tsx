@@ -83,6 +83,7 @@ export function fixtureState(): WireState {
   return {
     project: { id: 'p1', title: 'Demo', created_at: '2026-10-05T00:00:00Z' },
     head: 'g3',
+    tip: 'g3',
     components: {
       proj: {
         records,
@@ -178,6 +179,8 @@ export function scriptedFetch(routes: ScriptedRoutes = {}): { fetch: typeof fetc
         const request = body as OperationRequest
         return Promise.resolve(json(record({ id: `new-${String(writes.length)}`, operation: request.operation, params: request.params ?? {}, outputs: ['new.mp4'] })))
       }
+      // Undo and redo move the current position and answer the line.
+      if (url.pathname === '/api/dv/undo' || url.pathname === '/api/dv/redo') return Promise.resolve(json({ tip: 'g3', at: 'g3' }))
       return Promise.resolve(json({ record: record({ id: 'b1' }) }))
     }
     switch (url.pathname) {

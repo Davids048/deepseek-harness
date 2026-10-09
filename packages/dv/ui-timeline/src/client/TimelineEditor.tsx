@@ -299,9 +299,10 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
     if (!window.confirm(t('tabs.deleteConfirm', { name }))) return
     void run(() => client.runOperation(request(project, session, { operation: 'timeline.delete', params: { timeline: id }, intent: t('intent.delete', { name }) })))
   }
-  // Undo goes back one step of the whole project, whichever view made the step; the undo is a new step at the end of
-  // the history.
-  const undo = (): void => { void run(() => client.undo(project, 'timeline', session)) }
+  // Undo and redo move the whole project's current position one step, whichever view made the step.
+  const undo = (): void => { void run(() => client.undo(project)) }
+  const redo = (): void => { void run(() => client.redo(project)) }
+  const canRedo = state.head !== state.tip
   const remove = (position: number): void => {
     const clip = clips.find(placed => placed.position === position)
     if (clip === undefined) return
@@ -503,6 +504,7 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
   const toolbar = (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '6px 8px', borderTop: `1px solid ${palette.line}`, borderBottom: `1px solid ${palette.line}`, flexWrap: 'wrap' }}>
       <button type="button" style={button} onClick={undo}>{t('tool.undo')}</button>
+      <button type="button" style={buttonStyle(!canRedo)} disabled={!canRedo} onClick={redo}>{t('tool.redo')}</button>
       <button type="button" style={buttonStyle(playheadClip?.status !== 'ready')} disabled={playheadClip?.status !== 'ready'} onClick={splitAtPlayhead}>{t('tool.split')}</button>
       {staleRecord !== null
         ? <button type="button" style={{ ...button, color: palette.playhead }} onClick={keepStale}>{t('tool.keepAnyway')}</button>

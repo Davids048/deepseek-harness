@@ -24,7 +24,7 @@ function scheduledBy(record: ProjectRecord): string[] {
 }
 
 /**
- * Turn history entries into panel rows: one row per record, newest first, undo records included. The records a loaded
+ * Turn history entries into panel rows: one row per step, newest first. The records a loaded
  * plan approval scheduled fold under the approval's row instead of standing alone.
  * @param entries - history entries, newest first.
  * @returns the rows, newest first.
@@ -78,37 +78,13 @@ function field(fields: Record<string, unknown> | undefined, key: string): string
 }
 
 /**
- * The record a `proj.undo` record returned the project to, followed through undo records to the step whose state it
- * shows.
- * @param record - an undo record.
- * @param records - the loaded records by ID.
- * @returns the target record, or undefined when it is not loaded.
- */
-function undoTarget(record: ProjectRecord, records: ReadonlyMap<string, ProjectRecord>): ProjectRecord | undefined {
-  let target = records.get(field(record.params, 'to') ?? '')
-  const seen = new Set<string>()
-  while (target?.operation === 'proj.undo' && !seen.has(target.id)) {
-    seen.add(target.id)
-    target = records.get(field(target.params, 'to') ?? '')
-  }
-  return target
-}
-
-/**
  * The label a row shows for its action: the tool label followed by its subject. Plans name their title or PlanId and
  * version (`report.plan`, `report.version`), a plan's shot render names its shot number (`params.shot`), and story bible
- * records name the character, location or style. An undo record names the step it returned to: 回到「…」.
+ * records name the character, location or style.
  * @param record - the operation record.
- * @param records - the loaded records by ID, to name the target of an undo record.
  * @returns the Chinese and English label.
  */
-export function actionLabel(record: ProjectRecord, records: ReadonlyMap<string, ProjectRecord> = new Map()): readonly [string, string] {
-  if (record.operation === 'proj.undo') {
-    const target = undoTarget(record, records)
-    if (target === undefined) return ['回到之前的一步', 'Go back to an earlier step']
-    const [toZh, toEn] = actionLabel(target, records)
-    return [`回到「${toZh}」`, `Go back to “${toEn}”`]
-  }
+export function actionLabel(record: ProjectRecord): readonly [string, string] {
   const [zh, en] = operationLabel(record.operation)
   // A PlanId (`p1`); a plan named by its record ID comes from a project made before plans had IDs and is not shown.
   const named = field(record.report, 'plan') ?? field(record.params, 'plan')
@@ -254,17 +230,16 @@ export type CenterFocus =
   | null
 
 /**
- * The center focus of a selected entry. Only records of the current state are what the canvas and the timeline show.
- * Timeline records and timeline exports focus their timeline and clip; `proj.*` records focus nothing; every other
- * record focuses its node.
+ * The center focus of a selected entry. Only steps at or before the current position are what the canvas and the
+ * timeline show. Timeline records and timeline exports focus their timeline and clip; `proj.*` records focus nothing;
+ * every other record focuses its node.
  * @param entry - the selected entry.
  * @param owner - clip ID → timeline ID of the current state, from {@link clipTimelines}.
- * @param inState - the IDs of the current state's records (`components.proj.records`).
  * @returns the focus, or null.
  */
-export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, string>, inState: ReadonlySet<string>): CenterFocus {
+export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, string>): CenterFocus {
   const { record } = entry
-  if (!inState.has(record.id)) return null
+  if (entry.place === 'after') return null
   if (record.component === 'proj') return null
   if (record.component === 'timeline' || record.operation === 'deliver.timeline_export') {
     const timelineId = timelineOf(record, owner)
@@ -273,17 +248,4 @@ export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, stri
     return { event: 'dv:timeline-focus', detail: { timelineId, clipId } }
   }
   return { event: 'dv:canvas-focus', detail: { recordId: record.id } }
-}
-
-/**
- * Whether a row offers 回到这一步: not the newest record (the project already shows it), not an unfinished record, and
- * not the record the newest undo record already returned to.
- * @param record - the row's record.
- * @param newest - the project's newest record, or undefined while none is loaded.
- * @returns whether the project can go back to the record.
- */
-export function canGoBack(record: ProjectRecord, newest: ProjectRecord | undefined): boolean {
-  if (newest === undefined || record.id === newest.id) return false
-  if (record.status === 'pending' || record.status === 'running') return false
-  return !(newest.operation === 'proj.undo' && newest.params['to'] === record.id)
 }

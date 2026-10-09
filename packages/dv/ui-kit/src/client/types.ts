@@ -230,7 +230,10 @@ export interface ComponentStates {
 export interface WireState {
   project: ProjectInfo
   /** The project's last record. */
+  /** The current position: the step whose state this is. */
   head: string
+  /** The last step of the history list; redo can move the current position up to it. */
+  tip: string
   components: ComponentStates
   /** Every asset of the current state, and every asset the project imported anywhere in its history. */
   assets: ProjectAsset[]
@@ -271,14 +274,23 @@ export interface WireProject {
   current?: boolean
 }
 
-/** One project change, as the event stream sends it: an appended record or a record update. */
+/** The last step of the history list and the current position, as undo and redo answer them. */
+export interface WireLine {
+  tip: string
+  at: string
+}
+
+/** One project change, as the event stream sends it: an appended record, a record update, or a move of the position. */
 export type ProjectEvent =
   | { kind: 'record'; record: ProjectRecord }
   | { kind: 'update'; record: ProjectRecord }
+  | ({ kind: 'line' } & WireLine)
 
-/** One entry of the history list: one record of the project in its current form. */
+/** One entry of the history list: one step and where it stands relative to the current position. */
 export interface HistoryEntry {
   record: ProjectRecord
+  /** `current` for the current position, `before` for a step before it, `after` for a step redo brings back. */
+  place: 'before' | 'current' | 'after'
 }
 
 /** What `POST /api/dv/history` selects (the JSON body). Every filter is optional; filters combine with AND. */
@@ -325,7 +337,7 @@ export interface OperationRequest {
   supersedes?: string[]
 }
 
-/** The record a project-level route wrote (undo, stale accept). */
+/** The record a project-level route wrote (stale accept). */
 export interface WireRecordResult {
   record: ProjectRecord
 }

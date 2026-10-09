@@ -42,7 +42,7 @@ kind: "package-reference"
 | --- | --- | --- | --- |
 | `asset.import` | `dv_asset_import` | 参数 `path`（本机上的文件）或 `base64`（字节）、`mime`（必填）、`name`（默认：文件名）、`place`（为 true 时同时把素材放到画布上） | `asset` |
 | `asset.grab_still` | `dv_asset_grab_still` | 输入 `video`，参数 `at`：`first`、`last`（默认）或以秒计的时间 | `still`（PNG） |
-| `asset.place` | `dv_asset_place` | 输入 `asset`（一个或多个）；素材既不是项目历史中任何一步导入的、也不是当前状态中某一步生成的时返回 `invalid_inputs`，全部素材已在画布上时返回 `invalid_params` | 无 |
+| `asset.place` | `dv_asset_place` | 输入 `asset`（一个或多个）；素材既不是项目的任何记录（包括被丢弃的记录）导入的、也不是当前状态中某一步生成的时返回 `invalid_inputs`，全部素材已在画布上时返回 `invalid_params` | 无 |
 | `asset.unplace` | `dv_asset_unplace` | 输入 `asset`（一个或多个）；没有一个素材在画布上时返回 `invalid_params`；素材仍留在素材库 | 无 |
 
 | 方法 | 行为 |

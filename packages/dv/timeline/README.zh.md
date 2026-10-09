@@ -57,7 +57,7 @@ kind: "package-reference"
 
 **占位片段。** `timeline.create` 和 `timeline.update` 在 `OperationSpec.pendingInputRoles` 中声明输入角色 `clip`，因此 `clip` 输入可以指向尚未完成的渲染的输出：调用立即运行，渲染进行时其记录已完成。归约函数把每个 `clip` 输入排成带该 `source` 的片段；在渲染完成前，输入的 `resolved_asset` 以及片段的 `asset` 为 null，渲染完成后由记录的当前形式填入。渲染失败时片段仍是占位片段。移动、移除和替换可用于占位片段；替换会放入素材并清空其 `source`。智能体摘要把占位片段列为 `{clip, asset: null, status, record, in_sec, out_sec}`，其中 `record` 是它等待的渲染。
 
-**片段 ID。** 添加片段的操作在 `execute` 中分配片段 ID，并按片段顺序存入记录的 `report.clips`：`timeline.create` 和 `timeline.update` 每个片段一个，`timeline.clip_insert` 一个，`timeline.clip_split` 为后一部分分配一个（前一部分保留原片段 ID）。`cl` 之后的数字比项目整个历史中（包括已撤销的记录）任一时间线记录的 `report.clips` 中的最大数字大 1，也大于分配给仍在运行的调用的任何数字，因此项目中不会有两个片段共用一个 ID，无论片段加在哪个状态中。归约函数只从 `report.clips` 读取片段 ID。已完成的记录如果其 `report.clips` 与它添加的片段不符，或指定了已在使用的 ID，则不产生任何效果。
+**片段 ID。** 添加片段的操作在 `execute` 中分配片段 ID，并按片段顺序存入记录的 `report.clips`：`timeline.create` 和 `timeline.update` 每个片段一个，`timeline.clip_insert` 一个，`timeline.clip_split` 为后一部分分配一个（前一部分保留原片段 ID）。`cl` 之后的数字比项目历史列表中（包括当前位置之后的步骤）任一时间线记录的 `report.clips` 中的最大数字大 1，也大于分配给仍在运行的调用的任何数字，因此历史列表中不会有两个片段共用一个 ID，无论片段加在哪个状态中。归约函数只从 `report.clips` 读取片段 ID。已完成的记录如果其 `report.clips` 与它添加的片段不符，或指定了已在使用的 ID，则不产生任何效果。
 
 | 文件 | 内容 |
 | --- | --- |
@@ -112,7 +112,7 @@ kind: "package-reference"
 
 #### 模型看到什么
 
-技能目录列出 `timeline-editing` 及其描述和使用时机。智能体加载该技能时，读到一张表：从用户的剪辑说法（剪辑、重做、更换参考和风格、调整顺序、删除、回到之前的版本、撤销、导出）到按顺序的 `dv_*` 调用及其必需参数，以及适用于每一行的规则。重做调用片段生成方式对应的渲染工具（`dv_shot_render_ref2va` 或 `dv_shot_render_t2va`）。
+技能目录列出 `timeline-editing` 及其描述和使用时机。智能体加载该技能时，读到一张表：从用户的剪辑说法（剪辑、重做、更换参考和风格、调整顺序、删除、回到之前的版本、撤销、恢复撤销、导出）到按顺序的 `dv_*` 调用及其必需参数，以及适用于每一行的规则。重做调用片段生成方式对应的渲染工具（`dv_shot_render_ref2va` 或 `dv_shot_render_t2va`）。
 
 #### Token 影响
 

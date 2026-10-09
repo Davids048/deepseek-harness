@@ -1,16 +1,16 @@
 /**
- * The History panel's pure readings: action rows and approval folds, labels with subjects (undo records included),
- * thumbnails, relative times, focus, and the rows that offer 回到这一步.
+ * The History panel's pure readings: action rows and approval folds, labels with subjects, thumbnails, relative times,
+ * and the focus a selected step gives the canvas or the timeline.
  */
 import { describe, expect, it } from 'vitest'
 import type { HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
 import {
-  actionLabel, actionRows, canGoBack, centerFocus, clipTimelines, operationLabel, relativeTime, thumbnailOf,
+  actionLabel, actionRows, centerFocus, clipTimelines, operationLabel, relativeTime, thumbnailOf,
 } from '../src/client/rows.ts'
 
-/** An entry of a record. */
-const entry = (fields: Partial<ProjectRecord> & { id: string }): HistoryEntry => ({ record: record(fields) })
+/** An entry of a record, at or before the current position unless `place` says otherwise. */
+const entry = (fields: Partial<ProjectRecord> & { id: string }, place: HistoryEntry['place'] = 'before'): HistoryEntry => ({ record: record(fields), place })
 
 describe('actionRows', () => {
   it('folds the loaded records an approval scheduled under its row, in scheduled order', () => {
@@ -24,11 +24,6 @@ describe('actionRows', () => {
     expect(rows.map(row => [row.entry.record.id, row.children.map(child => child.record.id)])).toEqual([
       ['ap', ['g1', 'g2', 'tl']], ['h1', []],
     ])
-  })
-
-  it('lists undo records as rows of their own', () => {
-    const rows = actionRows([entry({ id: 'u', operation: 'proj.undo', params: { to: 'h1' } }), entry({ id: 'h1', operation: 'timeline.clip_move' })])
-    expect(rows.map(row => row.entry.record.id)).toEqual(['u', 'h1'])
   })
 
   it('keeps scheduled records as rows of their own while their approval is not loaded', () => {
@@ -53,17 +48,6 @@ describe('labels, thumbnails and times', () => {
     expect(actionLabel(record({ id: 'tu', operation: 'timeline.update', params: { timeline: 't2' } }))).toEqual(['修改时间线', 'Update timeline'])
     expect(actionLabel(record({ id: 'g', component: 'bible', operation: 'bible.character_create', params: { character: 'c1', name: '阿明' } })))
       .toEqual(['新建角色「阿明」', 'Create character “阿明”'])
-  })
-
-  it('names the step an undo record returned to, through earlier undo records, and an unloaded target generically', () => {
-    const move = record({ id: 'm', operation: 'timeline.clip_move' })
-    const first = record({ id: 'u1', operation: 'proj.undo', params: { to: 'm' } })
-    const second = record({ id: 'u2', operation: 'proj.undo', params: { to: 'u1' } })
-    const loaded = new Map([move, first, second].map(item => [item.id, item]))
-    expect(actionLabel(first, loaded)).toEqual(['回到「移动片段」', 'Go back to “Move clip”'])
-    expect(actionLabel(second, loaded)).toEqual(['回到「移动片段」', 'Go back to “Move clip”'])
-    expect(actionLabel(record({ id: 'u3', operation: 'proj.undo', params: { to: 'gone' } }), loaded))
-      .toEqual(['回到之前的一步', 'Go back to an earlier step'])
   })
 
   it('shows an image first, a take\'s still for its video, a video frame without a still, and nothing for other files', () => {
@@ -112,28 +96,15 @@ describe('timelines and focus', () => {
     expect(Object.fromEntries(clipTimelines(records))).toEqual({ cl1: 't1', cl2: 't1', cl3: 't2', cl4: 't1' })
   })
 
-  it('focuses a clip record on the timeline, a render on the canvas, and nothing for proj records or records off the current state', () => {
+  it('focuses a clip record on the timeline, a render on the canvas, and nothing for proj records or steps after the current position', () => {
     const owner = clipTimelines(records)
     const render = fixtureState().components.proj.records.find(item => item.id === 'g1') as ProjectRecord
-    const inState = new Set(['m', 'c', 'g1', 'u'])
-    expect(centerFocus({ record: records[3] as ProjectRecord }, owner, inState))
+    expect(centerFocus({ record: records[3] as ProjectRecord, place: 'before' }, owner))
       .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl4' } })
-    expect(centerFocus({ record: records[0] as ProjectRecord }, owner, inState))
+    expect(centerFocus({ record: records[0] as ProjectRecord, place: 'current' }, owner))
       .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl1' } })
-    expect(centerFocus({ record: render }, owner, inState)).toEqual({ event: 'dv:canvas-focus', detail: { recordId: 'g1' } })
-    expect(centerFocus({ record: render }, owner, new Set())).toBeNull()
-    expect(centerFocus(entry({ id: 'u', operation: 'proj.undo' }), owner, inState)).toBeNull()
-  })
-})
-
-describe('canGoBack', () => {
-  it('offers 回到这一步 on finished records except the newest one and the one the newest undo returned to', () => {
-    const done = record({ id: 'a', operation: 'timeline.clip_move' })
-    const running = record({ id: 'r', operation: 'shot.render_ref2va', status: 'running' })
-    const newest = record({ id: 'n', operation: 'timeline.rename' })
-    expect([done, running, newest].map(item => canGoBack(item, newest))).toEqual([true, false, false])
-    const undo = record({ id: 'u', operation: 'proj.undo', params: { to: 'a' } })
-    expect([done, newest].map(item => canGoBack(item, undo))).toEqual([false, true])
-    expect(canGoBack(done, undefined)).toBe(false)
+    expect(centerFocus({ record: render, place: 'before' }, owner)).toEqual({ event: 'dv:canvas-focus', detail: { recordId: 'g1' } })
+    expect(centerFocus({ record: render, place: 'after' }, owner)).toBeNull()
+    expect(centerFocus(entry({ id: 's', operation: 'proj.stale_accept' }), owner)).toBeNull()
   })
 })

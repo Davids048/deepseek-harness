@@ -1,15 +1,15 @@
 /**
  * The reducer registry and project state. Components register one reducer per component key; the state at a record
- * is the result of passing every record of its effective chain (see `effectiveChain` in the history module),
+ * is the result of passing every record of its chain (see `chainTo` in the history module),
  * oldest first, through every registered reducer. Project registers its own reducer, {@link projReducer}, for the
  * `proj` slice.
  *
- * Calls: reads records through the record store and the effective chain through the history module. Called by the
+ * Calls: reads records through the record store and the chain through the history module. Called by the
  * service (`getState`) and the runner (state at a record's parent, character, location and style resolution).
  *
  * @module @dv/project/reducers
  */
-import { effectiveChain } from './history.ts'
+import { chainTo } from './history.ts'
 import type { RecordStore } from './record-store.ts'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { COMPONENT_KEYS, ProjectError } from './shared.ts'
@@ -182,32 +182,32 @@ export class ReducerRegistry {
   }
 
   /**
-   * The project's current state: the state at its head.
+   * The project's current state: the state at its current position.
    * @param project - the project.
    * @returns the state.
    */
   getState(project: ProjectId): ProjectState {
     this.store.getProject(project)
-    const head = this.store.head(project)
-    if (head === undefined) throw new ProjectError('invalid_params', `Project ${project} has no record to compute a state from.`)
-    return this.stateAt(project, head)
+    const line = this.store.line(project)
+    if (line === undefined) throw new ProjectError('invalid_params', `Project ${project} has no record to compute a state from.`)
+    return this.stateAt(project, line.at)
   }
 
   /**
    * The state at any record; the runner uses it for the state at a record's parent.
    * @param project - the project.
    * @param head - the record to compute the state at.
-   * @returns the state of the effective chain ending at `head`.
+   * @returns the state of the chain ending at `head`.
    */
   stateAt(project: ProjectId, head: RecordId): ProjectState {
-    return this.reduceChain(this.store.getProject(project), effectiveChain(this.store, project, head))
+    return this.reduceChain(this.store.getProject(project), chainTo(this.store, project, head))
   }
 
   /**
    * Pass a list of records through every reducer, starting from each reducer's initial slice. Pure: the same records
    * always give the same state.
    * @param info - the project's metadata.
-   * @param records - the effective chain, oldest first; must not be empty.
+   * @param records - a chain, oldest first; must not be empty.
    * @returns the state at the last record.
    */
   reduceChain(info: ProjectInfo, records: ProjectRecord[]): ProjectState {

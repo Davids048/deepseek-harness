@@ -26,7 +26,7 @@ Use this package to give the web application a timeline editor beside the chat. 
 
 Mount the plugin in a profile that stacks `dsh-web-app` and `@dv/api`, and build the browser bundle first with `pnpm run build`.
 
-The editor also has a toolbar and a ruler, and each clip carries its producer's last frame. Dragging a clip moves it, dragging its edges trims it, the toolbar splits the clip under the playhead, its 撤销 / Undo takes the project's current state back one step (whichever view made the step) with an undo record at the end of the history, and Delete removes the selected clip.
+The editor also has a toolbar and a ruler, and each clip carries its producer's last frame. Dragging a clip moves it, dragging its edges trims it, the toolbar splits the clip under the playhead, its 撤销 / Undo and 重做 / Redo move the project's current position one step back or forward (whichever view made the step) and write no record, 重做 / Redo being disabled while the current position is the last step, and Delete removes the selected clip.
 
 ```yaml
 - id: dv-ui-timeline
@@ -46,7 +46,7 @@ The Host half registers nothing. The browser half registers the `dv-timeline` ta
 | Export | One `deliver.timeline_export {timeline}` call; the link opens the exported video |
 | "Keep anyway" for a selected stale clip | `POST /api/dv/stale/accept` for the record that made the clip's asset (`proj.stale_accept`) |
 
-Every record carries `surface: 'timeline'`, the chat session the view sits beside (stored as the record's `session`; the record goes at the end of the project's history), and an intent in the DSH interface language naming the gesture. The selected timeline is shared through `@dv/ui-kit/current-timeline.ts`, so the shell keeps it in the URL. `TimelineView` follows `<html lang>` through `@dv/ui-kit/locale.ts`; switching timeline tabs stops playback and resets the viewer and playhead. Clicking a clip selects it and sends nothing. A clip whose asset reports no duration is drawn as five seconds.
+Every record carries `surface: 'timeline'`, the chat session the view sits beside (stored as the record's `session`; the record is a step after the project's current position), and an intent in the DSH interface language naming the gesture. The selected timeline is shared through `@dv/ui-kit/current-timeline.ts`, so the shell keeps it in the URL. `TimelineView` follows `<html lang>` through `@dv/ui-kit/locale.ts`; switching timeline tabs stops playback and resets the viewer and playhead. Clicking a clip selects it and sends nothing. A clip whose asset reports no duration is drawn as five seconds.
 
 The DOM carries test IDs `dv-timeline-body`, `dv-timeline-editor`, `dv-timeline-viewer`, `dv-timeline-viewer-empty`, `dv-timeline-time`, `dv-timeline-exported`, `dv-timeline-ruler` and `dv-timeline-playhead`; each clip carries `data-clip` (its clip ID), `data-clip-position` and `data-clip-stale`, and each tab carries `data-timeline`.
 

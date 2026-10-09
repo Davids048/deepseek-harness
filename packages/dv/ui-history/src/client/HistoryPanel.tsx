@@ -1,12 +1,12 @@
 /**
- * The History panel: the edit history of a project, read through `POST /api/dv/history`. The project has one history
- * line that only grows, so the panel is one list of every record, newest first, undo records included. Each row shows
- * the action with its subject (修改分镜计划 p1 → v2, 参考图生成镜头 7, 回到「插入片段」), who did it (你, 智能体, 自动), how long
- * ago, its status, one thumbnail, and for an agent action the intent the agent gave for the call. The renders a plan
- * approval scheduled fold under the approval's row. The newest row carries 当前. A row's ⋮ menu offers 回到这一步, which
- * adds an undo record that returns the project to its state just after that record (`canGoBack` says which rows offer
- * it). Selecting a row plays its output under the row and, for a record of the current state, focuses it on the canvas
- * or its clip on the timeline. The header holds undo.
+ * The History panel: the edit history of a project, read through `POST /api/dv/history`, like the History panel of an
+ * image editor. It lists the steps of the history list, newest first. Each row shows the action with its subject
+ * (修改分镜计划 p1 → v2, 参考图生成镜头 7), who did it (你, 智能体, 自动), how long ago, its status, one thumbnail, and for an
+ * agent action the intent the agent gave for the call. The renders a plan approval scheduled fold under the approval's
+ * row. The step at the current position carries 当前; the steps after it, which redo brings back, are greyed. Every other
+ * row's ⋮ menu offers 回到这一步, which moves the current position to that step. Selecting a row plays its output under
+ * the row and, for a step at or before the current position, focuses it on the canvas or its clip on the timeline. The
+ * header holds undo and redo; moves write no record, and a new step after a move discards the greyed steps.
  *
  * @module @dv/ui-history/HistoryPanel
  */
@@ -24,13 +24,13 @@ import {
   DV_HISTORY_FOCUS_EVENT, DV_TRAJECTORY_FOCUS_EVENT, dispatchWorkspaceEvent, type DvWorkspaceEventMap,
 } from '@dv/ui-kit/workspace-events.ts'
 import {
-  actionLabel, actionRows, canGoBack, centerFocus, clipTimelines, relativeTime, thumbnailOf, type ActionRow, type Thumbnail,
+  actionLabel, actionRows, centerFocus, clipTimelines, relativeTime, thumbnailOf, type ActionRow, type Thumbnail,
 } from './rows.ts'
 
 /** Props of {@link HistoryPanel}. */
 export interface HistoryPanelProps {
   projectId: string
-  /** The chat session the panel sits beside, recorded as the `session` of the undo records it writes. */
+  /** The chat session the panel sits beside. */
   session: string | null
   /** The API client; defaults to one over the page's fetch. */
   client?: DvClient
@@ -184,7 +184,7 @@ function useHistory(client: DvClient, query: HistoryQuery | null): {
  * @returns the panel.
  */
 export function HistoryPanel(props: HistoryPanelProps): ReactNode {
-  const { projectId, session } = props
+  const { projectId } = props
   const client = useMemo(() => props.client ?? new DvClient(), [props.client])
   const t = useText()
   const current = useProjectState(client, projectId)
@@ -203,8 +203,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   // The records of the current state: what the canvas and the timeline show.
   const records = current.value?.components.proj.records
   const owner = useMemo(() => clipTimelines(records ?? []), [records])
-  const inState = useMemo(() => new Set((records ?? []).map(record => record.id)), [records])
-  // Every record of the project, newest first.
+  // The steps of the history list, newest first.
   const query = useMemo((): HistoryQuery => ({ project: projectId }), [projectId])
   const { loaded, error, loadMore } = useHistory(client, query)
   const rows = useMemo(() => actionRows(loaded?.entries ?? []), [loaded])
@@ -240,7 +239,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
 
   const choose = (entry: HistoryEntry): void => {
     setSelected(entry.record.id)
-    const target = centerFocus(entry, owner, inState)
+    const target = centerFocus(entry, owner)
     // The focus names its own event and detail, so it is dispatched as is.
     if (target !== null) window.dispatchEvent(new CustomEvent(target.event, { detail: target.detail }))
   }
@@ -252,10 +251,10 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     })
   }
   const report = (failure: unknown): void => { setNotice(failure instanceof Error ? failure.message : String(failure)) }
-  // 回到这一步: an undo record at the end of the history returns the project to its state just after the record.
+  // 回到这一步: move the current position to the step.
   const jump = (record: string): void => {
     setNotice(null)
-    client.undo(projectId, 'history', session, record).catch(report)
+    client.undo(projectId, record).catch(report)
   }
   const rowRef = (record: string) => (element: HTMLElement | null): void => {
     if (element === null) rowRefs.current.delete(record)
@@ -271,7 +270,6 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     const changes = loaded.entries.filter(entry => entry.record.operation !== 'proj.create')
     const shared = {
       assets: loaded.assets, records: recordsById, now, selected, onChoose: choose, rowRef, onJump: jump,
-      newest: loaded.entries[0]?.record, currentRow: rows[0]?.entry.record.id,
     }
     body = (
       <>
@@ -294,7 +292,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   return (
     <div data-testid="dv-history-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: '8px 8px 0', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center' }}>
-        <Actions client={client} projectId={projectId} session={session} />
+        <Actions client={client} projectId={projectId} canRedo={current.value !== null && current.value.head !== current.value.tip} />
       </div>
       {notice === null ? null : <p style={{ color: muted, fontSize: 12, margin: 0 }}>{notice}</p>}
       <div role="listbox" style={{ flex: 1, minHeight: 0, overflowY: 'auto', borderTop: `1px solid ${line}` }}>
@@ -312,12 +310,13 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
 }
 
 /**
- * Undo at the end of the header: an undo record that returns the project to its state before the last step.
- * @param props - the client, the project, and the chat session.
- * @returns the button and the last failure.
+ * Undo and redo at the end of the header: they move the current position one step; redo is enabled while a step after
+ * the current position exists.
+ * @param props - the client, the project, and whether redo has a step to bring back.
+ * @returns the buttons and the last failure.
  */
-function Actions(props: { client: DvClient; projectId: string; session: string | null }): ReactNode {
-  const { client, projectId, session } = props
+function Actions(props: { client: DvClient; projectId: string; canRedo: boolean }): ReactNode {
+  const { client, projectId } = props
   const t = useText()
   const [failure, setFailure] = useState<string | null>(null)
   const run = (work: () => Promise<unknown>): void => {
@@ -328,10 +327,20 @@ function Actions(props: { client: DvClient; projectId: string; session: string |
     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginLeft: 'auto' }}>
       <button
         type="button" data-testid="dv-history-undo" aria-label={t('撤销', 'Undo')} title={t('撤销（Ctrl+Z / ⌘Z）', 'Undo (Ctrl+Z / ⌘Z)')}
-        style={icon} onClick={() => { run(() => client.undo(projectId, 'history', session)) }}
+        style={icon} onClick={() => { run(() => client.undo(projectId)) }}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" />
+        </svg>
+      </button>
+      <button
+        type="button" data-testid="dv-history-redo" disabled={!props.canRedo} aria-label={t('重做', 'Redo')}
+        title={t('重做（Shift+Ctrl+Z / ⇧⌘Z）', 'Redo (Shift+Ctrl+Z / ⇧⌘Z)')}
+        style={{ ...icon, ...props.canRedo ? {} : { opacity: 0.35, cursor: 'default' } }}
+        onClick={() => { run(() => client.redo(projectId)) }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" />
         </svg>
       </button>
       {failure === null ? null : <span style={{ color: danger, fontSize: 12 }}>{failure}</span>}
@@ -341,7 +350,7 @@ function Actions(props: { client: DvClient; projectId: string; session: string |
 
 /**
  * The ⋮ button at the end of a row and its menu with 回到这一步. Escape or a click outside closes the menu; its clicks and
- * keys never reach the row. A row the project cannot go back to has no button.
+ * keys never reach the row. The row of the current position has no button.
  * @param props - the 回到这一步 gesture, or null when it does not apply.
  * @returns the button and, while open, the menu; null without a gesture.
  */
@@ -419,17 +428,14 @@ interface RowContext {
   selected: string | null
   onChoose: (entry: HistoryEntry) => void
   rowRef: (record: string) => (element: HTMLElement | null) => void
-  /** The project's newest record, for the rows that offer 回到这一步. */
-  newest: ProjectRecord | undefined
-  /** The record of the newest row, which carries 当前. */
-  currentRow: string | undefined
   /** 回到这一步 on a row. */
   onJump: (record: string) => void
 }
 
 /**
- * One action row: the thumbnail, the action label and the time on the first line; who, the status, 当前 on the newest
- * row and the agent's intent on the second. A plan approval adds the toggle that shows the renders it scheduled, nested below it.
+ * One action row: the thumbnail, the action label and the time on the first line; who, the status, 当前 on the step at
+ * the current position and the agent's intent on the second; a step after the current position is greyed. A plan
+ * approval adds the toggle that shows the renders it scheduled, nested below it.
  * @param props - the row, the shared row context, and the approval's expanded state and toggle.
  * @returns the row and, while expanded, its nested rows.
  */
@@ -440,7 +446,7 @@ function Row(props: RowContext & { row: ActionRow; expanded: boolean; onToggle: 
   const renders = children.filter(child => child.record.operation === 'shot.render_ref2va' || child.record.operation === 'shot.render_t2va')
   const doneRenders = renders.filter(child => child.record.status === 'done').length
   const foldText = renders.length === 0
-    ? t(...actionLabel(children[0]?.record ?? row.entry.record, props.records))
+    ? t(...actionLabel(children[0]?.record ?? row.entry.record))
     : t(`渲染 ${String(renders.length)} 个镜头`, `Render ${String(renders.length)} shots`)
   return (
     <div style={{ borderBottom: `1px solid ${line}` }}>
@@ -477,11 +483,12 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
   // A human action's intent repeats its label, so it stays in the tooltip.
   const words = record.actor === 'agent' && record.intent !== record.operation ? record.intent : ''
   const size = nested ? 28 : 40
+  const dim = entry.place === 'after' ? 0.55 : 1
   return (
     <div
       ref={props.rowRef(record.id)} role="option" tabIndex={0} aria-selected={selected} title={record.intent}
       data-testid="dv-history-row" data-record={record.id} data-status={record.status} data-actor={record.actor}
-      data-surface={record.surface}
+      data-surface={record.surface} data-place={entry.place}
       onClick={() => { props.onChoose(entry) }}
       onKeyDown={(event) => { if (event.key === 'Enter') props.onChoose(entry) }}
       style={{
@@ -490,15 +497,16 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
       }}
     >
       <div style={{ display: 'grid', gridTemplateColumns: `${String(size)}px minmax(0, 1fr) auto`, columnGap: 8, alignItems: 'center' }}>
-        <Thumb thumbnail={thumbnail} size={size} />
-        <div style={{ minWidth: 0 }}>
+        {/* A step after the current one is greyed; the ⋮ menu is not, so it is not trapped under the next row. */}
+        <div style={{ opacity: dim }}><Thumb thumbnail={thumbnail} size={size} /></div>
+        <div style={{ minWidth: 0, opacity: dim }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
             <span
               style={{
                 flex: 1, minWidth: 0, fontWeight: nested ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}
             >
-              {t(...actionLabel(record, props.records))}
+              {t(...actionLabel(record))}
             </span>
             <span
               data-testid="dv-history-time" title={new Date(record.created_at).toLocaleString()}
@@ -513,7 +521,7 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
               <span style={{ width: 6, height: 6, borderRadius: 3, background: STATUS_COLORS[record.status], display: 'inline-block' }} />
               {record.status === 'done' ? null : <span style={{ color: record.status === 'failed' ? danger : muted }}>{status}</span>}
             </span>
-            {record.id === props.currentRow
+            {entry.place === 'current'
               ? (
                 <span data-testid="dv-history-current" style={{ background: accent, color: '#fff', borderRadius: 3, padding: '0 4px', lineHeight: '14px' }}>
                   {t('当前', 'Current')}
@@ -523,7 +531,7 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
             {words === '' ? null : <span title={words} style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>“{words}”</span>}
           </div>
         </div>
-        <StepActions onBack={canGoBack(record, props.newest) ? () => { props.onJump(record.id) } : null} />
+        <StepActions onBack={entry.place === 'current' ? null : () => { props.onJump(record.id) }} />
       </div>
       {selected ? <Details record={record} assets={assets} words={words} /> : null}
     </div>

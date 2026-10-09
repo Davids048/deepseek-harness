@@ -11,6 +11,7 @@ export const DV_TOOL_LABELS: Readonly<Record<string, readonly [string, string]>>
   dv_proj_open: ['打开项目', 'Open project'],
   dv_proj_state: ['查看项目', 'Get project state'],
   dv_proj_undo: ['撤销', 'Undo'],
+  dv_proj_redo: ['重做', 'Redo'],
   dv_proj_stale_accept: ['仍然保留', 'Keep anyway'],
   dv_proj_history_list: ['查看历史', 'List history'],
   dv_proj_wait: ['等待记录完成', 'Wait for records'],
