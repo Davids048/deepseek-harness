@@ -68,6 +68,7 @@ DOM 带测试 ID `dv-timeline-body`、`dv-timeline-editor`、`dv-timeline-viewer
 | [`src/client/TimelineView.tsx`](src/client/TimelineView.tsx) | 中央视图：状态和写入 |
 | [`src/client/TimelineEditor.tsx`](src/client/TimelineEditor.tsx) | 编辑器：标签、预览、工具栏、标尺、轨道、手势 |
 | [`src/client/timelines.ts`](src/client/timelines.ts) | 片段摆放、放下位置、时间码 |
+| [`src/client/first-frame.ts`](src/client/first-frame.ts) | 视频的首帧，每个页面只读一次；没有静帧图的轨道片段把它沿整个宽度重复铺满 |
 | [`src/client/player.ts`](src/client/player.ts) | 跨片段连续播放 |
 | [`src/client/locales.ts`](src/client/locales.ts) | `dvTimeline` 词典 |
 

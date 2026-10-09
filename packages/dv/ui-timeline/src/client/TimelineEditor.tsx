@@ -17,6 +17,7 @@ import { timelineName } from '@dv/ui-kit/timeline.ts'
 import { assetIndex, videoAssets } from '@dv/ui-kit/state.ts'
 import type { OperationRequest, WireState } from '@dv/ui-kit/types.ts'
 import { DV_ASSET_DRAG_TYPE, DV_TIMELINE_FOCUS_EVENT, type DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
+import { useFirstFrames } from './first-frame.ts'
 import { useTimelinePlayer } from './player.ts'
 import { clipIndexAt, dropPosition, nextTimelineId, placeTimeline, timecode, timelinesOf } from './timelines.ts'
 import type { TrackClip } from './timelines.ts'
@@ -174,6 +175,9 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
   const timeline = timelines.find(entry => entry.id === activeId) ?? timelines[0] ?? null
   const { clips, total } = useMemo(() => placeTimeline(state, timeline), [state, timeline])
   const assets = useMemo(() => assetIndex(state), [state])
+  // A clip without a still image repeats its video's first frame across its width.
+  const unstilled = clips.flatMap(clip => clip.thumbnail === null && clip.assetId !== null ? [assetUrl(clip.assetId)] : [])
+  const frames = useFirstFrames(unstilled)
   const candidates = useMemo(() => videoAssets(state), [state])
   const timelineId = timeline?.id ?? null
   const player = useTimelinePlayer(timelineId, clips, total)
@@ -560,18 +564,21 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
               + `${clip.stale ? ` · ${t('track.stale')}` : ''}`
             // A placeholder clip is striped in the track color, red when its render failed.
             const placeholderFill = `repeating-linear-gradient(135deg, ${clip.status === 'failed' ? palette.playhead : palette.clip} 0 8px, ${palette.panel} 8px 16px)`
+            // The still image of the clip, else its video's first frame once read, repeated across the clip.
+            const firstFrame = clip.assetId === null ? null : frames.get(assetUrl(clip.assetId)) ?? null
+            const frame = clip.thumbnail !== null ? assetUrl(clip.thumbnail) : firstFrame
             return (
               <div
                 key={clip.clip} role="listitem" aria-label={t('track.clipAria', { position: clip.position, name })} aria-pressed={selected === clip.position}
                 data-clip={clip.clip} data-clip-position={clip.position} data-clip-status={clip.status} data-clip-stale={clip.stale} title={caption} {...clipHandlers(clip, 'move')}
                 style={{
                   ...blockGeometry(clip), boxSizing: 'border-box', borderRadius: 4, overflow: 'hidden', cursor: 'grab', touchAction: 'none',
-                  background: !ready ? placeholderFill : clip.thumbnail === null ? palette.clip : `${palette.clip} url("${assetUrl(clip.thumbnail)}") left center / auto 100% repeat-x`,
+                  background: !ready ? placeholderFill : frame === null ? palette.clip : `${palette.clip} url("${frame}") left center / auto 100% repeat-x`,
                   // A border in the track color keeps a visible gap between neighboring clips.
                   border: `2px solid ${selected === clip.position ? palette.text : clip.stale ? palette.playhead : palette.bg}`,
                 }}
               >
-                {clip.thumbnail === null && clip.assetId !== null ? <video src={assetUrl(clip.assetId)} preload="metadata" muted style={{ height: '100%', pointerEvents: 'none' }} /> : null}
+                {frame === null && clip.assetId !== null ? <video src={assetUrl(clip.assetId)} preload="metadata" muted style={{ height: '100%', pointerEvents: 'none' }} /> : null}
                 <span style={{ position: 'absolute', left: handle + 2, right: handle + 2, bottom: 2, fontSize: 10, color: '#fff', textShadow: '0 0 3px #000', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none' }}>
                   {caption}
                 </span>

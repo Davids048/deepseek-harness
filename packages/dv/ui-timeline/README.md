@@ -68,6 +68,7 @@ The DOM carries test IDs `dv-timeline-body`, `dv-timeline-editor`, `dv-timeline-
 | [`src/client/TimelineView.tsx`](src/client/TimelineView.tsx) | The center view: state and writes |
 | [`src/client/TimelineEditor.tsx`](src/client/TimelineEditor.tsx) | The editor: tabs, viewer, toolbar, ruler, tracks, gestures |
 | [`src/client/timelines.ts`](src/client/timelines.ts) | Clip placement, drop position, timecode |
+| [`src/client/first-frame.ts`](src/client/first-frame.ts) | The first frame of a video, read once per page; a track clip without a still image repeats it across its width |
 | [`src/client/player.ts`](src/client/player.ts) | Continuous playback across clips |
 | [`src/client/locales.ts`](src/client/locales.ts) | The `dvTimeline` dictionaries |
 
