@@ -683,8 +683,8 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
                 key={`${edge.from}>${edge.to}`}
                 d={`M ${String(x1)} ${String(y1)} C ${String(x1 + bend)} ${String(y1)}, ${String(x2 - bend)} ${String(y2)}, ${String(x2)} ${String(y2)}`}
                 fill="none"
-                style={{ stroke: highlighted ? 'var(--dv-accent)' : EDGE_COLOR[edge.kind], strokeOpacity: highlighted ? 0.9 : 0.28 }}
-                strokeWidth={highlighted ? 2 : 1.25}
+                style={{ stroke: highlighted ? 'var(--dv-accent)' : EDGE_COLOR[edge.kind], strokeOpacity: highlighted ? 0.9 : 0.6 }}
+                strokeWidth={highlighted ? 2 : 1.5}
                 vectorEffect="non-scaling-stroke"
                 strokeDasharray={edge.kind === 'take' ? '6 5' : undefined}
                 data-edge={`${edge.from}>${edge.to}`}
