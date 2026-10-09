@@ -161,8 +161,9 @@ function VideoCard({ asset, label, inGrid }: { asset: string; label: string; inG
       <span style={frame}>
         <button ref={cardRef} type="button" style={thumbButton} aria-label={label === '' ? play : `${play}: ${label}`}
           onClick={() => { setOpen(true) }}>
-          {/* `#t=0.1` makes the browser show an early frame instead of a blank first frame. */}
-          <video style={media} src={`${src}#t=0.1`} muted preload="metadata" playsInline tabIndex={-1} aria-hidden="true" />
+          {/* `#t=0.1` makes the browser show an early frame instead of a blank first frame. The preview takes no pointer
+              events, so a click focuses the card button, which gets focus back when the viewer closes. */}
+          <video style={{ ...media, pointerEvents: 'none' }} src={`${src}#t=0.1`} muted preload="metadata" playsInline aria-hidden="true" />
           <span style={playBadge}><PlayIcon /></span>
         </button>
       </span>
