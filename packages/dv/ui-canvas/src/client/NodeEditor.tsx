@@ -6,7 +6,8 @@
  * "问 agent" (a `dv:compose` event that prefills the chat composer). A take shows a large player, the failure reason of a
  * failed take, its render mode, its prompt, reference chips (`ref2va` only), duration, and seed, and offers "渲染新版本"
  * (a user record of the take's render operation, `shot.render_ref2va` or `shot.render_t2va`, whose `based_on` is the
- * take). A character, location or style can replace its reference image. A plan switches between its versions (第 1 版,
+ * take); while the render starts the button is disabled and reads 渲染中…, and a refused request shows its error under the
+ * button. A character, location or style can replace its reference image. A plan switches between its versions (第 1 版,
  * 第 2 版, …) and shows the chosen version's approval status, its reference images, and one card per shot with exactly
  * what the plan holds: duration, render mode, reference images, whether the shot continues the previous shot, and the
  * full prompt with each `Picture N` drawn as its image. A stale node offers "仍然保留", which keeps its record as it is
@@ -18,7 +19,7 @@ import { assetUrl } from '@dv/ui-kit/api.ts'
 import type { DvClient } from '@dv/ui-kit/api.ts'
 import { dispatchCompose, type DvComposeRef } from '@dv/ui-kit/compose.ts'
 import { pictureParts, referenceImages, shotReferences } from '@dv/ui-kit/references.ts'
-import type { PlanVersion, Shot, WireState } from '@dv/ui-kit/types.ts'
+import type { OperationRequest, PlanVersion, Shot, WireState } from '@dv/ui-kit/types.ts'
 import { bibleItems, bibleVersions, referenceText } from './graph.ts'
 import type { CanvasNode } from './graph.ts'
 import { clockText, KIND_COLOR, kindLabel, nodeTitle } from './NodeCard.tsx'
@@ -36,6 +37,11 @@ export interface NodeEditorProps {
   onClose: () => void
   /** Run a write and report its failure. */
   run: (work: () => Promise<unknown>) => Promise<void>
+  /**
+   * Start the render of a new take based on the open take. Settles once the new take is on the canvas, after the canvas
+   * closed the editor; rejects when the request fails before that.
+   */
+  onRender: (request: OperationRequest & { based_on: string }) => Promise<void>
   /** Take an asset off the project's canvas list; the asset stays in the asset pool. */
   onRemoveFromCanvas: (assetId: string) => void
 }
@@ -551,7 +557,7 @@ function AssetPanel(
  * @returns the element.
  */
 function TakeForm(
-  { node, state, client, project, session, t, onClose, run, title }: NodeEditorProps & { title: string },
+  { node, state, project, session, t, onRender, title }: NodeEditorProps & { title: string },
 ): ReactNode {
   const record = node.record
   const [prompt, setPrompt] = useState(() => typeof record?.params['prompt'] === 'string' ? record.params['prompt'] : '')
@@ -560,6 +566,8 @@ function TakeForm(
   )
   const [duration, setDuration] = useState(() => typeof record?.params['duration_sec'] === 'number' ? String(record.params['duration_sec']) : '')
   const [seed, setSeed] = useState(() => typeof record?.params['seed'] === 'number' ? String(record.params['seed']) : '')
+  const [starting, setStarting] = useState(false)
+  const [renderError, setRenderError] = useState<string | null>(null)
   const references = inputs.filter(input => input.role === 'reference')
   const candidates = [
     ...bibleItems(state).flatMap(({ id, versions }) => {
@@ -578,10 +586,16 @@ function TakeForm(
     delete params['seed']
     if (duration.trim() !== '' && Number.isFinite(Number(duration))) params['duration_sec'] = Number(duration)
     if (seed.trim() !== '' && Number.isInteger(Number(seed))) params['seed'] = Number(seed)
-    void run(() => client.runOperation({
+    setStarting(true)
+    setRenderError(null)
+    // On success the canvas closes the editor and selects the new take.
+    onRender({
       project, operation, inputs, params, surface: 'canvas', intent: t('intent.renderTake', { title }), based_on: record.id,
       ...session === null ? {} : { session },
-    })).then(onClose)
+    }).catch((error: unknown) => {
+      setStarting(false)
+      setRenderError(error instanceof Error ? error.message : String(error))
+    })
   }
   const failure = node.flags.failed ? record?.error?.message ?? null : null
   return (
@@ -626,8 +640,14 @@ function TakeForm(
           <input id="dv-canvas-editor-seed" type="number" step={1} style={field} placeholder={t('editor.seedRandom')} value={seed} onChange={(event) => { setSeed(event.target.value) }} />
         </div>
       </div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="dv-canvas-soft" disabled={operation === null} style={{ ...button, opacity: operation === null ? 0.5 : 1 }} onClick={renderTake}>{t('editor.renderTake')}</button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12, marginTop: 14 }}>
+        {renderError === null ? null : <p role="alert" style={{ flex: 1, minWidth: 0, margin: 0, color: 'var(--dv-danger)' }}>{t('error', { message: renderError })}</p>}
+        <button
+          type="button" className="dv-canvas-soft" disabled={operation === null || starting}
+          style={{ ...button, opacity: operation === null || starting ? 0.5 : 1 }} onClick={renderTake}
+        >
+          {starting ? t('node.rendering') : t('editor.renderTake')}
+        </button>
       </div>
     </div>
   )

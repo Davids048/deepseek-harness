@@ -6,7 +6,7 @@
  * (still grabs, timeline records) do not become nodes; a timeline trim shows as a badge on the take it shortened.
  */
 import type {
-  Character, Clip, Location, PlanVersion, ProjectRecord, RecordInput, RecordInputRef, StoryBibleState, Style, WireState,
+  Character, Clip, Location, NodePosition, PlanVersion, ProjectRecord, RecordInput, RecordInputRef, StoryBibleState, Style, WireState,
 } from '@dv/ui-kit/types.ts'
 
 /** What a node represents; the canvas colors nodes by it. */
@@ -500,4 +500,38 @@ export function planShotFrames(nodes: readonly CanvasNode[], planId: string, sho
       && node.record.params['shot'] === index + 1 && (node.thumb !== null || node.video !== null))
     return take === undefined ? null : { thumb: take.thumb, video: take.video }
   })
+}
+
+/** The least space between two node cards that {@link freePositions} keeps, in canvas units. */
+const NODE_GAP = 12
+
+/**
+ * Positions for the nodes that have no stored position: each node's automatic position, moved down one row at a time
+ * until its card overlaps neither a stored node nor a node placed before it. A node that appears later therefore never
+ * covers a node that the user moved.
+ * @param nodes - the graph's nodes, in graph order.
+ * @param stored - the stored positions by node ID.
+ * @param heightOf - a node's card height in canvas units.
+ * @returns the positions of the nodes that had none, by node ID.
+ */
+export function freePositions(
+  nodes: readonly CanvasNode[], stored: Readonly<Record<string, NodePosition>>, heightOf: (node: CanvasNode) => number,
+): Record<string, NodePosition> {
+  const boxes = nodes.flatMap((node) => {
+    const at = stored[node.id]
+    return at === undefined ? [] : [{ ...at, height: heightOf(node) }]
+  })
+  const placed: Record<string, NodePosition> = {}
+  for (const node of nodes) {
+    if (stored[node.id] !== undefined) continue
+    const height = heightOf(node)
+    let y = node.y
+    const overlaps = (box: { x: number; y: number; height: number }): boolean =>
+      box.x < node.x + NODE_WIDTH + NODE_GAP && node.x < box.x + NODE_WIDTH + NODE_GAP
+      && box.y < y + height + NODE_GAP && y < box.y + box.height + NODE_GAP
+    while (boxes.some(overlaps)) y += ROW
+    placed[node.id] = { x: node.x, y }
+    boxes.push({ x: node.x, y, height })
+  }
+  return placed
 }
