@@ -1,7 +1,7 @@
 /**
  * The History panel: the edit history of a project, read through `POST /api/dv/history`, like the History panel of an
  * image editor. It lists the steps of the history list, newest first. Each row shows the action with its subject
- * (修改分镜计划 p1 → v2, 参考图生成镜头 7), who did it (你, 智能体, 自动), how long ago, its status, one thumbnail, and for an
+ * (修改分镜计划 p1 → v2, 参考图生成镜头 7), who did it (你, 智能体, 自动), how long ago, its status, a thumbnail on render rows, and for an
  * agent action the intent the agent gave for the call. The renders a plan approval scheduled fold under the approval's
  * row. The step at the current position carries 当前; the steps after it, which redo brings back, are greyed. Every other
  * row's ⋮ menu offers 回到这一步, which moves the current position to that step. Selecting a row plays its output under
@@ -430,7 +430,7 @@ function Row(props: RowContext & { row: ActionRow; expanded: boolean; onToggle: 
     : t(`渲染 ${String(renders.length)} 个镜头`, `Render ${String(renders.length)} shots`)
   return (
     <div className={css.group}>
-      <EntryRow {...props} entry={row.entry} nested={false} folded={children} />
+      <EntryRow {...props} entry={row.entry} nested={false} />
       {children.length === 0
         ? null
         : (
@@ -449,21 +449,24 @@ function Row(props: RowContext & { row: ActionRow; expanded: boolean; onToggle: 
 
 /**
  * One record's line pair, with its output preview, full words and trajectory link while selected.
- * @param props - the entry, the shared row context, whether it is nested under an approval, and the records folded under it (`folded`).
+ * @param props - the entry, the shared row context, and whether it is nested under an approval.
  * @returns the row.
  */
-function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; folded?: HistoryEntry[] }): ReactNode {
+function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean }): ReactNode {
   const { entry, assets, nested } = props
   const { record } = entry
   const t = useText()
   const selected = props.selected === record.id
   const status = t(...STATUSES[record.status])
-  const thumbnail = thumbnailOf(record, assets, props.records, (props.folded ?? []).map(child => child.record))
+  // Only a render row shows a thumbnail, its take's frame; other rows stay text so the list reads cleanly.
+  const thumbnail = record.operation?.startsWith('shot.render_') === true ? thumbnailOf(record, assets, props.records) : null
   // The intent the agent gave for its call; a call without one records the operation name, which the label already shows.
   // A human action's intent repeats its label, so it stays in the tooltip.
   const words = record.actor === 'agent' && record.intent !== record.operation ? record.intent : ''
   const size = nested ? 28 : 40
-  const dim = entry.place === 'after' ? 0.55 : 1
+  // A step after the current position is clearly greyed: faded text and a black-and-white thumbnail.
+  const after = entry.place === 'after'
+  const dim = after ? 0.3 : 1
   return (
     <div
       ref={props.rowRef(record.id)} role="option" tabIndex={0} aria-selected={selected} title={record.intent}
@@ -473,9 +476,14 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
       onKeyDown={(event) => { if (event.key === 'Enter') props.onChoose(entry) }}
       className={css.row}
     >
-      <div className={css.rowGrid} style={{ gridTemplateColumns: `${String(size)}px minmax(0, 1fr) auto` }}>
+      <div
+        className={css.rowGrid}
+        style={{ gridTemplateColumns: thumbnail === null ? 'minmax(0, 1fr) auto' : `${String(size)}px minmax(0, 1fr) auto` }}
+      >
         {/* A step after the current one is greyed; the ⋮ menu is not, so it is not trapped under the next row. */}
-        <div style={{ opacity: dim }}><Thumb thumbnail={thumbnail} size={size} /></div>
+        {thumbnail === null
+          ? null
+          : <div style={{ opacity: dim, filter: after ? 'grayscale(1)' : undefined }}><Thumb thumbnail={thumbnail} size={size} /></div>}
         <div style={{ minWidth: 0, opacity: dim }}>
           <div className={css.titleLine}>
             <span className={css.label}>

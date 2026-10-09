@@ -368,8 +368,9 @@ describe('History panel', () => {
     expect(await firstShot.innerText()).toContain('参考图生成镜头 1')
     expect(await firstShot.getAttribute('data-actor')).toBe('system')
     expect(await firstShot.innerText()).toContain('自动')
-    // The approval's thumbnail is its first render's still.
-    const thumb = approvalRow.locator('[data-testid="dv-history-thumb"]')
+    // Only render rows show a thumbnail: the approval row has none, and its first render shows the take's still.
+    expect(await approvalRow.locator('[data-testid="dv-history-thumb"]').count()).toBe(0)
+    const thumb = firstShot.locator('[data-testid="dv-history-thumb"]')
     await expect.poll(() => thumb.evaluate(element => element instanceof HTMLImageElement && element.naturalWidth > 0)).toBe(true)
     expect(page.errors).toEqual([])
   })
