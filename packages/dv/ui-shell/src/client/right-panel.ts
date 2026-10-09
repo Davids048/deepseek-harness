@@ -7,10 +7,10 @@
  */
 
 /**
- * Width in px of the right panel until the user drags its edge; 392 fits the 对话, 素材库, and 历史 tabs beside the
- * tab bar buttons.
+ * Width in px of the right panel until the user drags its edge; 448 fits the three 100 px tabs (对话, 素材库, 历史), the active
+ * tab's close button, and the tab bar buttons.
  */
-export const RIGHT_PANEL_WIDTH = 392
+export const RIGHT_PANEL_WIDTH = 448
 
 /** Whether this page load already set the right panel's default width. */
 let applied = false
