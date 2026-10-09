@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanVersion, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
-import { buildCanvasGraph, referenceText } from '../src/client/graph.ts'
+import { buildCanvasGraph, freePositions, NODE_WIDTH, referenceText, ROW } from '../src/client/graph.ts'
 
 /** Six shot prompts of plan p1 version 1; versions 2 and 3 change shot 3 and add shot 7, version 4 returns to these. */
 const PROMPTS = ['rain', 'alley', 'door', 'stairs', 'roof', 'dawn']
@@ -233,5 +233,17 @@ describe('buildCanvasGraph', () => {
       referenceText({ asset: 'a1' }), referenceText({ record: 'g1', output: 1 }), referenceText({ character: 'hero', version: 2 }),
       referenceText({ location: 'alley', version: 1 }), referenceText({ style: 'noir', version: 3 }),
     ]).toEqual(['a1', 'g1#1', 'hero@2', 'alley@1', 'noir@3'])
+  })
+})
+
+describe('freePositions', () => {
+  it('moves a node whose automatic spot is taken down a row at a time, and leaves stored nodes alone', () => {
+    const [template] = buildCanvasGraph(fixtureState()).nodes
+    if (template === undefined) throw new Error('fixture has no nodes')
+    const at = (id: string, x: number, y: number) => ({ ...template, id, x, y })
+    // `moved` is stored half a card to the right of `a`'s automatic spot; `b`'s automatic spot is where `a` moves to.
+    const nodes = [at('moved', 0, 0), at('a', 0, 0), at('b', 0, ROW)]
+    const placed = freePositions(nodes, { moved: { x: NODE_WIDTH / 2, y: 0 } }, () => 150)
+    expect(placed).toEqual({ a: { x: 0, y: ROW }, b: { x: 0, y: 2 * ROW } })
   })
 })
