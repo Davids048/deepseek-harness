@@ -66,6 +66,7 @@ kind: "package-reference"
 | 文件 | 内容 |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | `dvAssetPool`：存储、索引重放、路由、四个操作和 `grabStill` |
+| [`src/imports.ts`](src/imports.ts) | `importedAssets(records)`：项目对每个导入素材的第一条已完成 `asset.import` 记录；`placeable(state, imported, asset)`：`asset.place` 的规则；`@dv/api` 和 `@dv/chat-references` 都使用这两个函数 |
 | [`src/reducer.ts`](src/reducer.ts) | `asset` 归约函数：由 `asset.place`、`asset.unplace` 和带 `place` 的 `asset.import` 得出 `placed` |
 | [`src/types.ts`](src/types.ts) | `Asset`，即 `index.jsonl` 的一行，以及 `asset` 切片 `AssetState` |
 

@@ -31,7 +31,7 @@ kind: "package-reference"
 
 `@dv/ui-composer` 的输入框把选中的项目对象写成 `@[<label>](dv:<kind>/<id>)`。在 `agent/pre-step`，插件在本步的用户消息里找到这些提及，并追加一条 `dv-mentions` 上下文消息，用具体 ID 描述每个提及，内容读自对话所属项目的当前状态。提及 URI：`dv:asset/<AssetId>`、`dv:record/<RecordId>`、`dv:character/<CharacterId>`、`dv:location/<LocationId>`、`dv:style/<StyleId>` 和 `dv:clip/<ClipId>`。
 
-活着的对话里用户输入的消息带图片时，插件从 `attachments` 读取图片，以用户身份、在来源 `chat` 上、作为项目当前位置之后的一步为每张图片执行一次带 `place: true` 的 `asset.import`，因此每张图片也放到画布上。对话的下一次工具调用会等导入完成（`dvProject.holdToolCalls`）。这样的消息提及素材（`dv:asset/<id>`）时，插件把被提及、由当前状态中的记录创建且还不在画布上的素材，以用户身份、在来源 `chat` 上用一次 `asset.place` 放到画布上。没有绑定项目的对话不导入也不放置。
+活着的对话里用户输入的消息带图片时，插件从 `attachments` 读取图片，以用户身份、在来源 `chat` 上、作为项目当前位置之后的一步为每张图片执行一次带 `place: true` 的 `asset.import`，因此每张图片也放到画布上。对话的下一次工具调用会等导入完成（`dvProject.holdToolCalls`）。这样的消息提及素材（`dv:asset/<id>`）时，插件把被提及、`asset.place` 接受（项目历史中任何一处导入的素材，或由当前状态中的记录创建的素材）且还不在画布上的素材，以用户身份、在来源 `chat` 上用一次 `asset.place` 放到画布上。没有绑定项目的对话不导入也不放置。
 
 提及辅助函数 `parseMentions`、`formatMention`、`describeMention` 供其他使用者导出；`dvChatReferences.expansionMessage(sessionId, messages)` 返回某一步的上下文消息。
 

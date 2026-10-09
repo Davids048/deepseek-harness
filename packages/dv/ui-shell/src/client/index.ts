@@ -1,8 +1,8 @@
 /**
  * Browser half of the DreamVerse shell: the center workspace in place of DSH's main Conversation, the DreamVerse
  * navigator and brand in the left sidebar, the 对话 / 轨迹 right-panel tabs, DSH's New Session action redirected
- * into the open project, the `dv:trajectory-focus` link that opens 轨迹 at one tool call, and the Ctrl+Z key that undoes
- * the last step of the open project.
+ * into the open project, the `dv:trajectory-focus` link that opens 轨迹 at one tool call, and the Ctrl+Z and Shift+Ctrl+Z keys
+ * that undo and redo one step of the open project.
  *
  * @module @dv/ui-shell/client
  */

@@ -229,7 +229,6 @@ export interface ComponentStates {
 /** The project's current state, with the assets the views need beside it. */
 export interface WireState {
   project: ProjectInfo
-  /** The project's last record. */
   /** The current position: the step whose state this is. */
   head: string
   /** The last step of the history list; redo can move the current position up to it. */
@@ -335,11 +334,6 @@ export interface OperationRequest {
   session?: string
   based_on?: string
   supersedes?: string[]
-}
-
-/** The record a project-level route wrote (stale accept). */
-export interface WireRecordResult {
-  record: ProjectRecord
 }
 
 /** Where a canvas node sits, in canvas units. */

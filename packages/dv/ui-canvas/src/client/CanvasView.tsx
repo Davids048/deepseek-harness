@@ -3,7 +3,7 @@
  * empty space to pan, scroll to zoom around the cursor, drag a node to move it, click a node to open its floating
  * editor. A scroll over an overlay marked `data-dv-scroll-island`, such as the floating editor, scrolls that overlay.
  * Node positions and the viewport are stored per project through `/api/dv/layout`. The canvas draws the project's
- * current state and follows every change of it; its writes go at the end of the project's history. Colors
+ * current state and follows every change of it; its writes go after the current position of the project's history. Colors
  * come from the DSH theme tokens, so the canvas follows the app's light and dark themes. An image or video that no take
  * or story bible node shows has a node only while it is on the project's canvas (the `asset` slice's `placed`):
  * dropping a 素材 tile on the canvas runs `asset.place` with its node under the pointer, dropping image and video files
@@ -18,7 +18,7 @@ import type { CanvasViewport, NodePosition } from '@dv/ui-kit/types.ts'
 import { DV_ASSET_DRAG_TYPE, DV_CANVAS_FOCUS_EVENT } from '@dv/ui-kit/workspace-events.ts'
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
-import { buildCanvasGraph, NODE_WIDTH, ROW, withImportNames } from './graph.ts'
+import { buildCanvasGraph, NODE_WIDTH, ROW } from './graph.ts'
 import type { CanvasEdge, CanvasNode } from './graph.ts'
 import { NodeCard } from './NodeCard.tsx'
 import type { CanvasTranslate } from './NodeCard.tsx'
@@ -138,8 +138,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
   }
   const graph = useMemo(() => {
     if (base.value === null) return null
-    const state = withImportNames(base.value)
-    return { state, ...buildCanvasGraph(state, placed) }
+    return { state: base.value, ...buildCanvasGraph(base.value, placed) }
   }, [base.value, placed])
 
   const [positions, setPositions] = useState<Record<string, NodePosition>>({})

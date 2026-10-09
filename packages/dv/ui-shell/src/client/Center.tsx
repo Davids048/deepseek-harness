@@ -2,7 +2,7 @@
  * The center of the DreamVerse shell, shadowing DSH's `main.conversation`. Without an open project it is the entry
  * page: a DreamVerse headline, the DSH composer, and recent project cards, and the chat itself once it starts. With a
  * project open it is the workspace: a top bar (breadcrumb, 画布 | 时间线 toggle, panel control) above the canvas or the
- * timeline editor. Every view shows the project's current state, the state after the last step of its history.
+ * timeline editor. Every view shows the project's current state, the state at the current position of its history.
  *
  * The center also keeps the shell's open project and the DSH main session together: once the client lists are ready
  * it restores the location the URL names, and afterwards it adopts the project of a main session that moves to

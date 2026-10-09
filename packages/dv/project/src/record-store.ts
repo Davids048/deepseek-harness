@@ -210,9 +210,10 @@ export class RecordStore {
     loaded.order.push(stored.id)
     loaded.line = { tip: stored.id, at: stored.id }
     writeAtomic(join(this.root, project, 'line.json'), `${JSON.stringify(loaded.line)}\n`)
-    this.onChange(project, { kind: 'record', record: this.currentForm(loaded, stored) })
+    const current = this.currentForm(loaded, stored)
+    this.onChange(project, { kind: 'record', record: current })
     this.onChange(project, { kind: 'line', ...loaded.line })
-    return this.currentForm(loaded, stored)
+    return current
   }
 
   /**
@@ -247,7 +248,7 @@ export class RecordStore {
     applyUpdate(record, stored)
     const current = this.currentForm(loaded, record)
     this.onChange(project, { kind: 'update', record: current })
-    return this.currentForm(loaded, record)
+    return current
   }
 
   /**
@@ -294,6 +295,36 @@ export class RecordStore {
   line(project: ProjectId): ProjectLine | undefined {
     const line = this.loaded(project).line
     return line === null ? undefined : { ...line }
+  }
+
+  /**
+   * @param project - the project.
+   * @returns the last step of the history list and the current position; throws `invalid_params` before the first
+   *   record.
+   */
+  requireLine(project: ProjectId): ProjectLine {
+    const line = this.line(project)
+    if (line === undefined) throw new ProjectError('invalid_params', `Project ${project} has no record yet.`)
+    return line
+  }
+
+  /**
+   * The record IDs of the history list, read without copying any record.
+   * @param project - the project.
+   * @returns the IDs of the `parents[0]` ancestry of `tip`, oldest first, and the index of `at` in them; empty with
+   *   index -1 before the first record.
+   */
+  lineIds(project: ProjectId): { ids: RecordId[]; atIndex: number } {
+    const loaded = this.loaded(project)
+    if (loaded.line === null) return { ids: [], atIndex: -1 }
+    const ids: RecordId[] = []
+    let next: RecordId | undefined = loaded.line.tip
+    while (next !== undefined) {
+      ids.push(next)
+      next = this.storedRecord(project, loaded, next).parents[0]
+    }
+    ids.reverse()
+    return { ids, atIndex: ids.indexOf(loaded.line.at) }
   }
 
   /**

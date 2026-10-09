@@ -53,7 +53,7 @@ kind: "package-reference"
 | `/api/dv/assets/import` | POST | 原始文件作为请求体；查询参数 `project`、`name`、`mime`、`surface`（`canvas \| asset_pool`，其他值回 `400` `invalid_params`）、`session?` | `{asset, record}`：`AssetId` 和 `asset.import` 记录；从画布导入时带 `place: true` 运行，因此素材也会放到画布上 |
 | `/api/dv/undo` | POST | `{project, to?}`：把当前位置往回移一步，或移到历史列表中的步骤 `to`，可在当前位置之前或之后；不写记录 | `{tip, at}`：最后一步和当前位置 |
 | `/api/dv/redo` | POST | `{project}`：把当前位置往前移一步；不写记录 | `{tip, at}` |
-| `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `{record}`，带 `proj.stale_accept` 记录 |
+| `/api/dv/stale/accept` | POST | `{project, record, session?, surface}` | `proj.stale_accept` 记录 |
 | `/api/dv/history` | POST | `{project, actor?, component?, operation?, kind?, status?, session?, turn?, tool_call?, records?, before?, limit?}`；`records` 是数组；`limit` 取 1 到 200，默认 50 | `WireHistory` `{entries, assets}`：`dvProject.listHistory` 的条目 `{record, place}`，即历史列表中的步骤（最新的在前），`place` 是相对当前位置的 `before`、`current` 或 `after`，以及条目提到的每个素材；这是只读请求，不写记录 |
 | `/api/dv/layout` | GET / POST | GET：`project`；POST：`{project, positions?, viewport?}` | `{positions, viewport}`；POST 合并以画布节点 ID 为键的位置，并替换视口。布局是视图状态，不写记录；画布上有哪些素材是当前状态的 `asset` 切片，由 `asset.place` 和 `asset.unplace` 经 `/api/dv/operation` 写入 |
 | `/api/dv/workspaces` | GET / POST | POST：`{project, workspace_id}` | GET：`{entry_path, projects: [{id, title, created_at, path, workspace_id}], bindings}`；POST：`{ok}` |
@@ -61,7 +61,7 @@ kind: "package-reference"
 | `/api/dv/workspaces/sessions` | GET | `project` | `[{session, updated_at, bytes}]`，最新在前；`updated_at` 是 ISO-8601 UTC |
 | `/dv/events?project=<id>` | GET | — | `text/event-stream`：先 `ready`，再是 `record`、`update` 和 `line` 事件，每个事件带一个 `ProjectEvent`；每次写入和每次移动之后都有一个 `line` 事件 `{kind: 'line', tip, at}` |
 
-`surface` 是 `canvas`、`timeline`、`asset_pool` 或 `history`；其他值都按 `canvas` 处理，素材导入除外：它只接受 `canvas` 或 `asset_pool`。一次运行以人的身份调用 `dvProject.run`，作为项目当前位置之后的一步，请求所属的对话记为记录的 `session`；当某个输入指向尚未完成的记录时改为排队。每条路由（包括事件流）的每个错误都以 JSON 体 `{error, code, ...details}` 回答：`error` 是消息文本，`code` 是下表中的一个错误码；`details` 携带拒绝的附加字段。
+`surface` 是 `canvas`、`timeline` 或 `asset_pool`；其他值都按 `canvas` 处理，素材导入除外：它只接受 `canvas` 或 `asset_pool`。一次运行以人的身份调用 `dvProject.run`，作为项目当前位置之后的一步，请求所属的对话记为记录的 `session`；当某个输入指向尚未完成的记录时改为排队。每条路由（包括事件流）的每个错误都以 JSON 体 `{error, code, ...details}` 回答：`error` 是消息文本，`code` 是下表中的一个错误码；`details` 携带拒绝的附加字段。
 
 | 错误码 | 状态 | 含义 |
 | --- | --- | --- |

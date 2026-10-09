@@ -161,10 +161,10 @@ function stringOf(value: unknown, field: string): string {
 
 /**
  * @param value - the raw `surface` of a request.
- * @returns the surface; anything but `timeline`, `asset_pool` or `history` counts as the canvas.
+ * @returns the surface; anything but `timeline` or `asset_pool` counts as the canvas.
  */
-function surfaceOf(value: unknown): Surface & ('canvas' | 'timeline' | 'asset_pool' | 'history') {
-  return value === 'timeline' || value === 'asset_pool' || value === 'history' ? value : 'canvas'
+function surfaceOf(value: unknown): Surface & ('canvas' | 'timeline' | 'asset_pool') {
+  return value === 'timeline' || value === 'asset_pool' ? value : 'canvas'
 }
 
 /** The values each enumerated history filter accepts. */
@@ -301,7 +301,7 @@ export class ApiHandlers {
   }
 
   /**
-   * Run an operation as the human, from a view. The record goes at the end of the project's history. A call whose
+   * Run an operation as the human, from a view. The record goes after the current position of the project's history. A call whose
    * inputs name an unfinished record is scheduled to run once that record is done.
    * @param raw - the {@link OperationRequest}.
    * @returns the record, finished or pending.
@@ -346,7 +346,7 @@ export class ApiHandlers {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
     const to = body['to'] === undefined ? undefined : brandString<RecordId>(stringOf(body['to'], 'to'))
-    return await refused(() => this.services.project.undo(projectId, to))
+    return await refused(() => to === undefined ? this.services.project.undo(projectId) : this.services.project.moveTo(projectId, to))
   }
 
   /**
@@ -361,18 +361,17 @@ export class ApiHandlers {
   }
 
   /**
-   * Accept a stale record as it is: a `proj.stale_accept` record at the end of the history removes its stale mark and
+   * Accept a stale record as it is: a `proj.stale_accept` record after the current position removes its stale mark and
    * the marks of the records made from it.
    * @param raw - `{project, record, session?, surface}`.
    * @returns the `proj.stale_accept` record.
    * @throws ApiRequestError (404, code `unknown_record`) when the record does not exist.
    */
-  async acceptStale(raw: unknown): Promise<{ record: ProjectRecord }> {
+  async acceptStale(raw: unknown): Promise<ProjectRecord> {
     const body = objectOf(raw)
     const projectId = this.requireProject(body['project'])
     const target = brandString<RecordId>(stringOf(body['record'], 'record'))
-    const record = await refused(() => this.services.project.acceptStale(projectId, target, humanOrigin(body, `accept ${target}`)))
-    return { record }
+    return await refused(() => this.services.project.acceptStale(projectId, target, humanOrigin(body, `accept ${target}`)))
   }
 
   /**

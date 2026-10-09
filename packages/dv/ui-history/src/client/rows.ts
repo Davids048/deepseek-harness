@@ -1,8 +1,7 @@
 /**
  * Pure readings behind the History panel: the action rows of history entries (a plan approval folds the renders it
- * scheduled), the label of an action with its subject, the thumbnail of a record, relative times, where selecting a
- * record focuses the center, and which rows offer 回到这一步. Nothing here touches the DOM or the network, so the unit
- * tests cover it directly.
+ * scheduled), the label of an action with its subject, the thumbnail of a record, relative times, and where selecting a
+ * record focuses the center. Nothing here touches the DOM or the network, so the unit tests cover it directly.
  *
  * @module @dv/ui-history/rows
  */

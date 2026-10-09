@@ -239,23 +239,6 @@ function bibleIdOf(ref: RecordInputRef): string | undefined {
 }
 
 /**
- * Name each imported asset by this project's own `asset.import` record. The asset pool keeps the name of the first
- * import of identical bytes in any project, so another project's file name would otherwise show here.
- * @param state - a project state.
- * @returns the state with import names applied; `state` itself when no name differs.
- */
-export function withImportNames(state: WireState): WireState {
-  const names = new Map<string, string>()
-  for (const record of state.components.proj.records) {
-    const name = record.params['name']
-    if (record.operation !== 'asset.import' || record.status !== 'done' || typeof name !== 'string' || name === '') continue
-    for (const id of record.outputs) names.set(id, name)
-  }
-  if (!state.assets.some(asset => names.has(asset.id) && names.get(asset.id) !== asset.name)) return state
-  return { ...state, assets: state.assets.map(asset => ({ ...asset, name: names.get(asset.id) ?? asset.name })) }
-}
-
-/**
  * The canvas graph of a project state, with a default layout: story bible items and assets in column 0, plans in
  * column 1, takes from column 2 rightwards by first-frame chain depth, retakes in their source take's column.
  * Every image or video on the project's canvas (`placed`) gets one node, unless a story bible node (a reference image) or

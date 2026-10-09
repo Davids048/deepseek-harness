@@ -5,7 +5,7 @@
  *
  * @module @dv/api/wire
  */
-import type { Asset } from '@dv/asset-pool'
+import { importedAssets, type Asset } from '@dv/asset-pool'
 import type {
   AssetId, ComponentStates, HistoryEntry, OperationSpec, ProjectId, ProjectInfo, ProjectLine, ProjectRecord, ProjectState, RecordId,
 } from '@dv/project'
@@ -71,16 +71,16 @@ export interface WireOperation {
  * clips), and every asset that an `asset.import` record of the project output, discarded steps included. A generated
  * asset of a step after the current position, or of a discarded step, is left out; an imported asset never is.
  * @param state - the project's current state.
- * @param records - every record of the project.
+ * @param imported - the project's imported assets, as `importedAssets` of `@dv/asset-pool` returns them.
  * @returns the asset IDs, each once, in first-mention order.
  */
-export function mentionedAssets(state: ProjectState, records: readonly ProjectRecord[]): AssetId[] {
+export function mentionedAssets(state: ProjectState, imported: ReadonlyMap<AssetId, unknown>): AssetId[] {
   const seen = new Set<AssetId>(Object.keys(state.components.proj.created_by) as AssetId[])
   for (const record of state.components.proj.records) {
     for (const id of record.outputs) seen.add(id)
     for (const input of record.inputs) if (input.resolved_asset !== null) seen.add(input.resolved_asset)
   }
-  for (const record of records) if (record.operation === 'asset.import' && record.status === 'done') for (const id of record.outputs) seen.add(id)
+  for (const id of imported.keys()) seen.add(id)
   const { characters, locations, styles } = state.components.bible
   for (const versions of [...Object.values(characters), ...Object.values(locations), ...Object.values(styles)]) {
     for (const version of versions) for (const id of version.references) seen.add(id)
@@ -103,15 +103,11 @@ export function mentionedAssets(state: ProjectState, records: readonly ProjectRe
 export function toWireState(
   state: ProjectState, line: ProjectLine, records: readonly ProjectRecord[], asset: (id: AssetId) => Asset | null,
 ): WireState {
-  // This project's first finished import of each asset, oldest first; the pool keeps the first import in any project.
-  const imported = new Map<AssetId, ProjectRecord>()
-  for (const record of records) {
-    if (record.operation !== 'asset.import' || record.status !== 'done') continue
-    for (const id of record.outputs) if (!imported.has(id)) imported.set(id, record)
-  }
+  // This project's first finished import of each asset; the pool keeps the first import in any project.
+  const imported = importedAssets(records)
   const { proj } = state.components
   const byId = new Map(proj.records.map(record => [record.id, record]))
-  const assets = mentionedAssets(state, records).flatMap((id): ProjectAsset[] => {
+  const assets = mentionedAssets(state, imported).flatMap((id): ProjectAsset[] => {
     const found = asset(id)
     if (found === null) return []
     const importRecord = imported.get(id)

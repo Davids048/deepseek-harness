@@ -1,6 +1,6 @@
 /**
  * The reducer registry and project state. Components register one reducer per component key; the state at a record
- * is the result of passing every record of its chain (see `chainTo` in the history module),
+ * is the result of passing every record of its chain (`ancestors` in the record store),
  * oldest first, through every registered reducer. Project registers its own reducer, {@link projReducer}, for the
  * `proj` slice.
  *
@@ -9,7 +9,6 @@
  *
  * @module @dv/project/reducers
  */
-import { chainTo } from './history.ts'
 import type { RecordStore } from './record-store.ts'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { COMPONENT_KEYS, ProjectError } from './shared.ts'
@@ -188,9 +187,7 @@ export class ReducerRegistry {
    */
   getState(project: ProjectId): ProjectState {
     this.store.getProject(project)
-    const line = this.store.line(project)
-    if (line === undefined) throw new ProjectError('invalid_params', `Project ${project} has no record to compute a state from.`)
-    return this.stateAt(project, line.at)
+    return this.stateAt(project, this.store.requireLine(project).at)
   }
 
   /**
@@ -200,7 +197,7 @@ export class ReducerRegistry {
    * @returns the state of the chain ending at `head`.
    */
   stateAt(project: ProjectId, head: RecordId): ProjectState {
-    return this.reduceChain(this.store.getProject(project), chainTo(this.store, project, head))
+    return this.reduceChain(this.store.getProject(project), this.store.ancestors(project, head))
   }
 
   /**

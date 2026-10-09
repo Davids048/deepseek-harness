@@ -35,6 +35,17 @@ export function parseMentions(text: string): Mention[] {
 }
 
 /**
+ * The assets a text mentions with `dv:asset/<AssetId>`, each once, in order.
+ * @param text - user text.
+ * @returns the asset IDs.
+ */
+export function mentionedAssetIds(text: string): AssetId[] {
+  return [...new Set(parseMentions(text).flatMap(mention => mention.uri.startsWith('dv:asset/')
+    ? [brandString<AssetId>(decodeURIComponent(mention.uri.slice('dv:asset/'.length)))]
+    : []))]
+}
+
+/**
  * Format one mention the way the composer serializes it.
  * @param label - the chip label, such as `时间线 1·片段 2`.
  * @param uri - the `dv:` URI.

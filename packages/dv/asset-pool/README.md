@@ -66,6 +66,7 @@ Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvA
 | File | Content |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | `dvAssetPool`: the store, the index replay, the route, the four operations, and `grabStill` |
+| [`src/imports.ts`](src/imports.ts) | `importedAssets(records)`, the project's first finished `asset.import` record of each imported asset, and `placeable(state, imported, asset)`, the rule of `asset.place`; `@dv/api` and `@dv/chat-references` use both |
 | [`src/reducer.ts`](src/reducer.ts) | The `asset` reducer: `placed` from `asset.place`, `asset.unplace`, and `asset.import` with `place` |
 | [`src/types.ts`](src/types.ts) | `Asset`, one line of `index.jsonl`, and the `asset` slice `AssetState` |
 

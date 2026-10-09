@@ -14,9 +14,9 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, type ContextFormed, type UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session'
-import type {} from '@dv/asset-pool'
+import { importedAssets, placeable } from '@dv/asset-pool'
 import type { AssetId, ProjectId, SessionId } from '@dv/project'
-import { expansionBlock, parseMentions, type ExpansionSources } from './expand.ts'
+import { expansionBlock, mentionedAssetIds, type ExpansionSources } from './expand.ts'
 
 export { describeMention, formatMention, parseMentions, type ExpansionSources, type Mention } from './expand.ts'
 
@@ -72,9 +72,7 @@ export default class DvChatReferences extends Service {
     const project = this.ctx.dvProject
     const bound = project.sessionProject(session)
     if (bound !== null) return bound
-    const assets = parseMentions(text).flatMap(mention => mention.uri.startsWith('dv:asset/')
-      ? [brandString<AssetId>(decodeURIComponent(mention.uri.slice('dv:asset/'.length)))]
-      : [])
+    const assets = mentionedAssetIds(text)
     const projects = project.listProjects().sort((a, b) => b.created_at.localeCompare(a.created_at))
     const match = projects.find((info) => {
       const createdBy = project.getState(info.id).components.proj.created_by
@@ -113,8 +111,9 @@ export default class DvChatReferences extends Service {
 
   /**
    * Put the assets a user message mentions (`dv:asset/<id>`) on the canvas of the session's project with one
-   * `asset.place` by the user, in the chat. Only assets from a record of the current state and not on the canvas yet count; a
-   * message without such a mention, or a session without a project, places nothing.
+   * `asset.place` by the user, in the chat. Only assets that `asset.place` accepts (an import of the project anywhere in its
+   * history, or an asset a record of the current state created) and that are not on the canvas yet count; a message without
+   * such a mention, or a session without a project, places nothing.
    * @param session - the chat session.
    * @param message - the appended user message, which the user typed.
    */
@@ -122,12 +121,12 @@ export default class DvChatReferences extends Service {
     const project = this.ctx.dvProject
     const projectId = project.sessionProject(session)
     if (projectId === null) return
-    const text = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+    const mentioned = mentionedAssetIds(message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'))
+    if (mentioned.length === 0) return
     const state = project.getState(projectId)
     const placed = new Set(state.components.asset.placed)
-    const assets = [...new Set(parseMentions(text).flatMap(mention => mention.uri.startsWith('dv:asset/')
-      ? [brandString<AssetId>(decodeURIComponent(mention.uri.slice('dv:asset/'.length)))]
-      : []))].filter(asset => asset in state.components.proj.created_by && !placed.has(asset))
+    const imported = importedAssets(project.listRecords(projectId))
+    const assets = mentioned.filter(asset => placeable(state, imported, asset) && !placed.has(asset))
     if (assets.length === 0) return
     project.run({
       project: projectId, operation: 'asset.place', params: {}, inputs: assets.map(asset => ({ role: 'asset', ref: { asset } })),
@@ -154,7 +153,7 @@ export default class DvChatReferences extends Service {
 
   /**
    * Import chat images as assets of the session's project and put them on its canvas: one `asset.import` with `place`
-   * per image by the user, in the chat, at the end of the project's history. The session's next tool call waits until the import finished
+   * per image by the user, in the chat, after the project's current position. The session's next tool call waits until the import finished
    * (`dvProject.holdToolCalls`). A session without a project, or a process without an attachment service, imports
    * nothing.
    * @param session - the chat session.

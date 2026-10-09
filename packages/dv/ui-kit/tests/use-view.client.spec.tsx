@@ -70,7 +70,7 @@ describe('useViewSession', () => {
     const { result } = renderHook(() => useViewSession(client, 'timeline'))
     await waitFor(() => { expect(result.current.project).toBe('p1') })
     let ok = true
-    await act(async () => { ok = await result.current.run(() => client.undo('p1', 'timeline')) })
+    await act(async () => { ok = await result.current.run(() => client.undo('p1')) })
     expect(ok).toBe(false)
     expect(result.current.notice).toBe('nothing to undo')
     await act(async () => { ok = await result.current.run(() => client.acceptStale('p1', 'g2', 'timeline')) })

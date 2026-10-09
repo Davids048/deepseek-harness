@@ -11,6 +11,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { afterEach, describe, expect, it } from 'vitest'
+import { importedAssets } from '@dv/asset-pool'
 import type { AssetId, OperationSpec, ProjectEvent, ProjectId, ProjectRecord, RecordId, RecordOrigin, SessionId, TurnId } from '@dv/project'
 import { FFMPEG, startBase, type BaseFixture } from './support.ts'
 import { answer } from '../src/api.ts'
@@ -325,7 +326,7 @@ describe('dvApi', () => {
     })
     expect(await keep('nope')).toMatchObject({ status: 404, json: { code: 'unknown_record' } })
     const kept = await keep(importId)
-    expect(kept).toMatchObject({ status: 200, json: { record: { operation: 'proj.stale_accept', actor: 'user' } } })
+    expect(kept).toMatchObject({ status: 200, json: { operation: 'proj.stale_accept', actor: 'user' } })
   })
 
   it('answers every refusal of the project routes with the body {error, code}', async () => {
@@ -452,12 +453,12 @@ describe('dvApi', () => {
       project: projectId, operation: 'bible.character_create', surface: 'canvas', params: { character: 'c1', name: 'Hero' },
       inputs: imported.outputs.map(ref => ({ role: 'reference', ref })),
     })
-    const records = (): ProjectRecord[] => fixture.project.listHistory({ project: projectId }).map(entry => entry.record)
-    expect(mentionedAssets(fixture.project.getState(projectId), records())).toEqual(imported.outputs)
+    const imports = (): Map<AssetId, ProjectRecord> => importedAssets(fixture.project.listRecords(projectId))
+    expect(mentionedAssets(fixture.project.getState(projectId), imports())).toEqual(imported.outputs)
     // An imported asset of an undone step stays mentioned through the whole history.
     const later = await fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('l.png', 'L'), mime: 'image/png' } })
     await fixture.handlers.undo({ project: projectId })
-    expect(mentionedAssets(fixture.project.getState(projectId), records())).toEqual([...imported.outputs, ...later.outputs])
+    expect(mentionedAssets(fixture.project.getState(projectId), imports())).toEqual([...imported.outputs, ...later.outputs])
   })
 
   it.skipIf(!existsSync(FFMPEG))('lists a generated asset while its step is in the current state, and an imported asset through the whole history', async () => {
@@ -512,8 +513,8 @@ describe('dvApi', () => {
       inputs: [{ role: 'reference', ref: 'nowhere' }],
     })).rejects.toMatchObject({ code: 'unknown_asset' })
     expect(fixture.handlers.getState(projectId).assets.map(entry => entry.id)).toEqual([...first.outputs, ...second.outputs])
-    const records = fixture.project.listHistory({ project: projectId }).map(entry => entry.record)
-    expect(mentionedAssets(fixture.project.getState(projectId), records)).toEqual([...first.outputs, ...second.outputs])
+    const imports = importedAssets(fixture.project.listRecords(projectId))
+    expect(mentionedAssets(fixture.project.getState(projectId), imports)).toEqual([...first.outputs, ...second.outputs])
   })
 
   it('links a project to its Workspace and binds a chat session to the project', async () => {

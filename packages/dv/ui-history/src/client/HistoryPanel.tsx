@@ -30,8 +30,6 @@ import {
 /** Props of {@link HistoryPanel}. */
 export interface HistoryPanelProps {
   projectId: string
-  /** The chat session the panel sits beside. */
-  session: string | null
   /** The API client; defaults to one over the page's fetch. */
   client?: DvClient
 }
@@ -110,10 +108,10 @@ function mergePage(loaded: Loaded | null, page: WireHistory, limit: number): Loa
  * The loaded history window for a query: the first page on a query change, more pages on request, a refetch of the
  * loaded window on every `record` or unreadable event, and an in-place record update on every `update` event.
  * @param client - the API client.
- * @param query - the query without paging fields, or null when no record can match.
+ * @param query - the query without paging fields.
  * @returns the window, the last error, and the paging gesture.
  */
-function useHistory(client: DvClient, query: HistoryQuery | null): {
+function useHistory(client: DvClient, query: HistoryQuery): {
   loaded: Loaded | null
   error: string | null
   loadMore: () => Promise<Loaded | null>
@@ -131,7 +129,6 @@ function useHistory(client: DvClient, query: HistoryQuery | null): {
   }, [])
   // The first page of every query.
   useEffect(() => {
-    if (query === null) { store({ entries: [], assets: new Map(), more: false }, key); return }
     const controller = new AbortController()
     current.current = null
     setLoaded(null)
@@ -144,7 +141,6 @@ function useHistory(client: DvClient, query: HistoryQuery | null): {
   }, [client, key, store])
   // Live update of the loaded window.
   useEffect(() => {
-    if (query === null) return
     let timer: ReturnType<typeof setTimeout> | null = null
     const refetch = (): void => {
       const limit = Math.min(Math.max(current.current?.entries.length ?? 0, PAGE), MAX_PAGE)
@@ -169,7 +165,7 @@ function useHistory(client: DvClient, query: HistoryQuery | null): {
   const loadMore = useCallback(async (): Promise<Loaded | null> => {
     const shown = current.current
     const last = shown?.entries.at(-1)
-    if (query === null || shown === null || last === undefined) return shown
+    if (shown === null || last === undefined) return shown
     const page = await client.listHistory({ ...query, before: last.record.id, limit: PAGE })
     const next = mergePage(shown, page, PAGE)
     store(next, key)
@@ -180,7 +176,7 @@ function useHistory(client: DvClient, query: HistoryQuery | null): {
 
 /**
  * The History panel of one project.
- * @param props - the project, the chat session beside the panel, and an optional client.
+ * @param props - the project and an optional client.
  * @returns the panel.
  */
 export function HistoryPanel(props: HistoryPanelProps): ReactNode {
@@ -254,7 +250,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   // 回到这一步: move the current position to the step.
   const jump = (record: string): void => {
     setNotice(null)
-    client.undo(projectId, record).catch(report)
+    client.moveTo(projectId, record).catch(report)
   }
   const rowRef = (record: string) => (element: HTMLElement | null): void => {
     if (element === null) rowRefs.current.delete(record)
@@ -309,6 +305,15 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   )
 }
 
+/** The undo and redo buttons of the header: test ID suffix, label, tooltip, and icon paths. */
+const MOVES = [
+  { key: 'undo', label: ['撤销', 'Undo'], title: ['撤销（Ctrl+Z / ⌘Z）', 'Undo (Ctrl+Z / ⌘Z)'], paths: ['M9 14 4 9l5-5', 'M4 9h11a5 5 0 0 1 0 10h-3'] },
+  {
+    key: 'redo', label: ['重做', 'Redo'], title: ['重做（Shift+Ctrl+Z / ⇧⌘Z）', 'Redo (Shift+Ctrl+Z / ⇧⌘Z)'],
+    paths: ['m15 14 5-5-5-5', 'M20 9H9a5 5 0 0 0 0 10h3'],
+  },
+] as const
+
 /**
  * Undo and redo at the end of the header: they move the current position one step; redo is enabled while a step after
  * the current position exists.
@@ -325,24 +330,21 @@ function Actions(props: { client: DvClient; projectId: string; canRedo: boolean 
   }
   return (
     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginLeft: 'auto' }}>
-      <button
-        type="button" data-testid="dv-history-undo" aria-label={t('撤销', 'Undo')} title={t('撤销（Ctrl+Z / ⌘Z）', 'Undo (Ctrl+Z / ⌘Z)')}
-        style={icon} onClick={() => { run(() => client.undo(projectId)) }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M9 14 4 9l5-5" /><path d="M4 9h11a5 5 0 0 1 0 10h-3" />
-        </svg>
-      </button>
-      <button
-        type="button" data-testid="dv-history-redo" disabled={!props.canRedo} aria-label={t('重做', 'Redo')}
-        title={t('重做（Shift+Ctrl+Z / ⇧⌘Z）', 'Redo (Shift+Ctrl+Z / ⇧⌘Z)')}
-        style={{ ...icon, ...props.canRedo ? {} : { opacity: 0.35, cursor: 'default' } }}
-        onClick={() => { run(() => client.redo(projectId)) }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="m15 14 5-5-5-5" /><path d="M20 9H9a5 5 0 0 0 0 10h3" />
-        </svg>
-      </button>
+      {MOVES.map((move) => {
+        const enabled = move.key === 'undo' || props.canRedo
+        return (
+          <button
+            key={move.key} type="button" data-testid={`dv-history-${move.key}`} disabled={!enabled}
+            aria-label={t(move.label[0], move.label[1])} title={t(move.title[0], move.title[1])}
+            style={{ ...icon, ...enabled ? {} : { opacity: 0.35, cursor: 'default' } }}
+            onClick={() => { run(() => move.key === 'undo' ? client.undo(projectId) : client.redo(projectId)) }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {move.paths.map(path => <path key={path} d={path} />)}
+            </svg>
+          </button>
+        )
+      })}
       {failure === null ? null : <span style={{ color: danger, fontSize: 12 }}>{failure}</span>}
     </div>
   )
@@ -592,7 +594,7 @@ function Details(props: { record: ProjectRecord; assets: ReadonlyMap<string, Ass
 /**
  * The tab body: the History panel of the project that the DreamVerse shell has open, beside the chat session whose
  * right panel holds the tab.
- * @param props - the tab's chat session and the injected client.
+ * @param props - the tab's props and the injected client.
  * @returns the panel, or a notice while no project is open.
  */
 export function HistoryTabBody(props: PropsRuntime<'sidebar.right.pane.tab'> & { client: DvClient }): ReactNode {
@@ -600,5 +602,5 @@ export function HistoryTabBody(props: PropsRuntime<'sidebar.right.pane.tab'> & {
   const t = useText()
   if (project === null) return <p data-testid="dv-history-empty" style={{ padding: 12, fontSize: 12, color: muted }}>{t('先打开一个项目', 'Open a project first')}</p>
   // Keyed by project so a switch starts from an empty panel instead of showing the previous project's records.
-  return <HistoryPanel key={project} projectId={project} session={props.sessionId} client={props.client} />
+  return <HistoryPanel key={project} projectId={project} client={props.client} />
 }

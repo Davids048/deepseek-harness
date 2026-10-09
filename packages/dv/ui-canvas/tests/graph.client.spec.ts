@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import type { PlanVersion, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
-import { buildCanvasGraph, referenceText, withImportNames } from '../src/client/graph.ts'
+import { buildCanvasGraph, referenceText } from '../src/client/graph.ts'
 
 /** Six shot prompts of plan p1 version 1; versions 2 and 3 change shot 3 and add shot 7, version 4 returns to these. */
 const PROMPTS = ['rain', 'alley', 'door', 'stairs', 'roof', 'dawn']
@@ -226,15 +226,6 @@ describe('buildCanvasGraph', () => {
     const pending = rollbackProject('q4')
     expect(pending.components.plan.plans['p1']?.at(-1)?.approved_by).toBeNull()
     expect(drawn(pending).filter(([, kind]) => kind === 'take').map(([id]) => id)).toEqual(['r1', 'r2', 'r3', 'r4', 's7', 'w5', 'r6'].sort(byRecordOrder))
-  })
-
-  it('names an imported asset by this project\'s record, not by the shared asset pool', () => {
-    const full = fixtureState()
-    const [firstAsset] = full.assets
-    if (firstAsset === undefined) throw new Error('fixture lacks an asset')
-    full.components.proj.records.push(record({ id: 'u9', operation: 'asset.import', params: { name: 'yi-name.png' }, outputs: ['shared.png'] }))
-    const state = withImportNames({ ...full, assets: [...full.assets, { ...firstAsset, id: 'shared.png', mime: 'image/png', name: 'jia-name.png' }] })
-    expect(buildCanvasGraph(state, new Set(['shared.png'])).nodes.find(node => node.id === 'u9')?.title).toBe('yi-name.png')
   })
 
   it('writes stored input references as the reference text of an operation request', () => {

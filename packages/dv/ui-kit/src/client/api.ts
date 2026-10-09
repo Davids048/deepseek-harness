@@ -6,7 +6,7 @@
  */
 import type {
   CanvasLayout, HistoryQuery, OperationRequest, ProjectEvent,
-  ProjectInfo, ProjectRecord, WireHistory, WireLine, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
+  ProjectInfo, ProjectRecord, WireHistory, WireLine, WireOperation, WireProject, WireSession, WireState,
   WireWorkspaces,
 } from './types.ts'
 
@@ -75,7 +75,7 @@ function releaseEventSource(project: string, shared: SharedEventSource): void {
 const EVENT_KINDS: ReadonlyArray<ProjectEvent['kind']> = ['record', 'update', 'line']
 
 /** The surface a view sends with its writes: a subset of the record field `Surface`. */
-export type ViewSurface = 'canvas' | 'timeline' | 'asset_pool' | 'history'
+export type ViewSurface = 'canvas' | 'timeline' | 'asset_pool'
 
 /** A route answered with an error status. */
 export class DvApiError extends Error {
@@ -207,14 +207,22 @@ export class DvClient {
   }
 
   /**
-   * Move the current position one step back, or with `to` to that step of the history list (before or after the
-   * current position). Writes no record.
+   * Move the current position one step back. Writes no record.
    * @param project - the project.
-   * @param to - a step of the history list; omit for one step back.
    * @returns the last step and the current position afterwards.
    */
-  undo(project: string, to?: string): Promise<WireLine> {
-    return this.post('/api/dv/undo', { project, ...to === undefined ? {} : { to } })
+  undo(project: string): Promise<WireLine> {
+    return this.post('/api/dv/undo', { project })
+  }
+
+  /**
+   * Move the current position to a step of the history list, before or after it. Writes no record.
+   * @param project - the project.
+   * @param to - a step of the history list.
+   * @returns the last step and the current position afterwards.
+   */
+  moveTo(project: string, to: string): Promise<WireLine> {
+    return this.post('/api/dv/undo', { project, to })
   }
 
   /**
@@ -234,7 +242,7 @@ export class DvClient {
    * @param session - the chat session the view sits beside, or null.
    * @returns the accept record.
    */
-  acceptStale(project: string, record: string, surface: ViewSurface, session: string | null = null): Promise<WireRecordResult> {
+  acceptStale(project: string, record: string, surface: ViewSurface, session: string | null = null): Promise<ProjectRecord> {
     return this.post('/api/dv/stale/accept', { project, record, surface, ...session === null ? {} : { session } })
   }
 

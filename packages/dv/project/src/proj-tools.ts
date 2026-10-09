@@ -208,7 +208,7 @@ export function projTools(project: DvProject, deps: ProjToolDeps): ToolDefinitio
       output: stateOutput,
       execute: async (args, exec) => {
         const projectId = projectOf(exec, args.project_id)
-        await project.undo(projectId, args.to === undefined ? undefined : brandString<RecordId>(args.to))
+        await (args.to === undefined ? project.undo(projectId) : project.moveTo(projectId, brandString<RecordId>(args.to)))
         return summary(projectId)
       },
     }),

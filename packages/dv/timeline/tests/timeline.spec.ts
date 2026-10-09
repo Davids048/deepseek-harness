@@ -224,7 +224,7 @@ describe('dvTimeline', () => {
       .map(clip => [clip.id, clip.asset])
     expect(clips()).toEqual([['cl1', 'a1'], ['cl2', 'a2'], ['cl4', 'm1']])
     // The human's insert discarded the agent's insert, so the project cannot go back to it.
-    await expect(fixture.ctx.dvProject.undo(fixture.project, brandString<RecordId>(added.record))).rejects.toMatchObject({ code: 'invalid_params' })
+    await expect(fixture.ctx.dvProject.moveTo(fixture.project, brandString<RecordId>(added.record))).rejects.toMatchObject({ code: 'invalid_params' })
   })
 
   it('lays out a render that is not done as a placeholder clip that becomes ready when the render is done', async () => {

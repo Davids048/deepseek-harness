@@ -22,7 +22,7 @@ import DvProject, {
   ProjectError, type AssetId, type OperationToolValue, type ProjectId, type ProjectRecord, type RecordId, type RecordInput, type SessionId,
 } from '@dv/project'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import DvAssetPool from '../src/index.ts'
+import DvAssetPool, { importedAssets, placeable } from '../src/index.ts'
 
 const FFMPEG = process.env['DV_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
 const FFPROBE = process.env['DV_FFPROBE'] ?? 'ffprobe'
@@ -207,6 +207,25 @@ describe('dvAssetPool', () => {
     expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before + 1)
     await fixture.ctx.dvProject.undo(fixture.project)
     expect(placed()).toEqual([b, a])
+  })
+
+  it('keeps the first finished import of each asset, discarded steps included, and places imports and current-state assets', async () => {
+    const fixture = await start()
+    const bytes = Buffer.from('twice').toString('base64')
+    const first = await fixture.run('asset.import', { base64: bytes, mime: 'image/png', name: 'first.png' })
+    const second = await fixture.run('asset.import', { base64: bytes, mime: 'image/png', name: 'second.png' })
+    const asset = first.outputs[0] as AssetId
+    expect(second.outputs).toEqual([asset])
+    await fixture.ctx.dvProject.undo(fixture.project)
+    await fixture.ctx.dvProject.undo(fixture.project)
+    // A write after two undos discards both imports; the project still imported the asset.
+    const kept = (await fixture.run('asset.import', { base64: Buffer.from('kept').toString('base64'), mime: 'image/png' })).outputs[0] as AssetId
+    const imported = importedAssets(fixture.ctx.dvProject.listRecords(fixture.project))
+    expect(imported.get(asset)?.id).toBe(first.id)
+    const state = fixture.ctx.dvProject.getState(fixture.project)
+    expect(placeable(state, imported, asset)).toBe(true)
+    expect(placeable(state, new Map(), asset)).toBe(false)
+    expect(placeable(state, new Map(), kept)).toBe(true)
   })
 
   it('fails an import without bytes and refuses one without a media type before writing a record', async () => {

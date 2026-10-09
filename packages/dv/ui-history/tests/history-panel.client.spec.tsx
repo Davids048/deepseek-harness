@@ -69,7 +69,7 @@ function mount(entries: HistoryEntry[] = ENTRIES, adjust: (state: WireState) => 
       return { status: 200, body: answer }
     },
   })
-  const view = render(<HistoryPanel projectId="p1" session="s5" client={new DvClient(scripted.fetch)} />)
+  const view = render(<HistoryPanel projectId="p1" client={new DvClient(scripted.fetch)} />)
   const row = (id: string): HTMLElement => {
     const element = view.container.querySelector(`[data-testid="dv-history-row"][data-record="${id}"]`)
     if (!(element instanceof HTMLElement)) throw new Error(`no row ${id}`)

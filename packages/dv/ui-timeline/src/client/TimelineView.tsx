@@ -1,7 +1,7 @@
 /**
  * The timeline editor for one project, without the project bar: the center area's 时间线 view. It reads the project's
- * current state itself and refetches it after every project change and every write; the view's edits go at the end of
- * the project's history.
+ * current state itself and refetches it after every project change and every write; the view's edits go after the
+ * current position of the project's history.
  */
 import { useCallback, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'

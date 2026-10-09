@@ -33,9 +33,11 @@ import z from '@deepseek-ai/schemastery'
 import { FfmpegError } from '@dv/ffmpeg'
 import type {} from '@dv/ffmpeg'
 import { ProjectError, type AssetId, type OperationContext, type OperationResult, type OperationSpec, type RecordId } from '@dv/project'
+import { importedAssets, placeable } from './imports.ts'
 import { assetReducer } from './reducer.ts'
 import type { Asset, StillAt } from './types.ts'
 
+export { importedAssets, placeable } from './imports.ts'
 export type { Asset, AssetState } from './types.ts'
 /** The SHA-256 hex digest of an asset's bytes; defined by `@dv/project`. */
 export type { AssetId } from '@dv/project'
@@ -187,7 +189,7 @@ export default class DvAssetPool extends Service {
    * @param media - the pixel size and the duration, each null when unknown.
    * @returns the entry after the change. Throws `unknown_asset`.
    */
-  describe(id: AssetId, media: { width: number | null; height: number | null; durationSec: number | null }): Asset {
+  private describe(id: AssetId, media: { width: number | null; height: number | null; durationSec: number | null }): Asset {
     const current = this.get(id)
     const next: Asset = {
       ...current,
@@ -346,10 +348,11 @@ export default class DvAssetPool extends Service {
         const assets = request.inputs.flatMap(input => input.role === 'asset' && 'asset' in input.ref ? [input.ref.asset] : [])
         const placed = new Set(state.components.asset.placed)
         if (place) {
-          // Imported assets count from the whole history; generated assets only from the current state.
-          const imported = new Set(this.ctx.dvProject.listRecords(request.project)
-            .flatMap(record => record.operation === 'asset.import' && record.status === 'done' ? record.outputs : []))
-          const missing = assets.filter(asset => !imported.has(asset) && !(asset in state.components.proj.created_by))
+          // The records are read only when an asset was not created by a record of the current state.
+          const imported = assets.every(asset => asset in state.components.proj.created_by)
+            ? new Map<AssetId, unknown>()
+            : importedAssets(this.ctx.dvProject.listRecords(request.project))
+          const missing = assets.filter(asset => !placeable(state, imported, asset))
           if (missing.length > 0) {
             throw new ProjectError('invalid_inputs', `Asset ${missing.join(', ')} is neither an import of this project nor made by a step of its current state.`)
           }

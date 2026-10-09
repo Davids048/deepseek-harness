@@ -250,15 +250,24 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Move the current position one step back, or with `to` to that step of the history list (before or after the
-   * current position). Writes no record. Rules in the history module.
+   * Move the current position one step back. Writes no record. Rules in the history module.
    * @param project - the project.
-   * @param to - a step of the history list; undefined for one step back.
-   * @returns the last step and the current position afterwards. Throws `nothing_to_undo`, `unknown_record`, or
-   *   `invalid_params` for a discarded record.
+   * @returns the last step and the current position afterwards. Throws `nothing_to_undo` at the first record.
    */
-  undo(project: ProjectId, to?: RecordId): Promise<ProjectLine> {
-    return this.store.lock(project, () => to === undefined ? this.history.undo(project) : this.history.moveTo(project, to))
+  undo(project: ProjectId): Promise<ProjectLine> {
+    return this.store.lock(project, () => this.history.undo(project))
+  }
+
+  /**
+   * Move the current position to a step of the history list, before or after it. Writes no record. Rules in the history
+   * module.
+   * @param project - the project.
+   * @param to - a step of the history list.
+   * @returns the last step and the current position afterwards. Throws `unknown_record`, or `invalid_params` for a
+   *   discarded record.
+   */
+  moveTo(project: ProjectId, to: RecordId): Promise<ProjectLine> {
+    return this.store.lock(project, () => this.history.moveTo(project, to))
   }
 
   /**
@@ -272,12 +281,11 @@ export default class DvProject extends Service {
 
   /**
    * @param project - the project.
-   * @returns the last step of the history list and the current position. Throws `unknown_project`.
+   * @returns the last step of the history list and the current position. Throws `unknown_project`, or `invalid_params`
+   *   before the first record.
    */
   line(project: ProjectId): ProjectLine {
-    const line = this.store.line(project)
-    if (line === undefined) throw new ProjectError('unknown_project', `Project ${project} has no record.`)
-    return line
+    return this.store.requireLine(project)
   }
 
   /**

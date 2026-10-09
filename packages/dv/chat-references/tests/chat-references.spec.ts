@@ -184,4 +184,19 @@ describe('chat images', () => {
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(places()).toHaveLength(1)
   })
+
+  it('puts a mentioned import of a discarded step on the canvas', async () => {
+    const { fixture, emit, callAs } = await start()
+    const created = await callAs('dv_proj_create', { title: 'discarded import' })
+    if (created.isError) throw new Error(created.error.message)
+    const projectId = (created.value as { project_id: ProjectId }).project_id
+    const user: RecordOrigin = { actor: 'user', surface: 'asset_pool', session: null, turn: null, tool_call: null, intent: 'import' }
+    const picture = await fixture.project.run({ ...user, project: projectId, operation: 'asset.import', inputs: [], params: { path: fixture.writeFile('old.png'), mime: 'image/png' } })
+    const asset = picture.outputs[0] as AssetId
+    // The undo and the next write discard the import step.
+    await fixture.project.undo(projectId)
+    await fixture.project.run({ ...user, project: projectId, operation: 'asset.import', inputs: [], params: { path: fixture.writeFile('new.png'), mime: 'image/png' } })
+    emit('user/message', { source: { kind: 'user' }, content: [{ type: 'text', text: `use @[old.png](dv:asset/${asset})` }] })
+    await expect.poll(() => fixture.project.getState(projectId).components.asset.placed).toEqual([asset])
+  })
 })

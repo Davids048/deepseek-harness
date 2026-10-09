@@ -25,7 +25,7 @@ This file specifies the internal modules of the `dvProject` service: what each o
 | History and reducer registry    | `src/history.ts`, `src/reducers.ts`                                                  | `tests/history.spec.ts`, `tests/reducers.spec.ts`           |
 | Sessions, tools, agent context  | `src/sessions.ts`, `src/agent-tools.ts`, `src/proj-tools.ts`, `src/agent-context.ts` | `tests/agent-tools.spec.ts`, `tests/proj-tools.spec.ts`     |
 
-The runner and history call the record store; the runner calls the reducer registry and the scheduler; the reducer registry and the runner call `history.chainTo`. Tests use the real modules (`tests/support.ts` `startModules()`), not mocks of other modules. Run them from `packages/dv`: `../../node_modules/.bin/vitest run --config vitest.config.ts project/tests`.
+The runner and history call the record store; the runner calls the reducer registry and the scheduler; the reducer registry calls `store.ancestors`; the runner calls `history.discardedSteps`. Tests use the real modules (`tests/support.ts` `startModules()`), not mocks of other modules. Run them from `packages/dv`: `../../node_modules/.bin/vitest run --config vitest.config.ts project/tests`.
 
 ## 2. Module calls
 
@@ -54,7 +54,7 @@ The runner and history call the record store; the runner calls the reducer regis
     |    ----> scheduler.enqueue / cancel scheduler ----> runner.execute       |
     |    ----> asset store                                                     |
     v                                                                          |
-  reducers, runner --> history.chainTo                                         |
+  runner ----> history.discardedSteps                                         |
   history, reducers, runner, scheduler ----> record-store                     |
                                                          |                     |
                                                          v  onChange(event)    |
@@ -104,6 +104,8 @@ Owner: agent A. Files: `<root>/<ProjectId>/project.json` (`ProjectInfo`, pretty-
 | `update(project, update)`                 | Rules in the JSDoc. Appends one `{"update": id, …}` line, applies it in memory, emits `{kind: 'update', record}` with the current form.                                                                 |
 | `getRecord` / `listRecords` / `ancestors` | Current forms. `ancestors` follows `parents[0]` only (the raw chain).                                                                                                                                   |
 | `line(project)`                           | The project's `{tip, at}`, or undefined for a project without records.                                                                                                                                  |
+| `requireLine(project)`                    | The project's `{tip, at}`; `invalid_params` for a project without records.                                                                                                                              |
+| `lineIds(project)`                        | `{ids, atIndex}`: the record IDs of the history list, oldest first, and the index of `at`; copies no record. `{ids: [], atIndex: -1}` for a project without records.                                     |
 | `moveTo(project, at)`                     | Sets `at` and rewrites `line.json`; `tip` stays. Writes no record; emits `{kind: 'line', tip, at}`. `unknown_record` for an unknown record. The caller checks that `at` is in the history list.         |
 
 Invariants:
@@ -127,7 +129,7 @@ Owner: agent D.
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `register(key, reducer)`             | One reducer per key (`reducer_exists`); at most one reducer defines `createdBy` and `assetsOf` (`invalid_params`). Registration order is the call order of `reduce`. Returns a remover.               |
 | `getState(project)`                  | `stateAt(project, at)` with the project's current position.                                                                                            |
-| `stateAt(project, head)`             | `reduceChain(info, chainTo(store, project, head))`.                                                                                                    |
+| `stateAt(project, head)`             | `reduceChain(info, store.ancestors(project, head))`.                                                                                                   |
 | `reduceChain(info, records)`         | Starts each registered reducer at `initial()`, calls `reduce` for every record in order, returns `{project: info, head: last.id, components}`.         |
 | `apply(state, record)`               | One more `reduce` per reducer on a copy of `state.components`; `head` becomes `record.id`.                                                             |
 | `assetsOf(state, ref)`               | `assetsOf` of the reducer that defines it, on that reducer's slice (Story bible in a deployment); null when no reducer defines it.                    |
@@ -149,16 +151,16 @@ Invariants: reducers are pure; `getState` on the same records always gives equal
 
 ## 7. History (`history.ts`)
 
-Owner: agent D. The module comment defines the history list, the current position and moves; the JSDoc of `undo`, `redo`, `moveTo`, `discardedBy` and `list` defines their behavior. The user-facing rules are the [history rules](../../../docs/subsystems/video-harness.md#history-rules).
+Owner: agent D. The module comment defines the history list, the current position and moves; the JSDoc of `discardedSteps`, `undo`, `redo`, `moveTo` and `list` defines their behavior. The user-facing rules are the [history rules](../../../docs/subsystems/video-harness.md#history-rules).
 
-- `chainTo(store, project, record)`: the `parents[0]` ancestry of `record`, oldest first; the first record is `proj.create`. The history list is `chainTo` of `tip`.
-- `undo(project)`: moves `at` to its parent; `nothing_to_undo` at the first record and for a project without records.
+- The history list is the `parents[0]` ancestry of `tip` (`store.lineIds`), oldest first; the first record is `proj.create`.
+- `undo(project)`: moves `at` to its parent; `nothing_to_undo` at the first record; `invalid_params` for a project without records.
 - `redo(project)`: moves `at` to the next record of the history list toward `tip`; `nothing_to_redo` at `tip`.
 - `moveTo(project, to)`: `unknown_record` for an unknown ID; `invalid_params` for a record outside the history list (a discarded record); a move to `at` changes nothing and emits no event; otherwise `at` becomes `to`, before or after the old `at`.
-- `discardedBy(project)`: the records of the history list after `at`, oldest first; empty when `at` is `tip`.
-- `list(query)`: the steps of the history list, newest first, as `{record, place}`, where `place` is `before`, `current` or `after` relative to `at`; filters combine with AND; `before` keeps the steps before that record in the list (`unknown_record` when the list does not have it); `records` keeps the named records; `tool_call` keeps the records one tool call wrote; `limit` applies after every filter.
+- `discardedSteps(store, project)`: the records of the history list after `at`, oldest first; empty when `at` is `tip`.
+- `list(query)`: the steps of the history list, newest first, as `{record, place}`, where `place` is `before`, `current` or `after` relative to `at`; filters combine with AND; `before` keeps the steps before that record in the list (`unknown_record` when the list does not have it); `records` keeps the named records; `tool_call` keeps the records one tool call wrote; `limit` applies after every filter; only the listed entries are copied.
 
-`dvProject.undo(project, to?)` calls `undo` without `to` and `moveTo` with it, and `dvProject.redo(project)` calls `redo`; each holds the project lock and returns `{tip, at}`. `dvProject.line(project)` returns `{tip, at}`; `dvProject.listRecords(project)` returns every record, discarded records included.
+`dvProject.undo(project)`, `dvProject.moveTo(project, to)` and `dvProject.redo(project)` call `undo`, `moveTo` and `redo`; each holds the project lock and returns `{tip, at}`. `dvProject.line(project)` returns `{tip, at}`; `dvProject.listRecords(project)` returns every record, discarded records included.
 
 Invariants: a move writes no record and keeps `tip`; an undo and then a redo return to the same position; a write after a move appends after `at`, so the steps that were after `at` leave the history list and stay in `records.jsonl`; a discarded step never comes back to the list.
 
@@ -249,6 +251,7 @@ Each test file builds modules with `startModules()` and projects with `createTes
 - `refuses an update of a finished record`: `record_finished` after `done`, `failed`, `cancelled`.
 - `reloads records, updates and the line from disk`: a second `RecordStore` on the same root after `load()` returns equal records and the same `{tip, at}` after a `moveTo`.
 - `moves the current position without writing a record, and appends after it`: `moveTo` leaves `records.jsonl` unchanged and emits `line`; an append after the old `tip` throws `parent_not_head`; an append after `at` becomes `tip` and `at`; an unknown record throws `unknown_record`; a project without records has no line.
+- `lists the record IDs of the history list with the index of the current position`: `lineIds` gives the list and the index of `at`; a write after a move leaves the later IDs out; a project without records gives `{ids: [], atIndex: -1}` and `requireLine` throws `invalid_params`.
 - `fills resolved_asset of an output input once the producer is done`: record B with `{record: A, output: 0}`; null before A is done, A's output after; the file still has `null`.
 - `returns copies that callers cannot use to change the store`.
 - `serializes work under the project lock`: two `lock` calls with awaited delays run one after the other; another project's lock runs concurrently.
@@ -275,7 +278,7 @@ Each test file builds modules with `startModules()` and projects with `createTes
 
 - `moves the current position on undo and redo without writing a record, and the state follows it` (R): `undo` moves `at` back one step and the state follows; `nothing_to_undo` at `proj.create`; `redo` moves forward again; `nothing_to_redo` at `tip`; `records.jsonl` is unchanged; each move emits `line`.
 - `moves to a step before or after the current position, and a move to the current position changes nothing`: `moveTo` back and forward sets the state and the places; a move to `at` emits nothing; an unknown ID throws `unknown_record`.
-- `discards the steps after the current position on a write: they leave the list and stay on disk` (R): `discardedBy` names the later steps; a write after a move has `at` as its parent and becomes `tip` and `at`; the list and the state leave out the discarded steps; `redo` throws `nothing_to_redo` and `moveTo` a discarded step throws `invalid_params`; `listRecords` still has them.
+- `discards the steps after the current position on a write: they leave the list and stay on disk` (R): `discardedSteps` names the later steps; a write after a move has `at` as its parent and becomes `tip` and `at`; the list and the state leave out the discarded steps; `redo` throws `nothing_to_redo` and `moveTo` a discarded step throws `invalid_params`; `listRecords` still has them.
 - `cancels a discarded running step and a discarded queued step, and leaves the new step running` (R): a move alone cancels nothing; the write after it ends the running render and the queued render `cancelled` / `discarded`, and the queued render never executes.
 - `lists the steps of the list newest first with their place, and filters them` (R): entries carry `after`, `current` and `before`; `actor`, `session`, `tool_call`, `records`, `before` and `limit` each narrow the list as specified; an unknown `before` throws `unknown_record`.
 

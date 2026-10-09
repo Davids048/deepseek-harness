@@ -17,7 +17,7 @@ describe('DvClient', () => {
     const record = await client.runOperation({ project: 'p1', operation: 'timeline.clip_move', params: { clip: 'cl2', to: 1 }, surface: 'timeline' })
     expect(record.operation).toBe('timeline.clip_move')
     expect(await client.undo('p1')).toEqual({ tip: 'g3', at: 'g3' })
-    await client.undo('p1', 'g1')
+    await client.moveTo('p1', 'g1')
     expect(await client.redo('p1')).toEqual({ tip: 'g3', at: 'g3' })
     await client.acceptStale('p1', 'g2', 'timeline', 's5')
     await client.renameProject('p1', 'Demo 3')
@@ -83,7 +83,7 @@ describe('DvClient', () => {
     const unknown: typeof fetch = () => Promise.resolve(new Response(JSON.stringify({
       error: 'Project p1 has no record r9.', code: 'unknown_record',
     }), { status: 404 }))
-    await expect(new DvClient(unknown).undo('p1', 'r9')).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
+    await expect(new DvClient(unknown).moveTo('p1', 'r9')).rejects.toMatchObject({ status: 404, code: 'unknown_record' })
   })
 
   it('follows the project changes through EventSource when the browser has it', () => {

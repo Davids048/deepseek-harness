@@ -27,9 +27,7 @@ export interface AssetLibrary {
  * @returns the groups.
  */
 export function assetLibrary(current: WireState): AssetLibrary {
-  const byId = new Map<string, ProjectAsset>()
-  for (const asset of current.assets) if (!byId.has(asset.id)) byId.set(asset.id, asset)
-  const assets = [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at))
+  const assets = [...current.assets].sort((a, b) => b.created_at.localeCompare(a.created_at))
   const images = assets.filter(asset => asset.mime.startsWith('image/'))
   const videos = assets.filter(asset => asset.mime.startsWith('video/'))
   const rendered = (asset: ProjectAsset): boolean => asset.made_by !== null && RENDER_OPERATIONS.has(asset.made_by)

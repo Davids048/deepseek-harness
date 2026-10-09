@@ -183,6 +183,23 @@ describe('RecordStore', () => {
     expect(store.line(empty)).toBeUndefined()
   })
 
+  it('lists the record IDs of the history list with the index of the current position', () => {
+    const { store } = openStore()
+    const { project, first } = createProject(store)
+    const second = store.append(project, line(first.id))
+    const third = store.append(project, line(second.id))
+    store.moveTo(project, second.id)
+    expect(store.lineIds(project)).toEqual({ ids: [first.id, second.id, third.id], atIndex: 1 })
+    // A write after the move leaves `third` out of the list.
+    store.moveTo(project, first.id)
+    const fourth = store.append(project, line(first.id))
+    expect(store.lineIds(project)).toEqual({ ids: [first.id, fourth.id], atIndex: 1 })
+    const empty = brandString<ProjectId>('project-empty')
+    store.createProject({ id: empty, title: 'Empty', created_at: new Date().toISOString() })
+    expect(store.lineIds(empty)).toEqual({ ids: [], atIndex: -1 })
+    expect(errorCode(() => store.requireLine(empty))).toBe('invalid_params')
+  })
+
   it('fills resolved_asset of an output input once the producer is done', () => {
     const { root, store } = openStore()
     const { project, first } = createProject(store)

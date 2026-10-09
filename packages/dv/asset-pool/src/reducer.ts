@@ -29,6 +29,7 @@ export const assetReducer: Reducer<'asset'> = {
       return { placed: slice.placed.filter(asset => !removed.has(asset)) }
     }
     if (added.length === 0) return slice
-    return { placed: [...slice.placed, ...added.filter(asset => !slice.placed.includes(asset))] }
+    const placed = new Set(slice.placed)
+    return { placed: [...slice.placed, ...added.filter(asset => !placed.has(asset))] }
   },
 }

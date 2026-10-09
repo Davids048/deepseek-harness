@@ -35,7 +35,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | 模块 | 内容 |
 | --- | --- |
 | `types.ts` | `WireState`（`head` 是当前位置，`tip` 是历史列表的最后一步）、`WireLine`（`{tip, at}`，撤销和重做的回答）、`ProjectRecord`、`Asset`、`ProjectAsset`（带本项目导入名字和时间以及 `made_by` 的素材）、`Timeline`、`Clip`、`WireOperation`、`WireProject`、`ProjectEvent`、`OperationRequest`、`HistoryQuery`、`HistoryEntry`（`{record, place}`）、`WireHistory`、`PlanVersion`、`Shot`（带生成方式 `mode`，即 `ref2va` 或 `t2va`，以及 `continue_previous`）：`@dv/api` 收发的 JSON 的结构类型 |
-| `api.ts` | `DvClient`（`listProjects`、`getState`（读当前状态）、`listOperations`、`runOperation`、`importAsset`、`undo`（往回移一步，或带 `to` 移到历史列表中的某一步）、`redo`（往前移一步）、`acceptStale`、`listHistory`、`placeOnCanvas`（在画布来源上执行 `asset.place` 或 `asset.unplace`），项目、布局（位置和视口）、工作区和对话调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
+| `api.ts` | `DvClient`（`listProjects`、`getState`（读当前状态）、`listOperations`、`runOperation`、`importAsset`、`undo`（往回移一步）、`moveTo`（移到历史列表中的某一步）、`redo`（往前移一步）、`acceptStale`、`listHistory`、`placeOnCanvas`（在画布来源上执行 `asset.place` 或 `asset.unplace`），项目、布局（位置和视口）、工作区和对话调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`、`paramsOf(fields)`、`FieldParseError`：每个 schema 属性一个控件，带类型转换 |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`、`timelineName(timeline, numbered)`、`formatSeconds` |
 | `references.ts` | `shotReferences(version, shot)`、`referenceImages(state, references)`、`pictureParts(prompt)`：一个镜头发给视频模型的参考图，按提示词里 `Picture 1`、`Picture 2`…… 的编号顺序排列，以及在这些标记处切开的提示词；`t2va` 镜头没有参考图 |

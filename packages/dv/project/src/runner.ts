@@ -406,9 +406,7 @@ export class Runner {
    * @returns the project's current position; every project has its `proj.create` record.
    */
   private headOf(project: ProjectId): RecordId {
-    const line = this.deps.store.line(project)
-    if (line === undefined) throw new ProjectError('invalid_params', `Project ${project} has no record to follow.`)
-    return line.at
+    return this.deps.store.requireLine(project).at
   }
 
   /**

@@ -2,8 +2,8 @@
  * The timeline editor: one tab per timeline of the project, a viewer that plays the selected timeline across its
  * clips, a toolbar, a ruler, the V1 track with clip thumbnails sized by duration, and a display-only A1 track. Every edit
  * is one `/api/dv/operation` call of a `timeline.*` operation with `surface: 'timeline'`; the clip operations name the
- * clip by its clip ID, and every edit goes at the end of the project's history, after the state the editor shows. A selected
- * stale clip offers "仍然保留", which keeps the record that made its asset (`proj.stale_accept`). A
+ * clip by its clip ID, and every edit goes after the current position of the project's history, the state the editor
+ * shows. A selected stale clip offers "仍然保留", which keeps the record that made its asset (`proj.stale_accept`). A
  * placeholder clip, whose render is still running (渲染中…) or failed (渲染失败), keeps its place and its planned length on
  * the track; it cannot be trimmed or split, playback skips it, and export waits until every clip is ready.
  */

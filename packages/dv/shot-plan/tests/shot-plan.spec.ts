@@ -372,10 +372,10 @@ describe('dvShotPlan', () => {
     // After going back to the plan's creation, the state holds none of the takes, so every shot would render again.
     const [rendered] = fixture.ctx.dvProject.listHistory({ project: fixture.project, limit: 1 })
     if (rendered === undefined) throw new Error('the approval wrote no record')
-    await fixture.ctx.dvProject.undo(fixture.project, created.id)
+    await fixture.ctx.dvProject.moveTo(fixture.project, created.id)
     expect(toRender()).toEqual([1, 2, 3])
     // Moving forward to the newest step brings the takes back.
-    await fixture.ctx.dvProject.undo(fixture.project, rendered.record.id)
+    await fixture.ctx.dvProject.moveTo(fixture.project, rendered.record.id)
     // Shot 2 changes, shot 3 changes its render mode with the same prompt, shot 4 is new; shot 1 keeps its take.
     value(await fixture.call('dv_plan_update', {
       reason: 'change', plan: 'p1', references: [picture], shots: [ref('a'), ref('B'), ref('c'), { mode: 't2va', prompt: 'd' }],

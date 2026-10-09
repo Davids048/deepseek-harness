@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectModules } from './support.ts'
 import { agentOrigin, createTestProject, OTHER_SESSION, readLines, SESSION, startModules, userOrigin } from './support.ts'
+import { discardedSteps } from '../src/history.ts'
 import { ProjectError } from '../src/shared.ts'
 import type { ProjectId, ProjectRecord, RecordId, RecordOrigin, RunRequest } from '../src/types.ts'
 
@@ -132,7 +133,7 @@ describe('history', () => {
     const second = await write(m, project, DIRECT, 2)
     const third = await write(m, project, DIRECT, 3)
     await m.store.lock(project, () => m.history.moveTo(project, first.id))
-    expect(m.history.discardedBy(project).map(record => record.id)).toEqual([second.id, third.id])
+    expect(discardedSteps(m.store, project).map(record => record.id)).toEqual([second.id, third.id])
     const fifth = await write(m, project, agentOrigin(), 5)
     expect(fifth.parents).toEqual([first.id])
     expect(m.store.line(project)).toEqual({ tip: fifth.id, at: fifth.id })
