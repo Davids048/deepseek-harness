@@ -1,14 +1,17 @@
 /**
  * The Shot render component of DreamVerse as the `dvShotRender` Cordis service: the Consumer of the render mode seams
- * of `@dv/render-modes`. It owns one operation per render mode, each registered only while its render mode service is
- * mounted, so the agent sees only the tools it can use:
+ * of `@dv/render-modes`. It owns one operation per render mode, each registered only while its render mode registry
+ * holds at least one renderer, so the agent sees only the tools it can use:
  *
- * - `shot.render_ref2va` (tool `dv_shot_render_ref2va`, service `dvRef2va`): one take of a shot from a prompt and 1 to N
- *   reference images (the images of the characters, locations and styles it names), and optionally a first frame, usually
- *   the last still of the shot it continues;
- * - `shot.render_t2va` (tool `dv_shot_render_t2va`, service `dvT2va`): one take of a shot from a prompt only.
+ * - `shot.render_ref2va` (tool `dv_shot_render_ref2va`, registry `dvRef2va`): one take of a shot from a prompt and 1 to
+ *   N reference images (the images of the characters, locations and styles it names), and optionally a first frame,
+ *   usually the last still of the shot it continues;
+ * - `shot.render_t2va` (tool `dv_shot_render_t2va`, registry `dvT2va`): one take of a shot from a prompt only.
  *
- * The provider's model facts decide the frame size and frame count. Every render stores the video and its last still as
+ * The `backend` param of a call names the renderer of its render mode; a call without it uses the first registered
+ * renderer, and the record report keeps the backend that rendered the take. The operation is registered again whenever
+ * the registry changes, so the `backend` param lists exactly the registered backends. The renderer's model facts decide
+ * the frame size and frame count. Every render stores the video and its last still as
  * two outputs (`video`, `last_still`), so a later shot can start from output `#1`. The component's reducer groups the
  * takes of each shot in the `shot` slice for every render mode. While the optional live stream service is mounted, the
  * video bytes also go to browsers as the provider produces them.
@@ -27,7 +30,9 @@ import type {
   AssetId, OperationContext, OperationInput, OperationResult, OperationSpec, OperationToolCall, ProjectId, ProjectRecord, ProjectState,
   RecordId, RecordInputRef, RunRequest,
 } from '@dv/project'
-import type { RenderModelFacts, RenderStreamEvent, Ref2vaRenderer, T2vaRenderer } from '@dv/render-modes'
+import type {
+  RendererRegistry, RenderModelFacts, RenderStreamEvent, Ref2vaRegistry, Ref2vaRenderer, T2vaRegistry, T2vaRenderer,
+} from '@dv/render-modes'
 import { shotReducer } from './reducer.ts'
 import { backendSeconds, baseMime, imageLabels, number, shotGeometry, text, type ShotGeometry } from './render.ts'
 
@@ -40,7 +45,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** `dvShotRender` plugin configuration: none; each render mode provider reports its GPU rate in its model facts. */
+/** `dvShotRender` plugin configuration: none; each renderer reports its GPU rate in its model facts. */
 export type Config = Record<string, unknown>
 
 /** Loader validation. */
@@ -52,8 +57,41 @@ const SEED_LIMIT = 2 ** 31
 /** The duration the GPU estimate assumes for a call that names none. */
 const ESTIMATE_DURATION_SEC = 5
 
-/** The render modes of Shot render, each with its operation and its service. */
+/** The render modes of Shot render, each with its operation and its registry. */
 type RenderMode = 'ref2va' | 't2va'
+
+/**
+ * The `backend` param of a render operation: the registered backends of its render mode.
+ * @param mode - the render mode.
+ * @param backends - the registered backend names, at least one, in registration order.
+ * @returns the param.
+ */
+const BACKEND_PARAM = (mode: RenderMode, backends: string[]): OperationSpec['params'] => ({
+  backend: {
+    type: 'string', enum: backends,
+    description: `The ${mode} backend that renders the shot, each with its own prompt skill; default ${backends[0] ?? ''}.`,
+  },
+})
+
+/**
+ * The renderer a call names: its `backend` param, else the first registered backend.
+ * @param registry - the render mode registry.
+ * @param mode - the render mode.
+ * @param params - the call's params.
+ * @returns the backend name and its renderer.
+ * @throws Error naming the registered backends when the call names an unregistered one.
+ */
+function pickRenderer<R>(
+  registry: RendererRegistry<R>, mode: RenderMode, params: Record<string, unknown>,
+): { backend: string; renderer: R } {
+  const backends = registry.backends()
+  const backend = typeof params['backend'] === 'string' ? params['backend'] : backends[0]
+  const renderer = backend === undefined ? undefined : registry.get(backend)
+  if (backend === undefined || renderer === undefined) {
+    throw new Error(`shot.render_${mode} has no backend "${backend ?? ''}"; registered: ${backends.join(', ')}.`)
+  }
+  return { backend, renderer }
+}
 
 /**
  * Where a shot's bytes go while the provider is still producing them, so browsers can watch the shot render: the
@@ -113,20 +151,20 @@ function inputAssets(context: Pick<OperationContext, 'inputs'>, role: string): A
     .filter((asset): asset is AssetId => asset !== null)
 }
 
-/** The Shot render service: one render operation per mounted render mode, the `shot` reducer, and the method they run. */
+/** The Shot render service: one render operation per render mode with a renderer, the `shot` reducer, and the method they run. */
 export default class DvShotRender extends Service {
   static inject = ['dvProject', 'dvAssetPool']
   static Config = Config
 
-  /** The `ref2va` render mode while it is mounted. */
-  private ref2va: Ref2vaRenderer | null = null
-  /** The `t2va` render mode while it is mounted. */
-  private t2va: T2vaRenderer | null = null
+  /** The `ref2va` render mode registry while it is mounted. */
+  private ref2va: Ref2vaRegistry | null = null
+  /** The `t2va` render mode registry while it is mounted. */
+  private t2va: T2vaRegistry | null = null
   /**
-   * The latest model facts each mounted render mode reported. The GPU estimate (`estimate`, `confirmSummary`) is
-   * synchronous, so it reads the provider's GPU rate from here; every facts read refreshes the entry.
+   * The latest model facts each registered renderer reported, by `<mode>/<backend>`. The GPU estimate (`estimate`,
+   * `confirmSummary`) is synchronous, so it reads the renderer's GPU rate from here; every facts read refreshes the entry.
    */
-  private readonly facts: Partial<Record<RenderMode, RenderModelFacts>> = {}
+  private readonly facts = new Map<string, RenderModelFacts>()
 
   constructor(ctx: Context) {
     super(ctx, 'dvShotRender')
@@ -134,27 +172,53 @@ export default class DvShotRender extends Service {
     ctx.inject(['dvRef2va'], (child) => {
       child.effect(() => {
         this.ref2va = child.dvRef2va
-        this.prefetchFacts('ref2va')
-        const remove = ctx.dvProject.registerOperation(this.ref2vaOperation())
+        const unmount = this.mountMode('ref2va', child.dvRef2va, backends => this.ref2vaOperation(backends))
         return () => {
-          remove()
+          unmount()
           this.ref2va = null
-          delete this.facts.ref2va
         }
       }, 'dvShotRender shot.render_ref2va')
     })
     ctx.inject(['dvT2va'], (child) => {
       child.effect(() => {
         this.t2va = child.dvT2va
-        this.prefetchFacts('t2va')
-        const remove = ctx.dvProject.registerOperation(this.t2vaOperation())
+        const unmount = this.mountMode('t2va', child.dvT2va, backends => this.t2vaOperation(backends))
         return () => {
-          remove()
+          unmount()
           this.t2va = null
-          delete this.facts.t2va
         }
       }, 'dvShotRender shot.render_t2va')
     })
+  }
+
+  /**
+   * Keep a render mode's operation registered while its registry holds a renderer, registered again on every change so
+   * its `backend` param lists the registered backends, and read the model facts of each new renderer.
+   * @param mode - the render mode.
+   * @param registry - its registry.
+   * @param operation - builds the operation for the registered backends.
+   * @returns a function that removes the operation, the listener, and the mode's facts.
+   */
+  private mountMode<R>(mode: RenderMode, registry: RendererRegistry<R>, operation: (backends: string[]) => OperationSpec): () => void {
+    let removeOperation: (() => void) | null = null
+    const sync = (): void => {
+      removeOperation?.()
+      removeOperation = null
+      const backends = registry.backends()
+      for (const key of [...this.facts.keys()]) {
+        if (key.startsWith(`${mode}/`) && !backends.includes(key.slice(mode.length + 1))) this.facts.delete(key)
+      }
+      if (backends.length === 0) return
+      for (const backend of backends) if (!this.facts.has(`${mode}/${backend}`)) this.prefetchFacts(mode, backend)
+      removeOperation = this.ctx.dvProject.registerOperation(operation(backends))
+    }
+    sync()
+    const unlisten = registry.onChanged(sync)
+    return () => {
+      unlisten()
+      removeOperation?.()
+      for (const key of [...this.facts.keys()]) if (key.startsWith(`${mode}/`)) this.facts.delete(key)
+    }
   }
 
   /**
@@ -163,8 +227,9 @@ export default class DvShotRender extends Service {
    * the record completes.
    * @param context - the running `shot.render_ref2va` or `shot.render_t2va` call.
    * @returns the video and last-still assets, the GPU time, and the report of the render's facts.
-   * @throws Error for params outside the model's facts, a missing prompt, a reference count the model refuses, a
-   *   provider failure, or a stream that ends before the provider reports completion or without a last frame.
+   * @throws Error for an unregistered backend, params outside the model's facts, a missing prompt, a reference count the
+   *   model refuses, a provider failure, or a stream that ends before the provider reports completion or without a last
+   *   frame.
    */
   async renderShot(context: OperationContext): Promise<OperationResult> {
     const record = context.record
@@ -173,20 +238,20 @@ export default class DvShotRender extends Service {
     const operation = record.operation ?? ''
     const prompt = text(context.params['prompt'])
     if (operation === 'shot.render_t2va') {
-      const renderer = this.t2va
-      if (renderer === null) throw new Error('shot.render_t2va needs the dvT2va service.')
-      const facts = await this.modelFacts('t2va', renderer)
+      if (this.t2va === null) throw new Error('shot.render_t2va needs the dvT2va service.')
+      const { backend, renderer } = pickRenderer(this.t2va, 't2va', context.params)
+      const facts = await this.modelFacts('t2va', backend, renderer)
       const geometry = shotGeometry(facts, context.params)
       if (prompt === '') throw new Error('shot.render_t2va needs a `prompt`.')
       const seed = number(context.params['seed'], randomInt(SEED_LIMIT))
       const stream = renderer.render({
         prompt, frameWidth: geometry.width, frameHeight: geometry.height, numFrames: geometry.numFrames, seed,
       }, context.signal)
-      return await this.storeShot(context, record, facts, geometry, seed, stream, {})
+      return await this.storeShot(context, record, facts, geometry, seed, stream, { backend })
     }
-    const renderer = this.ref2va
-    if (renderer === null) throw new Error('shot.render_ref2va needs the dvRef2va service.')
-    const facts = await this.modelFacts('ref2va', renderer)
+    if (this.ref2va === null) throw new Error('shot.render_ref2va needs the dvRef2va service.')
+    const { backend, renderer } = pickRenderer(this.ref2va, 'ref2va', context.params)
+    const facts = await this.modelFacts('ref2va', backend, renderer)
     const geometry = shotGeometry(facts, context.params)
     if (prompt === '') throw new Error('shot.render_ref2va needs a `prompt`.')
     const references = inputAssets(context, 'reference')
@@ -201,7 +266,7 @@ export default class DvShotRender extends Service {
       frameWidth: geometry.width, frameHeight: geometry.height, numFrames: geometry.numFrames, seed,
     }, context.signal)
     return await this.storeShot(context, record, facts, geometry, seed, stream, {
-      image_labels: imageLabels(facts, references.length, firstFrame !== null),
+      backend, image_labels: imageLabels(facts, references.length, firstFrame !== null),
     })
   }
 
@@ -302,28 +367,31 @@ export default class DvShotRender extends Service {
   }
 
   /**
-   * Read a render mode's model facts and keep them for the GPU estimate.
+   * Read a renderer's model facts and keep them for the GPU estimate while the renderer stays registered.
    * @param mode - the render mode.
-   * @param renderer - its service.
+   * @param backend - the renderer's backend name.
+   * @param renderer - the renderer.
    * @returns the facts.
-   * @throws Error when the provider cannot read them.
+   * @throws Error when the renderer cannot read them.
    */
-  private async modelFacts(mode: RenderMode, renderer: Ref2vaRenderer | T2vaRenderer): Promise<RenderModelFacts> {
+  private async modelFacts(mode: RenderMode, backend: string, renderer: Ref2vaRenderer | T2vaRenderer): Promise<RenderModelFacts> {
     const facts = await renderer.model()
-    if (mode === 'ref2va' ? this.ref2va === renderer : this.t2va === renderer) this.facts[mode] = facts
+    const registry = mode === 'ref2va' ? this.ref2va : this.t2va
+    if (registry?.get(backend) === renderer) this.facts.set(`${mode}/${backend}`, facts)
     return facts
   }
 
   /**
-   * Read a newly mounted render mode's model facts in the background, so the GPU estimate knows the provider's rate
-   * before the first call; a failed read is logged and retried by the next call.
+   * Read a newly registered renderer's model facts in the background, so the GPU estimate knows its rate before the
+   * first call; a failed read is logged and retried by the next call.
    * @param mode - the render mode.
+   * @param backend - the renderer's backend name.
    */
-  private prefetchFacts(mode: RenderMode): void {
-    const renderer = mode === 'ref2va' ? this.ref2va : this.t2va
-    if (renderer === null) return
-    this.modelFacts(mode, renderer).catch((error: unknown) => {
-      this.ctx.logger.warn(`dvShotRender: the ${mode} render mode reported no model facts yet: ${String(error)}`)
+  private prefetchFacts(mode: RenderMode, backend: string): void {
+    const renderer = (mode === 'ref2va' ? this.ref2va : this.t2va)?.get(backend)
+    if (renderer === undefined) return
+    this.modelFacts(mode, backend, renderer).catch((error: unknown) => {
+      this.ctx.logger.warn(`dvShotRender: the ${mode} backend ${backend} reported no model facts yet: ${String(error)}`)
     })
   }
 
@@ -342,15 +410,15 @@ export default class DvShotRender extends Service {
    * @throws Error telling the model to ask the user for a reference image first.
    */
   private async precondition(request: RunRequest, state: ProjectState): Promise<void> {
-    const renderer = this.ref2va
-    if (renderer === null) return
+    if (this.ref2va === null) return
     const images = (ref: RecordInputRef): number =>
       'asset' in ref || 'record' in ref ? 1 : this.ctx.dvProject.assetsOf(state, ref)?.length ?? 0
     const count = request.inputs.filter(input => input.role === 'reference').reduce((sum, input) => sum + images(input.ref), 0)
     if (count > 0) return
-    const limit = (await this.modelFacts('ref2va', renderer)).maxReferenceImages
+    const { backend, renderer } = pickRenderer(this.ref2va, 'ref2va', request.params)
+    const limit = (await this.modelFacts('ref2va', backend, renderer)).maxReferenceImages
     const planned = request.params['plan'] !== undefined
-    const fromText = this.t2va === null ? '' : ' A shot that needs no reference image can be rendered from text with dv_shot_render_t2va.'
+    const fromText = (this.t2va?.backends().length ?? 0) === 0 ? '' : ' A shot that needs no reference image can be rendered from text with dv_shot_render_t2va.'
     throw new Error(`dv_shot_render_ref2va renders a shot from 1 to ${limit} reference images${planned ? '' : ', and this shot has none'}. `
       + 'Nothing was rendered. Ask the user for a reference image of the subject (they can attach one in the chat; it '
       + `appears under Imported images), add it as a reference or to the character, ${planned ? 'update the plan with dv_plan_update, ' : ''}`
@@ -365,28 +433,37 @@ export default class DvShotRender extends Service {
    */
   private async prepareRef2vaCall(call: OperationToolCall): Promise<void> {
     const { args, request, state } = call
-    // The model facts carry the provider's GPU rate, which the agreement text reads after this call.
-    if (this.ref2va !== null) await this.modelFacts('ref2va', this.ref2va)
+    // The model facts carry the renderer's GPU rate, which the agreement text reads after this call.
+    await this.prefetchCallFacts('ref2va', request.params)
     await this.precondition(request, state)
     const continueFrom = text(args['continue_from'])
     if (continueFrom !== '') request.inputs.push({ role: 'first_frame', ref: { record: brandString<RecordId>(continueFrom), output: 1 } })
   }
 
-  /** Read the `t2va` model facts before an agent call, so the agreement text knows the provider's GPU rate. */
-  private async prefetchT2vaFacts(): Promise<void> {
-    if (this.t2va !== null) await this.modelFacts('t2va', this.t2va)
+  /**
+   * Read the model facts of the renderer an agent call names, so the agreement text knows its GPU rate.
+   * @param mode - the render mode.
+   * @param params - the call's params.
+   * @throws Error naming the registered backends when the call names an unregistered one.
+   */
+  private async prefetchCallFacts(mode: RenderMode, params: Record<string, unknown>): Promise<void> {
+    const registry = mode === 'ref2va' ? this.ref2va : this.t2va
+    if (registry === null) return
+    const { backend, renderer } = pickRenderer<Ref2vaRenderer | T2vaRenderer>(registry, mode, params)
+    await this.modelFacts(mode, backend, renderer)
   }
 
   /**
-   * The GPU estimate of one render: its duration times the provider's `gpuSecondsPerVideoSecond`.
+   * The GPU estimate of one render: its duration times the `gpuSecondsPerVideoSecond` of the renderer it names.
    * @param mode - the render mode.
    * @param params - the call's params.
-   * @returns the estimate from `duration_sec`, or from 5 seconds when the call names none; 0 while the provider has
+   * @returns the estimate from `duration_sec`, or from 5 seconds when the call names none; 0 while the renderer has
    *   reported no model facts (its backend was never reached, so the render cannot run either).
    */
   private estimate(mode: RenderMode, params: Record<string, unknown>): { gpu_seconds: number } {
     const durationSec = number(params['duration_sec'], 0)
-    const rate = this.facts[mode]?.gpuSecondsPerVideoSecond ?? 0
+    const backend = typeof params['backend'] === 'string' ? params['backend'] : (mode === 'ref2va' ? this.ref2va : this.t2va)?.backends()[0]
+    const rate = this.facts.get(`${mode}/${backend ?? ''}`)?.gpuSecondsPerVideoSecond ?? 0
     return { gpu_seconds: (durationSec > 0 ? durationSec : ESTIMATE_DURATION_SEC) * rate }
   }
 
@@ -421,16 +498,23 @@ export default class DvShotRender extends Service {
     }
   }
 
-  /** The `shot.render_ref2va` operation. */
-  private ref2vaOperation(): OperationSpec {
+  /**
+   * The `shot.render_ref2va` operation.
+   * @param backends - the registered `ref2va` backends.
+   * @returns the operation.
+   */
+  private ref2vaOperation(backends: string[]): OperationSpec {
     return {
       name: 'shot.render_ref2va',
       description: 'Render one take of a shot from a prompt and reference images (render mode ref2va). Needs at least one reference '
         + 'image: an imported image, or a character, location or style version with reference images (c1@1), through the reference '
         + 'input. Pass continue_from to start from the last still of an earlier shot. ' + TAKE_RULE,
       inputs: REF2VA_INPUTS,
-      params: RENDER_PARAMS('The complete shot prompt, written with the prompt skill of this render mode; it names the images by '
-        + 'position: the reference images in input order, then the first frame.'),
+      params: {
+        ...RENDER_PARAMS('The complete shot prompt, written with the prompt skill of its backend; it names the images by '
+          + 'position: the reference images in input order, then the first frame.'),
+        ...BACKEND_PARAM('ref2va', backends),
+      },
       toolParams: CONTINUE_FROM_PARAM,
       prepareToolCall: call => this.prepareRef2vaCall(call),
       precondition: (request, state) => this.precondition(request, state),
@@ -438,16 +522,20 @@ export default class DvShotRender extends Service {
     }
   }
 
-  /** The `shot.render_t2va` operation. */
-  private t2vaOperation(): OperationSpec {
+  /**
+   * The `shot.render_t2va` operation.
+   * @param backends - the registered `t2va` backends.
+   * @returns the operation.
+   */
+  private t2vaOperation(backends: string[]): OperationSpec {
     return {
       name: 'shot.render_t2va',
       description: 'Render one take of a shot from a prompt only (render mode t2va): no reference images and no first frame, so the '
         + 'prompt describes every subject, place and style in words. ' + TAKE_RULE,
       inputs: {},
-      params: RENDER_PARAMS('The complete shot prompt, written with the prompt skill of this render mode.'),
-      // An agent call reads the model facts first, so the agreement text knows the provider's GPU rate.
-      prepareToolCall: async () => { await this.prefetchT2vaFacts() },
+      params: { ...RENDER_PARAMS('The complete shot prompt, written with the prompt skill of its backend.'), ...BACKEND_PARAM('t2va', backends) },
+      // An agent call reads the model facts first, so the agreement text knows the renderer's GPU rate.
+      prepareToolCall: async ({ request }) => { await this.prefetchCallFacts('t2va', request.params) },
       ...this.renderMembers('t2va'),
     }
   }

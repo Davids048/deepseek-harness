@@ -2269,6 +2269,9 @@ importers:
       '@dv/project':
         specifier: workspace:*
         version: link:../../dv/project
+      '@dv/render-modes':
+        specifier: workspace:*
+        version: link:../../dv/render-modes
       '@dv/shot-plan':
         specifier: workspace:*
         version: link:../../dv/shot-plan
@@ -2318,9 +2321,6 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:*
         version: link:../../core/tools
-      '@dv/render-modes':
-        specifier: workspace:*
-        version: link:../../dv/render-modes
 
   packages/bundle/headless:
     dependencies:

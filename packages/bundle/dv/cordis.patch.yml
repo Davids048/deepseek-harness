@@ -14,7 +14,12 @@
 #   GROQ_API_KEY          key of the documented fallback route
 
 - insert:
-    # The render mode providers; Shot render registers dv_shot_render_<mode> only for the modes mounted here.
+    # The render mode registries dvRef2va and dvT2va. Each provider row below registers one renderer under its `backend`
+    # name; Shot render registers dv_shot_render_<mode> only while that mode has a renderer. Add a provider row (with a
+    # distinct `backend`) to offer another backend of the same mode.
+    - id: dv-render-modes
+      name: '@dv/render-modes'
+
     - id: dv-fasth3-ref2va
       name: '@dv/fasth3-ref2va'
       config:

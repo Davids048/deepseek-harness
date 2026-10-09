@@ -1,8 +1,8 @@
 /**
- * The FastH3 Ref2VA provider in a REAL composition: a test-only `cordis.yml` boots the DSH skill registry and the
- * provider through the Loader. The FastVideo streaming_v2 server is the only fake: an HTTP server that answers the
- * capabilities and health routes and streams fixed bytes for every render. An opt-in test renders against a running
- * server named by `DV_BACKEND_URL`.
+ * The FastH3 Ref2VA provider in a REAL composition: a test-only `cordis.yml` boots the DSH skill registry, the render
+ * mode registries, and the provider through the Loader. The FastVideo streaming_v2 server is the only fake: an HTTP
+ * server that answers the capabilities and health routes and streams fixed bytes for every render. An opt-in test
+ * renders against a running server named by `DV_BACKEND_URL`.
  */
 import { once } from 'node:events'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -15,9 +15,10 @@ import { Context } from '@deepseek-ai/cordis'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
+import * as RenderModes from '@dv/render-modes'
 import type { RenderStreamEvent } from '@dv/render-modes'
 import { afterEach, describe, expect, it } from 'vitest'
-import FastH3Ref2vaRenderer from '../src/index.ts'
+import * as FastH3Ref2va from '../src/index.ts'
 
 /** The reference image of the opt-in run against a running server. */
 const REAL_REFERENCE = '/mnt/lustre/vlm-d1su/codes/dsh-dv-hub/elon-musk.jpg'
@@ -73,19 +74,27 @@ async function startFakeServer(): Promise<{ url: string; requests: Record<string
 }
 
 /** The plugin classes the fixture rows resolve through `globalThis`, because Node imports the rows outside Vite. */
-const PLUGINS = { SkillRegistry, FastH3Ref2vaRenderer }
+const PLUGINS = {
+  SkillRegistry,
+  RenderModes: { name: RenderModes.name, apply: RenderModes.apply },
+  FastH3Ref2va: { name: FastH3Ref2va.name, inject: FastH3Ref2va.inject, Config: FastH3Ref2va.Config, apply: FastH3Ref2va.apply },
+}
 
 /**
- * Boot the skill registry and the provider from a test-only `cordis.yml`.
+ * Boot the skill registry, the render mode registries, and the provider from a test-only `cordis.yml`.
  * @param baseUrl - the streaming_v2 server.
+ * @param backends - the backend names of the provider rows, one row each; omitted, one row with the default name.
  * @returns the root context.
  */
-async function start(baseUrl: string): Promise<Context> {
+async function start(baseUrl: string, backends: string[] = []): Promise<Context> {
   const dir = mkdtempSync(join(tmpdir(), 'dv-fasth3-ref2va-'))
   const globals = globalThis as typeof globalThis & { __dvFastH3Ref2va?: typeof PLUGINS }
   globals.__dvFastH3Ref2va = PLUGINS
   const rows: string[] = []
-  for (const [id, key, config] of [['skills', 'SkillRegistry', []], ['dv-fasth3-ref2va', 'FastH3Ref2vaRenderer', [`baseUrl: ${baseUrl}`]]] as const) {
+  const providers = backends.length === 0
+    ? [['dv-fasth3-ref2va', 'FastH3Ref2va', [`baseUrl: ${baseUrl}`]] as const]
+    : backends.map(backend => [`dv-fasth3-ref2va-${backend}`, 'FastH3Ref2va', [`backend: ${backend}`, `baseUrl: ${baseUrl}`]] as const)
+  for (const [id, key, config] of [['skills', 'SkillRegistry', []] as const, ['dv-render-modes', 'RenderModes', []] as const, ...providers]) {
     writeFileSync(join(dir, `${id}.mjs`), `export default globalThis.__dvFastH3Ref2va.${key}\n`)
     rows.push(`- id: ${id}`, `  name: ${pathToFileURL(join(dir, `${id}.mjs`)).href}`, ...config.length === 0 ? [] : ['  config:', ...config.map(line => `    ${line}`)])
   }
@@ -102,6 +111,18 @@ async function start(baseUrl: string): Promise<Context> {
   return ctx
 }
 
+/**
+ * The renderer a provider row registered.
+ * @param ctx - the root context.
+ * @param backend - the backend name.
+ * @returns the renderer.
+ */
+function renderer(ctx: Context, backend = 'fasth3'): RenderModes.Ref2vaRenderer {
+  const registered = ctx.dvRef2va.get(backend)
+  if (registered === undefined) throw new Error(`no ref2va backend ${backend}`)
+  return registered
+}
+
 /** Collect a render stream. */
 async function collect(stream: AsyncIterable<RenderStreamEvent>): Promise<RenderStreamEvent[]> {
   const events: RenderStreamEvent[] = []
@@ -113,12 +134,12 @@ describe('dvRef2va from FastH3 Ref2VA', () => {
   it('reports the model facts with one request image kept for the first frame', async () => {
     const server = await startFakeServer()
     const ctx = await start(server.url)
-    expect(await ctx.dvRef2va.model()).toEqual({
+    expect(await renderer(ctx).model()).toEqual({
       modelId: 'fake-ref2va', name: 'Fake Ref2AV', aspectRatios: ['16:9'], resolutions: ['720p'],
       frameSizes: { '16:9': { '720p': [1344, 768] } }, minDurationSec: 5, maxDurationSec: 6, numFramesByDurationSec: { 5: 124, 6: 158 },
       maxReferenceImages: 2, imageLabels: ['Picture 1', 'Picture 2', 'Picture 3'], gpuSecondsPerVideoSecond: 4,
     })
-    expect(await ctx.dvRef2va.ready()).toEqual({ ready: true, detail: null })
+    expect(await renderer(ctx).ready()).toEqual({ ready: true, detail: null })
     // The streaming_v2 client stays private to the provider.
     expect(ctx.get('dreamverseGeneration')).toBeUndefined()
   })
@@ -127,34 +148,43 @@ describe('dvRef2va from FastH3 Ref2VA', () => {
     const server = await startFakeServer()
     const ctx = await start(server.url)
     const request = { prompt: 'Picture 1 smiles', frameWidth: 1344, frameHeight: 768, numFrames: 124, seed: 7 }
-    const events = await collect(ctx.dvRef2va.render({ ...request, references: [Buffer.from('REF1'), Buffer.from('REF2')], firstFrame: Buffer.from('FIRST') }))
+    const events = await collect(renderer(ctx).render({ ...request, references: [Buffer.from('REF1'), Buffer.from('REF2')], firstFrame: Buffer.from('FIRST') }))
     expect(server.requests[0]).toEqual({
       prompt: 'Picture 1 smiles', width: 1344, height: 768, num_frames: 124, seed: 7, return_last_frame: true,
       reference_images: ['REF1', 'REF2', 'FIRST'].map(text => Buffer.from(text).toString('base64')),
     })
     expect(events.map(event => event.kind)).toEqual(['last_frame', 'video_start', 'chunk', 'done'])
     expect(events[2]).toEqual({ kind: 'chunk', bytes: Buffer.from('VIDEO') })
-    await collect(ctx.dvRef2va.render({ ...request, references: [Buffer.from('REF1')], firstFrame: null }))
+    await collect(renderer(ctx).render({ ...request, references: [Buffer.from('REF1')], firstFrame: null }))
     expect(server.requests[1]?.['reference_images']).toEqual([Buffer.from('REF1').toString('base64')])
   })
 
-  it('registers its prompt skill and removes the skill and the service on disposal', async () => {
+  it('registers its renderer and prompt skill, and removes both on disposal', async () => {
     const server = await startFakeServer()
     const ctx = await start(server.url)
     const skill = await ctx.skills.get('fasth3-ref2va-prompting')
     expect(skill?.description).toContain('dv_shot_render_ref2va')
     expect(skill?.content).toContain('Every shot needs at least one reference image.')
+    expect(ctx.dvRef2va.backends()).toEqual(['fasth3'])
     const entry = [...ctx.loader.entries()].find(candidate => candidate.options.name.endsWith('/dv-fasth3-ref2va.mjs'))
     await entry?.fiber?.dispose()
     expect(await ctx.skills.get('fasth3-ref2va-prompting')).toBeUndefined()
-    expect(ctx.get('dvRef2va')).toBeUndefined()
+    expect(ctx.dvRef2va.backends()).toEqual([])
+  })
+
+  it('registers one renderer per provider row, each under its own backend name', async () => {
+    const server = await startFakeServer()
+    const ctx = await start(server.url, ['fasth3-a', 'fasth3-b'])
+    expect(ctx.dvRef2va.backends()).toEqual(['fasth3-a', 'fasth3-b'])
+    expect(renderer(ctx, 'fasth3-a')).not.toBe(renderer(ctx, 'fasth3-b'))
+    expect((await renderer(ctx, 'fasth3-b').model()).modelId).toBe((await renderer(ctx, 'fasth3-a').model()).modelId)
   })
 
   it.skipIf(REAL_BACKEND === undefined || !existsSync(REAL_REFERENCE))('renders a real five-second shot against the running server', async () => {
     const ctx = await start(REAL_BACKEND as string)
-    const facts = await ctx.dvRef2va.model()
+    const facts = await renderer(ctx).model()
     const [width, height] = facts.frameSizes[facts.aspectRatios[0] ?? '']?.[facts.resolutions[0] ?? ''] ?? [0, 0]
-    const events = await collect(ctx.dvRef2va.render({
+    const events = await collect(renderer(ctx).render({
       prompt: 'Picture 1 is a man speaking to the camera in a bright office, slow push-in, natural light.',
       references: [readFileSync(REAL_REFERENCE)], firstFrame: null, frameWidth: width, frameHeight: height,
       numFrames: facts.numFramesByDurationSec['5'] ?? 0, seed: 1,

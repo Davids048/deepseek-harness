@@ -1,8 +1,8 @@
 /**
- * Service Provider of the `t2va` render mode seam (`ctx.dvT2va`) for the FastH3 8-Step V2 text-to-video model
- * (`FastVideo/FastVideo-FastH3-8-Step-V2`) behind a FastVideo streaming_v2 server. The streaming_v2 client of
- * `@dreamverse/generation-client` sends each render as one `POST /v1/streamv2/generate` without reference images and
- * returns the server's event stream. While the DSH skill registry is mounted, the provider registers the
+ * Service Provider of the `t2va` render mode seam: registers a renderer into `ctx.dvT2va` for the FastH3 8-Step V2
+ * text-to-video model (`FastVideo/FastVideo-FastH3-8-Step-V2`) behind a FastVideo streaming_v2 server. The streaming_v2
+ * client of `@dreamverse/generation-client` sends each render as one `POST /v1/streamv2/generate` without reference
+ * images and returns the server's event stream. While the DSH skill registry is mounted, the provider registers the
  * `fasth3-t2va-prompting` skill: the model's limits and prompt rules.
  *
  * @module @dv/fasth3-t2va
@@ -12,10 +12,12 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-skill'
 import z from '@deepseek-ai/schemastery'
 import { DreamverseGeneration } from '@dreamverse/generation-client'
-import { T2vaRenderer, type RenderModelFacts, type RenderStreamEvent, type T2vaRequest } from '@dv/render-modes'
+import type { T2vaRenderer, RenderModelFacts, RenderStreamEvent, T2vaRequest } from '@dv/render-modes'
 
 /** `dvT2va` provider configuration. */
 export interface Config {
+  /** The backend name the renderer is registered under; the render tool's `backend` param names it. */
+  backend: string
   /** HTTP base URL of the FastVideo streaming_v2 server that serves the text-to-video model. */
   baseUrl: string
   /** GPU seconds per rendered video second on this server, reported in the model facts for the GPU estimate. */
@@ -24,6 +26,7 @@ export interface Config {
 
 /** Loader validation. */
 export const Config: z<Config> = z.object({
+  backend: z.string().default('fasth3'),
   baseUrl: z.string().required(),
   gpuSecondsPerVideoSecond: z.number().default(1.5),
 })
@@ -38,18 +41,12 @@ const PROMPT_SKILL = {
 }
 
 /** Renders `t2va` shots with the FastH3 8-Step V2 text-to-video model served by FastVideo streaming_v2. */
-export default class FastH3T2vaRenderer extends T2vaRenderer {
-  static Config = Config
-
+export class FastH3T2vaRenderer implements T2vaRenderer {
   /** The streaming_v2 client; it lives in a scope of its own, so it is not a `dreamverseGeneration` service of the host. */
   private readonly client: DreamverseGeneration
 
   constructor(ctx: Context, private readonly config: Config) {
-    super(ctx)
     this.client = new DreamverseGeneration(ctx.isolate('dreamverseGeneration'), { baseUrl: config.baseUrl })
-    ctx.inject(['skills'], (child) => {
-      child.effect(() => child.skills.register(PROMPT_SKILL), `dvT2va ${PROMPT_SKILL.name}`)
-    })
   }
 
   /**
@@ -94,4 +91,24 @@ export default class FastH3T2vaRenderer extends T2vaRenderer {
       ...signal === undefined ? {} : { signal },
     })
   }
+}
+
+/** Plugin name. */
+export const name = 'dv-fasth3-t2va'
+
+/** Required services: the `t2va` render mode registry. */
+export const inject = ['dvT2va']
+
+/**
+ * Register the renderer into `ctx.dvT2va` under `config.backend`, and its prompt skill while the DSH skill registry is
+ * mounted.
+ * @param ctx - the plugin context.
+ * @param config - the validated configuration.
+ */
+export function apply(ctx: Context, config: Config): void {
+  const renderer = new FastH3T2vaRenderer(ctx, config)
+  ctx.effect(() => ctx.dvT2va.register(config.backend, renderer), `dvT2va ${config.backend}`)
+  ctx.inject(['skills'], (child) => {
+    child.effect(() => child.skills.register(PROMPT_SKILL), `dvT2va ${PROMPT_SKILL.name}`)
+  })
 }
