@@ -3,6 +3,7 @@
  * operation calls from the canvas and the timeline, the one history line that every edit joins, undo, the history,
  * the Fetch routes, and the event stream.
  */
+import { existsSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { join } from 'node:path'
 import type { AddressInfo } from 'node:net'
@@ -10,8 +11,8 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import { afterEach, describe, expect, it } from 'vitest'
-import type { OperationSpec, ProjectEvent, ProjectId, ProjectRecord, RecordId, RecordOrigin, SessionId, TurnId } from '@dv/project'
-import { startBase, type BaseFixture } from './support.ts'
+import type { AssetId, OperationSpec, ProjectEvent, ProjectId, ProjectRecord, RecordId, RecordOrigin, SessionId, TurnId } from '@dv/project'
+import { FFMPEG, startBase, type BaseFixture } from './support.ts'
 import { answer } from '../src/api.ts'
 import DvApi, { ApiRequestError, EVENTS_PATH, ROUTES, WORKSPACE_ROUTES, frameOf, mentionedAssets, messageOf, type ApiHandlers } from '../src/index.ts'
 
@@ -264,7 +265,7 @@ describe('dvApi', () => {
     expect(undone).toEqual({ record: expect.objectContaining({ operation: 'proj.undo', params: { to: first.id }, actor: 'user', surface: 'timeline', parents: [second.id] }) })
     const state = fixture.handlers.getState(projectId)
     expect(state.components.proj.records.map(record => record.id)).not.toContain(second.id)
-    // The asset pool keeps every asset of the history, so the state still lists the undone import's asset.
+    // An imported asset stays listed through the whole history, so the state still lists the undone import's asset.
     expect(state.assets.map(asset => asset.id)).toEqual([...first.outputs, ...second.outputs])
     // A write after the undo continues from the earlier state; going back to the undone step brings it back.
     const third = await fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('u3.png', 'U3'), mime: 'image/png' } })
@@ -448,10 +449,36 @@ describe('dvApi', () => {
     })
     const records = (): ProjectRecord[] => fixture.project.listHistory({ project: projectId }).map(entry => entry.record)
     expect(mentionedAssets(fixture.project.getState(projectId), records())).toEqual(imported.outputs)
-    // An asset of an undone step stays mentioned through the whole history.
+    // An imported asset of an undone step stays mentioned through the whole history.
     const later = await fixture.handlers.runOperation({ project: projectId, operation: 'asset.import', surface: 'canvas', params: { path: fixture.writeFile('l.png', 'L'), mime: 'image/png' } })
     await fixture.handlers.undo({ project: projectId })
     expect(mentionedAssets(fixture.project.getState(projectId), records())).toEqual([...imported.outputs, ...later.outputs])
+  })
+
+  it.skipIf(!existsSync(FFMPEG))('lists a generated asset while its step is in the current state, and an imported asset through the whole history', async () => {
+    const fixture = await start()
+    const projectId = await fixture.newProject('demo')
+    const { outputs } = await fixture.context.dvFfmpeg.run({
+      argv: ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=red:s=160x90:d=1:r=10', '-pix_fmt', 'yuv420p', '{{out:clip.mp4}}'],
+      inputs: [], outputs: ['clip.mp4'], dir: fixture.root,
+    })
+    const imported = await fixture.handlers.runOperation({
+      project: projectId, operation: 'asset.import', surface: 'asset_pool', params: { path: outputs[0], mime: 'video/mp4', name: '开场.mp4' },
+    })
+    const video = imported.outputs[0] ?? ''
+    const still = await fixture.handlers.runOperation({
+      project: projectId, operation: 'asset.grab_still', surface: 'canvas', params: { at: 'first' }, inputs: [{ role: 'video', ref: video }],
+    })
+    const listed = () => new Map(fixture.handlers.getState(projectId).assets.map(asset => [asset.id, asset]))
+    // The import carries this project's name and the media facts read at import; the still names the step that made it.
+    expect(listed().get(brandString<AssetId>(video))).toMatchObject({ name: '开场.mp4', made_by: 'asset.import', width: 160, height: 90 })
+    expect(listed().get(brandString<AssetId>(video))?.duration_sec).toBeCloseTo(1, 1)
+    expect(listed().get(still.outputs[0] ?? brandString<AssetId>(''))).toMatchObject({ made_by: 'asset.grab_still' })
+    // Undo the still: the generated asset leaves the list; undo the import too: the imported asset stays.
+    await fixture.handlers.undo({ project: projectId })
+    expect(listed().has(still.outputs[0] ?? brandString<AssetId>(''))).toBe(false)
+    await fixture.handlers.undo({ project: projectId })
+    expect(listed().get(brandString<AssetId>(video))).toMatchObject({ made_by: 'asset.import' })
   })
 
   it('names errors, orders projects, and refuses an undo without changes', async () => {

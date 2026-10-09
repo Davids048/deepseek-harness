@@ -3,7 +3,7 @@
  * timeline, a failed export, and a running retake as the last record. Also a scripted `fetch` that answers the
  * `/api/dv` routes from such a state and records every write.
  */
-import type { Asset, OperationRequest, ProjectRecord, WireOperation, WireProject, WireState } from '../src/client/types.ts'
+import type { OperationRequest, ProjectAsset, ProjectRecord, WireOperation, WireProject, WireState } from '../src/client/types.ts'
 
 /**
  * A record with defaults for everything a test does not set.
@@ -27,12 +27,15 @@ export function record(partial: Partial<ProjectRecord> & { id: string }): Projec
  * @param mime - the MIME type.
  * @param createdBy - the record that created it.
  * @param durationSec - the duration for videos.
+ * @param madeBy - the operation of the project record that output it.
  * @returns the asset.
  */
-export function asset(id: string, mime: string, createdBy: string | null, durationSec: number | null = null): Asset {
+export function asset(
+  id: string, mime: string, createdBy: string | null, durationSec: number | null = null, madeBy: string | null = null,
+): ProjectAsset {
   return {
     id, mime, name: id, size_bytes: 3, created_by: createdBy, created_at: `2026-10-05T00:00:0${String(id.length % 10)}Z`,
-    width: null, height: null, duration_sec: durationSec,
+    width: null, height: null, duration_sec: durationSec, made_by: madeBy,
   }
 }
 
@@ -108,13 +111,13 @@ export function fixtureState(): WireState {
       },
     },
     assets: [
-      asset('ref.png', 'image/png', 'u1'),
-      asset('shot1.mp4', 'video/mp4', 'g1', 4),
-      asset('shot1-last.png', 'image/png', 'g1'),
-      asset('shot2.mp4', 'video/mp4', 'g2', 6),
-      asset('shot2-last.png', 'image/png', 'g2'),
-      asset('export.mp4', 'video/mp4', 'c1', 3),
-      asset('export-last.png', 'image/png', 'x1'),
+      asset('ref.png', 'image/png', 'u1', null, 'asset.import'),
+      asset('shot1.mp4', 'video/mp4', 'g1', 4, 'shot.render_ref2va'),
+      asset('shot1-last.png', 'image/png', 'g1', null, 'shot.render_ref2va'),
+      asset('shot2.mp4', 'video/mp4', 'g2', 6, 'shot.render_ref2va'),
+      asset('shot2-last.png', 'image/png', 'g2', null, 'shot.render_ref2va'),
+      asset('export.mp4', 'video/mp4', 'c1', 3, 'deliver.timeline_export'),
+      asset('export-last.png', 'image/png', 'x1', null, 'asset.grab_still'),
     ],
   }
 }

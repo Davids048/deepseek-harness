@@ -76,7 +76,6 @@ export const zh = {
   'intent.replaceRef': '在画布上更换 {name} 的参考图',
   'intent.import': '在画布导入 {name}',
   'compose.text': '修改 {title}：',
-  'drop.noNode': '这个素材在画布上没有对应的节点。',
   'drop.notMedia': '「{name}」不是图片或视频，画布只接受图片和视频。',
 } satisfies Record<string, string>
 
@@ -146,6 +145,5 @@ export const en = {
   'intent.replaceRef': 'Replace the reference image of {name} from the canvas',
   'intent.import': 'Import {name} from the canvas',
   'compose.text': 'Change {title}: ',
-  'drop.noNode': 'This asset has no node on the canvas.',
   'drop.notMedia': '"{name}" is not an image or a video; the canvas accepts images and videos only.',
 } satisfies Record<DvCanvasKey, string>

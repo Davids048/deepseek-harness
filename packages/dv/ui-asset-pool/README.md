@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the web application a 素材库 / Asset pool panel beside the chat. `AssetsPanel` lists every image and video of the open project once, grouped into images, videos, and stills extracted from generation: the asset pool only grows, so an asset that an undo took out of the current state stays listed. You can import images and videos by dropping them on the panel, drag a thumbnail into the canvas or the timeline, and open a preview that inserts a video as a clip or asks the agent to use the asset. The `dv-asset-pool` right-Sidebar tab type shows the panel of the project the shell has open.
+Use this package to give the web application a 素材库 / Asset pool panel beside the chat. `AssetsPanel` lists every image and video of the open project once, grouped into images, videos, and stills extracted from generation: every asset of the current state, and every imported asset of the whole history, so an undo hides a generated asset of an undone step and never hides an imported asset. You can import images and videos by dropping them on the panel, drag a thumbnail into the canvas or the timeline, and open a preview that inserts a video as a clip or asks the agent to use the asset. The `dv-asset-pool` right-Sidebar tab type shows the panel of the project the shell has open.
 
 ## Table of Contents
 
@@ -35,7 +35,7 @@ The Host half registers nothing. The browser half registers the `dv-asset-pool` 
 
 | Gesture | Request or event |
 | --- | --- |
-| Open the panel, any project change | `GET /api/dv/state` for the project's current state and `POST /api/dv/history` with `limit: 200`, both refetched on every `/dv/events` event |
+| Open the panel, any project change | `GET /api/dv/state` for the project's current state, refetched on every `/dv/events` event |
 | Drop images or videos on the drop zone, or click it to choose files | `POST /api/dv/assets/import` once per image or video file with `surface=asset_pool` and the tab's chat session; the `asset.import` record goes at the end of the project's history. The zone imports no other file and shows 「<name>」不是图片或视频，没有导入。 / "<name>" is not an image or a video, so it was not imported. for each one |
 | Drag a thumbnail | a drag that carries the asset ID as `application/x-dv-asset`; the canvas moves the asset's node to the drop point, the timeline inserts a clip at the drop position |
 | 插入片段 / Insert clip in the preview of a video | `dv:timeline-insert` `{assetId}`; the shell appends the clip to the timeline selected in the editor (else the first timeline, else a new timeline `t1`) and shows the timeline |
@@ -43,7 +43,7 @@ The Host half registers nothing. The browser half registers the `dv-asset-pool` 
 
 Thumbnails and the preview load the asset files from `GET /dv/assets/<AssetId>`.
 
-The panel lists every image and video that the state lists in `assets` (every asset that a record of the whole history created or names: imported files, renders and their stills, exports, and the reference images of characters, locations, and styles) once, in three sections, each newest first: 图片 / Images (`image/*`), 视频 / Videos (`video/*`), 从生成中截取的帧 / Extracted from generation (the images that a `shot.render_ref2va` or `shot.render_t2va` record outputs, such as the last still of a take). Assets of other media types are not listed. An image stays under 图片 / Images when a character, location, or style uses it, and a still of `asset.grab_still` is listed under 图片 / Images. A section without assets is hidden, and a project without assets shows 暂无 / None yet. An asset that an undo took out of the current state drags, inserts, and previews like any other asset, so inserting one writes a normal `timeline.clip_insert` record at the end of the history. The preview shows the size, duration, and file size, with the actions 插入片段 / Insert clip (videos only), 让智能体使用 / Ask the agent to use it, and 关闭 / Close.
+The panel lists every image and video that the state lists in `assets` (every asset of the current state, and every asset that the project imported anywhere in its history; see the [history rules](../../../docs/subsystems/video-harness.md#history-rules)) once, in three sections, each newest first: 图片 / Images (`image/*`), 视频 / Videos (`video/*`), 从生成中截取的帧 / Extracted from generation (the images whose `made_by` is `shot.render_ref2va` or `shot.render_t2va`, such as the last still of a take). Assets of other media types are not listed. An image stays under 图片 / Images when a character, location, or style uses it, and a still of `asset.grab_still` is listed under 图片 / Images. A section without assets is hidden, and a project without assets shows 暂无 / None yet. An imported asset that an undo took out of the current state drags, inserts, and previews like any other asset, so inserting one writes a normal `timeline.clip_insert` record at the end of the history. The preview shows the size, duration, and file size, with the actions 插入片段 / Insert clip (videos only), 让智能体使用 / Ask the agent to use it, and 关闭 / Close.
 
 -----
 
@@ -53,7 +53,7 @@ The panel lists every image and video that the state lists in `assets` (every as
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`assetLibrary` groups the assets of the state, each asset once, into images and videos; it reads the records of the current state and of the newest 200 history entries, oldest first, so an image that a shot render record outputs goes to `extracted`. An imported asset shows the name and time of this project's `asset.import` record whose status is `done`, because the asset pool keeps the name and time of the first import of identical bytes in any project; a failed history fetch leaves the names of the current state's records only. The preview reads the width and height from the loaded media when the asset has none (imported files), and renders on `document.body` so the right Sidebar cannot cover its buttons; Escape or a click outside closes it.
+`assetLibrary` groups the assets of the state, each asset once, into images and videos; an image whose `made_by` is a shot render operation goes to `extracted`. The state already carries this project's own import name and time of each asset (`ProjectAsset`), because the asset pool keeps the name and time of the first import of identical bytes in any project. The preview reads the width and height from the loaded media when the asset pool could not read them at import, and renders on `document.body` so the right Sidebar cannot cover its buttons; Escape or a click outside closes it.
 
 | File | Content |
 | --- | --- |
@@ -70,7 +70,7 @@ The panel lists every image and video that the state lists in `assets` (every as
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`@dv/api`](../api/README.md) — the state route, the history route, and the asset import route.
+- [`@dv/api`](../api/README.md) — the state route and the asset import route.
 - [`@dv/asset-pool`](../asset-pool/README.md) — the asset pool that stores the files and serves them.
 - [`@dv/ui-kit`](../ui-kit/README.md) — the API client, the wire types, the window events, and the compose event.
 
@@ -89,5 +89,4 @@ None; the panel sends nothing to a model. 让智能体使用 / Ask the agent to 
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Names and stills from the newest 200 entries** — the panel reads at most 200 history entries, so in a longer history an asset that an undo took out of the current state may show the asset pool's first-import name, and an old render still may sit under 图片 / Images.
-- **One history fetch per project change** — every project change refetches the history entries as well as the state.
+- **Whole state per project change** — every project change refetches the whole state, the asset list included; there is no incremental asset route.

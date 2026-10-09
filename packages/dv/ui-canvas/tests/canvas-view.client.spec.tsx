@@ -103,6 +103,25 @@ describe('CanvasView', () => {
     await waitFor(() => { expect(writes).toContainEqual(placement('asset.unplace')) })
   })
 
+  it('places a dropped 素材 tile of an asset that no record of the current state imported, and draws it as asset:<id>', async () => {
+    const canvas: string[] = []
+    const { view, writes } = mount(true, (state) => {
+      // An undo went back past the import: the asset pool still lists the asset.
+      state.assets.push(asset('undone.png', 'image/png', 'u9', null, 'asset.import'))
+      state.components.asset.placed = [...canvas]
+    })
+    await waitFor(() => { expect(view.container.querySelector('[data-node-id="g1"]')).not.toBeNull() })
+    const dataTransfer = { types: [DV_ASSET_DRAG_TYPE], getData: (type: string) => type === DV_ASSET_DRAG_TYPE ? 'undone.png' : '', files: [] }
+    fireEvent.drop(view.getByTestId('dv-canvas-view'), { dataTransfer })
+    await waitFor(() => {
+      expect(writes).toContainEqual({
+        path: '/api/dv/operation', body: { project: 'p1', operation: 'asset.place', surface: 'canvas', inputs: [{ role: 'asset', ref: 'undone.png' }], session: 's5' },
+      })
+    })
+    await waitFor(() => { expect(view.container.querySelector('[data-node-id="asset:undone.png"]')).not.toBeNull() })
+    expect(view.queryByText(/no node/)).toBeNull()
+  })
+
   it('draws an asset that another writer put on the project\'s canvas once the state refetches', async () => {
     const canvas: string[] = []
     const { view, node } = mount(true, (state) => {

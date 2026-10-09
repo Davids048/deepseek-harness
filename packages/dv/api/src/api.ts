@@ -292,7 +292,8 @@ export class ApiHandlers {
   getState(project: unknown): WireState {
     const projectId = this.requireProject(project)
     const { project: service } = this.services
-    const records = service.listHistory({ project: projectId }).map(entry => entry.record)
+    // The history list is newest first; the wire state reads it oldest first.
+    const records = service.listHistory({ project: projectId }).map(entry => entry.record).reverse()
     return toWireState(service.getState(projectId), records, id => this.assetOrNull(id))
   }
 

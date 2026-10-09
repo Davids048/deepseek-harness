@@ -29,7 +29,7 @@ export { LAYOUT_ROUTE, type CanvasLayout, type CanvasViewport, type NodePosition
 export { PROJECT_ADMIN_ROUTES } from './projects-admin.ts'
 export { WORKSPACE_ROUTES } from './workspaces.ts'
 export {
-  mentionedAssets, projectIdOf, toWireOperation, toWireState, type WireHistory, type WireOperation, type WireState,
+  mentionedAssets, projectIdOf, toWireOperation, toWireState, type ProjectAsset, type WireHistory, type WireOperation, type WireState,
 } from './wire.ts'
 
 declare module '@deepseek-ai/cordis' {

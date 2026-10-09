@@ -24,7 +24,7 @@ Use this package to keep every image, video, audio, and text file of a project e
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvAssetPool`. The service registers itself with `dvProject.registerAssetStore`, so the same file imported twice is one asset. `asset.grab_still` runs through `dvFfmpeg`, and `dvProject` turns the four operations into the agent tools `dv_asset_import`, `dv_asset_grab_still`, `dv_asset_place` and `dv_asset_unplace`. The `asset` reducer keeps `placed`, the assets on the canvas of the current state in the order they were placed; the `proj` slice's `created_by` names the record that created each asset. Which assets are on the canvas is project content: each placement is a record, so History lists it and undo takes it back.
+Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvAssetPool`. The service registers itself with `dvProject.registerAssetStore`, so the same file imported twice is one asset. `asset.import` reads the pixel size and duration of an image or video through `dvFfmpeg`, `asset.grab_still` runs through `dvFfmpeg`, and `dvProject` turns the four operations into the agent tools `dv_asset_import`, `dv_asset_grab_still`, `dv_asset_place` and `dv_asset_unplace`. The `asset` reducer keeps `placed`, the assets on the canvas of the current state in the order they were placed; the `proj` slice's `created_by` names the record that created each asset. Which assets are on the canvas is project content: each placement is a record, so History lists it and undo takes it back.
 
 ```yaml
 - id: dv-asset-pool
@@ -42,7 +42,7 @@ Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvA
 | --- | --- | --- | --- |
 | `asset.import` | `dv_asset_import` | params `path` (a file on this machine) or `base64` (the bytes), `mime` (required), `name` (default: the file name), `place` (true also puts the asset on the canvas) | `asset` |
 | `asset.grab_still` | `dv_asset_grab_still` | input `video`, param `at`: `first`, `last` (default), or a time in seconds | `still` (PNG) |
-| `asset.place` | `dv_asset_place` | input `asset` (one or more); refused with `invalid_inputs` for an asset that no record in the current state created, and with `invalid_params` when every asset is already on the canvas | none |
+| `asset.place` | `dv_asset_place` | input `asset` (one or more); refused with `invalid_inputs` for an asset that is neither imported anywhere in the project's history nor made by a step of the current state, and with `invalid_params` when every asset is already on the canvas | none |
 | `asset.unplace` | `dv_asset_unplace` | input `asset` (one or more); refused with `invalid_params` when none of the assets is on the canvas; the assets stay in the pool | none |
 
 | Method | Behavior |
@@ -61,7 +61,7 @@ Mount the plugin after `@dv/project` and `@dv/ffmpeg`. Other plugins inject `dvA
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-`importAsset` writes the bytes to `objects/<sha>.partial` and renames the file into place, so a crash never leaves a half-written object under its hash. The index is one `Asset` JSON line per asset, appended after the object exists; at start the service replays the index and skips lines whose object file is missing. The pool never decodes media: width, height, and duration are stored only when the importer gives them. `grabStill` seeks to the first frame or the given time; for the last frame it probes the video and tries an input seek just before the video stream's end, then a full decode that keeps the last frame, because a fragmented MP4 from a streaming backend has no reliable duration in its header. The route registers on `webServer` through `ctx.inject`, so the plugin also works in compositions without a web server.
+`importAsset` writes the bytes to `objects/<sha>.partial` and renames the file into place, so a crash never leaves a half-written object under its hash. The index is one `Asset` JSON line per asset, appended after the object exists; at start the service replays the index and skips lines whose object file is missing. `asset.import` reads the width, height, and duration of an image or video that the entry does not know yet with ffprobe (`dvFfmpeg.probe`); a video whose header has no duration (a WebM file a browser recorded) is decoded once with `-progress pipe:1`, and the last `out_time` is its duration. `describe` appends the updated entry to the index, and the last line of an ID wins at replay. A probe failure leaves the facts null and does not fail the import. `grabStill` seeks to the first frame or the given time; for the last frame it probes the video and tries an input seek just before the video stream's end, then a full decode that keeps the last frame, because a fragmented MP4 from a streaming backend has no reliable duration in its header. The route registers on `webServer` through `ctx.inject`, so the plugin also works in compositions without a web server.
 
 | File | Content |
 | --- | --- |

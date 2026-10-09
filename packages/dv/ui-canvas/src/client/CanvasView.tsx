@@ -4,10 +4,11 @@
  * editor. A scroll over an overlay marked `data-dv-scroll-island`, such as the floating editor, scrolls that overlay.
  * Node positions and the viewport are stored per project through `/api/dv/layout`. The canvas draws the project's
  * current state and follows every change of it; its writes go at the end of the project's history. Colors
- * come from the DSH theme tokens, so the canvas follows the app's light and dark themes. An imported asset has a node
- * only while it is on the project's canvas (the `asset` slice's `placed`): dropping a 素材 tile on the canvas runs
- * `asset.place` with its node under the pointer, dropping image and video files imports them with `place`, and the
- * asset node's "从画布移除" runs `asset.unplace`. Each of these is a record, so History lists it and undo takes it back.
+ * come from the DSH theme tokens, so the canvas follows the app's light and dark themes. An image or video that no take
+ * or story bible node shows has a node only while it is on the project's canvas (the `asset` slice's `placed`):
+ * dropping a 素材 tile on the canvas runs `asset.place` with its node under the pointer, dropping image and video files
+ * imports them with `place`, and the asset node's "从画布移除" runs `asset.unplace`. Each of these is a record, so
+ * History lists it and undo takes it back.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
@@ -426,9 +427,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     if (assetId !== '') {
       const id = graph?.assetNodes[assetId]
       if (id !== undefined) { placeNode(id, point); return }
-      // An imported asset of the current state that is not on the canvas goes on it, with its node under the pointer.
-      const imported = graph?.state.components.proj.records.some(record => record.operation === 'asset.import' && record.outputs.includes(assetId))
-      if (imported !== true) { setNotice(t('drop.noNode')); return }
+      // Any other asset of the asset pool panel goes on the canvas, with its node under the pointer.
       pendingDrops.current.set(assetId, point)
       void run(() => changePlacement(assetId, true))
       return

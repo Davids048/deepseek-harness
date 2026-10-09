@@ -24,7 +24,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 `@dv/project` 和 `@dv/ffmpeg` 之后挂载插件。其他插件注入 `dvAssetPool`。本服务经 `dvProject.registerAssetStore` 注册自己，因此同一文件导入两次只是一个素材。`asset.grab_still` 经 `dvFfmpeg` 运行，`dvProject` 把这四个操作变成智能体工具 `dv_asset_import`、`dv_asset_grab_still`、`dv_asset_place` 和 `dv_asset_unplace`。`asset` 归约函数维护 `placed`，即当前状态中画布上的素材，按放上的顺序排列；`proj` 切片的 `created_by` 记着创建每个素材的记录。画布上有哪些素材属于项目内容：每次摆放都是一条记录，因此历史会列出它，撤销能把它退回。
+在 `@dv/project` 和 `@dv/ffmpeg` 之后挂载插件。其他插件注入 `dvAssetPool`。本服务经 `dvProject.registerAssetStore` 注册自己，因此同一文件导入两次只是一个素材。`asset.import` 经 `dvFfmpeg` 读取图片或视频的像素尺寸和时长，`asset.grab_still` 经 `dvFfmpeg` 运行，`dvProject` 把这四个操作变成智能体工具 `dv_asset_import`、`dv_asset_grab_still`、`dv_asset_place` 和 `dv_asset_unplace`。`asset` 归约函数维护 `placed`，即当前状态中画布上的素材，按放上的顺序排列；`proj` 切片的 `created_by` 记着创建每个素材的记录。画布上有哪些素材属于项目内容：每次摆放都是一条记录，因此历史会列出它，撤销能把它退回。
 
 ```yaml
 - id: dv-asset-pool
@@ -42,7 +42,7 @@ kind: "package-reference"
 | --- | --- | --- | --- |
 | `asset.import` | `dv_asset_import` | 参数 `path`（本机上的文件）或 `base64`（字节）、`mime`（必填）、`name`（默认：文件名）、`place`（为 true 时同时把素材放到画布上） | `asset` |
 | `asset.grab_still` | `dv_asset_grab_still` | 输入 `video`，参数 `at`：`first`、`last`（默认）或以秒计的时间 | `still`（PNG） |
-| `asset.place` | `dv_asset_place` | 输入 `asset`（一个或多个）；素材不是当前状态中的记录创建的时返回 `invalid_inputs`，全部素材已在画布上时返回 `invalid_params` | 无 |
+| `asset.place` | `dv_asset_place` | 输入 `asset`（一个或多个）；素材既不是项目历史中任何一步导入的、也不是当前状态中某一步生成的时返回 `invalid_inputs`，全部素材已在画布上时返回 `invalid_params` | 无 |
 | `asset.unplace` | `dv_asset_unplace` | 输入 `asset`（一个或多个）；没有一个素材在画布上时返回 `invalid_params`；素材仍留在素材库 | 无 |
 
 | 方法 | 行为 |
@@ -61,7 +61,7 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-`importAsset` 先把字节写到 `objects/<sha>.partial`，再改名到位，因此崩溃不会在哈希名下留下写了一半的对象。索引每个素材一行 `Asset` JSON，在对象文件存在之后追加；启动时服务重放索引，跳过对象文件缺失的行。素材库从不解码媒体：宽、高和时长只在导入方给出时保存。`grabStill` 对第一帧或给定时间直接定位；对最后一帧，它先探测视频，尝试在视频流结尾前做输入定位，再尝试保留最后一帧的完整解码，因为来自流式后端的分片 MP4 头部没有可靠的时长。路由通过 `ctx.inject` 注册在 `webServer` 上，因此插件在没有 web server 的组合中也能工作。
+`importAsset` 先把字节写到 `objects/<sha>.partial`，再改名到位，因此崩溃不会在哈希名下留下写了一半的对象。索引每个素材一行 `Asset` JSON，在对象文件存在之后追加；启动时服务重放索引，跳过对象文件缺失的行。`asset.import` 用 ffprobe（`dvFfmpeg.probe`）读取条目还不知道的图片或视频的宽、高和时长；文件头里没有时长的视频（浏览器录制的 WebM 文件）用 `-progress pipe:1` 解码一遍，最后一个 `out_time` 就是它的时长。`describe` 把更新后的条目追加到索引，重放时同一 ID 以最后一行为准。探测失败时这些值保持为 null，导入不会因此失败。`grabStill` 对第一帧或给定时间直接定位；对最后一帧，它先探测视频，尝试在视频流结尾前做输入定位，再尝试保留最后一帧的完整解码，因为来自流式后端的分片 MP4 头部没有可靠的时长。路由通过 `ctx.inject` 注册在 `webServer` 上，因此插件在没有 web server 的组合中也能工作。
 
 | 文件 | 内容 |
 | --- | --- |

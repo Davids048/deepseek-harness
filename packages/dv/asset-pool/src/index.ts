@@ -11,6 +11,7 @@
  *
  * Two identical files become one asset. The service registers itself as Project's asset store, and four operations:
  * - `asset.import`: a file on this machine, or base64 bytes, becomes an asset; with `place`, it also goes on the canvas;
+ *   an image or video gets its pixel size and duration from `dvFfmpeg` the first time a record imports it;
  * - `asset.grab_still`: one frame of a video becomes a PNG still, through `dvFfmpeg`;
  * - `asset.place` and `asset.unplace`: assets go on the canvas or come off it, and stay in the pool either way.
  *
@@ -23,6 +24,7 @@
 import { createHash } from 'node:crypto'
 import { appendFileSync, createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
@@ -179,6 +181,27 @@ export default class DvAssetPool extends Service {
   }
 
   /**
+   * Fill the media facts an asset entry does not know yet: append the updated entry to `index.jsonl` (the last line of
+   * an ID wins at replay) and keep it in memory. Facts the entry already holds stay as they are.
+   * @param id - an asset the pool holds.
+   * @param media - the pixel size and the duration, each null when unknown.
+   * @returns the entry after the change. Throws `unknown_asset`.
+   */
+  describe(id: AssetId, media: { width: number | null; height: number | null; durationSec: number | null }): Asset {
+    const current = this.get(id)
+    const next: Asset = {
+      ...current,
+      width: current.width ?? media.width,
+      height: current.height ?? media.height,
+      duration_sec: current.duration_sec ?? media.durationSec,
+    }
+    if (next.width === current.width && next.height === current.height && next.duration_sec === current.duration_sec) return current
+    appendFileSync(join(this.config.root, INDEX_FILE), `${JSON.stringify(next)}\n`)
+    this.assets.set(id, next)
+    return next
+  }
+
+  /**
    * @param asset - an asset ID.
    * @returns whether the pool holds it.
    */
@@ -280,7 +303,7 @@ export default class DvAssetPool extends Service {
       resource: 'none',
       confirm: 'never',
       summarize: record => `imported ${text(record.params['name'], basename(text(record.params['path'], 'bytes')))}`,
-      execute: (context): Promise<OperationResult> => {
+      execute: async (context): Promise<OperationResult> => {
         const path = text(context.params['path'])
         const base64 = text(context.params['base64'])
         if (path === '' && base64 === '') throw new Error('asset.import needs `path` or `base64`.')
@@ -288,14 +311,17 @@ export default class DvAssetPool extends Service {
           mime: text(context.params['mime']),
           name: text(context.params['name'], path === '' ? 'imported' : basename(path)),
         })
-        return Promise.resolve({ outputs: [asset] })
+        // The import route and chat images store the bytes before this record runs, so the probe runs here for them too.
+        await this.probeMedia(asset)
+        return { outputs: [asset] }
       },
     }
   }
 
   /**
-   * The `asset.place` or `asset.unplace` operation: put assets that a record of the current state created on the canvas, or take assets off
-   * it. A call that changes nothing (every asset already placed, or none of them placed) is refused before any record.
+   * The `asset.place` or `asset.unplace` operation: put assets on the canvas (an asset the project imported anywhere in
+   * its history, or one a record of the current state made), or take assets off it. A call that changes nothing (every
+   * asset already placed, or none of them placed) is refused before any record.
    * @param name - which of the two operations.
    * @returns the operation spec.
    */
@@ -306,7 +332,8 @@ export default class DvAssetPool extends Service {
       component: 'asset',
       version: '1',
       description: place
-        ? 'Put assets of the project on the canvas, where the user sees each one as a node. The assets must come from a record in the current state of the project.'
+        ? 'Put assets of the project on the canvas, where the user sees each one as a node. An asset the project imported '
+          + 'anywhere in its history can go on the canvas, and an asset a step of the current state made.'
         : 'Take assets off the canvas. The assets stay in the asset pool.',
       inputs: { asset: { type: 'any', required: true, many: true, description: place ? 'The assets to put on the canvas.' : 'The assets to take off the canvas.' } },
       params: {},
@@ -319,8 +346,13 @@ export default class DvAssetPool extends Service {
         const assets = request.inputs.flatMap(input => input.role === 'asset' && 'asset' in input.ref ? [input.ref.asset] : [])
         const placed = new Set(state.components.asset.placed)
         if (place) {
-          const missing = assets.filter(asset => !(asset in state.components.proj.created_by))
-          if (missing.length > 0) throw new ProjectError('invalid_inputs', `Asset ${missing.join(', ')} comes from no record in the current state.`)
+          // Imported assets count from the whole history; generated assets only from the current state.
+          const imported = new Set(this.ctx.dvProject.listHistory({ project: request.project, operation: 'asset.import', status: 'done' })
+            .flatMap(entry => entry.record.outputs))
+          const missing = assets.filter(asset => !imported.has(asset) && !(asset in state.components.proj.created_by))
+          if (missing.length > 0) {
+            throw new ProjectError('invalid_inputs', `Asset ${missing.join(', ')} is neither an import of this project nor made by a step of its current state.`)
+          }
           if (assets.every(asset => placed.has(asset))) throw new ProjectError('invalid_params', 'Every asset is already on the canvas.')
         } else if (!assets.some(asset => placed.has(asset))) {
           throw new ProjectError('invalid_params', 'None of the assets is on the canvas.')
@@ -329,6 +361,43 @@ export default class DvAssetPool extends Service {
       },
       execute: (): Promise<OperationResult> => Promise.resolve({ outputs: [] }),
     }
+  }
+
+  /**
+   * Read the pixel size and duration of an image or video that the pool does not know yet, and store them with
+   * {@link DvAssetPool.describe}. ffprobe reads the header; a video whose header has no duration (a WebM file that a
+   * browser recorded) is decoded to measure it. A failure leaves the facts unknown and does not fail the import.
+   * @param id - an asset the pool holds.
+   */
+  private async probeMedia(id: AssetId): Promise<void> {
+    const asset = this.get(id)
+    const video = asset.mime.startsWith('video/')
+    if (!video && !asset.mime.startsWith('image/')) return
+    if (asset.width !== null && asset.height !== null && (!video || asset.duration_sec !== null)) return
+    try {
+      const probed = await this.ctx.dvFfmpeg.probe(this.path(id))
+      const durationSec = video ? probed.videoDurationSec ?? probed.durationSec ?? await this.decodedDuration(id) : null
+      this.describe(id, { width: probed.width, height: probed.height, durationSec })
+    } catch (error) {
+      this.ctx.logger('dvAssetPool').warn('could not read the media facts of asset %s: %s', id, error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  /**
+   * Decode a video's first video stream and read the last progress time ffmpeg reports.
+   * @param id - a video asset.
+   * @returns the duration in seconds, or null when ffmpeg reports none.
+   */
+  private async decodedDuration(id: AssetId): Promise<number | null> {
+    const result = await this.ctx.dvFfmpeg.run({
+      argv: ['ffmpeg', '-v', 'error', '-i', '{{in:0}}', '-map', '0:v:0', '-f', 'null', '-progress', 'pipe:1', '-'],
+      inputs: [this.path(id)], outputs: [], dir: tmpdir(),
+    })
+    const times = [...result.stdout.matchAll(/^out_time=(\d+):(\d+):(\d+(?:\.\d+)?)$/gm)]
+    const last = times.at(-1)
+    if (last === undefined) return null
+    const seconds = Number(last[1]) * 3600 + Number(last[2]) * 60 + Number(last[3])
+    return Number.isFinite(seconds) && seconds > 0 ? seconds : null
   }
 
   /** The `asset.grab_still` operation. */

@@ -13,7 +13,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DvClient, assetUrl } from '@dv/ui-kit/api.ts'
-import type { Asset, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
+import type { Asset } from '@dv/ui-kit/types.ts'
 import { dispatchCompose } from '@dv/ui-kit/compose.ts'
 import { useCurrentProject } from '@dv/ui-kit/current-project.ts'
 import { useText } from '@dv/ui-kit/locale.ts'
@@ -35,31 +35,6 @@ const muted = 'var(--dv-muted, rgba(127, 127, 127, 0.95))'
 const accent = 'var(--dv-accent, #7c5cff)'
 const button: CSSProperties = { border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '5px 12px', fontSize: 13, cursor: 'pointer' }
 
-/** The most history entries the panel reads for the records an undo went back past. */
-const HISTORY_ENTRIES = 200
-
-/**
- * The newest records of the project's history, for the render stills and import names of the assets outside the
- * current state; refetched whenever the state reloads, which happens on every change of the project.
- * @param client - the API client.
- * @param projectId - the project.
- * @param current - the current state, or null while it loads.
- * @returns the records; none while they load or after a failed fetch.
- */
-function useHistoryRecords(client: DvClient, projectId: string, current: WireState | null): ProjectRecord[] {
-  const [records, setRecords] = useState<ProjectRecord[]>([])
-  useEffect(() => {
-    if (current === null) return
-    const controller = new AbortController()
-    client.listHistory({ project: projectId, limit: HISTORY_ENTRIES }, controller.signal)
-      .then((history) => { if (!controller.signal.aborted) setRecords(history.entries.map(entry => entry.record)) }, () => {
-        if (!controller.signal.aborted) setRecords([])
-      })
-    return () => { controller.abort() }
-  }, [client, projectId, current])
-  return records
-}
-
 /**
  * The asset pool panel of one project.
  * @param props - the project and an optional client.
@@ -68,10 +43,9 @@ function useHistoryRecords(client: DvClient, projectId: string, current: WireSta
 export function AssetsPanel(props: AssetsPanelProps): ReactNode {
   const client = useMemo(() => props.client ?? new DvClient(), [props.client])
   const state = useProjectState(client, props.projectId)
-  const history = useHistoryRecords(client, props.projectId, state.value)
   const t = useText()
   const [preview, setPreview] = useState<Asset | null>(null)
-  const library = useMemo(() => state.value === null ? null : assetLibrary(state.value, history), [state.value, history])
+  const library = useMemo(() => state.value === null ? null : assetLibrary(state.value), [state.value])
 
   let body: ReactNode
   if (library === null) body = <p style={{ color: muted, fontSize: 12 }}>{state.error === null ? t('正在读取…', 'Loading…') : t(`读取失败：${state.error}`, `Failed to load: ${state.error}`)}</p>
@@ -199,7 +173,7 @@ function Thumb(props: { asset: Asset; onOpen: (asset: Asset) => void }): ReactNo
 function Preview(props: { asset: Asset; onClose: () => void }): ReactNode {
   const { asset, onClose } = props
   const t = useText()
-  // The asset pool records no dimensions for imported files, so read them from the loaded media.
+  // When the asset pool could not read the dimensions at import, read them from the loaded media.
   const [loadedSize, setLoadedSize] = useState<{ width: number; height: number } | null>(null)
   const width = asset.width ?? loadedSize?.width ?? null
   const height = asset.height ?? loadedSize?.height ?? null

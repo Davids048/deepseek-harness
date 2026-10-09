@@ -146,6 +146,19 @@ describe('buildCanvasGraph', () => {
     expect(listed.edges).toContainEqual({ from: 'u3', to: 'g9', kind: 'reference' })
   })
 
+  it('draws a placed asset that no record of the current state imported as asset:<id>, and no second node for a take output', () => {
+    const state = fixtureState()
+    // An undo went back past the import of undone.png: the asset pool keeps it, the current state has no import record.
+    state.assets.push(asset('undone.png', 'image/png', 'u9', null, 'asset.import'))
+    const graph = buildCanvasGraph(state, new Set(['undone.png', 'shot1-last.png', 'export-last.png']))
+    const node = graph.nodes.find(candidate => candidate.id === 'asset:undone.png')
+    expect(node).toMatchObject({ kind: 'asset', title: 'undone.png', thumb: 'undone.png', video: null, record: null })
+    // The take g1 already shows its still; the grabbed still of the export has no other node, so it gets one.
+    expect(graph.nodes.filter(candidate => candidate.kind === 'asset').map(candidate => candidate.id).sort())
+      .toEqual(['asset:export-last.png', 'asset:undone.png'])
+    expect(graph.assetNodes['undone.png']).toBe('asset:undone.png')
+  })
+
   it('draws one node for an asset imported twice', () => {
     const state = fixtureState()
     state.assets.push(asset('twice.png', 'image/png', 'u2'))

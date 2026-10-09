@@ -34,7 +34,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 
 | Module | Content |
 | --- | --- |
-| `types.ts` | `WireState`, `ProjectRecord`, `Asset`, `Timeline`, `Clip`, `WireOperation`, `WireProject`, `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry`, `WireHistory`, `PlanVersion`, `Shot` (with its render `mode`, `ref2va` or `t2va`, and `continue_previous`): the JSON `@dv/api` sends and receives, as structural types |
+| `types.ts` | `WireState`, `ProjectRecord`, `Asset`, `ProjectAsset` (an asset with this project's import name and time and `made_by`), `Timeline`, `Clip`, `WireOperation`, `WireProject`, `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry`, `WireHistory`, `PlanVersion`, `Shot` (with its render `mode`, `ref2va` or `t2va`, and `continue_previous`): the JSON `@dv/api` sends and receives, as structural types |
 | `api.ts` | `DvClient` (`listProjects`, `getState` (the current state), `listOperations`, `runOperation`, `importAsset`, `undo` (one step, or with `to` back to a record), `acceptStale`, `listHistory`, `placeOnCanvas` (`asset.place` or `asset.unplace` on the canvas surface), project, layout (positions and viewport), workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`, `paramsOf(fields)`, `FieldParseError`: one control per schema property, typed coercion |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`, `timelineName(timeline, numbered)`, `formatSeconds` |

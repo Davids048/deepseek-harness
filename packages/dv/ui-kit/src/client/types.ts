@@ -103,6 +103,15 @@ export interface Asset {
   duration_sec: number | null
 }
 
+/**
+ * An asset as one project sees it: `name` and `created_at` are the project's own import name and time, and `made_by`
+ * is the operation of the current-state record that created it, else `asset.import` for an asset the project imported
+ * anywhere in its history, else null.
+ */
+export interface ProjectAsset extends Asset {
+  made_by: string | null
+}
+
 /** One version of a character in the story bible. */
 export interface Character {
   id: string
@@ -223,8 +232,8 @@ export interface WireState {
   /** The project's last record. */
   head: string
   components: ComponentStates
-  /** Every asset a record of the project created or names, anywhere in the history; the asset pool keeps them all. */
-  assets: Asset[]
+  /** Every asset of the current state, and every asset the project imported anywhere in its history. */
+  assets: ProjectAsset[]
 }
 
 /** One property of an operation's parameter schema, in the DSH parameter format. */

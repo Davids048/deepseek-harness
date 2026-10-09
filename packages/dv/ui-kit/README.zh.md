@@ -34,7 +34,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 
 | 模块 | 内容 |
 | --- | --- |
-| `types.ts` | `WireState`、`ProjectRecord`、`Asset`、`Timeline`、`Clip`、`WireOperation`、`WireProject`、`ProjectEvent`、`OperationRequest`、`HistoryQuery`、`HistoryEntry`、`WireHistory`、`PlanVersion`、`Shot`（带生成方式 `mode`，即 `ref2va` 或 `t2va`，以及 `continue_previous`）：`@dv/api` 收发的 JSON 的结构类型 |
+| `types.ts` | `WireState`、`ProjectRecord`、`Asset`、`ProjectAsset`（带本项目导入名字和时间以及 `made_by` 的素材）、`Timeline`、`Clip`、`WireOperation`、`WireProject`、`ProjectEvent`、`OperationRequest`、`HistoryQuery`、`HistoryEntry`、`WireHistory`、`PlanVersion`、`Shot`（带生成方式 `mode`，即 `ref2va` 或 `t2va`，以及 `continue_previous`）：`@dv/api` 收发的 JSON 的结构类型 |
 | `api.ts` | `DvClient`（`listProjects`、`getState`（读当前状态）、`listOperations`、`runOperation`、`importAsset`、`undo`（后退一步，或带 `to` 回到某条记录）、`acceptStale`、`listHistory`、`placeOnCanvas`（在画布来源上执行 `asset.place` 或 `asset.unplace`），项目、布局（位置和视口）、工作区和对话调用，`subscribe`）、`ViewSurface`、`DvApiError`、`assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`、`paramsOf(fields)`、`FieldParseError`：每个 schema 属性一个控件，带类型转换 |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`、`timelineName(timeline, numbered)`、`formatSeconds` |

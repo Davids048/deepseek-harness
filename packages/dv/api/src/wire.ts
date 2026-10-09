@@ -22,10 +22,23 @@ export interface WireState {
   /** One slice per registered reducer, as Project computed them. */
   components: ComponentStates
   /**
-   * The asset pool entry of every asset a record of the project created or names, anywhere in the history, and every
-   * asset the current state references; the asset pool keeps them all.
+   * The assets of the project as the views read them (see {@link mentionedAssets}): every asset of the current state,
+   * and every asset the project imported anywhere in its history.
    */
-  assets: Asset[]
+  assets: ProjectAsset[]
+}
+
+/**
+ * An asset as one project sees it: the asset pool entry with this project's own name and time, and the operation that
+ * made it. The pool keeps the name and time of the first import of identical bytes in any project, so `name` and
+ * `created_at` come from this project's first finished `asset.import` record of the asset when it has one.
+ */
+export type ProjectAsset = Asset & {
+  /**
+   * The operation of the current-state record that created the asset, else `asset.import` for an asset the project
+   * imported anywhere in its history, else null (an asset the project only references).
+   */
+  made_by: string | null
 }
 
 /** The history list as the browser reads it (`POST /api/dv/history`). */
@@ -51,19 +64,21 @@ export interface WireOperation {
 }
 
 /**
- * Collect every asset a project mentions: the outputs and resolved inputs of every record of its history, the created
- * assets of the state, and the character, location and style references and timeline clips of the state. Records that
- * failed before creating anything add nothing.
+ * Collect the assets of a project as the views read them: every asset the current state mentions (the outputs and
+ * resolved inputs of its records, its created assets, the character, location and style references, and the timeline
+ * clips), and every asset that an `asset.import` record anywhere in the history output. A generated asset of a step
+ * that an undo went back past is left out; an imported asset never is.
  * @param state - the project's current state.
  * @param records - every record of the project.
  * @returns the asset IDs, each once, in first-mention order.
  */
 export function mentionedAssets(state: ProjectState, records: readonly ProjectRecord[]): AssetId[] {
   const seen = new Set<AssetId>(Object.keys(state.components.proj.created_by) as AssetId[])
-  for (const record of records) {
+  for (const record of state.components.proj.records) {
     for (const id of record.outputs) seen.add(id)
     for (const input of record.inputs) if (input.resolved_asset !== null) seen.add(input.resolved_asset)
   }
+  for (const record of records) if (record.operation === 'asset.import' && record.status === 'done') for (const id of record.outputs) seen.add(id)
   const { characters, locations, styles } = state.components.bible
   for (const versions of [...Object.values(characters), ...Object.values(locations), ...Object.values(styles)]) {
     for (const version of versions) for (const id of version.references) seen.add(id)
@@ -78,14 +93,32 @@ export function mentionedAssets(state: ProjectState, records: readonly ProjectRe
 /**
  * Turn the project's current state into the wire form.
  * @param state - the current state.
- * @param records - every record of the project, for the assets of the whole history.
+ * @param records - every record of the project, oldest first, for the imports of the whole history.
  * @param asset - looks an asset up; unknown IDs return null and are left out.
  * @returns the wire state.
  */
 export function toWireState(state: ProjectState, records: readonly ProjectRecord[], asset: (id: AssetId) => Asset | null): WireState {
-  const assets = mentionedAssets(state, records).flatMap((id) => {
+  // This project's first finished import of each asset, oldest first; the pool keeps the first import in any project.
+  const imported = new Map<AssetId, ProjectRecord>()
+  for (const record of records) {
+    if (record.operation !== 'asset.import' || record.status !== 'done') continue
+    for (const id of record.outputs) if (!imported.has(id)) imported.set(id, record)
+  }
+  const { proj } = state.components
+  const byId = new Map(proj.records.map(record => [record.id, record]))
+  const assets = mentionedAssets(state, records).flatMap((id): ProjectAsset[] => {
     const found = asset(id)
-    return found === null ? [] : [found]
+    if (found === null) return []
+    const importRecord = imported.get(id)
+    const name = importRecord?.params['name']
+    const creator = proj.created_by[id]
+    const madeBy = creator === undefined ? null : byId.get(creator)?.operation ?? null
+    return [{
+      ...found,
+      ...typeof name === 'string' && name.length > 0 ? { name } : {},
+      ...importRecord === undefined ? {} : { created_at: importRecord.created_at },
+      made_by: madeBy ?? (importRecord === undefined ? null : 'asset.import'),
+    }]
   })
   return { project: state.project, head: state.head, components: state.components, assets }
 }

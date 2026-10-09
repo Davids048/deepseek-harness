@@ -258,9 +258,10 @@ export function withImportNames(state: WireState): WireState {
 /**
  * The canvas graph of a project state, with a default layout: story bible items and assets in column 0, plans in
  * column 1, takes from column 2 rightwards by first-frame chain depth, retakes in their source take's column.
- * An imported image or video gets one node, drawn from its first `asset.import` record, when its asset ID is on the
- * project's canvas (`placed`) and it is not a reference image of a character, location or style, which that story bible
- * node shows. A take that reads an asset off the canvas has no edge from it.
+ * Every image or video on the project's canvas (`placed`) gets one node, unless a story bible node (a reference image) or
+ * a take node (a take output) already shows it: drawn from its first `asset.import` record of the current state when
+ * there is one, else as `asset:<id>` with no record (an import that an undo went back past, a still, an export). A take that
+ * reads an asset off the canvas has no edge from it.
  * @param state - a project state.
  * @param placed - the assets on the canvas; defaults to the state's `asset` slice.
  * @returns the nodes and edges.
@@ -331,6 +332,20 @@ export function buildCanvasGraph(
       })
     } else continue
     byRecord.add(record.id)
+  }
+  // A placed asset that no node shows yet (an import that an undo went back past, a still, an export, or another take
+  // output) gets its own node, `asset:<id>`, with no record.
+  const shownByTake = new Set(proj.records.flatMap(record => byRecord.has(record.id) && isRender(record) ? record.outputs : []))
+  for (const assetId of placed) {
+    const shown = bibleOfAsset.has(assetId) || importNodes.has(assetId) || shownByTake.has(assetId)
+    if (!(isImage(assetId) || isVideo(assetId)) || shown) continue
+    const id = `asset:${assetId}`
+    importNodes.set(assetId, id)
+    nodes.push({
+      id, kind: 'asset', title: assets.get(assetId)?.name ?? assetId, subtitle: '', thumb: isImage(assetId) ? assetId : null, references: [],
+      video: isVideo(assetId) ? assetId : null, durationSec: assets.get(assetId)?.duration_sec ?? null,
+      record: null, flags: flagsOf(null), badges: [], take: null, x: 0, y: 0,
+    })
   }
   const nodeIds = new Set(nodes.map(node => node.id))
   /** The node an asset comes from: its story bible node, its import node, or the nearest drawn record up its producer chain. */

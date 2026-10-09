@@ -11,7 +11,7 @@ import { useState } from 'react'
 import type { ChangeEvent, CSSProperties, ReactNode } from 'react'
 import { assetUrl } from '@dv/ui-kit/api.ts'
 import type { DvClient } from '@dv/ui-kit/api.ts'
-import { dispatchCompose } from '@dv/ui-kit/compose.ts'
+import { dispatchCompose, type DvComposeRef } from '@dv/ui-kit/compose.ts'
 import { pictureParts, referenceImages, shotReferences } from '@dv/ui-kit/references.ts'
 import type { WireState } from '@dv/ui-kit/types.ts'
 import { bibleItems, bibleVersions, referenceText } from './graph.ts'
@@ -119,15 +119,11 @@ export function NodeEditor(props: NodeEditorProps): ReactNode {
   const staleRecord = node.flags.stale ? node.record : null
   const askAgent = (): void => {
     const shown = node.thumb ?? node.video ?? node.references[0] ?? null
-    dispatchCompose({
-      text: t('compose.text', { title }),
-      refs: [{
-        kind: node.bibleKind ?? 'record',
-        id: node.bibleId ?? node.record?.id ?? node.id,
-        label: title,
-        ...shown === null ? {} : { assetId: shown },
-      }],
-    })
+    // An asset node without a record (`asset:<id>`) is referenced as the asset itself.
+    const ref: DvComposeRef = node.kind === 'asset' && node.record === null && shown !== null
+      ? { kind: 'asset', id: shown, label: title, assetId: shown }
+      : { kind: node.bibleKind ?? 'record', id: node.bibleId ?? node.record?.id ?? node.id, label: title, ...shown === null ? {} : { assetId: shown } }
+    dispatchCompose({ text: t('compose.text', { title }), refs: [ref] })
     onClose()
   }
   let body: ReactNode

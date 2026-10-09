@@ -296,6 +296,45 @@ describe('dvAssetPool', () => {
       expect(failure(await fixture.call('dv_asset_grab_still', { reason: 'no video' }))).toContain('needs input "video"')
     })
 
+    it('reads the size and duration of an imported video, decoding it when its header has no duration', async () => {
+      const fixture = await start()
+      const { outputs } = await fixture.ctx.dvFfmpeg.run({
+        argv: ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=160x90:d=2:r=10', '-pix_fmt', 'yuv420p', '{{out:blue.mp4}}'],
+        inputs: [], outputs: ['blue.mp4'], dir: fixture.dir,
+      })
+      const imported = await fixture.run('asset.import', { path: outputs[0], mime: 'video/mp4' })
+      const asset = fixture.ctx.dvAssetPool.get(imported.outputs[0] as AssetId)
+      expect(asset).toMatchObject({ width: 160, height: 90 })
+      expect(asset.duration_sec).toBeCloseTo(2, 1)
+      // A header without a duration (a WebM file a browser recorded) is measured by decoding the video stream.
+      const probe = vi.spyOn(fixture.ctx.dvFfmpeg, 'probe').mockResolvedValue({
+        durationSec: null, videoDurationSec: null, width: 160, height: 90, hasAudio: false, codec: 'h264',
+      })
+      const other = await fixture.ctx.dvFfmpeg.run({
+        argv: ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=green:s=160x90:d=3:r=10', '-pix_fmt', 'yuv420p', '{{out:green.mp4}}'],
+        inputs: [], outputs: ['green.mp4'], dir: fixture.dir,
+      })
+      const bare = await fixture.run('asset.import', { path: other.outputs[0], mime: 'video/mp4' })
+      expect(probe).toHaveBeenCalled()
+      probe.mockRestore()
+      expect(fixture.ctx.dvAssetPool.get(bare.outputs[0] as AssetId).duration_sec).toBeCloseTo(3, 1)
+    })
+
+    it('puts an import of an undone step on the canvas, and refuses a generated asset whose step was undone', async () => {
+      const fixture = await start()
+      const red = await video(fixture, 'red', 1)
+      const input = (asset: AssetId): RecordInput => ({ role: 'asset', ref: { asset }, resolved_asset: asset })
+      const imported = (await fixture.run('asset.import', { base64: Buffer.from('later').toString('base64'), mime: 'image/png', name: 'later.png' })).outputs[0] as AssetId
+      const still = (await fixture.run('asset.grab_still', { at: 'first' }, [videoInput(red)])).outputs[0] as AssetId
+      const origin = { actor: 'user' as const, surface: 'history' as const, session: null, turn: null, tool_call: null, intent: 'undo' }
+      await fixture.ctx.dvProject.undo(fixture.project, origin)
+      await fixture.ctx.dvProject.undo(fixture.project, origin)
+      // Both steps are undone: the import still belongs to the project, the still does not.
+      await expect(fixture.run('asset.place', {}, [input(still)])).rejects.toMatchObject({ code: 'invalid_inputs' })
+      expect((await fixture.run('asset.place', {}, [input(imported)])).status).toBe('done')
+      expect(fixture.ctx.dvProject.getState(fixture.project).components.asset.placed).toEqual([imported])
+    })
+
     it('reads the last frame of a fragmented video, falls through the seek attempts, and rethrows other failures', async () => {
       const fixture = await start()
       const fragmented = await video(fixture, 'green', 2, true)
