@@ -1,8 +1,8 @@
 /**
  * Browser half of the DreamVerse shell: the center workspace in place of DSH's main Conversation, the DreamVerse
- * navigator and brand in the left sidebar, the 对话 / 轨迹 right-panel tabs, DSH's New Session action redirected
- * into the open project, the `dv:trajectory-focus` link that opens 轨迹 at one tool call, and the Ctrl+Z and Shift+Ctrl+Z keys
- * that undo and redo one step of the open project.
+ * navigator and brand in the left sidebar, the DreamVerse theme, the 对话 / 轨迹 right-panel tabs and the right panel's
+ * default width, DSH's New Session action redirected into the open project, the `dv:trajectory-focus` link that opens
+ * 轨迹 at one tool call, and the Ctrl+Z and Shift+Ctrl+Z keys that undo and redo one step of the open project.
  *
  * @module @dv/ui-shell/client
  */
@@ -15,7 +15,9 @@ import { createActions } from './actions.ts'
 import { CenterPanel, type ShellInjected } from './Center.tsx'
 import { applyChrome } from './chrome.tsx'
 import { BrandName, Navigator } from './Navigator.tsx'
+import { applyRightPanelWidth } from './right-panel.ts'
 import { getShell, refreshLinks } from './store.ts'
+import { applyTheme } from './theme.ts'
 import { CHAT_ID, ChatTab, chatDefinition, TRAJECTORY_ID, TrajectoryTab, trajectoryDefinition } from './tabs.tsx'
 import { listenHistoryKeys } from './undo-keys.ts'
 
@@ -33,6 +35,7 @@ const LINKS_POLL_MS = 4000
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
+  applyTheme(ctx)
   const injected: ShellInjected = { shell: createActions(ctx) }
   ctx.effect(() => ctx.slots.inject('main.conversation', () => ctx.slots.register(
     { name: 'main.conversation', priority: -1, inject: () => injected }, CenterPanel,
@@ -44,6 +47,12 @@ export function apply(ctx: ClientContext): void {
     { name: 'sidebar.brand.name', priority: -1 }, BrandName,
   )), 'ui-shell: brand')
   applyChrome(ctx)
+  ctx.inject(['layout'], (scope) => {
+    scope.effect(() => {
+      applyRightPanelWidth(scope.get('layout') as object)
+      return () => {}
+    }, 'ui-shell: right panel default width')
+  })
   ctx.effect(() => ctx.sidebarRightTabs.register(chatDefinition), 'ui-shell: chat tab type')
   ctx.effect(() => ctx.sidebarRightTabs.register(trajectoryDefinition), 'ui-shell: trajectory tab type')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(

@@ -273,6 +273,30 @@ export interface WireProject {
   current?: boolean
 }
 
+/**
+ * The media a project card shows as its cover: the first frame of `video` when it has one, else `image`. A rendered
+ * take's image is its last frame.
+ */
+export interface WireProjectCover {
+  video: string | null
+  image: string | null
+}
+
+/**
+ * What a project card shows besides the title, as `GET /api/dv/projects/summary` lists it. A project whose state the
+ * server could not read arrives with `cover` and `edited_at` null.
+ */
+export interface WireProjectSummary {
+  project: string
+  /**
+   * The first clip with media on the requested timeline, else on the first timeline; else the first image output of a
+   * finished record; null when the project has neither.
+   */
+  cover: WireProjectCover | null
+  /** When the project's last record was written, ISO-8601; null without records. */
+  edited_at: string | null
+}
+
 /** The last step of the history list and the current position, as undo and redo answer them. */
 export interface WireLine {
   tip: string

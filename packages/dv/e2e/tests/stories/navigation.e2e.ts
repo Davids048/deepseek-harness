@@ -1,7 +1,8 @@
 // Navigation, projects, chat sessions, and panels: user stories of the DreamVerse shell, driven in Chromium against the
 // shipped profile with the fake video backend and a scripted OpenAI-compatible model (`scripted-model.ts`). Each story
 // opens a fresh browser context and its own projects, then checks the screen against the UI state contract: after an
-// action the center, breadcrumb, navigator highlight, right panel, and URL all show exactly the destination.
+// action the center, session switcher, navigator highlight, right panel, and URL all show exactly the destination. An
+// open project starts with the left sidebar collapsed, so a story opens the sidebar before it reads or uses the navigator.
 import type { Browser, BrowserContext, Page } from 'playwright'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { WireProjectLink } from '@dv/ui-kit/types.ts'
@@ -98,7 +99,8 @@ describe('navigation, projects, sessions, and panels', () => {
     await page.goto(signedIn.has(context) ? `${harness.origin}/${hash}` : `${harness.tokenUrl}${hash}`, { waitUntil: 'load' })
     signedIn.add(context)
     if (options.notice !== 'keep') await dismissNotice(page)
-    await page.locator('[data-dv-navigator]').waitFor({ timeout: 30_000 })
+    // A location that names a project opens the workspace with the left sidebar, and so the navigator, collapsed.
+    await page.locator('[data-dv-navigator], [data-dv-workspace]').first().waitFor({ timeout: 30_000 })
     return { page, errors }
   }
 
@@ -138,12 +140,28 @@ describe('navigation, projects, sessions, and panels', () => {
     return (await navigator(page).locator(':scope > button[data-active]').allInnerTexts()).map(text => text.trim())
   }
 
-  /** The breadcrumb as [project, session], or null on the entry page. */
+  /** The session switcher button at the left of the workspace top bar. */
+  const switcher = (page: Page) => page.locator('[data-dv-workspace] header button[aria-haspopup="menu"]').first()
+
+  /** The session switcher's titles as [project, session], or null on the entry page. */
   async function crumbs(page: Page): Promise<[string, string] | null> {
-    const bar = page.locator('[data-dv-workspace] header > div').first()
-    if (await bar.count() === 0) return null
-    const spans = await bar.locator(':scope > span').allInnerTexts()
-    return [spans[0]?.trim() ?? '', spans.at(-1)?.trim() ?? '']
+    const button = switcher(page)
+    if (await button.count() === 0) return null
+    // The button holds the cover frame and the chevron (no text), the project title, a `/`, and the session title.
+    const spans = (await button.locator(':scope > span').allInnerTexts()).map(text => text.trim()).filter(text => text !== '' && text !== '/')
+    return [spans[0] ?? '', spans.at(-1) ?? '']
+  }
+
+  /** Pick an entry of the session switcher menu, such as 新建项目 or another project's title, by its exact name. */
+  async function pickInSwitcher(page: Page, item: string): Promise<void> {
+    await switcher(page).click()
+    await page.getByRole('menu').getByRole('menuitem', { name: item, exact: true }).click()
+  }
+
+  /** Open DSH's left sidebar when it is collapsed, and wait for the navigator in it. */
+  async function showNavigator(page: Page): Promise<void> {
+    if (await page.locator('[data-sidebar-collapsed]').count() > 0) await page.getByRole('button', { name: '打开侧边栏', exact: true }).click()
+    await navigator(page).waitFor({ timeout: 5000 })
   }
 
   /** The visible right-panel tab titles, in strip order. */
@@ -175,15 +193,19 @@ describe('navigation, projects, sessions, and panels', () => {
     await page.locator('[data-dv-chat]:visible').getByText(`收到${word}`).first().waitFor({ timeout: 30_000 })
   }
 
-  /** Wait until the shell shows project `title`: workspace, breadcrumb, and navigator highlight. */
+  /** Wait until the shell shows project `title`: workspace, session switcher, and the navigator highlight when the sidebar is open. */
   async function waitProject(page: Page, title: string): Promise<void> {
-    await waitFor(async () => (await crumbs(page))?.[0] === title && await activeProject(page) === title, `project ${title} open`, 20_000)
+    await waitFor(
+      async () => (await crumbs(page))?.[0] === title && (await navigator(page).count() === 0 || await activeProject(page) === title),
+      `project ${title} open`, 20_000,
+    )
   }
 
-  /** Click 新建项目 and wait for the created project; returns its ID and title. */
+  /** Click 新建项目 (in the session switcher menu inside a project) and wait for the created project; returns its ID and title. */
   async function newProject(page: Page, label = '新建项目'): Promise<{ projectId: string; title: string }> {
     const before = locationOf(page).project
-    await navigator(page).getByRole('button', { name: label }).click()
+    if (await switcher(page).count() > 0) await pickInSwitcher(page, label)
+    else await navigator(page).getByRole('button', { name: label }).click()
     const projectId = await waitFor(() => Promise.resolve(locationOf(page).project !== before && locationOf(page).project), 'a new project in the URL', 20_000)
     const title = await waitFor(() => titleOf(projectId), 'the new project title', 10_000)
     await waitProject(page, title)
@@ -201,9 +223,10 @@ describe('navigation, projects, sessions, and panels', () => {
     await harness.api.post('/api/dv/operation', { project: projectId, operation: 'asset.import', params: { base64: png, mime: 'image/png', name }, inputs: [], surface: 'canvas', intent: 'story: import' })
   }
 
-  /** Open a project from its navigator row and wait until the shell shows it. */
+  /** Open a project from the session switcher menu inside a project, else from its navigator row, and wait until the shell shows it. */
   async function openProject(page: Page, title: string): Promise<void> {
-    await projectRow(page, title).locator('span[role="button"][title]').click()
+    if (await switcher(page).count() > 0) await pickInSwitcher(page, title)
+    else await projectRow(page, title).locator('span[role="button"][title]').click()
     await waitProject(page, title)
     await waitFor(() => Promise.resolve(locationOf(page).session), `a chat session of ${title}`, 20_000)
     await composer(page).waitFor({ timeout: 20_000 })
@@ -213,6 +236,7 @@ describe('navigation, projects, sessions, and panels', () => {
 
   /** Run one entry of a navigator row menu (project or session row). */
   async function rowMenu(page: Page, row: ReturnType<Page['locator']>, item: string | RegExp): Promise<void> {
+    await showNavigator(page)
     await row.hover()
     await row.locator('button[aria-haspopup="menu"]').click()
     await page.getByRole('menuitem', { name: item }).click()
@@ -226,13 +250,14 @@ describe('navigation, projects, sessions, and panels', () => {
   }
 
   /**
-   * The contract check for an open project: the URL names it, the breadcrumb and the navigator highlight show its
-   * title, and the 对话 tab is in the right panel.
+   * The contract check for an open project: the URL names it, the session switcher and the navigator highlight (with
+   * the left sidebar opened) show its title, and the 对话 tab is in the right panel.
    */
   async function expectProjectShown(page: Page, projectId: string): Promise<void> {
     const title = await titleOf(projectId)
     expect(locationOf(page).project).toBe(projectId)
     expect((await crumbs(page))?.[0]).toBe(title)
+    await showNavigator(page)
     expect(await activeProject(page)).toBe(title)
     expect(await activeNavEntries(page)).not.toContain('首页')
   }
@@ -250,7 +275,7 @@ describe('navigation, projects, sessions, and panels', () => {
 
   it('first visit: the entry page is DreamVerse, highlights 首页, and shows no DSH notice or project panel', async () => {
     const { page, errors } = await openPage({ notice: 'keep' })
-    await page.getByText('今天想做一个什么视频？').waitFor({ timeout: 20_000 })
+    await page.getByText('今天想拍点什么？').waitFor({ timeout: 20_000 })
     await expectEntryShown(page)
     // The first screen a creator sees must not read as a DeepSeek developer tool.
     const text = await page.locator('body').innerText()
@@ -316,7 +341,7 @@ describe('navigation, projects, sessions, and panels', () => {
     expect(created[0]?.title).not.toBe(created[1]?.title)
   })
 
-  it('renames a project from its row menu and by double-clicking the breadcrumb; titles stay unique', async () => {
+  it('renames a project from its row menu; the switcher follows, Escape and an empty title change nothing, and titles stay unique', async () => {
     const { page, errors } = await openPage()
     const other = await createProject('NAV 已占用')
     const { projectId, title } = await newProject(page)
@@ -324,25 +349,23 @@ describe('navigation, projects, sessions, and panels', () => {
     await typeRename(page, 'NAV 行菜单改名')
     await waitProject(page, 'NAV 行菜单改名')
     expect(await titleOf(projectId)).toBe('NAV 行菜单改名')
-    // Double-clicking the breadcrumb title renames in place; Escape cancels and an empty title changes nothing.
-    await page.locator('[data-dv-workspace] header > div > span').first().dblclick()
-    await typeRename(page, 'NAV 面包屑改名')
-    await waitProject(page, 'NAV 面包屑改名')
-    await page.locator('[data-dv-workspace] header > div > span').first().dblclick()
+    // The session switcher in the top bar shows the title only; renaming stays in the navigator row menu, where Escape
+    // cancels and an empty title changes nothing.
+    await rowMenu(page, projectRow(page, 'NAV 行菜单改名'), '重命名')
     await typeRename(page, '不要保存', 'Escape')
-    await page.locator('[data-dv-workspace] header > div > span').first().dblclick()
+    await rowMenu(page, projectRow(page, 'NAV 行菜单改名'), '重命名')
     await page.keyboard.press('ControlOrMeta+a')
     await page.keyboard.press('Backspace')
     await page.keyboard.press('Enter')
     await page.waitForTimeout(500)
-    expect(await titleOf(projectId)).toBe('NAV 面包屑改名')
-    expect(await page.locator('[data-dv-workspace] header input').count()).toBe(0)
+    expect(await titleOf(projectId)).toBe('NAV 行菜单改名')
+    expect(await navigator(page).locator('input').count()).toBe(0)
     // A title another project already uses comes back unique, and the navigator never shows two equal titles.
-    await rowMenu(page, projectRow(page, 'NAV 面包屑改名'), '重命名')
+    await rowMenu(page, projectRow(page, 'NAV 行菜单改名'), '重命名')
     await typeRename(page, 'NAV 已占用')
     const renamed = await waitFor(async () => {
       const current = await titleOf(projectId)
-      return current !== 'NAV 面包屑改名' ? current : null
+      return current !== 'NAV 行菜单改名' ? current : null
     }, 'the rename to land', 10_000)
     expect(renamed).not.toBe(await titleOf(other))
     await waitProject(page, renamed)
@@ -377,13 +400,16 @@ describe('navigation, projects, sessions, and panels', () => {
     const { projectId, title } = await newProject(page)
     await send(page, '一')
     const first = locationOf(page).session
-    const plus = projectRow(page, title).getByRole('button', { name: '＋' })
+    await showNavigator(page)
+    const plus = projectRow(page, title).getByRole('button', { name: '新对话', exact: true })
     await plus.click()
     await waitFor(() => Promise.resolve(locationOf(page).session !== first), 'a second session', 20_000)
     const second = locationOf(page).session
     expect(await crumbs(page)).toEqual([title, '新对话'])
     expect(await userMessages(page)).toEqual([])
-    // A second ＋ on a blank session keeps that session: no pile of empty chats.
+    // A second ＋ on a blank session keeps that session: no pile of empty chats. Opening a chat session collapses the
+    // left sidebar again, so the creator reopens it first.
+    await showNavigator(page)
     await plus.click()
     await page.waitForTimeout(1500)
     expect(locationOf(page).session).toBe(second)
@@ -395,7 +421,7 @@ describe('navigation, projects, sessions, and panels', () => {
     const firstRow = sessionRows(page).filter({ hasNotText: '会话二' }).first()
     await rowMenu(page, firstRow, '重命名')
     await typeRename(page, '会话一')
-    // Switch to the first session: URL, breadcrumb, highlight, and chat all follow, and survive a reload.
+    // Switch to the first session: URL, session switcher, highlight, and chat all follow, and survive a reload.
     await sessionRows(page).filter({ hasText: '会话一' }).click()
     await waitFor(async () => locationOf(page).session === first && (await crumbs(page))?.[1] === '会话一', 'the first session open', 10_000)
     expect(await activeSessionRow(page).innerText()).toContain('会话一')
@@ -408,10 +434,12 @@ describe('navigation, projects, sessions, and panels', () => {
     await waitFor(async () => await sessionRows(page).filter({ hasText: '会话二' }).count() === 0, 'session 二 gone', 10_000)
     expect(locationOf(page).session).toBe(first)
     // Delete the open session: the page moves to the project's latest other session.
+    await showNavigator(page)
     await plus.click()
     await waitFor(() => Promise.resolve(locationOf(page).session !== first), 'a third session', 20_000)
     await send(page, '三')
     const third = locationOf(page).session
+    await showNavigator(page)
     await sessionRows(page).filter({ hasText: '会话一' }).click()
     await waitFor(() => Promise.resolve(locationOf(page).session === first), 'back on session 一', 10_000)
     await rowMenu(page, activeSessionRow(page), /^删除(会话|对话)$/)
@@ -438,6 +466,7 @@ describe('navigation, projects, sessions, and panels', () => {
     await waitFor(() => Promise.resolve(locationOf(page).session !== used), 'a new session', 20_000)
     await expectProjectShown(page, projectId)
     expect(await crumbs(page)).toEqual([title, '新对话'])
+    await showNavigator(page)
     await navigator(page).getByRole('button', { name: '首页' }).click()
     await expectEntryShown(page)
     await dshNew.first().click()
@@ -476,10 +505,8 @@ describe('navigation, projects, sessions, and panels', () => {
     // From the timeline.
     await page.locator('[data-dv-workspace] [role="tab"]', { hasText: '时间线' }).click()
     await checkSwitch('NAV 切换甲', a, '甲', '乙')
-    // Fast clicks end on the last project clicked.
-    for (const title of ['NAV 切换甲', 'NAV 切换乙', 'NAV 切换甲', 'NAV 切换乙', 'NAV 切换甲']) {
-      await projectRow(page, title).locator('span[role="button"][title]').click()
-    }
+    // Fast picks in the session switcher end on the last project picked.
+    for (const title of ['NAV 切换乙', 'NAV 切换甲', 'NAV 切换乙', 'NAV 切换甲']) await pickInSwitcher(page, title)
     await waitProject(page, 'NAV 切换甲')
     await page.waitForTimeout(3000)
     await expectProjectShown(page, a)
@@ -523,11 +550,14 @@ describe('navigation, projects, sessions, and panels', () => {
     const { page, errors } = await openPage({ hash: `#project=${old}` })
     await waitFor(async () => (await crumbs(page))?.[0] === 'NAV 很早的项目', 'the old project open', 20_000).catch(() => undefined)
     if ((await crumbs(page))?.[0] !== 'NAV 很早的项目') {
+      await showNavigator(page)
       await navigator(page).getByRole('button', { name: '全部项目' }).click()
       await openProject(page, 'NAV 很早的项目')
+      await showNavigator(page)
       await navigator(page).getByRole('button', { name: '收起项目' }).click()
     }
     await page.waitForTimeout(5000)
+    await showNavigator(page)
     expect(await activeProject(page)).toBe('NAV 很早的项目')
     expect(errors).toEqual([])
   })
@@ -550,7 +580,9 @@ describe('navigation, projects, sessions, and panels', () => {
     const chatText = (await chat(page).innerText()).replace(/\s+/g, '')
     // Beyond the composer controls, the blank chat carries a hint in the interface language.
     expect(chatText.replace(/发消息|调用指令|文件或对话|工作区内修改/g, '').length).toBeGreaterThan(4)
-    await selectTab(page, '轨迹')
+    // 轨迹 is not a default tab; the right panel's ＋ guide opens it.
+    await page.getByRole('button', { name: '新标签页' }).click()
+    await page.locator('[data-dv-guide] button', { hasText: '轨迹' }).click()
     const trajectory = page.locator('[data-dv-trajectory]:visible')
     await trajectory.waitFor({ timeout: 10_000 })
     expect((await trajectory.innerText()).trim().length).toBeGreaterThan(0)
@@ -575,7 +607,7 @@ describe('navigation, projects, sessions, and panels', () => {
     await waitFor(async () => await sessionRows(page).filter({ hasText: 'NAV 漂移会话' }).count() > 0, 'the renamed row', 10_000)
     for (const title of [first.title, 'NAV 另起']) {
       const toggle = projectRow(page, title).locator('span[role="button"]').first()
-      if (await toggle.count() > 0 && (await toggle.innerText()).includes('▸')) await toggle.click()
+      if (await toggle.count() > 0 && await toggle.getAttribute('aria-expanded') === 'false') await toggle.click()
     }
     await page.waitForTimeout(1000)
     expect(await sessionRows(page).filter({ hasText: 'NAV 漂移会话' }).count()).toBe(1)
@@ -594,9 +626,11 @@ describe('navigation, projects, sessions, and panels', () => {
     await expectReloadKeeps(page, 'timeline')
     await page.locator('[data-dv-workspace] [role="tab"]', { hasText: '画布' }).click()
     const older = locationOf(page).session
-    await projectRow(page, title).getByRole('button', { name: '＋' }).click()
+    await showNavigator(page)
+    await projectRow(page, title).getByRole('button', { name: '新对话', exact: true }).click()
     await waitFor(() => Promise.resolve(locationOf(page).session !== older), 'a newer session', 20_000)
     await send(page, '新')
+    await showNavigator(page)
     await sessionRows(page).nth(1).click()
     await waitFor(() => Promise.resolve(locationOf(page).session === older), 'the older session open', 10_000)
     await expectReloadKeeps(page, 'older chat session')
@@ -653,9 +687,9 @@ describe('navigation, projects, sessions, and panels', () => {
   it('closing every right-panel tab and collapsing both sidebars can all be undone', async () => {
     const { page, errors } = await openPage()
     const { projectId, title } = await newProject(page)
-    await waitFor(async () => (await rightTabs(page)).length === 4, 'the four default tabs', 20_000)
-    expect([...await rightTabs(page)].sort()).toEqual(['对话', '素材库', '历史', '轨迹'].sort())
-    for (const tab of ['轨迹', '历史', '素材库', '对话']) {
+    await waitFor(async () => (await rightTabs(page)).length === 3, 'the three default tabs', 20_000)
+    expect([...await rightTabs(page)].sort()).toEqual(['对话', '素材库', '历史'].sort())
+    for (const tab of ['历史', '素材库', '对话']) {
       const item = page.locator('[data-dockkit-tab]', { has: page.locator('[data-dockkit-tab-title]', { hasText: tab }) }).first()
       await item.hover()
       await item.locator('[data-dockkit-tab-close]').click()
@@ -663,19 +697,22 @@ describe('navigation, projects, sessions, and panels', () => {
     }
     expect(await rightTabs(page)).toEqual([])
     // Closing the last tab collapses the right panel, so the top bar shows its open button, which brings back
-    // 对话 / 素材库 / 历史 / 轨迹 with 对话 in front.
-    await page.getByRole('button', { name: '打开右侧面板', exact: true }).click()
-    await waitFor(async () => (await rightTabs(page)).length === 4, 'tabs reopened', 10_000)
+    // 对话 / 素材库 / 历史 with 对话 in front.
+    const panels = page.getByRole('button', { name: '打开右侧面板', exact: true })
+    await panels.click()
+    await waitFor(async () => (await rightTabs(page)).length === 3, 'tabs reopened', 10_000)
     await chat(page).waitFor({ timeout: 10_000 })
     // While the panel is shown, its own strip holds the collapse control and the top bar has no open button.
-    await expect.poll(() => page.getByRole('button', { name: '打开右侧面板', exact: true }).count()).toBe(0)
+    await expect.poll(() => panels.count()).toBe(0)
     await page.getByRole('button', { name: '收起右侧边栏' }).click()
     await waitFor(async () => (await rightTabs(page)).length === 0, 'right panel collapsed', 5000)
-    await page.getByRole('button', { name: '打开右侧面板', exact: true }).click()
-    await waitFor(async () => (await rightTabs(page)).length === 4, 'right panel expanded', 10_000)
-    await page.getByRole('button', { name: '收起侧边栏' }).click()
+    await panels.click()
+    await waitFor(async () => (await rightTabs(page)).length === 3, 'right panel expanded', 10_000)
+    // The left sidebar starts collapsed in a project: open it, collapse it, and open it again.
+    await showNavigator(page)
+    await page.getByRole('button', { name: '收起侧边栏', exact: true }).click()
     await waitFor(async () => !await navigator(page).isVisible(), 'navigator hidden', 5000)
-    await page.getByRole('button', { name: '打开侧边栏' }).click()
+    await page.getByRole('button', { name: '打开侧边栏', exact: true }).click()
     await navigator(page).waitFor({ timeout: 5000 })
     await waitProject(page, title)
     await expectProjectShown(page, projectId)
@@ -700,7 +737,9 @@ describe('navigation, projects, sessions, and panels', () => {
   it('switching the DSH language to English turns every DreamVerse string English, and back', async () => {
     const { page, errors } = await openPage()
     await newProject(page)
-    await waitFor(async () => (await rightTabs(page)).length === 4, 'the four default tabs', 20_000)
+    await waitFor(async () => (await rightTabs(page)).length === 3, 'the three default tabs', 20_000)
+    // The navigator stays open across the language switch.
+    await showNavigator(page)
     /** Pick a language in DSH Settings → General. */
     const pickLanguage = async (settings: string, current: string, wanted: string): Promise<void> => {
       await page.getByRole('button', { name: settings }).click()
@@ -717,15 +756,16 @@ describe('navigation, projects, sessions, and panels', () => {
       const bar = await page.locator('[data-dv-workspace] header').innerText()
       for (const label of ['Canvas', 'Timeline', 'New chat']) expect(bar).toContain(label)
       // The right panel is shown, so the top bar has no open button.
-      expect(await page.locator('[data-dv-workspace] header').getByRole('button', { name: 'Open the right panel', exact: true }).count()).toBe(0)
-      expect([...await rightTabs(page)].sort()).toEqual(['Asset pool', 'Chat', 'History', 'Trajectory'])
+      const header = page.locator('[data-dv-workspace] header')
+      expect(await header.getByRole('button', { name: 'Open the right panel', exact: true }).count()).toBe(0)
+      expect([...await rightTabs(page)].sort()).toEqual(['Asset pool', 'Chat', 'History'])
     } finally {
       // The language is a durable DSH preference shared by every browser of this harness; restore Chinese.
       await page.keyboard.press('Escape')
       await pickLanguage('Settings', 'English', '中文')
     }
     await waitFor(async () => (await page.evaluate(() => document.documentElement.lang)).startsWith('zh'), '<html lang> zh', 5000)
-    expect([...await rightTabs(page)].sort()).toEqual(['对话', '素材库', '历史', '轨迹'].sort())
+    expect([...await rightTabs(page)].sort()).toEqual(['对话', '素材库', '历史'].sort())
     expect(await navigator(page).innerText()).toContain('新建项目')
     expect(errors).toEqual([])
   })
