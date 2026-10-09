@@ -2,7 +2,7 @@
 /** Project card summaries: one `/api/dv/projects/summary` read for every card, and the card duration text. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, renderHook, waitFor } from '@testing-library/react'
-import { clockText } from '@dv/ui-canvas/src/client/NodeCard.tsx'
+import { clockText } from '@dv/ui-kit/timeline.ts'
 import { useProjectSummaries } from '../src/client/cover.tsx'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })

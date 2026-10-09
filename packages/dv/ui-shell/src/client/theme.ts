@@ -10,7 +10,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 
 /** The `--dv-*` variables and the DSH alias mapping. */
-export const DV_THEME_CSS = `
+const DV_THEME_CSS = `
 html body {
   --dv-bg: #F5F6F8;
   --dv-surface-1: #FFFFFF;

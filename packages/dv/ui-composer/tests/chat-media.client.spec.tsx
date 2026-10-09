@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** The DreamVerse thumbnail cards of chat Markdown: element selection, the cards, and the chain registration. */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import type { MarkdownElement, MarkdownTableCell } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { DvClient } from '@dv/ui-kit/api.ts'
@@ -16,10 +16,10 @@ const KINDS: AssetKinds = new Map<string, AssetEntry>([
   ['v1.mp4', { kind: 'video', shot: 2 }], ['v2.mp4', { kind: 'video', shot: null }], ['i1.png', { kind: 'image', shot: null }],
 ])
 
-const link = (href: string, text = '播放'): MarkdownElement => ({ kind: 'link', href, title: undefined, text })
-const cell = (text: string, href?: string): MarkdownTableCell => ({ text, links: href === undefined ? [] : [{ href, text }] })
+const link = (href: string): MarkdownElement => ({ kind: 'link', href })
+const cell = (text: string, href?: string): MarkdownTableCell => ({ text, links: href === undefined ? [] : [{ href }] })
 const table = (...rows: MarkdownTableCell[][]): MarkdownElement => ({
-  kind: 'table', header: [cell('镜头'), cell('内容'), cell('视频')], rows,
+  kind: 'table', rows,
 })
 
 /** The card form of one element under `kinds`: the entry's `select`, then the component's resolution. */
@@ -29,7 +29,7 @@ function selectChatMedia(element: MarkdownElement, kinds: AssetKinds): ChatMedia
 }
 
 // jsdom cannot play media; the player starts its video through `play()` once it is open.
-let play: ReturnType<typeof vi.spyOn>
+let play: MockInstance<HTMLMediaElement['play']>
 beforeEach(() => {
   document.documentElement.lang = 'zh-CN'
   play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
@@ -72,7 +72,7 @@ describe('selectChatMedia', () => {
   })
 
   it('turns an image of an image asset into a thumbnail and keeps an image of a video', () => {
-    const image = (src: string): MarkdownElement => ({ kind: 'image', src, alt: '定妆照', title: undefined })
+    const image = (src: string): MarkdownElement => ({ kind: 'image', src, alt: '定妆照' })
     expect(selectChatMedia(image('/dv/assets/i1.png'), KINDS)).toEqual({ kind: 'image', asset: 'i1.png', alt: '定妆照' })
     expect(selectChatMedia(image('/dv/assets/v1.mp4'), KINDS)).toBeNull()
   })
@@ -96,7 +96,7 @@ describe('selectChatMedia', () => {
   })
 
   it('takes the first video link of a row and captions the card with the other cells', () => {
-    const links = [{ href: '/dv/assets/i1.png', text: '定妆照' }, { href: '/dv/assets/v1.mp4', text: '播放' }]
+    const links = [{ href: '/dv/assets/i1.png' }, { href: '/dv/assets/v1.mp4' }]
     const row = [cell('1'), { text: '定妆照 播放', links }]
     expect(selectChatMedia(table(row), KINDS)).toEqual({ kind: 'grid', shots: [{ asset: 'v1.mp4', caption: '1' }] })
   })
@@ -324,7 +324,7 @@ describe('registerChatMedia', () => {
           const fallback = anchor(href!, text!)
           return (
             <p key={href}>
-              {props.renderSlotChain('conversation.chat.markdown', { element: link(href!, text), fallback }, { fallback, inline: true })}
+              {props.renderSlotChain('conversation.chat.markdown', { element: link(href!), fallback }, { fallback, inline: true })}
             </p>
           )
         })}

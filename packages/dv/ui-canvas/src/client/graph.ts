@@ -8,6 +8,7 @@
 import type {
   Character, Clip, Location, NodePosition, PlanVersion, ProjectRecord, RecordInput, RecordInputRef, StoryBibleState, Style, WireState,
 } from '@dv/ui-kit/types.ts'
+import { isRenderOperation } from '@dv/ui-kit/state.ts'
 
 /** What a node represents; the canvas colors nodes by it. */
 export type CanvasNodeKind = 'bible' | 'asset' | 'plan' | 'take'
@@ -86,7 +87,7 @@ export const ROW = 200
 
 /** A `shot.render_ref2va` or `shot.render_t2va` record, whose outputs are the takes the creator judges. */
 function isRender(record: ProjectRecord): boolean {
-  return record.operation === 'shot.render_ref2va' || record.operation === 'shot.render_t2va'
+  return isRenderOperation(record.operation)
 }
 
 /**

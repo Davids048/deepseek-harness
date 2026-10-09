@@ -18,6 +18,7 @@ import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DvClient, assetUrl } from '@dv/ui-kit/api.ts'
 import { useCurrentProject } from '@dv/ui-kit/current-project.ts'
 import { useText } from '@dv/ui-kit/locale.ts'
+import { isRenderOperation } from '@dv/ui-kit/state.ts'
 import type { Actor, Asset, HistoryEntry, HistoryQuery, ProjectRecord, RecordStatus, WireHistory } from '@dv/ui-kit/types.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
@@ -460,7 +461,7 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean }):
   const status = t(...STATUSES[record.status])
   // Only a render row has a thumbnail column, so render rows line up even when one rendered nothing (an empty square);
   // other rows stay text so the list reads cleanly.
-  const render = record.operation?.startsWith('shot.render_') === true
+  const render = isRenderOperation(record.operation)
   const thumbnail = render ? thumbnailOf(record, assets, props.records) : null
   // The intent the agent gave for its call; a call without one records the operation name, which the label already shows.
   // A human action's intent repeats its label, so it stays in the tooltip.

@@ -591,16 +591,16 @@ describe('Chat node rendering', () => {
     const owners: ChatMarkdownOwnerProps[] = []
     h.props.renderSlotChain = ((_key: string, owner: ChatMarkdownOwnerProps, opts?: { fallback?: React.ReactNode }) => {
       owners.push(owner)
-      return owner.element.kind === 'link' ? <span data-testid="card">{owner.element.text}</span> : opts?.fallback
+      return owner.element.kind === 'link' ? <span data-testid="card">{owner.element.href}</span> : opts?.fallback
     }) as ChatViewSlotProps['renderSlotChain']
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByRole('link', { name: 'Play' })).toBeTruthy()
     expect(owners).toEqual([])
 
     act(() => { h.setMarkdownReplaced(true) })
-    expect(view.getByTestId('card').textContent).toBe('Play')
+    expect(view.getByTestId('card').textContent).toBe('https://example.com/v1')
     expect(view.queryByRole('link', { name: 'Play' })).toBeNull()
-    expect(owners.at(-1)?.element).toEqual({ kind: 'link', href: 'https://example.com/v1', title: undefined, text: 'Play' })
+    expect(owners.at(-1)?.element).toEqual({ kind: 'link', href: 'https://example.com/v1' })
 
     act(() => { h.setMarkdownReplaced(false) })
     expect(view.getByRole('link', { name: 'Play' })).toBeTruthy()
@@ -624,7 +624,7 @@ describe('Chat node rendering', () => {
       await act(async () => {
         runtime.slots.register({
           name: 'conversation.chat.markdown',
-          select: ({ element }) => element.kind === 'link' && element.text === 'Play' ? element.text : null,
+          select: ({ element }) => element.kind === 'link' && element.href === 'https://example.com/v1' ? 'Play' : null,
         }, ({ matched, fallback }) => <span data-testid="card">{matched}{fallback}</span>)
       })
       const view = runtime.renderRoot()

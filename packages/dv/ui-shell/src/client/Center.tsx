@@ -25,7 +25,7 @@ import {
   DV_CANVAS_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT, DV_TIMELINE_INSERT_EVENT, type DvWorkspaceEventMap,
 } from '@dv/ui-kit/workspace-events.ts'
 import type { WireProjectSummary, WireWorkspaces } from '@dv/ui-kit/types.ts'
-import { clockText } from '@dv/ui-canvas/src/client/NodeCard.tsx'
+import { clockText } from '@dv/ui-kit/timeline.ts'
 import type { ShellActions } from './actions.ts'
 import { CoverFrame, editedText, useProjectSummaries } from './cover.tsx'
 import { SidebarRightIcon } from './icons.tsx'

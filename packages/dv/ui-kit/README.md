@@ -40,7 +40,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`, `timelineName(timeline, numbered)`, `formatSeconds` |
 | `references.ts` | `shotReferences(version, shot)`, `referenceImages(state, references)`, `pictureParts(prompt)`: the reference images a shot sends to the video model in the order its prompt names them `Picture 1`, `Picture 2`, …, and the prompt split at those tokens; a `t2va` shot has no reference images |
 | `state.ts` | `assetIndex`, `videoAssets` |
-| `useProject.ts` | `useProjects`, `useOperations`, `useProjectState`: loaders that refetch on every project event |
+| `useProject.ts` | `useProjects`, `useOperations`, `useProjectState`: loaders that refetch on every project event; `useLoader(load, deps)`, the request lifecycle they share, which aborts a stale request and keeps the last value while it reloads |
 | `useView.ts` | `useViewSession(client, surface, session?)`: the project choice, the project's current state, the operations, the last failure, and the project-bar callbacks; `sessionFromLocation` reads the chat session from the page's `?session=` so the view opens on that session's project |
 | `ProjectBar.tsx` | The Sidebar bar (test ID `dv-kit-project-bar`): the project picker, a new-project button, and undo, drawn as 28 px secondary controls with the `--dv-*` theme tokens; its copy arrives as `labels`, already localized by the owning plugin |
 | `compose.ts`, `workspace-events.ts` | The window events `dv:compose`, `dv:timeline-insert`, `dv:canvas-focus`, `dv:history-focus`, `dv:trajectory-focus`, `dv:timeline-focus` (`DV_*_EVENT`) and the asset drag type `application/x-dv-asset` |

@@ -14,9 +14,6 @@ export interface MarkdownLinkElement {
   readonly kind: 'link'
   /** Destination exactly as authored, before sanitizing. */
   readonly href: string
-  readonly title: string | undefined
-  /** Plain text of the link label, with whitespace runs collapsed. */
-  readonly text: string
 }
 
 /** A settled Markdown image outside a link, inline or by reference. */
@@ -25,15 +22,12 @@ export interface MarkdownImageElement {
   /** Destination exactly as authored, before sanitizing. */
   readonly src: string
   readonly alt: string
-  readonly title: string | undefined
 }
 
 /** One link inside a table cell. */
 export interface MarkdownTableLink {
   /** Destination exactly as authored, before sanitizing. */
   readonly href: string
-  /** Plain text of the link label. */
-  readonly text: string
 }
 
 /** One authored table cell. */
@@ -44,10 +38,9 @@ export interface MarkdownTableCell {
   readonly links: readonly MarkdownTableLink[]
 }
 
-/** A settled GFM table: the header row and the body rows with their authored cells. */
+/** A settled GFM table: its body rows with their authored cells. */
 export interface MarkdownTableElement {
   readonly kind: 'table'
-  readonly header: readonly MarkdownTableCell[]
   readonly rows: readonly (readonly MarkdownTableCell[])[]
 }
 

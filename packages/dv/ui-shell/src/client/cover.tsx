@@ -5,10 +5,10 @@
  * @module @dv/ui-shell/cover
  */
 import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
 import { assetUrl } from '@dv/ui-kit/api.ts'
 import type { PickText } from '@dv/ui-kit/locale.ts'
 import type { WireProjectCover, WireProjectSummary } from '@dv/ui-kit/types.ts'
+import { useLoader } from '@dv/ui-kit/useProject.ts'
 import { shellClient } from './store.ts'
 import css from './shell.module.css'
 
@@ -20,17 +20,10 @@ import css from './shell.module.css'
  * @returns the summaries by project ID, or null until the first read succeeds.
  */
 export function useProjectSummaries(project: string | null, refresh: unknown): ReadonlyMap<string, WireProjectSummary> | null {
-  const [summaries, setSummaries] = useState<ReadonlyMap<string, WireProjectSummary> | null>(null)
-  useEffect(() => {
-    const abort = new AbortController()
-    shellClient.listProjectSummaries(abort.signal, project).then((list) => {
-      if (!abort.signal.aborted) setSummaries(new Map(list.map(summary => [summary.project, summary])))
-    }, (error: unknown) => {
-      if (!abort.signal.aborted) console.warn('ui-shell: project summaries read failed', error)
-    })
-    return () => { abort.abort() }
-  }, [project, refresh])
-  return summaries
+  return useLoader(async (signal) => {
+    const list = await shellClient.listProjectSummaries(signal, project)
+    return new Map(list.map(summary => [summary.project, summary]))
+  }, [project, refresh]).value
 }
 
 /**

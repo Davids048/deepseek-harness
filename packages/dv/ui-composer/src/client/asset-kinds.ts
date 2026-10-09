@@ -7,6 +7,7 @@
  */
 import type { DvClient } from '@dv/ui-kit/api.ts'
 import { DV_CURRENT_PROJECT_EVENT, getCurrentProject } from '@dv/ui-kit/current-project.ts'
+import { isRenderOperation } from '@dv/ui-kit/state.ts'
 
 /** The media kinds that the chat cards draw. */
 export type AssetKind = 'video' | 'image'
@@ -29,9 +30,6 @@ export const NO_ASSET_KINDS: AssetKinds = new Map()
 
 /** The pause after a project event before the fetch, so a burst of events causes one fetch. */
 const REFETCH_DELAY_MS = 150
-
-/** The operations whose records write takes. */
-const RENDER_OPERATIONS: ReadonlySet<string> = new Set(['shot.render_ref2va', 'shot.render_t2va'])
 
 /**
  * @param mime - an asset's MIME type.
@@ -69,7 +67,7 @@ async function fetchKinds(client: DvClient, project: string, signal: AbortSignal
   const shots = new Map<string, number>()
   for (const record of state.components.proj.records) {
     const shot = record.params['shot']
-    if (!RENDER_OPERATIONS.has(record.operation ?? '') || typeof shot !== 'number') continue
+    if (!isRenderOperation(record.operation) || typeof shot !== 'number') continue
     for (const output of record.outputs) shots.set(output, shot)
   }
   const kinds = new Map<string, AssetEntry>()

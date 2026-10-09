@@ -25,6 +25,7 @@ import { useLanguage } from '@dv/ui-kit/locale.ts'
 import type { CanvasViewport, NodePosition, OperationRequest } from '@dv/ui-kit/types.ts'
 import { DV_ASSET_DRAG_TYPE, DV_CANVAS_FOCUS_EVENT } from '@dv/ui-kit/workspace-events.ts'
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
+import { readStored, writeStored } from '@dv/ui-kit/storage.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import { useZoomPresence } from '@dv/ui-kit/zoom.ts'
 import { buildCanvasGraph, freePositions, NODE_WIDTH, planShotFrames, referenceText, ROW } from './graph.ts'
@@ -134,13 +135,13 @@ function isFinishedTake(node: CanvasNode): boolean {
  * @returns the take node IDs opened in this browser, or null when the project has none stored.
  */
 function readSeen(projectId: string): Set<string> | null {
+  const raw = readStored('local', SEEN_KEY + projectId)
+  if (raw === null) return null
   try {
-    const raw = localStorage.getItem(SEEN_KEY + projectId)
-    if (raw === null) return null
     const parsed: unknown = JSON.parse(raw)
     return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [])
   } catch (error) {
-    // Storage that is blocked or holds malformed JSON counts as none stored.
+    // Malformed JSON counts as none stored.
     void error
     return null
   }
@@ -151,12 +152,7 @@ function readSeen(projectId: string): Set<string> | null {
  * @param ids - the take node IDs opened in this browser.
  */
 function writeSeen(projectId: string, ids: ReadonlySet<string>): void {
-  try {
-    localStorage.setItem(SEEN_KEY + projectId, JSON.stringify([...ids]))
-  } catch (error) {
-    // Blocked storage keeps the opened takes for this page only.
-    void error
-  }
+  writeStored('local', SEEN_KEY + projectId, JSON.stringify([...ids]))
 }
 
 /** A render whose new take the canvas waits for: the take it is based on and every node drawn before the request. */
@@ -413,14 +409,18 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
 
   // Reveal the take a render started: close the editor, center the new node, and select it.
   const awaitedRender = useRef<AwaitedRender | null>(null)
+  // The failed take whose 重试 started the awaited render; its button reads 渲染中… until the render is settled.
   const [retryingFrom, setRetryingFrom] = useState<string | null>(null)
+  const settleAwaited = (): void => {
+    awaitedRender.current = null
+    setRetryingFrom(null)
+  }
   useEffect(() => {
     const awaited = awaitedRender.current
     if (awaited === null || graph === null) return
     const node = graph.nodes.find(candidate => candidate.kind === 'take' && candidate.record?.based_on === awaited.basedOn && !awaited.known.has(candidate.id))
     if (node === undefined) return
-    awaitedRender.current = null
-    setRetryingFrom(null)
+    settleAwaited()
     setEditing(null)
     setSelected(node.id)
     centerOn(node)
@@ -556,15 +556,13 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     setNotice(null)
     client.runOperation(request).then(() => {
       if (awaitedRender.current !== awaited) return
-      awaitedRender.current = null
-      setRetryingFrom(null)
+      settleAwaited()
       setEditing(null)
       resolve()
     }, (error: unknown) => {
       const message = error instanceof Error ? error.message : String(error)
       if (awaitedRender.current !== awaited) { setNotice(t('error', { message })); return }
-      awaitedRender.current = null
-      setRetryingFrom(null)
+      settleAwaited()
       reject(new Error(message))
     })
   })
@@ -750,28 +748,28 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
         <button type="button" className="dv-canvas-btn" style={{ ...toolButton, padding: '0 8px' }} onClick={() => { autoFit.current = true; fit(); scheduleSave() }}>{t('canvas.fit')}</button>
       </div>
       {editingNode !== null && graph !== null
-        ? <div ref={editorZoom.fadeRef} aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'var(--dv-overlay)', zIndex: 9 }} />
-        : null}
-      {editingNode !== null && graph !== null
         ? (
-          <NodeEditor
-            key={editingNode.id}
-            node={editingNode}
-            zoomRef={editorZoom.targetRef}
-            state={graph.state}
-            client={client}
-            project={projectId}
-            session={session}
-            t={t}
-            onClose={() => { setEditing(null) }}
-            run={run}
-            onRender={startRender}
-            onRemoveFromCanvas={(assetId) => {
-              setEditing(null)
-              setSelected(null)
-              void run(() => changePlacement(assetId, false))
-            }}
-          />
+          <>
+            <div ref={editorZoom.fadeRef} aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'var(--dv-overlay)', zIndex: 9 }} />
+            <NodeEditor
+              key={editingNode.id}
+              node={editingNode}
+              zoomRef={editorZoom.targetRef}
+              state={graph.state}
+              client={client}
+              project={projectId}
+              session={session}
+              t={t}
+              onClose={() => { setEditing(null) }}
+              run={run}
+              onRender={startRender}
+              onRemoveFromCanvas={(assetId) => {
+                setEditing(null)
+                setSelected(null)
+                void run(() => changePlacement(assetId, false))
+              }}
+            />
+          </>
         )
         : null}
     </div>

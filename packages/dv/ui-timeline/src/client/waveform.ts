@@ -186,15 +186,15 @@ function loadEnvelope(assetId: string): Promise<AudioEnvelope | null> {
  * @returns the envelope, or null.
  */
 export function useAudioEnvelope(assetId: string | null): AudioEnvelope | null {
-  const cached = assetId === null ? null : settled.get(assetId) ?? null
-  const [loaded, setLoaded] = useState<{ assetId: string; envelope: AudioEnvelope | null } | null>(null)
+  // The module cache holds every settled envelope; the counter only re-renders the clip once its envelope settles.
+  const [, settle] = useState(0)
   useEffect(() => {
     if (assetId === null || settled.has(assetId) || !canDecode()) return
     let alive = true
     let retry: ReturnType<typeof setTimeout> | undefined
     const attempt = (failures: number): void => {
       void loadEnvelope(assetId).then(
-        (envelope) => { if (alive) setLoaded({ assetId, envelope }) },
+        () => { if (alive) settle(count => count + 1) },
         () => {
           const delay = RETRY_DELAYS_MS[failures]
           if (alive && delay !== undefined) retry = setTimeout(() => { attempt(failures + 1) }, delay)
@@ -204,5 +204,5 @@ export function useAudioEnvelope(assetId: string | null): AudioEnvelope | null {
     attempt(0)
     return () => { alive = false; clearTimeout(retry) }
   }, [assetId])
-  return cached ?? (loaded !== null && loaded.assetId === assetId ? loaded.envelope : null)
+  return assetId === null ? null : settled.get(assetId) ?? null
 }

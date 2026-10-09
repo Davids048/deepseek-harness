@@ -40,7 +40,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`、`timelineName(timeline, numbered)`、`formatSeconds` |
 | `references.ts` | `shotReferences(version, shot)`、`referenceImages(state, references)`、`pictureParts(prompt)`：一个镜头发给视频模型的参考图，按提示词里 `Picture 1`、`Picture 2`…… 的编号顺序排列，以及在这些标记处切开的提示词；`t2va` 镜头没有参考图 |
 | `state.ts` | `assetIndex`、`videoAssets` |
-| `useProject.ts` | `useProjects`、`useOperations`、`useProjectState`：每次项目事件都重新拉取的加载器 |
+| `useProject.ts` | `useProjects`、`useOperations`、`useProjectState`：每次项目事件都重新拉取的加载器；`useLoader(load, deps)` 是它们共用的请求流程，会中止过期的请求，并在重新加载时保留上一次的值 |
 | `useView.ts` | `useViewSession(client, surface, session?)`：项目选择、项目的当前状态、操作、最近一次失败和项目栏回调；`sessionFromLocation` 从页面地址的 `?session=` 读对话，让视图打开该对话的项目 |
 | `ProjectBar.tsx` | 侧栏的栏（测试 ID `dv-kit-project-bar`）：项目选择器、新建项目按钮和撤销，用 `--dv-*` 主题变量画成 28 px 的次要控件；文案以 `labels` 传入，由所属插件先本地化 |
 | `compose.ts`、`workspace-events.ts` | 窗口事件 `dv:compose`、`dv:timeline-insert`、`dv:canvas-focus`、`dv:history-focus`、`dv:trajectory-focus`、`dv:timeline-focus`（`DV_*_EVENT`）和素材拖拽类型 `application/x-dv-asset` |

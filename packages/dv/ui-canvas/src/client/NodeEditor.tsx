@@ -13,16 +13,18 @@
  * full prompt with each `Picture N` drawn as its image. A stale node offers "仍然保留", which keeps its record as it is
  * (`proj.stale_accept`).
  */
-import { useLayoutEffect, useRef, useState } from 'react'
+import { memo, useLayoutEffect, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { assetUrl } from '@dv/ui-kit/api.ts'
 import type { DvClient } from '@dv/ui-kit/api.ts'
 import { dispatchCompose, type DvComposeRef } from '@dv/ui-kit/compose.ts'
 import { pictureParts, referenceImages, shotReferences } from '@dv/ui-kit/references.ts'
+import { readStored, writeStored } from '@dv/ui-kit/storage.ts'
+import { clockText } from '@dv/ui-kit/timeline.ts'
 import type { OperationRequest, PlanVersion, Shot, WireState } from '@dv/ui-kit/types.ts'
 import { bibleItems, bibleVersions, referenceText } from './graph.ts'
 import type { CanvasNode } from './graph.ts'
-import { clockText, KIND_COLOR, kindLabel, nodeTitle } from './NodeCard.tsx'
+import { KIND_COLOR, kindLabel, mono, nodeTitle, planTotalSec } from './NodeCard.tsx'
 import type { CanvasTranslate } from './NodeCard.tsx'
 
 /** Props of {@link NodeEditor}. */
@@ -63,17 +65,17 @@ export interface EditorArea {
 }
 
 /** The widest default panel, in px. */
-export const EDITOR_DEFAULT_WIDTH = 720
+const EDITOR_DEFAULT_WIDTH = 720
 /** The space in px the default panel leaves on each side of the canvas area. */
-export const EDITOR_MARGIN = 24
+const EDITOR_MARGIN = 24
 /** The lowest panel height the default gives when the canvas area has room for it, in px. */
-export const EDITOR_DEFAULT_MIN_HEIGHT = 480
+const EDITOR_DEFAULT_MIN_HEIGHT = 480
 /** The smallest width a resize gives, in px; a narrower canvas area caps it at the area's width. */
-export const EDITOR_MIN_WIDTH = 480
+const EDITOR_MIN_WIDTH = 480
 /** The smallest height a resize gives, in px; a lower canvas area caps it at the area's height. */
-export const EDITOR_MIN_HEIGHT = 320
+const EDITOR_MIN_HEIGHT = 320
 /** The length in px of the panel's header that a move keeps inside the canvas area, so the header stays draggable. */
-export const EDITOR_KEEP_VISIBLE = 48
+const EDITOR_KEEP_VISIBLE = 48
 /** The `localStorage` key of the last panel position and size, shared by every node. */
 export const EDITOR_RECT_KEY = 'dv-canvas-editor-rect'
 
@@ -182,14 +184,7 @@ export function resizeEditorRect(
  * @returns the rectangle.
  */
 function readEditorRect(): EditorRect | null {
-  let text: string | null
-  try {
-    text = window.localStorage.getItem(EDITOR_RECT_KEY)
-  } catch (error) {
-    // Storage that throws (blocked site data, private windows) means no remembered rectangle; the default applies.
-    void error
-    return null
-  }
+  const text = readStored('local', EDITOR_RECT_KEY)
   if (text === null) return null
   let value: unknown
   try {
@@ -210,13 +205,7 @@ function readEditorRect(): EditorRect | null {
  * @param rect - the rectangle, or null after a reset to the default.
  */
 function writeEditorRect(rect: EditorRect | null): void {
-  try {
-    if (rect === null) window.localStorage.removeItem(EDITOR_RECT_KEY)
-    else window.localStorage.setItem(EDITOR_RECT_KEY, JSON.stringify(rect))
-  } catch (error) {
-    // Storage that throws only loses the remembered rectangle; the panel keeps its place for this open.
-    void error
-  }
+  writeStored('local', EDITOR_RECT_KEY, rect === null ? null : JSON.stringify(rect))
 }
 
 /** The px a resize-handle arrow key adds to or takes from the panel's width or height. */
@@ -256,7 +245,6 @@ const chip: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap:
 const referenceImage: CSSProperties = { height: 220, borderRadius: 'var(--dv-radius-md)', background: 'var(--dv-surface-3)' }
 /** A small rounded tag in the plan editor: the duration and render-mode chips of a shot. */
 const tag: CSSProperties = { height: 22, padding: '0 8px', display: 'inline-flex', alignItems: 'center', fontSize: 12, lineHeight: '16px', background: 'var(--dv-surface-3)' }
-const mono: CSSProperties = { fontFamily: 'var(--dv-font-mono)', fontVariantNumeric: 'tabular-nums' }
 /** The height a shot prompt is collapsed to until the reader expands it. */
 const PROMPT_COLLAPSED_HEIGHT = 140
 
@@ -611,8 +599,7 @@ function TakeForm(
       <span data-testid="dv-canvas-render-mode">{modeLabel(textOnly ? 't2va' : 'ref2va', t)}</span>
       <label style={label} htmlFor="dv-canvas-editor-prompt">{t('editor.prompt')}</label>
       <textarea id="dv-canvas-editor-prompt" style={{ ...field, minHeight: 72, resize: 'vertical' }} value={prompt} onChange={(event) => { setPrompt(event.target.value) }} />
-      {textOnly ? null : <span style={label}>{t('editor.references')}</span>}
-      {textOnly ? null : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+      {textOnly ? null : <><span style={label}>{t('editor.references')}</span><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
         {references.map((input) => {
           const image = refImage(state, input.ref)
           const name = refName(state, input.ref)
@@ -632,7 +619,7 @@ function TakeForm(
             </select>
           )
           : null}
-      </div>}
+      </div></>}
       <div style={{ display: 'flex', gap: 12 }}>
         <div style={{ flex: 1 }}>
           <label style={label} htmlFor="dv-canvas-editor-duration">{t('editor.duration')}</label>
@@ -769,10 +756,7 @@ function PlanHeader(
   let tone = 'var(--dv-warn)'
   if (approved) { status = t('editor.planApproved'); tone = 'var(--dv-ok)' }
   else if (replaced) { status = t('editor.planReplaced', { version: plan.version + 1 }); tone = 'var(--dv-text-2)' }
-  const durations = plan.shots.map(shot => shot.duration_sec)
-  const total = durations.length > 0 && durations.every(duration => duration !== undefined)
-    ? durations.reduce<number>((sum, duration) => sum + (duration ?? 0), 0)
-    : null
+  const total = planTotalSec(plan.shots)
   const summary = [t('node.planShots', { count: plan.shots.length }), ...total === null ? [] : [clockText(total)], ...plan.aspect_ratio === undefined ? [] : [plan.aspect_ratio]]
   const images = namedImages(state, plan.references ?? [])
   return (
@@ -820,11 +804,12 @@ function PlanHeader(
 }
 
 /**
- * The shots of one plan version as cards.
+ * The shots of one plan version as cards. Memoized, because a move or resize of the editor panel re-renders the editor
+ * on every pointer move and the shot cards look up their reference images.
  * @param props - the version, the branch state, and the canvas translate.
  * @returns the element.
  */
-function PlanShots({ plan, state, t }: { plan: PlanVersion; state: WireState; t: CanvasTranslate }): ReactNode {
+const PlanShots = memo(function PlanShots({ plan, state, t }: { plan: PlanVersion; state: WireState; t: CanvasTranslate }): ReactNode {
   return (
     <ol aria-label={t('editor.shots')} style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
       {plan.shots.map((shot, index) => (
@@ -832,7 +817,7 @@ function PlanShots({ plan, state, t }: { plan: PlanVersion; state: WireState; t:
       ))}
     </ol>
   )
-}
+})
 
 const term: CSSProperties = { fontSize: 12, lineHeight: '16px', color: 'var(--dv-text-2)' }
 

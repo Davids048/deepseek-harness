@@ -31,31 +31,31 @@ function recorder() {
 }
 
 describe('Markdown element renderer', () => {
-  it('offers settled links with the authored destination, title, and label text', () => {
+  it('offers settled links and resolved link references with the authored destination', () => {
     const { offered, renderElement } = recorder()
     renderWith('[**Play** it](/dv/assets/a1 "Shot 1") and [ref]\n\n[ref]: https://example.com/x "Ref"', renderElement)
     expect(offered).toEqual([
-      { kind: 'link', href: '/dv/assets/a1', title: 'Shot 1', text: 'Play it' },
-      { kind: 'link', href: 'https://example.com/x', title: 'Ref', text: 'ref' },
+      { kind: 'link', href: '/dv/assets/a1' },
+      { kind: 'link', href: 'https://example.com/x' },
     ])
   })
 
-  it('collapses label text from raw HTML, math, breaks, and footnote references', () => {
+  it('collapses cell text from raw HTML, math, and footnote references', () => {
     const { offered, renderElement } = recorder()
-    renderWith('[a <i>b</i> $x$\\\nc[^n]](https://example.com)\n\n[^n]: Note', renderElement)
-    expect(offered).toEqual([{ kind: 'link', href: 'https://example.com', title: undefined, text: 'a <i>b</i> x c' }])
+    renderWith('| A |\n| - |\n| a <i>b</i>   $x$ c[^n] |\n\n[^n]: Note', renderElement)
+    expect(offered.find(element => element.kind === 'table')).toEqual({ kind: 'table', rows: [[{ text: 'a <i>b</i> x c', links: [] }]] })
   })
 
   it('offers images outside links but keeps images inside a link label', () => {
     const { offered, renderElement } = recorder()
     renderWith('![Still](https://example.com/s.png "Title") [![badge](https://example.com/b.png)](https://example.com)', renderElement)
     expect(offered).toEqual([
-      { kind: 'image', src: 'https://example.com/s.png', alt: 'Still', title: 'Title' },
-      { kind: 'link', href: 'https://example.com', title: undefined, text: 'badge' },
+      { kind: 'image', src: 'https://example.com/s.png', alt: 'Still' },
+      { kind: 'link', href: 'https://example.com' },
     ])
   })
 
-  it('offers tables with header and body cells and the links of each cell', () => {
+  it('offers tables with their body cells and the links of each cell', () => {
     const { offered, renderElement } = recorder()
     renderWith([
       '| Shot | Content | Video |',
@@ -68,21 +68,16 @@ describe('Markdown element renderer', () => {
     const table = offered.find(element => element.kind === 'table')
     expect(table).toEqual({
       kind: 'table',
-      header: [
-        { text: 'Shot', links: [] },
-        { text: 'Content', links: [] },
-        { text: 'Video', links: [] },
-      ],
       rows: [
         [
           { text: '1', links: [] },
           { text: 'Opening line', links: [] },
-          { text: 'Play', links: [{ href: '/dv/assets/v1', text: 'Play' }] },
+          { text: 'Play', links: [{ href: '/dv/assets/v1' }] },
         ],
         [
           { text: '2', links: [] },
           { text: 'Close-up', links: [] },
-          { text: 'Play', links: [{ href: '/dv/assets/v2', text: 'Play' }] },
+          { text: 'Play', links: [{ href: '/dv/assets/v2' }] },
         ],
       ],
     })
@@ -156,8 +151,7 @@ describe('Markdown element renderer', () => {
     )
     expect(offered.find(element => element.kind === 'table')).toEqual({
       kind: 'table',
-      header: [{ text: 'A', links: [] }],
-      rows: [[{ text: 'x', links: [{ href: 'https://example.com', text: '' }] }]],
+      rows: [[{ text: 'x', links: [{ href: 'https://example.com' }] }]],
     })
   })
 })

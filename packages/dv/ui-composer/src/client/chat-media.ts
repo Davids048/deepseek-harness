@@ -187,7 +187,9 @@ function sameChatMedia(a: ChatMedia | null, b: ChatMedia | null): boolean {
 
 /**
  * Register the chain entry while the Chat view declares `conversation.chat.markdown`. The entry stays registered for
- * the whole declaration, and the open project's asset kinds reach its component through the `useAssetKinds` hook.
+ * the whole declaration, and the open project's asset kinds reach its component through the `useAssetKinds` hook. The
+ * kinds are followed only while a chat element subscribes to them; when the last one unsubscribes, following stops and
+ * the last kinds stay for the next subscriber.
  * @param ctx - client root context with the `slots` service.
  */
 export function registerChatMedia(ctx: Context): void {
@@ -195,17 +197,23 @@ export function registerChatMedia(ctx: Context): void {
   ctx.slots.inject('conversation.chat.markdown', () => {
     let kinds = NO_ASSET_KINDS
     const listeners = new Set<() => void>()
+    let stopFollowing: (() => void) | null = null
     const assetKinds = {
       getSnapshot: (): AssetKinds => kinds,
       subscribe: (listener: () => void): (() => void) => {
         listeners.add(listener)
-        return () => { listeners.delete(listener) }
+        stopFollowing ??= followAssetKinds(client, (next) => {
+          kinds = next
+          for (const each of [...listeners]) each()
+        })
+        return () => {
+          listeners.delete(listener)
+          if (listeners.size > 0) return
+          stopFollowing?.()
+          stopFollowing = null
+        }
       },
     }
-    const stop = followAssetKinds(client, (next) => {
-      kinds = next
-      for (const listener of [...listeners]) listener()
-    })
     const unregister = ctx.slots.register({
       name: 'conversation.chat.markdown',
       select: ({ element }) => selectAssetReference(element),
@@ -213,7 +221,7 @@ export function registerChatMedia(ctx: Context): void {
     }, ChatMediaEntry)
     return () => {
       unregister()
-      stop()
+      stopFollowing?.()
     }
   })
 }

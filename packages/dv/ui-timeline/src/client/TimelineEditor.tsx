@@ -10,12 +10,13 @@
  * placeholder clip, whose render is still running (渲染中…) or failed (渲染失败), keeps its place and its planned length on
  * the track; it cannot be trimmed or split, playback skips it, and export waits until every clip is ready.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent, KeyboardEvent, PointerEvent, ReactNode } from 'react'
 import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import { assetUrl } from '@dv/ui-kit/api.ts'
 import type { DvClient } from '@dv/ui-kit/api.ts'
 import { publishCurrentTimeline, useCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
+import { readStored, writeStored } from '@dv/ui-kit/storage.ts'
 import { timelineName } from '@dv/ui-kit/timeline.ts'
 import { assetIndex, videoAssets } from '@dv/ui-kit/state.ts'
 import type { OperationRequest, WireState } from '@dv/ui-kit/types.ts'
@@ -99,7 +100,6 @@ const palette = {
   lineStrong: 'var(--dv-line-strong)',
   fg: 'var(--dv-text)',
   muted: 'var(--dv-text-2)',
-  faint: 'var(--dv-text-3)',
   accent: 'var(--dv-accent)',
   accentFg: 'var(--dv-accent-text)',
   danger: 'var(--dv-danger)',
@@ -137,6 +137,12 @@ const button: CSSProperties = {
 const iconButton: CSSProperties = { width: 32, height: 32, padding: 0, justifyContent: 'center', border: 'none', color: palette.muted }
 /** A text-only button. */
 const textButton: CSSProperties = { border: 'none', color: palette.muted }
+/** A full-width row of a menu or a picker list. */
+const menuItem: CSSProperties = { ...button, border: 'none', display: 'flex', width: '100%', textAlign: 'left' }
+/** A one-line note centered over the preview frame. */
+const viewerNote: CSSProperties = {
+  position: 'absolute', inset: 0, margin: 'auto', height: 20, padding: '0 16px', textAlign: 'center', color: palette.muted,
+}
 
 /**
  * A toolbar button style that looks inactive when the button is disabled.
@@ -207,14 +213,8 @@ export function clampTrackHeight(requested: number, available: number, minTrack:
  * @returns the height in pixels, or null when none is stored or storage is unavailable.
  */
 function readTrackHeight(): number | null {
-  try {
-    const stored = Number(window.localStorage.getItem(TRACK_HEIGHT_KEY))
-    return Number.isFinite(stored) && stored > 0 ? stored : null
-  } catch (error: unknown) {
-    // Storage can throw in a private window or with blocked site data; the track area then keeps its natural height.
-    void error
-    return null
-  }
+  const stored = Number(readStored('local', TRACK_HEIGHT_KEY))
+  return Number.isFinite(stored) && stored > 0 ? stored : null
 }
 
 /**
@@ -222,12 +222,7 @@ function readTrackHeight(): number | null {
  * @param height - the height in pixels.
  */
 function storeTrackHeight(height: number): void {
-  try {
-    window.localStorage.setItem(TRACK_HEIGHT_KEY, String(height))
-  } catch (error: unknown) {
-    // Storage can throw in a private window or with blocked site data; the height then lasts until the editor unmounts.
-    void error
-  }
+  writeStored('local', TRACK_HEIGHT_KEY, String(height))
 }
 
 /**
@@ -235,14 +230,8 @@ function storeTrackHeight(height: number): void {
  * @returns a speed of `PLAYBACK_RATES`; 1 when none is stored or storage is unavailable.
  */
 function readPlaybackRate(): number {
-  try {
-    const stored = Number(window.sessionStorage.getItem(PLAYBACK_RATE_KEY))
-    return PLAYBACK_RATES.find(rate => rate === stored) ?? 1
-  } catch (error: unknown) {
-    // Storage can throw in a private window or with blocked site data; playback then starts at normal speed.
-    void error
-    return 1
-  }
+  const stored = Number(readStored('session', PLAYBACK_RATE_KEY))
+  return PLAYBACK_RATES.find(rate => rate === stored) ?? 1
 }
 
 /**
@@ -250,12 +239,7 @@ function readPlaybackRate(): number {
  * @param rate - the speed.
  */
 function storePlaybackRate(rate: number): void {
-  try {
-    window.sessionStorage.setItem(PLAYBACK_RATE_KEY, String(rate))
-  } catch (error: unknown) {
-    // Storage can throw in a private window or with blocked site data; the speed then lasts until the editor unmounts.
-    void error
-  }
+  writeStored('session', PLAYBACK_RATE_KEY, String(rate))
 }
 
 /**
@@ -265,18 +249,18 @@ function storePlaybackRate(rate: number): void {
  * @param props - the clip's asset, its in and out points, and its width and height in pixels.
  * @returns the element, or null.
  */
-function AudioWaveform(
+// Memoized, because playback re-renders the editor on every animation frame while a waveform depends only on its clip.
+const AudioWaveform = memo(function AudioWaveform(
   { assetId, inSec, outSec, width, height }: { assetId: string; inSec: number; outSec: number; width: number; height: number },
 ): ReactNode {
   const envelope = useAudioEnvelope(assetId)
   const bars = Math.max(1, Math.floor(width / (WAVE_BAR + WAVE_GAP)))
-  const peaks = useMemo(() => envelope === null ? null : clipPeaks(envelope, inSec, outSec, bars), [envelope, inSec, outSec, bars])
-  if (peaks === null) return null
   // Bars are mirrored around the middle and at least 1 px tall, so a silent stretch still shows a center line.
-  const path = peaks.map((peak, bar) => {
+  const path = useMemo(() => envelope === null ? null : clipPeaks(envelope, inSec, outSec, bars).map((peak, bar) => {
     const barHeight = Math.max(1, peak * (height - 4))
     return `M${String(bar * (WAVE_BAR + WAVE_GAP))} ${String((height - barHeight) / 2)}h${String(WAVE_BAR)}v${String(barHeight)}h-${String(WAVE_BAR)}z`
-  }).join('')
+  }).join(''), [envelope, inSec, outSec, bars, height])
+  if (path === null) return null
   return (
     <svg
       data-testid="dv-timeline-waveform" viewBox={`0 0 ${String(bars * (WAVE_BAR + WAVE_GAP))} ${String(height)}`} preserveAspectRatio="none" aria-hidden
@@ -285,7 +269,7 @@ function AudioWaveform(
       <path d={path} fill={palette.audio} />
     </svg>
   )
-}
+})
 
 // A `dv:timeline-focus` request usually arrives while the editor is unmounted (the shell shows the timeline view in
 // response), so the module keeps the latest requested clip until an editor showing that timeline consumes it.
@@ -406,7 +390,10 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
   const rows = useRef<HTMLDivElement | null>(null)
   // The track area's height in pixels; null keeps its natural height.
   const [trackHeight, setTrackHeight] = useState<number | null>(readTrackHeight)
-  const [resizing, setResizing] = useState<{ startY: number; startHeight: number } | null>(null)
+  // A track-area drag: where it started and the resize bounds, read once when it starts.
+  const [resizing, setResizing] = useState<
+    { startY: number; startHeight: number; bounds: { available: number; minTrack: number } | null } | null
+  >(null)
 
   // The clip selection, the asset picker, the tab menu, the rename box, and the export link belong to one timeline.
   useEffect(() => {
@@ -654,8 +641,7 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
     const minTrack = panelElement.offsetHeight - scrollElement.clientHeight + rowsElement.offsetHeight + TRACK_PADDING
     return { available, minTrack }
   }
-  const resizeTo = (requested: number): number => {
-    const bounds = resizeBounds()
+  const resizeTo = (requested: number, bounds = resizeBounds()): number => {
     const height = bounds === null ? Math.round(requested) : clampTrackHeight(requested, bounds.available, bounds.minTrack)
     setTrackHeight(height)
     return height
@@ -681,13 +667,15 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
       onPointerDown={(event) => {
         event.preventDefault()
         capture(event)
-        setResizing({ startY: event.clientY, startHeight: panel.current?.offsetHeight ?? 0 })
+        setResizing({ startY: event.clientY, startHeight: panel.current?.offsetHeight ?? 0, bounds: resizeBounds() })
       }}
-      onPointerMove={(event) => { if (resizing !== null) resizeTo(resizing.startHeight - (event.clientY - resizing.startY)) }}
+      onPointerMove={(event) => {
+        if (resizing !== null) resizeTo(resizing.startHeight - (event.clientY - resizing.startY), resizing.bounds)
+      }}
       onPointerUp={(event) => {
         if (resizing === null) return
         setResizing(null)
-        storeTrackHeight(resizeTo(resizing.startHeight - (event.clientY - resizing.startY)))
+        storeTrackHeight(resizeTo(resizing.startHeight - (event.clientY - resizing.startY), resizing.bounds))
       }}
       onPointerCancel={() => {
         setResizing(null)
@@ -712,9 +700,25 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
     void change.catch((error: unknown) => { void error })
   }
 
-  const steps = rulerSteps(px)
   const laneWidth = Math.max(total * px + 80, 200)
-  const ticks = Array.from({ length: Math.floor(laneWidth / px / steps.tick) + 1 }, (_, i) => i * steps.tick)
+  // The ruler's ticks and labels depend only on the zoom and the lane width, so playback, which re-renders the editor
+  // on every animation frame, reuses them.
+  const rulerMarks = useMemo(() => {
+    const steps = rulerSteps(px)
+    const ticks = Array.from({ length: Math.floor(laneWidth / px / steps.tick) + 1 }, (_, i) => i * steps.tick)
+    return (
+      <>
+        {ticks.map(sec => (
+          <span key={sec} style={{ position: 'absolute', left: sec * px, bottom: 0, width: 1, height: sec % steps.label === 0 ? 9 : 4, background: palette.lineStrong }} />
+        ))}
+        {ticks.filter(sec => sec % steps.label === 0).map(sec => (
+          <span key={`label-${String(sec)}`} style={{ position: 'absolute', left: sec * px, top: 3, marginLeft: 4, fontFamily: palette.mono, fontSize: 11, lineHeight: '14px', fontVariantNumeric: 'tabular-nums', color: palette.muted, whiteSpace: 'nowrap', pointerEvents: 'none' }}>
+            {timecode(sec).replace(/\.\d+$/, '')}
+          </span>
+        ))}
+      </>
+    )
+  }, [px, laneWidth])
 
   /** One clip block on V1 or A1, with the live offset of a drag applied. */
   const blockGeometry = (clip: TrackClip): CSSProperties => {
@@ -766,8 +770,8 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
       <button type="button" className="dv-tl-btn" onClick={createTimeline} style={{ ...button, ...textButton }}>{t('tabs.new')}</button>
       {menu !== null ? (
         <div ref={menuRef} role="menu" style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 20, background: palette.panel, border: `1px solid ${palette.line}`, borderRadius: 'var(--dv-radius-xl)', padding: 6, boxShadow: 'var(--dv-shadow-2)', minWidth: 140 }}>
-          <button type="button" role="menuitem" className="dv-tl-btn" onClick={() => { startRename(menu.id) }} style={{ ...button, border: 'none', display: 'flex', width: '100%', textAlign: 'left' }}>{t('tabs.rename')}</button>
-          <button type="button" role="menuitem" className="dv-tl-btn" onClick={() => { deleteTimeline(menu.id) }} style={{ ...button, border: 'none', display: 'flex', width: '100%', textAlign: 'left', color: palette.danger }}>{t('tabs.delete')}</button>
+          <button type="button" role="menuitem" className="dv-tl-btn" onClick={() => { startRename(menu.id) }} style={menuItem}>{t('tabs.rename')}</button>
+          <button type="button" role="menuitem" className="dv-tl-btn" onClick={() => { deleteTimeline(menu.id) }} style={{ ...menuItem, color: palette.danger }}>{t('tabs.delete')}</button>
         </div>
       ) : null}
     </div>
@@ -789,9 +793,9 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', visibility: player.front === which && playheadClip?.status === 'ready' ? 'visible' : 'hidden' }}
             />
           ))}
-          {clips.length === 0 ? <p data-testid="dv-timeline-viewer-empty" style={{ position: 'absolute', inset: 0, margin: 'auto', height: 20, padding: '0 16px', textAlign: 'center', color: palette.muted }}>{t(timeline === null ? 'viewer.noTimelines' : 'viewer.empty')}</p> : null}
+          {clips.length === 0 ? <p data-testid="dv-timeline-viewer-empty" style={viewerNote}>{t(timeline === null ? 'viewer.noTimelines' : 'viewer.empty')}</p> : null}
           {playheadClip !== undefined && playheadClip.status !== 'ready' ? (
-            <p data-testid="dv-timeline-viewer-placeholder" style={{ position: 'absolute', inset: 0, margin: 'auto', height: 20, padding: '0 16px', textAlign: 'center', color: palette.muted }}>
+            <p data-testid="dv-timeline-viewer-placeholder" style={viewerNote}>
               {t('viewer.placeholder', { position: playheadClip.position, status: t(playheadClip.status === 'failed' ? 'track.renderFailed' : 'track.rendering') })}
             </p>
           ) : null}
@@ -873,14 +877,7 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
           onPointerMove={(event) => { if (scrubbing.current) seekFromPointer(event) }}
           onPointerUp={() => { scrubbing.current = false }}
         >
-          {ticks.map(sec => (
-            <span key={sec} style={{ position: 'absolute', left: sec * px, bottom: 0, width: 1, height: sec % steps.label === 0 ? 9 : 4, background: palette.lineStrong }} />
-          ))}
-          {ticks.filter(sec => sec % steps.label === 0).map(sec => (
-            <span key={`label-${String(sec)}`} style={{ position: 'absolute', left: sec * px, top: 3, marginLeft: 4, fontFamily: palette.mono, fontSize: 11, lineHeight: '14px', fontVariantNumeric: 'tabular-nums', color: palette.muted, whiteSpace: 'nowrap', pointerEvents: 'none' }}>
-              {timecode(sec).replace(/\.\d+$/, '')}
-            </span>
-          ))}
+          {rulerMarks}
         </div>
         {trackHeader(palette.take, t('track.video'))}
         <div
@@ -901,10 +898,10 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
             const name = clip.assetId === null ? statusText : assets.get(clip.assetId)?.name ?? clip.assetId
             // Trim handles take at most a quarter of the clip each, so a short clip keeps a body to select and drag.
             const handle = Math.max(2, Math.min(7, Math.floor(clip.seconds * px / 4)))
-            const caption = `${String(clip.position)} · ${clip.seconds.toFixed(1)}s${ready ? '' : ` · ${statusText}`}`
-              + `${clip.stale ? ` · ${t('track.stale')}` : ''}`
-            // The visible label names the shot and any state that changes what the clip can do.
-            const label = [t('track.clipLabel', { position: clip.position }), ...ready ? [] : [statusText], ...clip.stale ? [t('track.stale')] : []].join(' · ')
+            // The caption and the visible label both name any state that changes what the clip can do.
+            const states = [...ready ? [] : [statusText], ...clip.stale ? [t('track.stale')] : []]
+            const caption = [`${String(clip.position)} · ${clip.seconds.toFixed(1)}s`, ...states].join(' · ')
+            const label = [t('track.clipLabel', { position: clip.position }), ...states].join(' · ')
             // A placeholder clip is striped, in the danger color when its render failed.
             const placeholderFill = `repeating-linear-gradient(135deg, ${clip.status === 'failed' ? palette.dangerSoft : palette.lineStrong} 0 8px, ${palette.fill} 8px 16px)`
             const isSelected = selected === clip.position
@@ -985,7 +982,7 @@ export function TimelineEditor({ client, t, project, session = null, state, run 
           <p style={{ margin: '0 0 4px', color: palette.muted, fontSize: 12, lineHeight: '16px' }}>{t('track.pick')}</p>
           {candidates.length === 0 ? <p style={{ margin: 0 }}>{t('track.noAssets')}</p> : candidates.map(entry => (
             <button
-              key={entry.id} type="button" className="dv-tl-btn" style={{ ...button, border: 'none', display: 'flex', width: '100%', textAlign: 'left', marginTop: 4 }}
+              key={entry.id} type="button" className="dv-tl-btn" style={{ ...menuItem, marginTop: 4 }}
               onClick={() => { setPicking(false); insert(clips.length + 1, entry.id) }}
             >
               {entry.name}

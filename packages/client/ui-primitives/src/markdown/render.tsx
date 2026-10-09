@@ -349,11 +349,11 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'table':
       return renderTable(node, key, context)
     case 'link':
-      return renderLink(node.url, node.title, node.children, key, context)
+      return renderLink(node.url, node.children, key, context)
     case 'linkReference':
       return renderLinkReference(node, key, context)
     case 'image':
-      return renderImage(node.url, node.alt ?? '', node.title, key, context)
+      return renderImage(node.url, node.alt ?? '', key, context)
     case 'imageReference':
       return renderImageReference(node, key, context)
     case 'footnoteReference':
@@ -506,11 +506,10 @@ function renderTable(node: Md.Table, key: Key, context: MarkdownRenderContext): 
   return <DelegatedElement key={key} element={context.streaming ? undefined : tableElement(node, context)} fallback={table} />
 }
 
-/** Authored cells of a table's header and body rows. */
+/** Authored cells of a table's body rows. */
 function tableElement(node: Md.Table, context: MarkdownRenderContext): MarkdownElement {
-  const [headRow, ...bodyRows] = node.children
-  const cells = (row: Md.TableRow) => row.children.map(cell => tableCell(cell, context))
-  return { kind: 'table', header: headRow === undefined ? [] : cells(headRow), rows: bodyRows.map(cells) }
+  const bodyRows = node.children.slice(1)
+  return { kind: 'table', rows: bodyRows.map(row => row.children.map(cell => tableCell(cell, context))) }
 }
 
 function tableCell(cell: Md.TableCell, context: MarkdownRenderContext): MarkdownTableCell {
@@ -523,10 +522,10 @@ function tableCell(cell: Md.TableCell, context: MarkdownRenderContext): Markdown
 function collectLinks(nodes: readonly Md.RootContent[], context: MarkdownRenderContext, links: MarkdownTableLink[]): void {
   for (const node of nodes) {
     if (node.type === 'link') {
-      links.push({ href: node.url, text: plainText(node.children) })
+      links.push({ href: node.url })
     } else if (node.type === 'linkReference') {
       const definition = context.targets.definitions.get(node.identifier.toUpperCase())
-      if (definition !== undefined) links.push({ href: definition.url, text: plainText(node.children) })
+      if (definition !== undefined) links.push({ href: definition.url })
     } else if ('children' in node) {
       collectLinks(node.children, context, links)
     }
@@ -638,7 +637,6 @@ function MarkdownAnchor({ href, glyph, children }: {
 /** A link node or resolved link reference; settled links also reach the delegate's element renderer. */
 function renderLink(
   url: string,
-  title: string | null | undefined,
   label: Md.PhrasingContent[],
   key: Key,
   context: MarkdownRenderContext,
@@ -646,9 +644,7 @@ function renderLink(
   const anchor = renderAnchor(
     url, renderChildren(label, { ...context, inLink: true }), key, !anchorWrapsOnlyImages(label), context.streaming,
   )
-  const element: MarkdownElement | undefined = context.streaming
-    ? undefined
-    : { kind: 'link', href: url, title: title ?? undefined, text: plainText(label) }
+  const element: MarkdownElement | undefined = context.streaming ? undefined : { kind: 'link', href: url }
   return <DelegatedElement key={key} element={element} fallback={anchor} />
 }
 
@@ -705,20 +701,12 @@ function inlineCodeHttpUrl(value: string): string | undefined {
   }
 }
 
-function renderImage(
-  url: string,
-  alt: string,
-  title: string | null | undefined,
-  key: Key,
-  context: MarkdownRenderContext,
-): ReactNode {
+function renderImage(url: string, alt: string, key: Key, context: MarkdownRenderContext): ReactNode {
   const image = <MarkdownImage key={`${key}:${url}`} destination={url} alt={alt}
     pathImages={context.pathImages} streaming={context.streaming} inLink={context.inLink === true} />
   // An image inside a link stays part of that link's label.
   if (context.inLink === true) return image
-  const element: MarkdownElement | undefined = context.streaming
-    ? undefined
-    : { kind: 'image', src: url, alt, title: title ?? undefined }
+  const element: MarkdownElement | undefined = context.streaming ? undefined : { kind: 'image', src: url, alt }
   return <DelegatedElement key={`${key}:${url}`} element={element} fallback={image} />
 }
 
@@ -777,7 +765,7 @@ function renderLinkReference(
     // not an anchor, so mentions inside it stay live.
     return <Fragment key={key}>{'['}{renderChildren(node.children, context)}{referenceSuffix(node)}</Fragment>
   }
-  return renderLink(definition.url, definition.title, node.children, key, context)
+  return renderLink(definition.url, node.children, key, context)
 }
 
 function renderImageReference(
@@ -787,7 +775,7 @@ function renderImageReference(
 ): ReactNode {
   const definition = context.targets.definitions.get(node.identifier.toUpperCase())
   if (definition === undefined) return `![${node.alt ?? ''}${referenceSuffix(node)}`
-  return renderImage(definition.url, node.alt ?? '', definition.title, key, context)
+  return renderImage(definition.url, node.alt ?? '', key, context)
 }
 
 function renderFootnoteReference(

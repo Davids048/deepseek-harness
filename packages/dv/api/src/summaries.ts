@@ -7,9 +7,7 @@
  */
 import type { AssetId, ComponentStates, ProjectId } from '@dv/project'
 import type {} from '@dv/shot-plan'
-
-/** The render operations whose finished records are a project's rendered takes. */
-const RENDER_OPERATIONS: ReadonlySet<string> = new Set(['shot.render_ref2va', 'shot.render_t2va'])
+import { RENDER_OPERATIONS } from '@dv/shot-render'
 
 /**
  * The media a project card shows as its cover. A render's image output is the take's last frame, kept for the next
@@ -55,7 +53,7 @@ export function summarizeProject(projectId: ProjectId, state: SummarySource, mim
     outputs.find(id => mimeOf(id)?.startsWith(kind) === true) ?? null
   let cover: WireProjectCover | null = null
   for (const record of records) {
-    if (record.status !== 'done' || record.operation === null || !RENDER_OPERATIONS.has(record.operation)) continue
+    if (record.status !== 'done' || record.operation === null || !RENDER_OPERATIONS.includes(record.operation)) continue
     const video = firstOf(record.outputs, 'video/')
     const image = firstOf(record.outputs, 'image/')
     if (video === null && image === null) continue

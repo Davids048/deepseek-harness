@@ -9,7 +9,8 @@
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { assetUrl } from '@dv/ui-kit/api.ts'
-import type { PlanVersion } from '@dv/ui-kit/types.ts'
+import { clockText } from '@dv/ui-kit/timeline.ts'
+import type { PlanVersion, Shot } from '@dv/ui-kit/types.ts'
 import { NODE_WIDTH } from './graph.ts'
 import type { CanvasNode, PlanShotFrame } from './graph.ts'
 import type {} from './locales.ts'
@@ -51,16 +52,6 @@ export function kindLabel(node: CanvasNode, t: CanvasTranslate): string {
     case 'plan': return t('node.plan')
     case 'take': return t('node.takeKind')
   }
-}
-
-/**
- * A duration as minutes and seconds, such as `0:30`.
- * @param seconds - the duration in seconds.
- * @returns the clock text.
- */
-export function clockText(seconds: number): string {
-  const whole = Math.round(seconds)
-  return `${String(Math.floor(whole / 60))}:${String(whole % 60).padStart(2, '0')}`
 }
 
 /** Header row height of a card with a frame. */
@@ -111,8 +102,17 @@ const READABLE_ZOOM = 0.8
 const MAX_TEXT_SCALE = 2.6
 
 const media: CSSProperties = { width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', display: 'block' }
-const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
-const mono: CSSProperties = { fontFamily: 'var(--dv-font-mono)', fontVariantNumeric: 'tabular-nums' }
+export const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+export const mono: CSSProperties = { fontFamily: 'var(--dv-font-mono)', fontVariantNumeric: 'tabular-nums' }
+
+/**
+ * @param shots - a plan version's shots.
+ * @returns their total duration in seconds, or null when the version has no shots or a shot has no duration.
+ */
+export function planTotalSec(shots: readonly Shot[]): number | null {
+  const durations = shots.flatMap(shot => shot.duration_sec === undefined ? [] : [shot.duration_sec])
+  return durations.length > 0 && durations.length === shots.length ? durations.reduce((sum, duration) => sum + duration, 0) : null
+}
 
 /**
  * The image or video of an asset, filling its box.
@@ -209,11 +209,7 @@ export function NodeCard(
       </div>
     )
   } else if (node.kind === 'plan') {
-    const shots = plan?.shots ?? []
-    const durations = shots.map(shot => shot.duration_sec)
-    const total = durations.every(duration => duration !== undefined) && durations.length > 0
-      ? durations.reduce<number>((sum, duration) => sum + (duration ?? 0), 0)
-      : null
+    const total = planTotalSec(plan?.shots ?? [])
     const label = plan === undefined ? kindLabel(node, t) : `${kindLabel(node, t)} · ${t('node.planVersion', { version: plan.version })}`
     body = (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10 }}>

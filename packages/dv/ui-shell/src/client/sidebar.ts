@@ -11,7 +11,7 @@
 const COLLAPSED_ATTRIBUTE = 'data-sidebar-collapsed'
 
 /** @returns whether DSH's app frame shows the left sidebar collapsed. */
-export function isSidebarCollapsed(): boolean {
+function isSidebarCollapsed(): boolean {
   return document.querySelector(`[${COLLAPSED_ATTRIBUTE}]`) !== null
 }
 
