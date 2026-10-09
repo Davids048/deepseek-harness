@@ -111,14 +111,14 @@
   text-overflow: ellipsis;
 }
 
-/* The workspace measures its own width so a narrow center gives the breadcrumb the space the centering would waste. */
+/* The workspace measures its own width so a narrow center tightens the top bar; the view toggle stays centered and the
+   breadcrumb truncates. */
 .workspace {
   container-type: inline-size;
 }
 
 @container (max-width: 560px) {
   .topbar {
-    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 8px;
     padding-inline-end: 10px;
   }
@@ -154,42 +154,10 @@
 
 .barEnd {
   display: flex;
-  justify-content: flex-end;
-  min-width: 0;
-}
-
-/* The agent draft strip between the top bar and the timeline view. */
-.draft {
-  display: flex;
-  flex: none;
   align-items: center;
-  gap: 8px;
-  padding: 6px 16px 6px 20px;
-  border-bottom: 1px dashed rgba(230, 140, 40, 0.7);
-  background: rgba(230, 140, 40, 0.08);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.draft > span {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.draftButton {
-  padding: 3px 10px;
-  border: none;
-  border-radius: 7px;
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.draftAccept {
-  background: var(--dsw-alias-state-business-primary);
-  color: #fff;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
 }
 
 .viewArea {
@@ -331,20 +299,34 @@
   overflow: visible;
 }
 
+/* The same 28px icon button as the right sidebar's own collapse and expand controls. */
 .panelsButton {
+  display: inline-flex;
   flex: none;
-  margin-left: 8px;
-  padding: 4px 10px;
-  border: 0.5px solid var(--dsw-alias-border-l3);
-  border-radius: 8px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  border: none;
+  border-radius: 28px;
   background: transparent;
-  color: inherit;
-  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
+}
+
+.panelsButton svg {
+  width: 15px;
+  height: 15px;
 }
 
 .panelsButton:hover {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The left sidebar's panel icon, mirrored: the divider sits on the right, where the panel opens. */
+.panelsIcon {
+  transform: scaleX(-1);
 }
 
 .renameInput {

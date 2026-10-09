@@ -1,13 +1,12 @@
 /**
- * The History panel: the edit history of a project, one row per action, newest first, read through
- * `POST /api/dv/history`. Each row shows the action with its subject (修改分镜计划 p1 → v2, 参考图生成镜头 7), who did it
- * (你, 智能体, 自动), how long ago, its status, one thumbnail, the record's mark (草稿, 已接受, 已撤销, 已丢弃, or 已重放),
- * and for an agent action the intent the agent gave for the call. The renders a plan approval scheduled
- * fold under the approval's row. One bar holds the filters (actor, branch, operation kind, timeline) and the actions on
- * the chat session's working branch (accept, discard, undo, redo). The working branch's current step carries 当前; every
- * step before it offers 回到这一步, which jumps the branch back to just after that step; the steps redo brings back are
- * greyed. Selecting a row plays its output under the row and focuses the record on the canvas or its clip on the
- * timeline.
+ * The History panel: the edit history of a project, read through `POST /api/dv/history`, like the History panel of an
+ * image editor. It lists the steps of the history list, newest first. Each row shows the action with its subject
+ * (修改分镜计划 p1 → v2, 参考图生成镜头 7), who did it (你, 智能体, 自动), how long ago, its status, one thumbnail, and for an
+ * agent action the intent the agent gave for the call. The renders a plan approval scheduled fold under the approval's
+ * row. The step at the current position carries 当前; the steps after it, which redo brings back, are greyed. Every other
+ * row's ⋮ menu offers 回到这一步, which moves the current position to that step. Selecting a row plays its output under
+ * the row and, for a step at or before the current position, focuses it on the canvas or its clip on the timeline. The
+ * header holds undo and redo; moves write no record, and a new step after a move discards the greyed steps.
  *
  * @module @dv/ui-history/HistoryPanel
  */
@@ -18,39 +17,22 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DvClient, assetUrl } from '@dv/ui-kit/api.ts'
 import { useCurrentProject } from '@dv/ui-kit/current-project.ts'
-import { useDiscardDraft } from '@dv/ui-kit/DiscardDraftDialog.tsx'
 import { useText } from '@dv/ui-kit/locale.ts'
-import type { PickText } from '@dv/ui-kit/locale.ts'
-import { openDrafts, sessionDraft } from '@dv/ui-kit/state.ts'
-import { timelineName } from '@dv/ui-kit/timeline.ts'
 import type { Actor, Asset, HistoryEntry, HistoryQuery, ProjectRecord, RecordStatus, WireHistory } from '@dv/ui-kit/types.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
   DV_HISTORY_FOCUS_EVENT, DV_TRAJECTORY_FOCUS_EVENT, dispatchWorkspaceEvent, type DvWorkspaceEventMap,
 } from '@dv/ui-kit/workspace-events.ts'
 import {
-  actionLabel, actionRows, branchQuery, centerFocus, clipTimelines, markBadge, markStyle, relativeTime, stepPlace, thumbnailOf,
-  timelineRecords, workingSteps, type ActionRow, type Thumbnail, type WorkingSteps,
+  actionLabel, actionRows, centerFocus, clipTimelines, relativeTime, thumbnailOf, type ActionRow, type Thumbnail,
 } from './rows.ts'
 
 /** Props of {@link HistoryPanel}. */
 export interface HistoryPanelProps {
   projectId: string
-  /** The chat session the panel sits beside; the header's actions act on that session's working branch. */
-  session: string | null
   /** The API client; defaults to one over the page's fetch. */
   client?: DvClient
 }
-
-/** The four filters of the header; an empty value means all. */
-interface Filters {
-  actor: '' | Actor
-  branch: string
-  component: string
-  timeline: string
-}
-
-const NO_FILTERS: Filters = { actor: '', branch: '', component: '', timeline: '' }
 
 /** Entries per page. */
 const PAGE = 50
@@ -71,10 +53,6 @@ const STATUSES: Record<RecordStatus, [string, string]> = {
   pending: ['等待中', 'Pending'], running: ['运行中', 'Running'], done: ['完成', 'Done'], failed: ['失败', 'Failed'],
   cancelled: ['已取消', 'Cancelled'],
 }
-const COMPONENTS: Array<[string, string, string]> = [
-  ['proj', '项目', 'Project'], ['asset', '素材库', 'Asset pool'], ['bible', '设定库', 'Story bible'], ['plan', '分镜', 'Shot plan'],
-  ['shot', '镜头渲染', 'Shot render'], ['timeline', '时间线', 'Timeline'], ['deliver', '交付', 'Deliver'], ['inspect', '检查器', 'Inspector'],
-]
 
 const line = 'var(--dv-line, rgba(127, 127, 127, 0.25))'
 const muted = 'var(--dv-muted, rgba(127, 127, 127, 0.95))'
@@ -88,7 +66,11 @@ const STATUS_COLORS: Record<RecordStatus, string> = { pending: muted, running: a
 const button: CSSProperties = {
   border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '2px 8px', fontSize: 12, cursor: 'pointer',
 }
-const select: CSSProperties = { border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, fontSize: 12, padding: '2px 4px' }
+/** A 28px icon-only button of the header. */
+const icon: CSSProperties = {
+  width: 28, height: 28, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 6,
+  padding: 0, background: 'transparent', color: 'inherit', cursor: 'pointer',
+}
 const link: CSSProperties = { border: 'none', background: 'transparent', color: accent, fontSize: 11, padding: 0, cursor: 'pointer' }
 
 /**
@@ -124,12 +106,12 @@ function mergePage(loaded: Loaded | null, page: WireHistory, limit: number): Loa
 
 /**
  * The loaded history window for a query: the first page on a query change, more pages on request, a refetch of the
- * loaded window on every `record`, `branch`, or unreadable event, and an in-place record update on every `update` event.
+ * loaded window on every `record` or unreadable event, and an in-place record update on every `update` event.
  * @param client - the API client.
- * @param query - the query without paging fields, or null when no record can match.
+ * @param query - the query without paging fields.
  * @returns the window, the last error, and the paging gesture.
  */
-function useHistory(client: DvClient, query: HistoryQuery | null): {
+function useHistory(client: DvClient, query: HistoryQuery): {
   loaded: Loaded | null
   error: string | null
   loadMore: () => Promise<Loaded | null>
@@ -147,7 +129,6 @@ function useHistory(client: DvClient, query: HistoryQuery | null): {
   }, [])
   // The first page of every query.
   useEffect(() => {
-    if (query === null) { store({ entries: [], assets: new Map(), more: false }, key); return }
     const controller = new AbortController()
     current.current = null
     setLoaded(null)
@@ -160,7 +141,6 @@ function useHistory(client: DvClient, query: HistoryQuery | null): {
   }, [client, key, store])
   // Live update of the loaded window.
   useEffect(() => {
-    if (query === null) return
     let timer: ReturnType<typeof setTimeout> | null = null
     const refetch = (): void => {
       const limit = Math.min(Math.max(current.current?.entries.length ?? 0, PAGE), MAX_PAGE)
@@ -185,7 +165,7 @@ function useHistory(client: DvClient, query: HistoryQuery | null): {
   const loadMore = useCallback(async (): Promise<Loaded | null> => {
     const shown = current.current
     const last = shown?.entries.at(-1)
-    if (query === null || shown === null || last === undefined) return shown
+    if (shown === null || last === undefined) return shown
     const page = await client.listHistory({ ...query, before: last.record.id, limit: PAGE })
     const next = mergePage(shown, page, PAGE)
     store(next, key)
@@ -196,17 +176,14 @@ function useHistory(client: DvClient, query: HistoryQuery | null): {
 
 /**
  * The History panel of one project.
- * @param props - the project, the chat session beside the panel, and an optional client.
+ * @param props - the project and an optional client.
  * @returns the panel.
  */
 export function HistoryPanel(props: HistoryPanelProps): ReactNode {
-  const { projectId, session } = props
+  const { projectId } = props
   const client = useMemo(() => props.client ?? new DvClient(), [props.client])
   const t = useText()
-  const main = useProjectState(client, projectId, 'main')
-  const draft = main.value === null ? null : sessionDraft(main.value, session)
-  const working = useProjectState(client, projectId, draft?.branch ?? 'main')
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS)
+  const current = useProjectState(client, projectId)
   const [selected, setSelected] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [focusRecord, setFocusRecord] = useState<string | null>(null)
@@ -219,35 +196,18 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     return () => { clearInterval(timer) }
   }, [])
 
-  const records = working.value?.components.proj.records
+  // The records of the current state: what the canvas and the timeline show.
+  const records = current.value?.components.proj.records
   const owner = useMemo(() => clipTimelines(records ?? []), [records])
-  const redoSteps = working.value?.redo_steps
-  const steps = useMemo(() => workingSteps(records ?? [], redoSteps ?? []), [records, redoSteps])
-  const timelines = working.value?.components.timeline.timelines ?? []
-  const timelineSet = useMemo(() => {
-    const timeline = timelines.find(item => item.id === filters.timeline)
-    if (filters.timeline === '' || working.value === null) return null
-    if (timeline === undefined) return []
-    const { records: branchRecords, created_by: createdBy } = working.value.components.proj
-    return timelineRecords(branchRecords, createdBy, timeline.id, timeline.clips.flatMap(clip => clip.asset === null ? [] : [clip.asset]))
-  }, [filters.timeline, timelines, working.value])
-  const query = useMemo((): HistoryQuery | null => {
-    if (timelineSet !== null && timelineSet.length === 0) return null
-    return {
-      project: projectId, ...branchQuery(filters.branch),
-      ...filters.actor === '' ? {} : { actor: filters.actor },
-      ...filters.component === '' ? {} : { component: filters.component },
-      ...timelineSet === null ? {} : { records: timelineSet },
-    }
-  }, [projectId, filters.branch, filters.actor, filters.component, timelineSet])
+  // The steps of the history list, newest first.
+  const query = useMemo((): HistoryQuery => ({ project: projectId }), [projectId])
   const { loaded, error, loadMore } = useHistory(client, query)
   const rows = useMemo(() => actionRows(loaded?.entries ?? []), [loaded])
   const recordsById = useMemo(() => new Map((loaded?.entries ?? []).map(entry => [entry.record.id, entry.record])), [loaded])
 
-  // A `dv:history-focus` request: clear the filters, find the record the tool call wrote, then select it once loaded.
+  // A `dv:history-focus` request: find the record the tool call wrote, then select it once loaded.
   const takeFocus = useCallback((focus: DvWorkspaceEventMap['dv:history-focus']) => {
     pendingFocus = null
-    setFilters(NO_FILTERS)
     setNotice(null)
     client.listHistory({ project: projectId, session: focus.session, tool_call: focus.toolCall, limit: 1 }).then((page) => {
       const found = page.entries[0]
@@ -261,7 +221,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
     return () => { focusListeners.delete(takeFocus) }
   }, [takeFocus])
   useEffect(() => {
-    if (focusRecord === null || loaded === null || query === null || JSON.stringify(filters) !== JSON.stringify(NO_FILTERS)) return
+    if (focusRecord === null || loaded === null) return
     if (loaded.entries.some(entry => entry.record.id === focusRecord)) {
       // A record folded under an approval shows once its approval's row is expanded.
       const parent = rows.find(row => row.children.some(child => child.record.id === focusRecord))
@@ -271,7 +231,7 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
       requestAnimationFrame(() => { rowRefs.current.get(focusRecord)?.scrollIntoView({ block: 'nearest' }) })
     } else if (loaded.more) void loadMore()
     else setFocusRecord(null)
-  }, [focusRecord, loaded, rows, query, filters, loadMore])
+  }, [focusRecord, loaded, rows, loadMore])
 
   const choose = (entry: HistoryEntry): void => {
     setSelected(entry.record.id)
@@ -286,38 +246,33 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
       return next
     })
   }
-  // 回到这一步: move the working branch back to just after the record.
+  const report = (failure: unknown): void => { setNotice(failure instanceof Error ? failure.message : String(failure)) }
+  // 回到这一步: move the current position to the step.
   const jump = (record: string): void => {
     setNotice(null)
-    client.undo(projectId, 'history', session, record).catch((failure: unknown) => {
-      setNotice(failure instanceof Error ? failure.message : String(failure))
-    })
+    client.moveTo(projectId, record).catch(report)
   }
   const rowRef = (record: string) => (element: HTMLElement | null): void => {
     if (element === null) rowRefs.current.delete(record)
     else rowRefs.current.set(record, element)
   }
 
-  const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS)
   let body: ReactNode
   if (error !== null) body = <p style={{ color: danger, fontSize: 12 }}>{t(`读取失败：${error}`, `Failed to load: ${error}`)}</p>
   else if (loaded === null) body = <p style={{ color: muted, fontSize: 12 }}>{t('正在读取…', 'Loading…')}</p>
   else {
-    // Every project starts with its `proj.create` record, so a project without other operation records counts as empty;
-    // its creation row stays listed below the notice.
+    // Every project starts with its `proj.create` record, so a project without other records counts as empty; its
+    // creation row stays listed below the notice.
     const changes = loaded.entries.filter(entry => entry.record.operation !== 'proj.create')
-    const empty = filtered ? rows.length === 0 : changes.length === 0
     const shared = {
-      assets: loaded.assets, records: recordsById, now, selected, onChoose: choose, rowRef, steps, onJump: jump,
+      assets: loaded.assets, records: recordsById, now, selected, onChoose: choose, rowRef, onJump: jump,
     }
     body = (
       <>
-        {empty
+        {changes.length === 0
           ? (
             <p data-testid="dv-history-empty" style={{ color: muted, fontSize: 12 }}>
-              {filtered
-                ? t('没有符合筛选条件的记录', 'No records match the filters')
-                : t('还没有记录。在画布、时间线或对话里做的每一步都会出现在这里。', 'No records yet. Every change made in the canvas, the timeline, or the chat appears here.')}
+              {t('还没有记录。在画布、时间线或对话里做的每一步都会出现在这里。', 'No records yet. Every change made in the canvas, the timeline, or the chat appears here.')}
             </p>
           )
           : null}
@@ -332,9 +287,8 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   }
   return (
     <div data-testid="dv-history-panel" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, padding: '8px 8px 0', gap: 6 }}>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        <FilterBar filters={filters} onChange={setFilters} state={main.value} timelines={timelines} t={t} />
-        <Actions client={client} projectId={projectId} session={session} draftOpen={draft !== null} canRedo={steps.after.size > 0} />
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <Actions client={client} projectId={projectId} canRedo={current.value !== null && current.value.head !== current.value.tip} />
       </div>
       {notice === null ? null : <p style={{ color: muted, fontSize: 12, margin: 0 }}>{notice}</p>}
       <div role="listbox" style={{ flex: 1, minHeight: 0, overflowY: 'auto', borderTop: `1px solid ${line}` }}>
@@ -351,98 +305,104 @@ export function HistoryPanel(props: HistoryPanelProps): ReactNode {
   )
 }
 
+/** The undo and redo buttons of the header: test ID suffix, label, tooltip, and icon paths. */
+const MOVES = [
+  { key: 'undo', label: ['撤销', 'Undo'], title: ['撤销（Ctrl+Z / ⌘Z）', 'Undo (Ctrl+Z / ⌘Z)'], paths: ['M9 14 4 9l5-5', 'M4 9h11a5 5 0 0 1 0 10h-3'] },
+  {
+    key: 'redo', label: ['重做', 'Redo'], title: ['重做（Shift+Ctrl+Z / ⇧⌘Z）', 'Redo (Shift+Ctrl+Z / ⇧⌘Z)'],
+    paths: ['m15 14 5-5-5-5', 'M20 9H9a5 5 0 0 0 0 10h3'],
+  },
+] as const
+
 /**
- * The actions on the chat session's working branch: accept and discard while its draft is open, undo, and redo while a
- * step can be redone. They sit at the end of the filter bar.
- * @param props - the client, the project, the chat session, whether the session has an open draft, and whether redo
- *   has a step to bring back.
- * @returns the buttons.
+ * Undo and redo at the end of the header: they move the current position one step; redo is enabled while a step after
+ * the current position exists.
+ * @param props - the client, the project, and whether redo has a step to bring back.
+ * @returns the buttons and the last failure.
  */
-function Actions(props: { client: DvClient; projectId: string; session: string | null; draftOpen: boolean; canRedo: boolean }): ReactNode {
-  const { client, projectId, session } = props
+function Actions(props: { client: DvClient; projectId: string; canRedo: boolean }): ReactNode {
+  const { client, projectId } = props
   const t = useText()
   const [failure, setFailure] = useState<string | null>(null)
-  const discard = useDiscardDraft(client, projectId, 'history')
   const run = (work: () => Promise<unknown>): void => {
     setFailure(null)
     work().catch((error: unknown) => { setFailure(error instanceof Error ? error.message : String(error)) })
   }
   return (
     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center', marginLeft: 'auto' }}>
-      {props.draftOpen && session !== null
-        ? (
-          <>
-            <button type="button" style={button} onClick={() => { run(() => client.acceptDraft(projectId, { session }, 'history')) }}>{t('接受草稿', 'Accept the draft')}</button>
-            <button type="button" style={button} onClick={() => { discard.request({ session }) }}>{t('丢弃', 'Discard')}</button>
-          </>
+      {MOVES.map((move) => {
+        const enabled = move.key === 'undo' || props.canRedo
+        return (
+          <button
+            key={move.key} type="button" data-testid={`dv-history-${move.key}`} disabled={!enabled}
+            aria-label={t(move.label[0], move.label[1])} title={t(move.title[0], move.title[1])}
+            style={{ ...icon, ...enabled ? {} : { opacity: 0.35, cursor: 'default' } }}
+            onClick={() => { run(() => move.key === 'undo' ? client.undo(projectId) : client.redo(projectId)) }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {move.paths.map(path => <path key={path} d={path} />)}
+            </svg>
+          </button>
         )
-        : null}
-      <button type="button" data-testid="dv-history-undo" style={button} onClick={() => { run(() => client.undo(projectId, 'history', session)) }}>
-        {t('撤销', 'Undo')}
-      </button>
-      <button
-        type="button" data-testid="dv-history-redo" disabled={!props.canRedo}
-        style={{ ...button, ...props.canRedo ? {} : { opacity: 0.4, cursor: 'default' } }}
-        onClick={() => { run(() => client.redo(projectId, 'history', session)) }}
-      >
-        {t('重做', 'Redo')}
-      </button>
+      })}
       {failure === null ? null : <span style={{ color: danger, fontSize: 12 }}>{failure}</span>}
-      {discard.dialog}
     </div>
   )
 }
 
 /**
- * The four filter selects. Each names its filter in its empty option, so the bar needs no separate labels.
- * @param props - the filters, the change callback, the state of `main` (for branches), the working branch's timelines,
- *   and the string picker.
- * @returns the selects.
+ * The ⋮ button at the end of a row and its menu with 回到这一步. Escape or a click outside closes the menu; its clicks and
+ * keys never reach the row. The row of the current position has no button.
+ * @param props - the 回到这一步 gesture, or null when it does not apply.
+ * @returns the button and, while open, the menu; null without a gesture.
  */
-function FilterBar(props: {
-  filters: Filters
-  onChange: (filters: Filters) => void
-  state: Parameters<typeof openDrafts>[0] | null
-  timelines: Array<{ id: string; name: string }>
-  t: PickText
-}): ReactNode {
-  const { filters, onChange, state, t } = props
-  const drafts = state === null ? [] : openDrafts(state)
-  const styled = (value: string): CSSProperties => ({ ...select, color: value === '' ? muted : 'inherit', maxWidth: 110 })
+function StepActions(props: { onBack: (() => void) | null }): ReactNode {
+  const t = useText()
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLSpanElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    const outside = (event: PointerEvent): void => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
+    document.addEventListener('pointerdown', outside)
+    return () => { document.removeEventListener('pointerdown', outside) }
+  }, [open])
+  const { onBack } = props
+  if (onBack === null) return null
   return (
-    <>
-      <select
-        data-testid="dv-history-filter-actor" aria-label={t('发起者', 'Actor')} style={styled(filters.actor)} value={filters.actor}
-        onChange={(event) => { onChange({ ...filters, actor: event.currentTarget.value as Filters['actor'] }) }}
+    <span
+      ref={root} style={{ position: 'relative', flex: 'none', display: 'inline-flex' }}
+      onClick={(event) => { event.stopPropagation() }}
+      onKeyDown={(event) => { event.stopPropagation(); if (event.key === 'Escape') setOpen(false) }}
+    >
+      <button
+        type="button" data-testid="dv-history-step-actions" aria-label={t('更多操作', 'More actions')} aria-haspopup="menu" aria-expanded={open}
+        style={{ ...icon, width: 24, height: 24, color: muted }} onClick={() => { setOpen(value => !value) }}
       >
-        <option value="">{t('发起者', 'Actor')}</option>
-        {(Object.keys(ACTORS) as Actor[]).map(actor => <option key={actor} value={actor}>{t(...ACTORS[actor])}</option>)}
-      </select>
-      <select
-        data-testid="dv-history-filter-branch" aria-label={t('分支', 'Branch')} style={styled(filters.branch)} value={filters.branch}
-        onChange={(event) => { onChange({ ...filters, branch: event.currentTarget.value }) }}
-      >
-        <option value="">{t('分支', 'Branch')}</option>
-        <option value="main">main</option>
-        {drafts.map(draft => <option key={draft.branch} value={draft.branch}>{t(`草稿 · ${draft.session}`, `Draft · ${draft.session}`)}</option>)}
-      </select>
-      <select
-        data-testid="dv-history-filter-component" aria-label={t('操作类型', 'Operation kind')} style={styled(filters.component)}
-        value={filters.component} onChange={(event) => { onChange({ ...filters, component: event.currentTarget.value }) }}
-      >
-        <option value="">{t('操作类型', 'Operation kind')}</option>
-        {COMPONENTS.map(([key, zh, en]) => <option key={key} value={key}>{t(zh, en)}</option>)}
-      </select>
-      <select
-        data-testid="dv-history-filter-timeline" aria-label={t('时间线', 'Timeline')} style={styled(filters.timeline)}
-        value={filters.timeline} onChange={(event) => { onChange({ ...filters, timeline: event.currentTarget.value }) }}
-      >
-        <option value="">{t('时间线', 'Timeline')}</option>
-        {props.timelines.map(timeline => (
-          <option key={timeline.id} value={timeline.id}>{timelineName(timeline, n => t(`时间线 ${String(n)}`, `Timeline ${String(n)}`))}</option>
-        ))}
-      </select>
-    </>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.8" /><circle cx="12" cy="12" r="1.8" /><circle cx="12" cy="19" r="1.8" />
+        </svg>
+      </button>
+      {open
+        ? (
+          <div
+            role="menu"
+            style={{
+              position: 'absolute', right: 0, top: '100%', marginTop: 2, zIndex: 20, minWidth: 140, padding: 4, display: 'flex',
+              flexDirection: 'column', border: '0.5px solid var(--dsw-alias-border-l3, #d0d3da)', borderRadius: 8,
+              background: 'var(--dsw-alias-bg-base, #ffffff)', boxShadow: '0 6px 24px rgba(0, 0, 0, 0.18)',
+            }}
+          >
+            <button
+              type="button" role="menuitem" data-testid="dv-history-step-back"
+              style={{ ...button, border: 'none', textAlign: 'left', padding: '6px 10px', whiteSpace: 'nowrap' }}
+              onClick={() => { setOpen(false); onBack() }}
+            >
+              {t('回到这一步', 'Go back to this step')}
+            </button>
+          </div>
+        )
+        : null}
+    </span>
   )
 }
 
@@ -470,15 +430,14 @@ interface RowContext {
   selected: string | null
   onChoose: (entry: HistoryEntry) => void
   rowRef: (record: string) => (element: HTMLElement | null) => void
-  /** The steps of the working branch. */
-  steps: WorkingSteps
-  /** 回到这一步 on a step before the current one. */
+  /** 回到这一步 on a row. */
   onJump: (record: string) => void
 }
 
 /**
- * One action row: the thumbnail, the action label and the time on the first line; who, the status, the mark and the
- * agent's intent on the second. A plan approval adds the toggle that shows the renders it scheduled, nested below it.
+ * One action row: the thumbnail, the action label and the time on the first line; who, the status, 当前 on the step at
+ * the current position and the agent's intent on the second; a step after the current position is greyed. A plan
+ * approval adds the toggle that shows the renders it scheduled, nested below it.
  * @param props - the row, the shared row context, and the approval's expanded state and toggle.
  * @returns the row and, while expanded, its nested rows.
  */
@@ -519,10 +478,6 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
   const { entry, assets, nested } = props
   const { record } = entry
   const t = useText()
-  const badge = markBadge(entry)
-  const step = stepPlace(record.id, props.steps)
-  // A step redo brings back is greyed; an undone record that redo can no longer bring back is also struck.
-  const style = step === 'after' ? 'dimmed' : markStyle(entry.mark)
   const selected = props.selected === record.id
   const status = t(...STATUSES[record.status])
   const thumbnail = thumbnailOf(record, assets, props.records, (props.folded ?? []).map(child => child.record))
@@ -530,27 +485,27 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
   // A human action's intent repeats its label, so it stays in the tooltip.
   const words = record.actor === 'agent' && record.intent !== record.operation ? record.intent : ''
   const size = nested ? 28 : 40
+  const dim = entry.place === 'after' ? 0.55 : 1
   return (
     <div
       ref={props.rowRef(record.id)} role="option" tabIndex={0} aria-selected={selected} title={record.intent}
-      data-testid="dv-history-row" data-record={record.id} data-mark={entry.mark} data-status={record.status} data-actor={record.actor}
-      data-surface={record.surface} data-step={step ?? undefined}
+      data-testid="dv-history-row" data-record={record.id} data-status={record.status} data-actor={record.actor}
+      data-surface={record.surface} data-place={entry.place}
       onClick={() => { props.onChoose(entry) }}
       onKeyDown={(event) => { if (event.key === 'Enter') props.onChoose(entry) }}
       style={{
         padding: nested ? '4px 8px 4px 56px' : '6px 8px', cursor: 'pointer', fontSize: 12,
         background: selected ? 'var(--dsw-alias-interactive-bg-hover, rgba(127, 127, 127, 0.12))' : 'transparent',
-        opacity: style === 'normal' ? 1 : 0.55,
       }}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: `${String(size)}px minmax(0, 1fr)`, columnGap: 8, alignItems: 'center' }}>
-        <Thumb thumbnail={thumbnail} size={size} />
-        <div style={{ minWidth: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: `${String(size)}px minmax(0, 1fr) auto`, columnGap: 8, alignItems: 'center' }}>
+        {/* A step after the current one is greyed; the ⋮ menu is not, so it is not trapped under the next row. */}
+        <div style={{ opacity: dim }}><Thumb thumbnail={thumbnail} size={size} /></div>
+        <div style={{ minWidth: 0, opacity: dim }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
             <span
               style={{
                 flex: 1, minWidth: 0, fontWeight: nested ? 400 : 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                textDecoration: style === 'struck' ? 'line-through' : 'none',
               }}
             >
               {t(...actionLabel(record))}
@@ -568,14 +523,7 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
               <span style={{ width: 6, height: 6, borderRadius: 3, background: STATUS_COLORS[record.status], display: 'inline-block' }} />
               {record.status === 'done' ? null : <span style={{ color: record.status === 'failed' ? danger : muted }}>{status}</span>}
             </span>
-            {badge === null
-              ? null
-              : (
-                <span style={{ border: `1px solid ${accent}`, color: accent, borderRadius: 3, padding: '0 4px', lineHeight: '14px' }}>
-                  {t(badge.zh, badge.en)}
-                </span>
-              )}
-            {step === 'current'
+            {entry.place === 'current'
               ? (
                 <span data-testid="dv-history-current" style={{ background: accent, color: '#fff', borderRadius: 3, padding: '0 4px', lineHeight: '14px' }}>
                   {t('当前', 'Current')}
@@ -583,18 +531,9 @@ function EntryRow(props: RowContext & { entry: HistoryEntry; nested: boolean; fo
               )
               : null}
             {words === '' ? null : <span title={words} style={{ overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>“{words}”</span>}
-            {step === 'before'
-              ? (
-                <button
-                  type="button" data-testid="dv-history-jump" style={{ ...link, marginLeft: 'auto', flex: 'none' }}
-                  onClick={(event) => { event.stopPropagation(); props.onJump(record.id) }}
-                >
-                  {t('回到这一步', 'Go back to this step')}
-                </button>
-              )
-              : null}
           </div>
         </div>
+        <StepActions onBack={entry.place === 'current' ? null : () => { props.onJump(record.id) }} />
       </div>
       {selected ? <Details record={record} assets={assets} words={words} /> : null}
     </div>
@@ -655,7 +594,7 @@ function Details(props: { record: ProjectRecord; assets: ReadonlyMap<string, Ass
 /**
  * The tab body: the History panel of the project that the DreamVerse shell has open, beside the chat session whose
  * right panel holds the tab.
- * @param props - the tab's chat session and the injected client.
+ * @param props - the tab's props and the injected client.
  * @returns the panel, or a notice while no project is open.
  */
 export function HistoryTabBody(props: PropsRuntime<'sidebar.right.pane.tab'> & { client: DvClient }): ReactNode {
@@ -663,5 +602,5 @@ export function HistoryTabBody(props: PropsRuntime<'sidebar.right.pane.tab'> & {
   const t = useText()
   if (project === null) return <p data-testid="dv-history-empty" style={{ padding: 12, fontSize: 12, color: muted }}>{t('先打开一个项目', 'Open a project first')}</p>
   // Keyed by project so a switch starts from an empty panel instead of showing the previous project's records.
-  return <HistoryPanel key={project} projectId={project} session={props.sessionId} client={props.client} />
+  return <HistoryPanel key={project} projectId={project} client={props.client} />
 }

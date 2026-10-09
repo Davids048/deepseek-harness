@@ -96,7 +96,7 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown }: NodeC
   else if (selected) border = `2px solid ${color}`
   const style: CSSProperties = {
     position: 'absolute', left: x, top: y, width: NODE_WIDTH, background: 'var(--dsw-alias-bg-layer-3)', color: 'var(--dsw-alias-label-primary)',
-    borderRadius: 12, border, outline: flags.draft ? `2px dashed ${color}` : 'none', outlineOffset: 4,
+    borderRadius: 12, border,
     boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 16px rgba(0, 0, 0, 0.08)', cursor: 'grab', userSelect: 'none', overflow: 'hidden',
     opacity: flags.superseded ? 0.55 : 1, touchAction: 'none',
   }
@@ -129,7 +129,6 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown }: NodeC
       style={style}
       data-node-id={node.id}
       data-node-kind={node.kind}
-      data-node-draft={String(flags.draft)}
       data-node-stale={String(flags.stale)}
       onPointerDown={onPointerDown}
       role="button"
@@ -140,7 +139,6 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown }: NodeC
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', fontSize: size(12), color: 'var(--dsw-alias-label-secondary)' }}>
         <span style={{ flex: 'none', width: size(8), height: size(8), borderRadius: '50%', background: color }} />
         <span style={{ fontWeight: 600 }}>{kindLabel(node, t)}</span>
-        {flags.draft ? <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{t('node.draft')}</span> : null}
         {flags.stale ? <span style={{ color: 'var(--dsw-alias-state-error-primary)' }}>{t('node.stale')}</span> : null}
         {typeof planVersion === 'number' ? <span>{t('node.planVersion', { version: planVersion })}</span> : null}
         <span style={{ flex: 1 }} />

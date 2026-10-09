@@ -150,7 +150,7 @@ function shotProblems(shots: readonly Shot[], operations: ReadonlySet<string>): 
 
 /**
  * One version of a plan in a state.
- * @param state - the state of the branch.
+ * @param state - a project state.
  * @param plan - the PlanId.
  * @param version - the version number; the latest version when omitted.
  * @returns the version.
@@ -186,15 +186,15 @@ interface ApprovalShot {
 /**
  * The render operation, params and reference inputs of every shot of a plan version, in shot order, as `plan.approve`
  * schedules them, and the take each unchanged shot reuses. A `ref2va` shot carries its own references, else the plan's;
- * a `t2va` shot carries none. A shot is unchanged when a done record of the shot's render operation for the same plan on
- * the approving branch has the same params (apart from `plan`, `plan_version` and `shot`), the same reference inputs,
+ * a `t2va` shot carries none. A shot is unchanged when a done record of the shot's render operation for the same plan in
+ * the approving state has the same params (apart from `plan`, `plan_version` and `shot`), the same reference inputs,
  * and the same `first_frame` input: none for a shot without `continue_previous`, else the reused take of the previous
  * shot, so a continuing shot after a rendered shot renders too. The newest such take is reused. The `first_frame` input
  * of a rendered continuing shot is added by the caller, because it can name a record that does not exist yet.
  * @param version - the plan version.
  * @param plan - the PlanId.
  * @param project - the Project service, which parses the references against the state.
- * @param state - the state of the approving branch.
+ * @param state - the state the approval runs on.
  * @returns one entry per shot.
  * @throws Error when a reference names an unknown character, location or style version.
  */
@@ -268,7 +268,7 @@ export default class DvShotPlan extends Service {
 
   /**
    * Read one version of a plan.
-   * @param state - the state of the branch the plan is read on.
+   * @param state - the state the plan is read in.
    * @param plan - the PlanId.
    * @param version - the version number; the latest version when omitted.
    * @returns the version.
@@ -281,7 +281,7 @@ export default class DvShotPlan extends Service {
   /**
    * The shots that approving a plan version would render: the new and changed shots (see `approvalShots`); the others
    * keep their done takes.
-   * @param state - the state of the branch the approval runs on.
+   * @param state - the state the approval runs on.
    * @param plan - the PlanId.
    * @param version - the version number; the latest version when omitted.
    * @returns the 1-based shot positions, in shot order.
@@ -294,7 +294,7 @@ export default class DvShotPlan extends Service {
 
   /**
    * Assign a new PlanId in a project. The number after `p` is one more than the highest number that any Shot plan
-   * record of the project stored in `report.plan`, on any branch, and than any number this service assigned to a call
+   * record of the project stored in `report.plan`, anywhere in its history, and than any number this service assigned to a call
    * still running, so no two plans of a project share an ID.
    * @param project - the project.
    * @returns the PlanId.
@@ -369,7 +369,7 @@ export default class DvShotPlan extends Service {
    * mode that cannot continue (see `shotProblems`), or when a `ref2va` shot's references (its own, else the plan's)
    * name an unknown character, location or style version, so the report's GPU estimate can be computed.
    * @param plan - the plan of the call's params.
-   * @param state - the state of the working branch the call writes to.
+   * @param state - the project's current state, which the call writes after.
    * @throws Error with one sentence per problem, or the error of the unknown reference.
    */
   private checkPlan(plan: Plan, state: ProjectState): void {
@@ -388,7 +388,7 @@ export default class DvShotPlan extends Service {
    * precondition of its render operation (for `shot.render_ref2va`, the reference-image rule): every rendered shot is
    * checked, and one error names all refused shots, so the plan can be fixed at once.
    * @param request - the `plan.approve` call.
-   * @param state - the state of the working branch the call writes to.
+   * @param state - the project's current state, which the call writes after.
    * @throws Error naming the unknown plan or version, the shots and their problems, or the refused shots followed by the
    *   first render refusal; the error of an unknown character, location or style version.
    */
@@ -423,7 +423,7 @@ export default class DvShotPlan extends Service {
    * `confirmSummary` of `plan.approve` repeats it.
    * @param version - the plan version, which need not be in the state yet.
    * @param plan - the PlanId.
-   * @param state - the state of the branch the approval would run on.
+   * @param state - the state the approval would run on.
    * @returns the shot lines, the rendered shot count, and the GPU seconds.
    * @throws Error when a reference names an unknown character, location or style version.
    */
@@ -446,7 +446,7 @@ export default class DvShotPlan extends Service {
   /**
    * The `confirmSummary` of `plan.approve`: the head line and the shot lines of `renderCost`, and its GPU seconds.
    * @param request - the `plan.approve` call.
-   * @param state - the state of the session's working branch.
+   * @param state - the project's current state.
    * @returns the text and the GPU seconds.
    */
   private approvalSummary(request: RunRequest, state: ProjectState): { text: string; gpu_seconds: number } {

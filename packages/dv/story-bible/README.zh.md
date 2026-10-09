@@ -45,12 +45,12 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-归约函数只读已完成的 `bible.*` 记录。一个版本的参考图是记录的 `reference` 输入所解析到的素材，因此运行器会检查它们存在，记录也把它们列为它读取的内容。Project 调用 `bible` 键下归约函数的三个可选成员：`assetsOf` 把 `<id>@<version>` 输入解析为其参考图，`createdBy` 指出写出一个版本的记录（Project 把它当作该输入的产生者，用于过期标记和解析 `<id>@<version>`），`conflict` 在 `main` 已有草稿要创建的 ID、或缺少草稿要更新的 ID 时停止接受重放。两个草稿更新同一版本时由 Project 的通用检查处理：两者取代同一条记录。
+归约函数只读已完成的 `bible.*` 记录。一个版本的参考图是记录的 `reference` 输入所解析到的素材，因此运行器会检查它们存在，记录也把它们列为它读取的内容。Project 调用 `bible` 键下归约函数的两个可选成员：`assetsOf` 把 `<id>@<version>` 输入解析为其参考图，`createdBy` 指出写出一个版本的记录（Project 把它当作该输入的产生者，用于过期标记和解析 `<id>@<version>`）。版本跟随当前状态：撤销回到某个版本之前时，该版本从状态中移除，它的 ID 在该状态中重新可用。
 
 | 文件 | 内容 |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | `dvStoryBible`：六个操作及其 ID 检查 |
-| [`src/reducer.ts`](src/reducer.ts) | 带 `assetsOf`、`createdBy` 和 `conflict` 的 `bible` 归约函数 |
+| [`src/reducer.ts`](src/reducer.ts) | 带 `assetsOf` 和 `createdBy` 的 `bible` 归约函数 |
 | [`src/types.ts`](src/types.ts) | `Character`、`Location`、`Style`、`StoryBibleState` 和 `ComponentStates` 声明 |
 
 -----
@@ -58,7 +58,7 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [`@dv/project`](../project/README.zh.md)：操作、归约函数、过期标记和接受重放。
+- [`@dv/project`](../project/README.zh.md)：操作、归约函数、过期标记和撤销。
 - [`COMPONENT-TEMPLATE.md`](../COMPONENT-TEMPLATE.md)：本包遵循的布局。
 
 -----

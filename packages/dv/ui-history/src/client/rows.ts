@@ -1,13 +1,12 @@
 /**
  * Pure readings behind the History panel: the action rows of history entries (a plan approval folds the renders it
- * scheduled), the label of an action with its subject, the thumbnail of a record, relative times, the badge of a mark,
- * the query of the branch filter, the record set of a timeline, and where selecting a record focuses the
- * center. Nothing here touches the DOM or the network, so the unit tests cover it directly.
+ * scheduled), the label of an action with its subject, the thumbnail of a record, relative times, and where selecting a
+ * record focuses the center. Nothing here touches the DOM or the network, so the unit tests cover it directly.
  *
  * @module @dv/ui-history/rows
  */
 import { DV_TOOL_LABELS } from '@dv/ui-kit/tool-labels.ts'
-import type { Asset, HistoryEntry, HistoryQuery, ProjectRecord } from '@dv/ui-kit/types.ts'
+import type { Asset, HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
 
 /** One row of the panel: an operation entry and, for a plan approval, the entries of the records it scheduled. */
@@ -23,27 +22,20 @@ function scheduledBy(record: ProjectRecord): string[] {
   return Array.isArray(scheduled) ? scheduled.filter((id): id is string => typeof id === 'string') : []
 }
 
-/** Undo and redo records move the working branch between steps, so they are not rows. */
-const MOVES = new Set(['proj.undo', 'proj.redo'])
-/** Records that are not steps: the moves between steps and an accept. Undo steps over them. */
-const NOT_A_STEP = new Set([...MOVES, 'proj.draft_accept'])
-
 /**
- * Turn history entries into panel rows: one row per operation record, newest first. The undo and redo records are not
- * rows. The records a loaded plan approval scheduled fold under the approval's row instead of
- * standing alone.
+ * Turn history entries into panel rows: one row per step, newest first. The records a loaded
+ * plan approval scheduled fold under the approval's row instead of standing alone.
  * @param entries - history entries, newest first.
  * @returns the rows, newest first.
  */
 export function actionRows(entries: readonly HistoryEntry[]): ActionRow[] {
-  const operations = entries.filter(entry => !MOVES.has(entry.record.operation ?? ''))
-  const loaded = new Map(operations.map(entry => [entry.record.id, entry]))
+  const loaded = new Map(entries.map(entry => [entry.record.id, entry]))
   const folded = new Map<string, string>()
-  for (const { record } of operations) {
+  for (const { record } of entries) {
     for (const id of scheduledBy(record)) if (loaded.has(id)) folded.set(id, record.id)
   }
   const rows: ActionRow[] = []
-  for (const entry of operations) {
+  for (const entry of entries) {
     if (folded.has(entry.record.id)) continue
     const row: ActionRow = { entry, children: [] }
     rows.push(row)
@@ -183,42 +175,6 @@ export function relativeTime(iso: string, now: number): readonly [string, string
   return [date, date]
 }
 
-/** What a mark badge says: a fixed word pair. */
-export type MarkBadge = { zh: string; en: string } | null
-
-/**
- * The badge of an entry: 已接受 for an accepted draft record, 草稿, 已撤销, 已丢弃, or 已重放.
- * @param entry - the history entry.
- * @returns the badge, or null for a record made on `main`.
- */
-export function markBadge(entry: HistoryEntry): MarkBadge {
-  switch (entry.mark) {
-    case 'main': return entry.record.branch.startsWith('draft/') ? { zh: '已接受', en: 'Accepted' } : null
-    case 'draft': return { zh: '草稿', en: 'Draft' }
-    case 'undone': return { zh: '已撤销', en: 'Undone' }
-    case 'discarded': return { zh: '已丢弃', en: 'Discarded' }
-    case 'replayed': return { zh: '已重放', en: 'Replayed' }
-  }
-}
-
-/** How a row looks for its mark: undone and discarded rows are dimmed and struck, replayed rows dimmed. */
-export function markStyle(mark: HistoryEntry['mark']): 'normal' | 'struck' | 'dimmed' {
-  if (mark === 'undone' || mark === 'discarded') return 'struck'
-  return mark === 'replayed' ? 'dimmed' : 'normal'
-}
-
-/**
- * The query fields of the branch filter. `main` shows the main line including what undo took back; a draft shows its
- * open records.
- * @param branch - the selected branch name; empty for all branches.
- * @returns the query fields.
- */
-export function branchQuery(branch: string): Pick<HistoryQuery, 'branch' | 'marks'> {
-  if (branch === '') return {}
-  if (branch === 'main') return { marks: ['main', 'undone'] }
-  return { branch, marks: ['draft'] }
-}
-
 /** @returns the text value of a param, or null. */
 function text(value: unknown): string | null {
   return typeof value === 'string' && value !== '' ? value : null
@@ -234,7 +190,7 @@ function reportedClips(record: ProjectRecord): string[] {
  * The timeline each clip belongs to: the timeline of the record that assigned the clip (`timeline.create`, `update`,
  * `clip_insert` name it by `params.timeline`, a create without one makes `t1`; `clip_split` adds to the timeline of the
  * split clip).
- * @param records - a branch's records, oldest first.
+ * @param records - the records of the current state, oldest first.
  * @returns clip ID → timeline ID.
  */
 export function clipTimelines(records: readonly ProjectRecord[]): Map<string, string> {
@@ -266,31 +222,6 @@ function timelineOf(record: ProjectRecord, owner: ReadonlyMap<string, string>): 
   return record.operation === 'timeline.create' ? 't1' : null
 }
 
-/**
- * The records of one timeline on a branch, for the timeline filter: Timeline records and exports that name the
- * timeline or one of its clips, and the records that created the assets of its clips.
- * @param records - the branch's records, oldest first.
- * @param createdBy - asset ID → the record that created it (`components.proj.created_by`).
- * @param timeline - the timeline ID.
- * @param clipAssets - the assets of the timeline's clips.
- * @returns the record IDs.
- */
-export function timelineRecords(
-  records: readonly ProjectRecord[], createdBy: Readonly<Record<string, string>>, timeline: string, clipAssets: readonly string[],
-): string[] {
-  const owner = clipTimelines(records)
-  const set = new Set<string>()
-  for (const record of records) {
-    const timelineRecord = record.component === 'timeline' || record.operation === 'deliver.timeline_export'
-    if (timelineRecord && timelineOf(record, owner) === timeline) set.add(record.id)
-  }
-  for (const asset of clipAssets) {
-    const maker = createdBy[asset]
-    if (maker !== undefined) set.add(maker)
-  }
-  return [...set]
-}
-
 /** Where selecting a record moves the center: a canvas node, a timeline clip, or nowhere. */
 export type CenterFocus =
   | { event: 'dv:canvas-focus'; detail: DvWorkspaceEventMap['dv:canvas-focus'] }
@@ -298,15 +229,16 @@ export type CenterFocus =
   | null
 
 /**
- * The center focus of a selected entry. Only `main` and `draft` records are on the shown branch. Timeline records and
- * timeline exports focus their timeline and clip; `proj.*` records focus nothing; every other record focuses its node.
+ * The center focus of a selected entry. Only steps at or before the current position are what the canvas and the
+ * timeline show. Timeline records and timeline exports focus their timeline and clip; `proj.*` records focus nothing;
+ * every other record focuses its node.
  * @param entry - the selected entry.
- * @param owner - clip ID → timeline ID of the working branch, from {@link clipTimelines}.
+ * @param owner - clip ID → timeline ID of the current state, from {@link clipTimelines}.
  * @returns the focus, or null.
  */
 export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, string>): CenterFocus {
   const { record } = entry
-  if (entry.mark !== 'main' && entry.mark !== 'draft') return null
+  if (entry.place === 'after') return null
   if (record.component === 'proj') return null
   if (record.component === 'timeline' || record.operation === 'deliver.timeline_export') {
     const timelineId = timelineOf(record, owner)
@@ -315,39 +247,4 @@ export function centerFocus(entry: HistoryEntry, owner: ReadonlyMap<string, stri
     return { event: 'dv:timeline-focus', detail: { timelineId, clipId } }
   }
   return { event: 'dv:canvas-focus', detail: { recordId: record.id } }
-}
-
-/** Where a record stands among the steps of the working branch: the current step, a step before it, or a step redo brings back. */
-export type StepPlace = 'current' | 'before' | 'after'
-
-/** The steps of the working branch: its current step, the steps before it, and the steps after it that redo brings back. */
-export interface WorkingSteps {
-  current: string | null
-  before: ReadonlySet<string>
-  after: ReadonlySet<string>
-}
-
-/**
- * The steps of the working branch. Every operation record on the branch's effective chain is a step except undo, redo
- * and accept records; the newest is the current step.
- * @param chain - the records of the working branch's effective chain, oldest first (`components.proj.records`).
- * @param redoSteps - the steps redo brings back (`WireState.redo_steps`).
- * @returns the steps.
- */
-export function workingSteps(chain: readonly ProjectRecord[], redoSteps: readonly string[]): WorkingSteps {
-  const steps = chain.filter(record => !NOT_A_STEP.has(record.operation ?? ''))
-  const current = steps.at(-1)?.id ?? null
-  return { current, before: new Set(steps.slice(0, -1).map(record => record.id)), after: new Set(redoSteps) }
-}
-
-/**
- * Where one record stands among the working branch's steps.
- * @param record - the record ID.
- * @param steps - the working branch's steps.
- * @returns the place, or null for a record that is not a step of the working branch.
- */
-export function stepPlace(record: string, steps: WorkingSteps): StepPlace | null {
-  if (record === steps.current) return 'current'
-  if (steps.before.has(record)) return 'before'
-  return steps.after.has(record) ? 'after' : null
 }

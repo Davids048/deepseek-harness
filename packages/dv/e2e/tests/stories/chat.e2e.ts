@@ -35,11 +35,11 @@ function planCall(view: TurnView, title: string): ScriptedStep {
 
 /**
  * The scripted agent. `只回复<X>` answers `收到<X>`; `慢慢想` streams for six seconds; `加人物` registers a character;
- * `慢慢做` imports an image and then streams for eight seconds, so a stop leaves an open draft; `新建项目` creates a
+ * `慢慢做` imports an image and then streams for eight seconds, so a stop lands while the turn runs; `新建项目` creates a
  * project as the agent does from the entry page; `做两个镜头的广告` imports a reference, plans two shots, approves, and
- * waits, leaving an open draft; `先给我看计划` imports a reference, plans two shots, calls the plan approval without the
- * user's agreement (Project refuses it), and asks in bold; `可以渲染` approves that plan with the user's agreement and
- * waits; `两段渲染` renders two shots at once.
+ * waits; every record goes at the end of the project's history at once; `先给我看计划` imports a reference, plans two shots,
+ * calls the plan approval without the user's agreement (Project refuses it), and asks in bold; `可以渲染` approves that
+ * plan with the user's agreement and waits; `两段渲染` renders two shots at once.
  */
 const RULES: ScriptedRule[] = [
   { match: /只回复\S+/, steps: [view => ({ text: `收到${/只回复(\S+)/.exec(view.userText)?.[1] ?? ''}` })] },
@@ -93,7 +93,7 @@ const RULES: ScriptedRule[] = [
       { calls: [{ name: 'dv_plan_approve', args: { reason: '用户同意', plan: 'p1', user_approved: true } }] },
       { calls: [{ name: 'dv_proj_wait', args: {} }] },
     ],
-    endText: '两个镜头已渲染。草稿待确认',
+    endText: '两个镜头已渲染。',
   },
   {
     match: '先给我看计划',
@@ -111,7 +111,7 @@ const RULES: ScriptedRule[] = [
       { calls: [{ name: 'dv_plan_approve', args: { reason: '用户同意', plan: 'p1', user_approved: true } }] },
       { calls: [{ name: 'dv_proj_wait', args: {} }] },
     ],
-    endText: '两个镜头已渲染。草稿待确认',
+    endText: '两个镜头已渲染。',
   },
   {
     match: '两段渲染',
@@ -292,71 +292,57 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('a turn that only looks at an image leaves no draft to accept', async () => {
+  it('a turn that only looks at an image writes no record', async () => {
     const { projectId, assetId } = await seedProject('只看图', 'look.png', RED_PNG)
+    const before = await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
     const { page, errors } = await openPage('zh', `#project=${projectId}`)
     await send(page, `看看这张图 asset ${assetId}`)
     await waitChat(page, '看过了')
     // The Inspector's tool answered as a read: the model got its report and no record.
     const answered = requestFor('看看这张图')?.messages.filter(message => message.role === 'tool').map(message => textOf(message.content)) ?? []
     expect(answered.some(text => text.startsWith('done: dv_inspect_image answered'))).toBe(true)
-    const workspace = page.locator('[data-dv-workspace]')
     await page.waitForTimeout(2000)
-    expect(await workspace.getByRole('button', { name: '接受', exact: true }).count()).toBe(0)
-    expect(await workspace.locator('[data-node-draft="true"]').count()).toBe(0)
+    const after = await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
+    expect(after.components.proj.records.map(record => record.id)).toEqual(before.components.proj.records.map(record => record.id))
+    expect(after.head).toBe(before.head)
     expect(errors).toEqual([])
   })
 
-  it('the agent\'s changes of two turns stay on one draft, nothing reaches main until the user accepts it', async () => {
+  it('the agent\'s changes of two turns go at the end of the project\'s history at once, with no accept step', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await send(page, '加人物')
     await waitChat(page, '人物小橘已登记', 30_000)
     await send(page, '点名渲染一段')
     await waitChat(page, '渲染好了', 60_000)
-    const mainState = async (): Promise<WireState> => await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as WireState
-    // Nothing is accepted by itself: at turn end `main` still holds none of the agent's records.
-    await page.waitForTimeout(2000)
-    expect((await mainState()).components.proj.records.filter(record => record.actor === 'agent')).toEqual([])
-    // One draft, owned by the chat session, holds the records of both turns.
-    const drafts = (await mainState()).branches.filter(branch => branch.counts !== null)
-    expect(drafts).toHaveLength(1)
-    const draftName = drafts[0]?.name ?? ''
-    const draft = await harness.api.get(`/api/dv/state?project=${projectId}&branch=${encodeURIComponent(draftName)}`) as WireState
-    const agentRecords = draft.components.proj.records.filter(record => record.actor === 'agent' && record.branch === draftName)
+    const state = await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
+    const agentRecords = state.components.proj.records.filter(record => record.actor === 'agent' && record.operation !== 'proj.create')
     expect(agentRecords.map(record => record.operation))
       .toEqual(['asset.import', 'bible.character_create', 'asset.import', 'shot.render_ref2va'])
     expect(new Set(agentRecords.map(record => record.turn)).size).toBe(2)
-    expect(drafts[0]?.counts).toEqual({ agent_changes: 4, human_edits: 0 })
-    // The user accepts the draft from the canvas bar; then `main` holds every record, and the accept is the user's.
+    // One line: each record follows the record written just before it.
+    const records = state.components.proj.records
+    expect(records.slice(1).every((record, index) => record.parents[0] === records[index]?.id)).toBe(true)
+    // Nothing waits for the user: the workspace offers no accept.
     const workspace = page.locator('[data-dv-workspace]')
-    const accept = workspace.getByRole('button', { name: '接受', exact: true })
-    expect(await accept.count()).toBe(1)
-    await accept.click({ timeout: 15_000 })
-    await waitFor(async () => await accept.count() === 0, 'the draft bar to close', 10_000)
-    const accepted = await mainState()
-    const acceptedRecords = accepted.components.proj.records
-    expect(acceptedRecords.filter(record => record.actor === 'agent').map(record => record.operation)).toEqual(agentRecords.map(record => record.operation))
-    expect(acceptedRecords.at(-1)).toMatchObject({ operation: 'proj.draft_accept', actor: 'user' })
-    expect(accepted.branches.filter(branch => branch.counts !== null)).toEqual([])
+    expect(await workspace.getByRole('button', { name: '接受', exact: true }).count()).toBe(0)
     expect(errors).toEqual([])
   })
 
-  it('after 停止生成 the draft bar offers 丢弃, and discarding clears it without errors', async () => {
+  it('after 停止生成 the image the agent already imported stays in the project, and the composer sends after a reload', async () => {
     const { page, errors } = await openPage()
-    await newProject(page)
+    const projectId = await newProject(page)
     await send(page, '慢慢做')
-    const workspace = page.locator('[data-dv-workspace]')
-    // The agent's import opens the chat session's draft, so the working-branch bar offers 丢弃.
-    await workspace.getByRole('button', { name: '丢弃', exact: true }).first().waitFor({ timeout: 15_000 })
+    const imported = async (): Promise<boolean> => ((await harness.api.get(`/api/dv/state?project=${projectId}`)) as WireState)
+      .components.proj.records.some(record => record.operation === 'asset.import' && record.actor === 'agent')
+    await waitFor(imported, 'the agent\'s import', 15_000)
     await chat(page).getByRole('button', { name: /停止|Stop/ }).first().click({ timeout: 10_000 })
-    const discard = workspace.getByRole('button', { name: '丢弃', exact: true })
-    await discard.first().click({ timeout: 15_000 })
-    await page.locator('[data-testid="dv-kit-discard-dialog"]').getByRole('button', { name: '丢弃', exact: true }).click()
-    await waitFor(async () => await discard.count() === 0, 'the draft bar to close', 10_000)
     await page.reload({ waitUntil: 'load' })
     await composer(page).waitFor({ timeout: 30_000 })
-    expect(await workspace.getByRole('button', { name: '丢弃', exact: true }).count()).toBe(0)
+    expect(await imported()).toBe(true)
+    expect(await page.locator('[data-dv-workspace]').getByRole('button', { name: '丢弃', exact: true }).count()).toBe(0)
+    await send(page, '只回复十')
+    await waitChat(page, '收到十')
     expect(errors).toEqual([])
   })
 
@@ -417,43 +403,51 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('accepting the chat session draft on the canvas clears the draft bar, and the agent is told it writes to main', async () => {
+  it('the agent\'s plan shows on the canvas at once, and the agent reads the project\'s current state', async () => {
     const { page, errors } = await openPage()
     await newProject(page)
     await send(page, '做两个镜头的广告')
     await waitChat(page, '两个镜头已渲染', 60_000)
     const workspace = page.locator('[data-dv-workspace]')
     await workspace.locator('[data-node-kind="plan"]').first().waitFor({ timeout: 15_000 })
-    const accept = workspace.getByRole('button', { name: '接受', exact: true })
-    await accept.first().click({ timeout: 15_000 })
-    await waitFor(async () => await accept.count() === 0, 'the draft bar to close', 10_000)
-    expect(await workspace.locator('[data-node-draft="true"]').count()).toBe(0)
+    expect(await workspace.getByRole('button', { name: '接受', exact: true }).count()).toBe(0)
     await send(page, '只回复八')
     await waitChat(page, '收到八')
     const prompt = promptOf(requestFor('只回复八') as ChatRequest)
-    expect(prompt).toContain('the branch you write to (main)')
-    expect(prompt).toContain('"draft": null')
+    expect(prompt).toContain('Project summary of the current state')
+    expect(prompt).not.toContain('"branches"')
     expect(errors).toEqual([])
   })
 
-  it('discarding the chat session draft from the timeline view empties the timeline and the canvas drafts', async () => {
+  it('撤销 in the timeline view takes back a step, and the agent\'s next change continues from that state and discards the undone step', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await send(page, '做两个镜头的广告')
     await waitChat(page, '两个镜头已渲染', 60_000)
+    const stateOf = async (): Promise<WireState> => await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
+    const history = async (): Promise<Array<{ id: string; place: string }>> =>
+      (await harness.api.post('/api/dv/history', { project: projectId, limit: 200 }) as { entries: Array<{ record: { id: string }; place: string }> })
+        .entries.map(entry => ({ id: entry.record.id, place: entry.place }))
+    const before = await stateOf()
+    const last = before.components.proj.records.at(-1)?.id ?? ''
     await page.getByRole('tab', { name: '时间线' }).click()
-    const workspace = page.locator('[data-dv-workspace]')
-    const discard = workspace.getByRole('button', { name: '丢弃', exact: true })
-    await discard.first().click({ timeout: 15_000 })
-    await page.locator('[data-testid="dv-kit-discard-dialog"]').getByRole('button', { name: '丢弃', exact: true }).click()
-    await waitFor(async () => await discard.count() === 0, 'the timeline draft bar to close', 10_000)
-    const state = await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as WireState
-    expect(state.components.timeline.timelines[0]?.clips.length ?? 0).toBe(0)
-    await page.getByRole('tab', { name: '画布' }).click()
-    expect(await workspace.locator('[data-node-draft="true"]').count()).toBe(0)
+    const editor = page.locator('[data-testid="dv-timeline-editor"]')
+    await editor.waitFor({ timeout: 15_000 })
+    await editor.getByRole('button', { name: '撤销', exact: true }).click()
+    await waitFor(async () => (await stateOf()).components.proj.records.every(record => record.id !== last), 'the undo', 10_000)
+    // The undone step stays in the history after the current step until a new change; the editor offers redo.
+    expect((await history()).find(entry => entry.id === last)?.place).toBe('after')
+    await expect.poll(() => editor.getByRole('button', { name: '重做', exact: true }).isEnabled()).toBe(true)
+    // The agent writes after the undo: its change continues from the earlier state and discards the undone step.
+    await send(page, '加人物')
+    await waitChat(page, '人物小橘已登记', 30_000)
+    const after = await stateOf()
+    expect(after.components.proj.records.filter(record => record.operation === 'bible.character_create')).toHaveLength(1)
+    expect(after.components.proj.records.some(record => record.id === last)).toBe(false)
+    expect((await history()).map(entry => entry.id)).not.toContain(last)
     await send(page, '只回复九')
     await waitChat(page, '收到九')
-    expect(promptOf(requestFor('只回复九') as ChatRequest)).toContain('the branch you write to (main)')
+    expect(promptOf(requestFor('只回复九') as ChatRequest)).toContain('Project summary of the current state')
     expect(errors).toEqual([])
   })
 
@@ -471,12 +465,9 @@ describe('chat with the agent', () => {
     const approveRows = chat(page).locator('[data-tool="dv_plan_approve"]')
     await waitFor(async () => (await approveRows.allTextContents()).some(text => text.includes('批准分镜计划')), 'the 批准分镜计划 step', 10_000)
     expect(await chat(page).getByText('dv_plan_approve').count()).toBe(0)
-    // Nothing renders before the user agrees: the plan on the draft waits for approval.
-    const draftName = (await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as WireState).branches
-      .find(branch => branch.counts !== null)?.name ?? ''
-    const draftState = async (): Promise<WireState> =>
-      await harness.api.get(`/api/dv/state?project=${projectId}&branch=${encodeURIComponent(draftName)}`) as WireState
-    const waiting = await draftState()
+    // Nothing renders before the user agrees: the plan waits for approval.
+    const currentState = async (): Promise<WireState> => await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
+    const waiting = await currentState()
     expect(waiting.components.plan.plans['p1']?.[0]?.approved_by).toBeNull()
     expect(waiting.components.proj.records.filter(record => record.operation === 'shot.render_ref2va')).toHaveLength(0)
     // The canvas plan editor lists each shot with its reference image, the image in place of the bare Picture 1, and its render mode.
@@ -499,7 +490,7 @@ describe('chat with the agent', () => {
     // The user agrees in the conversation; the agent approves with user_approved and both shots render.
     await send(page, '可以渲染')
     await waitChat(page, '两个镜头已渲染', 60_000)
-    const rendered = (await draftState()).components.proj.records.filter(record => record.operation === 'shot.render_ref2va')
+    const rendered = (await currentState()).components.proj.records.filter(record => record.operation === 'shot.render_ref2va')
     expect(rendered.map(record => [record.params['shot'], record.status])).toEqual([[1, 'done'], [2, 'done']])
     expect(errors).toEqual([])
   })
@@ -521,13 +512,13 @@ describe('chat with the agent', () => {
     await page.keyboard.press('Enter')
     await waitChat(page, '收到图')
     const state = await waitFor(async () => {
-      const value = await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as { assets: Array<{ id: string; name: string; mime: string }> }
+      const value = await harness.api.get(`/api/dv/state?project=${projectId}`) as { assets: Array<{ id: string; name: string; mime: string }> }
       return value.assets.some(asset => asset.mime.startsWith('image/')) ? value : null
     }, 'the attachment as a project asset', 15_000).catch(() => null)
     expect(state, 'the chat attachment is recorded as a project asset').not.toBeNull()
-    // The browser placed the sent image on the canvas list under the asset ID the import gave it, so the canvas draws it.
+    // The import of a sent image also puts it on the canvas, so the canvas draws it.
     const imageId = state?.assets.find(asset => asset.mime.startsWith('image/'))?.id
-    await expect.poll(async () => (await harness.api.get(`/api/dv/layout?project=${projectId}`) as { placed: string[] }).placed, { timeout: 10_000 })
+    await expect.poll(async () => (await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState).components.asset.placed, { timeout: 10_000 })
       .toEqual([imageId])
     await page.locator('[data-dv-workspace] [data-node-kind="asset"]').first().waitFor({ timeout: 15_000 })
     expect(errors).toEqual([])
@@ -593,7 +584,7 @@ describe('chat with the agent', () => {
     })
     await runOperation(projectId, 'plan.approve', { plan: plan.report?.['plan'] })
     const done = await waitFor(async () => {
-      const state = await harness.api.get(`/api/dv/state?project=${projectId}&branch=main`) as WireState
+      const state = await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
       return state.components.proj.records.find(record => record.operation === 'shot.render_ref2va' && record.status === 'done')
     }, 'the take to render', 60_000)
     // Visit another project first, so a stale composer from it would be a wrong target.
@@ -620,17 +611,14 @@ describe('chat with the agent', () => {
     expect(errors).toEqual([])
   })
 
-  it('a second chat session in the same project sees what the user accepted from the first session', async () => {
+  it('a second chat session in the same project sees the first session\'s character at once', async () => {
     const { page, errors } = await openPage()
     const projectId = await newProject(page)
     await send(page, '加人物')
     await waitChat(page, '人物小橘已登记')
     const first = locationOf(page).session
     await page.locator('[data-dv-workspace] [data-node-kind="bible"]').first().waitFor({ timeout: 15_000 })
-    // The character is on the first session's draft until the user accepts it; then it is on `main` for every session.
-    const accept = page.locator('[data-dv-workspace]').getByRole('button', { name: '接受', exact: true })
-    await accept.click({ timeout: 15_000 })
-    await waitFor(async () => await accept.count() === 0, 'the draft bar to close', 10_000)
+    // The character is in the project's current state, which every chat session of the project reads.
     // The project row's ＋ starts a second chat session in the same project.
     await page.locator('[data-dv-navigator] [data-active]').filter({ hasText: '＋' }).first().locator('button', { hasText: '＋' }).click()
     await waitFor(() => Promise.resolve(locationOf(page).session !== first && locationOf(page).session !== null), 'a second session', 15_000)

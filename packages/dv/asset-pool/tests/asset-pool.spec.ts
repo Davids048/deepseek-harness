@@ -22,7 +22,7 @@ import DvProject, {
   ProjectError, type AssetId, type OperationToolValue, type ProjectId, type ProjectRecord, type RecordId, type RecordInput, type SessionId,
 } from '@dv/project'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import DvAssetPool from '../src/index.ts'
+import DvAssetPool, { importedAssets, placeable } from '../src/index.ts'
 
 const FFMPEG = process.env['DV_FFMPEG'] ?? '/mnt/lustre/vlm-d1su/opt/ffmpeg-native/bin/ffmpeg'
 const FFPROBE = process.env['DV_FFPROBE'] ?? 'ffprobe'
@@ -149,12 +149,13 @@ function videoInput(asset: AssetId): RecordInput {
 }
 
 describe('dvAssetPool', () => {
-  it('registers both operations with their dv_asset_* tools and the asset store, and removes them on disposal', async () => {
+  it('registers its operations with their dv_asset_* tools and the asset store, and removes them on disposal', async () => {
     const fixture = await start()
     const specs = fixture.ctx.dvProject.listOperations().filter(spec => spec.component === 'asset')
-    expect(specs.map(spec => [spec.name, spec.deterministic, spec.resource])).toEqual([['asset.import', true, 'none'], ['asset.grab_still', true, 'cpu']])
-    expect(fixture.ctx.tools.get('dv_asset_import')).toBeDefined()
-    expect(fixture.ctx.tools.get('dv_asset_grab_still')).toBeDefined()
+    expect(specs.map(spec => [spec.name, spec.deterministic, spec.resource])).toEqual([
+      ['asset.import', true, 'none'], ['asset.grab_still', true, 'cpu'], ['asset.place', false, 'none'], ['asset.unplace', false, 'none'],
+    ])
+    for (const tool of ['dv_asset_import', 'dv_asset_grab_still', 'dv_asset_place', 'dv_asset_unplace']) expect(fixture.ctx.tools.get(tool)).toBeDefined()
     expect(fixture.web.routes.has('/dv/assets')).toBe(true)
     const entry = [...fixture.ctx.loader.entries()].find(candidate => candidate.options.name.endsWith('/dv-asset-pool.mjs'))
     await entry?.fiber?.dispose()
@@ -173,7 +174,7 @@ describe('dvAssetPool', () => {
     const record = fixture.ctx.dvProject.getRecord(fixture.project, brandString<RecordId>(imported.record))
     expect(record).toMatchObject({ actor: 'agent', component: 'asset', operation: 'asset.import', params: { path, mime: 'image/png' }, outputs: [asset] })
     expect(fixture.ctx.dvAssetPool.get(asset)).toMatchObject({ id: asset, mime: 'image/png', name: 'face.png', size_bytes: 9, created_by: record.id, width: null, duration_sec: null })
-    expect(fixture.ctx.dvProject.getState(fixture.project, record.branch).components.proj.created_by[asset]).toBe(record.id)
+    expect(fixture.ctx.dvProject.getState(fixture.project).components.proj.created_by[asset]).toBe(record.id)
     const inline = await fixture.run('asset.import', { base64: Buffer.from('hello').toString('base64'), mime: 'text/plain', name: 'note.txt' })
     expect(fixture.ctx.dvAssetPool.read(inline.outputs[0] as AssetId).toString()).toBe('hello')
     const bare = await fixture.run('asset.import', { base64: Buffer.from('x').toString('base64'), mime: 'text/plain' })
@@ -181,6 +182,50 @@ describe('dvAssetPool', () => {
     const spec = fixture.ctx.dvProject.listOperations().find(entry => entry.name === 'asset.import')
     expect(spec?.summarize(inline)).toBe('imported note.txt')
     expect(spec?.summarize(bare)).toBe('imported bytes')
+  })
+
+  it('puts assets on the canvas and takes them off as records, refuses a call that changes nothing, and undo takes a placement back', async () => {
+    const fixture = await start()
+    const placed = (): AssetId[] => fixture.ctx.dvProject.getState(fixture.project).components.asset.placed
+    const assetInput = (asset: AssetId): RecordInput => ({ role: 'asset', ref: { asset }, resolved_asset: asset })
+    const a = (await fixture.run('asset.import', { base64: Buffer.from('a').toString('base64'), mime: 'image/png' })).outputs[0] as AssetId
+    expect(placed()).toEqual([])
+    // An import with `place` puts its output on the canvas.
+    const b = (await fixture.run('asset.import', { base64: Buffer.from('b').toString('base64'), mime: 'image/png', place: true })).outputs[0] as AssetId
+    expect(placed()).toEqual([b])
+    const put = await fixture.run('asset.place', {}, [assetInput(a), assetInput(b)])
+    expect(put).toMatchObject({ status: 'done', component: 'asset', operation: 'asset.place', outputs: [] })
+    expect(placed()).toEqual([b, a])
+    const before = fixture.ctx.dvProject.listHistory({ project: fixture.project }).length
+    await expect(fixture.run('asset.place', {}, [assetInput(a)])).rejects.toMatchObject({ code: 'invalid_params' })
+    await fixture.run('asset.unplace', {}, [assetInput(b)])
+    expect(placed()).toEqual([a])
+    await expect(fixture.run('asset.unplace', {}, [assetInput(b)])).rejects.toMatchObject({ code: 'invalid_params' })
+    // An asset that no record of the current state created cannot go on the canvas.
+    const outside = fixture.ctx.dvAssetPool.importAsset(Buffer.from('outside'), { mime: 'image/png', name: 'o.png' }, null)
+    await expect(fixture.run('asset.place', {}, [assetInput(outside)])).rejects.toMatchObject({ code: 'invalid_inputs' })
+    expect(fixture.ctx.dvProject.listHistory({ project: fixture.project })).toHaveLength(before + 1)
+    await fixture.ctx.dvProject.undo(fixture.project)
+    expect(placed()).toEqual([b, a])
+  })
+
+  it('keeps the first finished import of each asset, discarded steps included, and places imports and current-state assets', async () => {
+    const fixture = await start()
+    const bytes = Buffer.from('twice').toString('base64')
+    const first = await fixture.run('asset.import', { base64: bytes, mime: 'image/png', name: 'first.png' })
+    const second = await fixture.run('asset.import', { base64: bytes, mime: 'image/png', name: 'second.png' })
+    const asset = first.outputs[0] as AssetId
+    expect(second.outputs).toEqual([asset])
+    await fixture.ctx.dvProject.undo(fixture.project)
+    await fixture.ctx.dvProject.undo(fixture.project)
+    // A write after two undos discards both imports; the project still imported the asset.
+    const kept = (await fixture.run('asset.import', { base64: Buffer.from('kept').toString('base64'), mime: 'image/png' })).outputs[0] as AssetId
+    const imported = importedAssets(fixture.ctx.dvProject.listRecords(fixture.project))
+    expect(imported.get(asset)?.id).toBe(first.id)
+    const state = fixture.ctx.dvProject.getState(fixture.project)
+    expect(placeable(state, imported, asset)).toBe(true)
+    expect(placeable(state, new Map(), asset)).toBe(false)
+    expect(placeable(state, new Map(), kept)).toBe(true)
   })
 
   it('fails an import without bytes and refuses one without a media type before writing a record', async () => {
@@ -268,6 +313,44 @@ describe('dvAssetPool', () => {
       const text = fixture.ctx.dvAssetPool.importAsset(Buffer.from('notes'), { mime: 'text/plain', name: 'notes.txt' }, null)
       expect(await fixture.run('asset.grab_still', { at: 'first' }, [videoInput(text)])).toMatchObject({ status: 'failed', error: { code: 'operation_failed' } })
       expect(failure(await fixture.call('dv_asset_grab_still', { reason: 'no video' }))).toContain('needs input "video"')
+    })
+
+    it('reads the size and duration of an imported video, decoding it when its header has no duration', async () => {
+      const fixture = await start()
+      const { outputs } = await fixture.ctx.dvFfmpeg.run({
+        argv: ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=160x90:d=2:r=10', '-pix_fmt', 'yuv420p', '{{out:blue.mp4}}'],
+        inputs: [], outputs: ['blue.mp4'], dir: fixture.dir,
+      })
+      const imported = await fixture.run('asset.import', { path: outputs[0], mime: 'video/mp4' })
+      const asset = fixture.ctx.dvAssetPool.get(imported.outputs[0] as AssetId)
+      expect(asset).toMatchObject({ width: 160, height: 90 })
+      expect(asset.duration_sec).toBeCloseTo(2, 1)
+      // A header without a duration (a WebM file a browser recorded) is measured by decoding the video stream.
+      const probe = vi.spyOn(fixture.ctx.dvFfmpeg, 'probe').mockResolvedValue({
+        durationSec: null, videoDurationSec: null, width: 160, height: 90, hasAudio: false, codec: 'h264',
+      })
+      const other = await fixture.ctx.dvFfmpeg.run({
+        argv: ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'color=c=green:s=160x90:d=3:r=10', '-pix_fmt', 'yuv420p', '{{out:green.mp4}}'],
+        inputs: [], outputs: ['green.mp4'], dir: fixture.dir,
+      })
+      const bare = await fixture.run('asset.import', { path: other.outputs[0], mime: 'video/mp4' })
+      expect(probe).toHaveBeenCalled()
+      probe.mockRestore()
+      expect(fixture.ctx.dvAssetPool.get(bare.outputs[0] as AssetId).duration_sec).toBeCloseTo(3, 1)
+    })
+
+    it('puts an import of an undone step on the canvas, and refuses a generated asset whose step was undone', async () => {
+      const fixture = await start()
+      const red = await video(fixture, 'red', 1)
+      const input = (asset: AssetId): RecordInput => ({ role: 'asset', ref: { asset }, resolved_asset: asset })
+      const imported = (await fixture.run('asset.import', { base64: Buffer.from('later').toString('base64'), mime: 'image/png', name: 'later.png' })).outputs[0] as AssetId
+      const still = (await fixture.run('asset.grab_still', { at: 'first' }, [videoInput(red)])).outputs[0] as AssetId
+      await fixture.ctx.dvProject.undo(fixture.project)
+      await fixture.ctx.dvProject.undo(fixture.project)
+      // Both steps are undone: the import still belongs to the project, the still does not.
+      await expect(fixture.run('asset.place', {}, [input(still)])).rejects.toMatchObject({ code: 'invalid_inputs' })
+      expect((await fixture.run('asset.place', {}, [input(imported)])).status).toBe('done')
+      expect(fixture.ctx.dvProject.getState(fixture.project).components.asset.placed).toEqual([imported])
     })
 
     it('reads the last frame of a fragmented video, falls through the seek attempts, and rethrows other failures', async () => {

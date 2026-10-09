@@ -144,19 +144,16 @@ describe('DreamVerse bundle composition', () => {
     const text = shot.content.find(block => block.type === 'text')
     expect(text?.type === 'text' ? text.text : '').toContain(`done ${shotValue.record}`)
     expect(text?.type === 'text' ? text.text : '').toContain('/dv/assets/')
-    // Durable: the project holds the record with its outputs on the session's draft, and the asset pool holds the bytes.
+    // Durable: the project's history holds the record with its outputs, and the asset pool holds the bytes.
     const record = ctx.dvProject.getRecord(projectId, shotValue.record as RecordId)
     expect(record).toMatchObject({ status: 'done', intent: 'the opening shot', operation: 'shot.render_ref2va', actor: 'agent' })
-    expect(record.branch).toBe('draft/anonymous')
     expect(record.outputs).toHaveLength(2)
     const [video] = record.outputs
     expect(video !== undefined && ctx.dvAssetPool.has(video)).toBe(true)
     expect(renderer.requests).toHaveLength(1)
     await call('dv_timeline_create', { reason: 'lay out the shot', assets: [video] })
-    const clips = ctx.dvProject.getState(projectId, 'draft/anonymous').components.timeline.timelines[0]?.clips
+    const clips = ctx.dvProject.getState(projectId).components.timeline.timelines[0]?.clips
     expect(clips?.map(clip => [clip.id, clip.asset])).toEqual([['cl1', video]])
-    expect(Object.keys(ctx.dvProject.getState(projectId).components.proj.created_by)).toHaveLength(0)
-    await call('dv_proj_draft_accept', {})
     expect(Object.keys(ctx.dvProject.getState(projectId).components.proj.created_by)).toHaveLength(3)
     // The bundle's `!!js` configuration put the project records under the state root the test set.
     expect(readFileSync(join(dir, 'projects', projectId, 'records.jsonl'), 'utf8')).toContain('shot.render_ref2va')

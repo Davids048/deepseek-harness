@@ -1,16 +1,16 @@
 /**
- * Tests of the reducer registry and Project's own `proj` slice: slices computed from a branch's records, one reducer
- * per key, stale and superseded marks, stale acceptance, and character references resolved, and their producers
- * found, through the reducer that defines `assetsOf` and `createdBy`. Records are appended on `main` directly
- * through the record store.
+ * Tests of the reducer registry and Project's own `proj` slice: slices computed from the records of the effective chain,
+ * one reducer per key, stale and superseded marks, stale acceptance, and character references resolved, and their
+ * producers found, through the reducer that defines `assetsOf` and `createdBy`. Records are appended after the head
+ * directly through the record store.
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { describe, expect, it } from 'vitest'
 import type { ProjectModules } from './support.ts'
 import { createTestProject, startModules, userOrigin, versionKey } from './support.ts'
-import { MAIN_BRANCH, ProjectError } from '../src/shared.ts'
+import { ProjectError } from '../src/shared.ts'
 import type { RecordLineInput } from '../src/record-store.ts'
-import type { AssetId, CharacterId, ComponentStates, ProjectId, ProjectRecord, RecordId, RecordInput } from '../src/types.ts'
+import type { AssetId, CharacterId, ComponentStates, ProjectId, ProjectRecord, RecordInput } from '../src/types.ts'
 
 declare module '@dv/project' {
   interface ComponentStates {
@@ -26,7 +26,7 @@ const HERO = brandString<CharacterId>('hero')
 type RecordLineFields = Pick<RecordLineInput, 'component' | 'operation'> & Partial<RecordLineInput>
 
 /**
- * Append one record on `main` at its head, under the lock.
+ * Append one record after the project's head, under the lock.
  * @param m - the modules.
  * @param project - the project.
  * @param fields - the record's operation and the fields that differ from a plain finished human edit.
@@ -34,7 +34,7 @@ type RecordLineFields = Pick<RecordLineInput, 'component' | 'operation'> & Parti
  */
 function append(m: ProjectModules, project: ProjectId, fields: RecordLineFields): Promise<ProjectRecord> {
   return m.store.lock(project, () => m.store.append(project, {
-    parents: [m.store.getBranch(project, MAIN_BRANCH)!.head], branch: MAIN_BRANCH, kind: 'operation', operation_version: '1',
+    parents: [m.store.line(project)!.at], kind: 'operation', operation_version: '1',
     ...userOrigin({ session: null }), params: {}, inputs: [], outputs: [], based_on: null, supersedes: [], deterministic: false,
     status: 'done', ...fields,
   }))
@@ -51,10 +51,10 @@ function uses(asset: AssetId): RecordInput {
 /**
  * @param m - the modules.
  * @param project - the project.
- * @returns the `proj` slice of `main`.
+ * @returns the `proj` slice of the current state.
  */
 function projSlice(m: ProjectModules, project: ProjectId): ComponentStates['proj'] {
-  return m.reducers.getState(project, MAIN_BRANCH).components.proj
+  return m.reducers.getState(project).components.proj
 }
 
 /** A shot render: component `shot`, operation `shot.render`. */
@@ -63,7 +63,7 @@ const RENDER = { component: 'shot', operation: 'shot.render' } as const
 const INSERT = { component: 'timeline', operation: 'timeline.clip_insert' } as const
 
 describe('reducers', () => {
-  it('computes each registered slice from the branch records', async () => {
+  it('computes each registered slice from the records of the effective chain', async () => {
     const m = startModules()
     m.reducers.register('reducers_test', {
       initial: () => ({ count: 0 }),
@@ -73,16 +73,11 @@ describe('reducers', () => {
     await append(m, project, INSERT)
     await append(m, project, RENDER)
     const last = await append(m, project, INSERT)
-    const state = m.reducers.getState(project, MAIN_BRANCH)
-    expect(state).toMatchObject({ branch: MAIN_BRANCH, head: last.id, project: m.store.getProject(project) })
+    const state = m.reducers.getState(project)
+    expect(state).toMatchObject({ head: last.id, project: m.store.getProject(project) })
     expect(state.components.reducers_test?.count).toBe(2)
     expect(state.components.proj.records).toEqual(m.store.ancestors(project, last.id))
-    const next = m.reducers.apply(state, { ...last, id: brandString<RecordId>('next') })
-    expect(next.head).toBe('next')
-    expect(next.components.reducers_test?.count).toBe(3)
-    expect(state.components.reducers_test?.count).toBe(2)
-    expect(m.reducers.conflict(state, last)).toBeNull()
-    expect(() => m.reducers.getState(project, 'draft/missing')).toThrow(ProjectError)
+    expect(() => m.reducers.getState(brandString<ProjectId>('missing'))).toThrow(ProjectError)
   })
 
   it('refuses a second reducer for a key', () => {
@@ -154,7 +149,7 @@ describe('reducers', () => {
   it('resolves character references through the reducer that defines assetsOf', async () => {
     const m = startModules()
     const project = await createTestProject(m)
-    const state = m.reducers.getState(project, MAIN_BRANCH)
+    const state = m.reducers.getState(project)
     const ref = { character: HERO, version: 1 }
     expect(m.reducers.assetsOf(state, ref)).toBeNull()
     const face = m.assets.add('hero face')
@@ -166,7 +161,7 @@ describe('reducers', () => {
       assetsOf: (slice, asked) => slice?.assets[versionKey(asked) ?? ''] ?? null,
     })
     await append(m, project, { component: 'bible', operation: 'bible.character_create', params: { character: 'hero' }, outputs: [face] })
-    const withBible = m.reducers.getState(project, MAIN_BRANCH)
+    const withBible = m.reducers.getState(project)
     expect(m.reducers.assetsOf(withBible, ref)).toEqual([face])
     expect(m.reducers.assetsOf(withBible, { character: HERO, version: 2 })).toBeNull()
   })

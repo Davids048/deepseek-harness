@@ -2,7 +2,7 @@
  * Browser API of DreamVerse. While a Connection service is mounted, the plugin registers authenticated Fetch routes
  * under `/api/dv/*`; while a web server is mounted, it serves a project's changes as server-sent events at
  * `/dv/events`, admitting a request only when Connection accepts its cookie. The canvas, the timeline and the asset
- * pool panel read branch state through these routes and write records through `dvProject.run`, the same entry point
+ * pool panel read the project state through these routes and write records through `dvProject.run`, the same entry point
  * the agent's tools use.
  *
  * @module @dv/api
@@ -29,12 +29,12 @@ export { LAYOUT_ROUTE, type CanvasLayout, type CanvasViewport, type NodePosition
 export { PROJECT_ADMIN_ROUTES } from './projects-admin.ts'
 export { WORKSPACE_ROUTES } from './workspaces.ts'
 export {
-  mentionedAssets, projectIdOf, toWireOperation, toWireState, type WireHistory, type WireOperation, type WireState,
+  mentionedAssets, projectIdOf, toWireOperation, toWireState, type ProjectAsset, type WireHistory, type WireOperation, type WireState,
 } from './wire.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** The browser API: branch state, operation declarations, human operation calls, drafts, and the history. */
+    /** The browser API: project state, operation declarations, human operation calls, undo and redo, and the history. */
     dvApi: DvApi
   }
 }
@@ -65,8 +65,6 @@ export const ROUTES = {
   state: '/api/dv/state',
   operations: '/api/dv/operations',
   operation: '/api/dv/operation',
-  acceptDraft: '/api/dv/drafts/accept',
-  discardDraft: '/api/dv/drafts/discard',
   undo: '/api/dv/undo',
   redo: '/api/dv/redo',
   acceptStale: '/api/dv/stale/accept',
@@ -133,12 +131,10 @@ export default class DvApi extends Service {
       },
       {
         path: ROUTES.state, methods: ['GET'], requestBody: 'buffered',
-        fetch: request => answer(() => api.getState(query(request, 'project'), query(request, 'branch') ?? undefined)),
+        fetch: request => answer(() => api.getState(query(request, 'project'))),
       },
       { path: ROUTES.operations, methods: ['GET'], requestBody: 'buffered', fetch: () => answer(() => api.listOperations()) },
       { path: ROUTES.operation, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.runOperation(body)) },
-      { path: ROUTES.acceptDraft, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.acceptDraft(body)) },
-      { path: ROUTES.discardDraft, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.discardDraft(body)) },
       { path: ROUTES.undo, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.undo(body)) },
       { path: ROUTES.redo, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.redo(body)) },
       { path: ROUTES.acceptStale, methods: ['POST'], requestBody: 'buffered', fetch: withBody(body => api.acceptStale(body)) },

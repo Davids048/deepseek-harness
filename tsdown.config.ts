@@ -31,6 +31,8 @@ export default defineConfig(({ env }) => {
         'packages/dv/chat-references/**',
         'packages/dv/api/**', 'packages/dv/ui-kit/**', 'packages/video-harness/stream/**',
         'packages/bundle/dv/**',
+        // The DreamVerse browser stories are tests only and have no build output.
+        'packages/dv/e2e/**',
       ],
     },
     entry: client ? '' : ['lib/types/{index,invariant,startup}.js'],

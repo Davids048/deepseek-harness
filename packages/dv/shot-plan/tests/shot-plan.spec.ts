@@ -212,8 +212,7 @@ describe('dvShotPlan', () => {
       summary: 'plan updated (1 shots)',
       report: { plan: 'p1', version: 2, shots: ['shot 1 (t2va): one'], gpu_seconds: 5 * GPU_SECONDS_PER_VIDEO_SECOND },
     })
-    const draft = fixture.ctx.dvProject.workingBranch(fixture.project, brandString<SessionId>('s1')).name
-    const state = fixture.ctx.dvProject.getState(fixture.project, draft)
+    const state = fixture.ctx.dvProject.getState(fixture.project)
     expect(state.components.plan.plans).toEqual({
       p1: [
         { title: 'dance', references: [picture], shots, version: 1, created_by: created.record, approved_by: null },
@@ -241,8 +240,7 @@ describe('dvShotPlan', () => {
     expect(approved).toMatchObject({ status: 'done', summary: 'plan p1 v1 approved' })
     expect(approved.scheduled).toHaveLength(4)
     await fixture.ctx.dvProject.wait(fixture.project)
-    const draft = fixture.ctx.dvProject.workingBranch(fixture.project, brandString<SessionId>('s1')).name
-    const state = fixture.ctx.dvProject.getState(fixture.project, draft)
+    const state = fixture.ctx.dvProject.getState(fixture.project)
     const shots = state.components.proj.records.filter(record => record.component === 'shot')
     expect(shots.map(shot => [shot.operation, shot.params])).toEqual([
       ['shot.render_ref2va', { prompt: 'one', plan: 'p1', plan_version: 1, shot: 1, duration_sec: 1, aspect_ratio: '16:9', seed: 7 }],
@@ -363,21 +361,26 @@ describe('dvShotPlan', () => {
     expect(spec(fixture, 'plan.approve')?.summarize(again)).toBe('plan p1 v2 approved')
   })
 
-  it('reuses only takes on the approving branch, makes shots without continue_previous reusable one by one, and renders a shot whose mode changed', async () => {
+  it('reuses only takes in the current state, makes shots without continue_previous reusable one by one, and renders a shot whose mode changed', async () => {
     const fixture = await start()
     const picture = fixture.put('face', 'image/png', 'face.png')
-    await fixture.record('plan.create', { references: [picture], shots: [ref('a'), ref('b'), { mode: 't2va', prompt: 'c' }] })
-    // The agent's approval lands on its draft; main holds none of the takes, so every shot would render there.
+    const created = await fixture.record('plan.create', { references: [picture], shots: [ref('a'), ref('b'), { mode: 't2va', prompt: 'c' }] })
     value(await fixture.call('dv_plan_approve', { reason: 'go', plan: 'p1', user_approved: true }))
     await fixture.ctx.dvProject.wait(fixture.project)
-    const draft = fixture.ctx.dvProject.workingBranch(fixture.project, brandString<SessionId>('s1')).name
-    expect(fixture.ctx.dvShotPlan.shotsToRender(fixture.ctx.dvProject.getState(fixture.project, draft), 'p1')).toEqual([])
-    expect(fixture.ctx.dvShotPlan.shotsToRender(fixture.ctx.dvProject.getState(fixture.project), 'p1')).toEqual([1, 2, 3])
+    const toRender = (): number[] => fixture.ctx.dvShotPlan.shotsToRender(fixture.ctx.dvProject.getState(fixture.project), 'p1')
+    expect(toRender()).toEqual([])
+    // After going back to the plan's creation, the state holds none of the takes, so every shot would render again.
+    const [rendered] = fixture.ctx.dvProject.listHistory({ project: fixture.project, limit: 1 })
+    if (rendered === undefined) throw new Error('the approval wrote no record')
+    await fixture.ctx.dvProject.moveTo(fixture.project, created.id)
+    expect(toRender()).toEqual([1, 2, 3])
+    // Moving forward to the newest step brings the takes back.
+    await fixture.ctx.dvProject.moveTo(fixture.project, rendered.record.id)
     // Shot 2 changes, shot 3 changes its render mode with the same prompt, shot 4 is new; shot 1 keeps its take.
     value(await fixture.call('dv_plan_update', {
       reason: 'change', plan: 'p1', references: [picture], shots: [ref('a'), ref('B'), ref('c'), { mode: 't2va', prompt: 'd' }],
     }))
-    expect(fixture.ctx.dvShotPlan.shotsToRender(fixture.ctx.dvProject.getState(fixture.project, draft), 'p1')).toEqual([2, 3, 4])
+    expect(toRender()).toEqual([2, 3, 4])
   })
 
   it('updates the plan\'s timeline when the plan is approved again, and creates a timeline for another plan', async () => {

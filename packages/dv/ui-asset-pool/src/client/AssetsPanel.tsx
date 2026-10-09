@@ -1,7 +1,8 @@
 /**
  * The project asset pool panel: an import drop zone, every asset of the project once in thumbnail grids grouped by media
  * type (图片 · 视频 · 从生成中截取的帧), drag sources that carry the asset ID as `application/x-dv-asset`, and a
- * preview on click. Assets of an open draft that the user has not accepted yet are listed too, with a 草稿 (Draft) badge.
+ * preview on click. The panel lists every asset of the project, including the assets of steps that an undo went back
+ * past: the asset pool only grows.
  *
  * @module @dv/ui-asset-pool/AssetsPanel
  */
@@ -12,20 +13,18 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DvClient, assetUrl } from '@dv/ui-kit/api.ts'
-import type { Asset, WireState } from '@dv/ui-kit/types.ts'
+import type { Asset } from '@dv/ui-kit/types.ts'
 import { dispatchCompose } from '@dv/ui-kit/compose.ts'
 import { useCurrentProject } from '@dv/ui-kit/current-project.ts'
 import { useText } from '@dv/ui-kit/locale.ts'
-import { openDrafts } from '@dv/ui-kit/state.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import { DV_ASSET_DRAG_TYPE, DV_TIMELINE_INSERT_EVENT, dispatchWorkspaceEvent } from '@dv/ui-kit/workspace-events.ts'
 import { assetLibrary } from './library.ts'
-import type { DraftState } from './library.ts'
 
 /** Props of {@link AssetsPanel}. */
 export interface AssetsPanelProps {
   projectId: string
-  /** The chat session the panel sits beside; an import goes to that session's working branch. */
+  /** The chat session the panel sits beside, recorded as the `session` of its imports. */
   session: string | null
   /** The API client; defaults to one over the page's fetch. */
   client?: DvClient
@@ -37,40 +36,16 @@ const accent = 'var(--dv-accent, #7c5cff)'
 const button: CSSProperties = { border: `1px solid ${line}`, background: 'transparent', color: 'inherit', borderRadius: 6, padding: '5px 12px', fontSize: 13, cursor: 'pointer' }
 
 /**
- * The states of the project's open drafts, refetched whenever the state of `main` reloads, which happens on
- * every change of the project, draft branches included.
- * @param client - the API client.
- * @param projectId - the project.
- * @param main - the state of `main`, or null while it loads.
- * @returns the draft states; a draft whose fetch fails is left out.
- */
-function useDraftStates(client: DvClient, projectId: string, main: WireState | null): DraftState[] {
-  const [drafts, setDrafts] = useState<DraftState[]>([])
-  useEffect(() => {
-    const branches = main === null ? [] : openDrafts(main).map(draft => draft.branch)
-    if (branches.length === 0) { setDrafts([]); return }
-    const controller = new AbortController()
-    void Promise.all(branches.map(branch => client.getState(projectId, branch, controller.signal)
-      .then(state => ({ branch, state }), () => null)))
-      .then((rows) => { if (!controller.signal.aborted) setDrafts(rows.filter((row): row is DraftState => row !== null)) })
-    return () => { controller.abort() }
-  }, [client, projectId, main])
-  return drafts
-}
-
-/**
  * The asset pool panel of one project.
  * @param props - the project and an optional client.
  * @returns the panel.
  */
 export function AssetsPanel(props: AssetsPanelProps): ReactNode {
   const client = useMemo(() => props.client ?? new DvClient(), [props.client])
-  const state = useProjectState(client, props.projectId, 'main')
-  const drafts = useDraftStates(client, props.projectId, state.value)
+  const state = useProjectState(client, props.projectId)
   const t = useText()
   const [preview, setPreview] = useState<Asset | null>(null)
-  const library = useMemo(() => state.value === null ? null : assetLibrary(state.value, drafts), [state.value, drafts])
-  const draft = library?.draft ?? new Set<string>()
+  const library = useMemo(() => state.value === null ? null : assetLibrary(state.value), [state.value])
 
   let body: ReactNode
   if (library === null) body = <p style={{ color: muted, fontSize: 12 }}>{state.error === null ? t('正在读取…', 'Loading…') : t(`读取失败：${state.error}`, `Failed to load: ${state.error}`)}</p>
@@ -79,11 +54,9 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
   } else {
     body = (
       <>
-        <Section title={t('图片', 'Images')} assets={library.images} draft={draft} onOpen={setPreview} />
-        <Section title={t('视频', 'Videos')} assets={library.videos} draft={draft} onOpen={setPreview} />
-        <Section
-          title={t('从生成中截取的帧', 'Extracted from generation')} assets={library.extracted} draft={draft} onOpen={setPreview}
-        />
+        <Section title={t('图片', 'Images')} assets={library.images} onOpen={setPreview} />
+        <Section title={t('视频', 'Videos')} assets={library.videos} onOpen={setPreview} />
+        <Section title={t('从生成中截取的帧', 'Extracted from generation')} assets={library.extracted} onOpen={setPreview} />
       </>
     )
   }
@@ -93,7 +66,7 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>{body}</div>
       {preview === null
         ? null
-        : <Preview key={preview.id} asset={preview} draft={draft.has(preview.id)} onClose={() => { setPreview(null) }} />}
+        : <Preview key={preview.id} asset={preview} onClose={() => { setPreview(null) }} />}
     </div>
   )
 }
@@ -101,7 +74,7 @@ export function AssetsPanel(props: AssetsPanelProps): ReactNode {
 /**
  * The drop zone that imports image and video files through `POST /api/dv/assets/import`, and names each other file it
  * refuses; also opens a file chooser on click.
- * @param props - the API client, the project, and the chat session whose working branch receives the imports.
+ * @param props - the API client, the project, and the chat session the panel sits beside.
  * @returns the zone.
  */
 function ImportZone(props: { client: DvClient; projectId: string; session: string | null }): ReactNode {
@@ -148,16 +121,18 @@ function ImportZone(props: { client: DvClient; projectId: string; session: strin
 
 /**
  * One titled grid of thumbnails.
- * @param props - the title, the assets, the IDs of draft assets, and the preview callback.
+ * @param props - the title, the assets, and the preview callback.
  * @returns the section, or nothing when it has no assets.
  */
-function Section(props: { title: string; assets: Asset[]; draft: ReadonlySet<string>; onOpen: (asset: Asset) => void }): ReactNode {
+function Section(props: { title: string; assets: Asset[]; onOpen: (asset: Asset) => void }): ReactNode {
   if (props.assets.length === 0) return null
   return (
     <section style={{ marginBottom: 14 }}>
       <h3 style={{ fontSize: 12, fontWeight: 600, color: muted, margin: '0 0 6px' }}>{props.title} · {props.assets.length}</h3>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(84px, 1fr))', gap: 6 }}>
-        {props.assets.map(asset => <Thumb key={asset.id} asset={asset} draft={props.draft.has(asset.id)} onOpen={props.onOpen} />)}
+        {props.assets.map(asset => (
+          <Thumb key={asset.id} asset={asset} onOpen={props.onOpen} />
+        ))}
       </div>
     </section>
   )
@@ -165,12 +140,11 @@ function Section(props: { title: string; assets: Asset[]; draft: ReadonlySet<str
 
 /**
  * One draggable thumbnail; dragging it carries the asset ID, clicking it opens the preview.
- * @param props - the asset, whether only an unaccepted draft has it, and the preview callback.
+ * @param props - the asset and the preview callback.
  * @returns the thumbnail.
  */
-function Thumb(props: { asset: Asset; draft: boolean; onOpen: (asset: Asset) => void }): ReactNode {
+function Thumb(props: { asset: Asset; onOpen: (asset: Asset) => void }): ReactNode {
   const { asset } = props
-  const t = useText()
   const video = asset.mime.startsWith('video/')
   const media: CSSProperties = { width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }
   return (
@@ -186,9 +160,6 @@ function Thumb(props: { asset: Asset; draft: boolean; onOpen: (asset: Asset) => 
       {video && asset.duration_sec !== null
         ? <span style={{ position: 'absolute', right: 3, bottom: 3, fontSize: 10, background: '#000a', color: '#fff', borderRadius: 3, padding: '0 3px' }}>{asset.duration_sec.toFixed(0)}s</span>
         : null}
-      {props.draft
-        ? <span style={{ position: 'absolute', left: 3, top: 3, fontSize: 10, background: accent, color: '#fff', borderRadius: 3, padding: '0 4px' }}>{t('草稿', 'Draft')}</span>
-        : null}
     </button>
   )
 }
@@ -196,13 +167,13 @@ function Thumb(props: { asset: Asset; draft: boolean; onOpen: (asset: Asset) => 
 /**
  * The preview dialog: the media at full size, its facts, and actions. Escape or a click outside closes it. The dialog
  * renders on `document.body`, so the right sidebar's resize handle and stacking context cannot cover its buttons.
- * @param props - the asset, whether only an unaccepted draft has it, and the close callback.
+ * @param props - the asset and the close callback.
  * @returns the dialog.
  */
-function Preview(props: { asset: Asset; draft: boolean; onClose: () => void }): ReactNode {
+function Preview(props: { asset: Asset; onClose: () => void }): ReactNode {
   const { asset, onClose } = props
   const t = useText()
-  // The asset pool records no dimensions for imported files, so read them from the loaded media.
+  // When the asset pool could not read the dimensions at import, read them from the loaded media.
   const [loadedSize, setLoadedSize] = useState<{ width: number; height: number } | null>(null)
   const width = asset.width ?? loadedSize?.width ?? null
   const height = asset.height ?? loadedSize?.height ?? null
@@ -225,7 +196,6 @@ function Preview(props: { asset: Asset; draft: boolean; onClose: () => void }): 
           : <img src={assetUrl(asset.id)} alt={asset.name} onLoad={(event) => { setLoadedSize({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight }) }} style={{ maxWidth: '80vw', maxHeight: '70vh', objectFit: 'contain', borderRadius: 8 }} />}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
           <span style={{ fontWeight: 600 }}>{asset.name}</span>
-          {props.draft ? <span style={{ fontSize: 11, background: accent, color: '#fff', borderRadius: 3, padding: '0 4px' }}>{t('草稿', 'Draft')}</span> : null}
           <span style={{ opacity: 0.7 }}>{facts.join(' · ')}</span>
           <span style={{ flex: 1 }} />
           {video ? <button type="button" style={button} onClick={() => { dispatchWorkspaceEvent(DV_TIMELINE_INSERT_EVENT, { assetId: asset.id }); onClose() }}>{t('插入片段', 'Insert clip')}</button> : null}

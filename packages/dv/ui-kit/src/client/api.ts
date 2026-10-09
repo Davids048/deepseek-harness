@@ -5,8 +5,8 @@
  * @module @dv/ui-kit/api
  */
 import type {
-  CanvasLayout, DraftCounts, DraftTarget, HistoryQuery, OperationRequest, ProjectEvent,
-  ProjectInfo, ProjectRecord, WireHistory, WireOperation, WireProject, WireRecordResult, WireSession, WireState,
+  CanvasLayout, HistoryQuery, OperationRequest, ProjectEvent,
+  ProjectInfo, ProjectRecord, WireHistory, WireLine, WireOperation, WireProject, WireSession, WireState,
   WireWorkspaces,
 } from './types.ts'
 
@@ -72,20 +72,19 @@ function releaseEventSource(project: string, shared: SharedEventSource): void {
 }
 
 /** The SSE event names of `/dv/events`: the kinds of a project change. */
-const EVENT_KINDS: ReadonlyArray<ProjectEvent['kind']> = ['record', 'update', 'branch']
+const EVENT_KINDS: ReadonlyArray<ProjectEvent['kind']> = ['record', 'update', 'line']
 
 /** The surface a view sends with its writes: a subset of the record field `Surface`. */
-export type ViewSurface = 'canvas' | 'timeline' | 'asset_pool' | 'history'
+export type ViewSurface = 'canvas' | 'timeline' | 'asset_pool'
 
 /** A route answered with an error status. */
 export class DvApiError extends Error {
   /**
    * @param status - the HTTP status.
    * @param message - the server's explanation.
-   * @param code - the Project error code, such as `draft_changed`, when the server sent one.
-   * @param body - the whole error body, for fields such as a changed draft's `counts`.
+   * @param code - the Project error code, such as `unknown_record`, when the server sent one.
    */
-  constructor(readonly status: number, message: string, readonly code: string | null = null, readonly body: Record<string, unknown> = {}) {
+  constructor(readonly status: number, message: string, readonly code: string | null = null) {
     super(message)
     this.name = 'DvApiError'
   }
@@ -106,12 +105,12 @@ async function decode<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const fields = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
     const reason = typeof fields['error'] === 'string' ? fields['error'] : `HTTP ${String(response.status)}`
-    throw new DvApiError(response.status, reason, typeof fields['code'] === 'string' ? fields['code'] : null, fields)
+    throw new DvApiError(response.status, reason, typeof fields['code'] === 'string' ? fields['code'] : null)
   }
   return body as T
 }
 
-/** Every `/api/dv` call of the browser: project state, operations, history, drafts, undo and redo, layout, workspaces. */
+/** Every `/api/dv` call of the browser: project state, operations, history, undo and redo, layout, workspaces. */
 export class DvClient {
   constructor(private readonly fetchImpl: typeof fetch = (input, init) => fetch(input, init)) {}
 
@@ -155,16 +154,15 @@ export class DvClient {
 
   /**
    * @param project - the project.
-   * @param branch - a branch name.
    * @param signal - cancels the request.
-   * @returns the state of the branch.
+   * @returns the project's current state.
    */
-  getState(project: string, branch: string, signal?: AbortSignal): Promise<WireState> {
-    return this.get('/api/dv/state', { project, branch }, signal)
+  getState(project: string, signal?: AbortSignal): Promise<WireState> {
+    return this.get('/api/dv/state', { project }, signal)
   }
 
   /**
-   * List a project's records with their marks, newest first, and the assets they name.
+   * List a project's records, newest first, and the assets they name.
    * The query travels as a JSON body because a `records` set can be long; the route writes no record.
    * @param query - the project and the filters.
    * @param signal - cancels the request.
@@ -196,7 +194,7 @@ export class DvClient {
    * @param project - the project.
    * @param file - the file.
    * @param surface - where the file was imported: the canvas or the asset pool panel.
-   * @param session - the chat session the view sits beside; the record goes to that session's working branch.
+   * @param session - the chat session the view sits beside, recorded as the record's `session`.
    * @returns the asset ID and the record.
    */
   async importAsset(
@@ -209,53 +207,31 @@ export class DvClient {
   }
 
   /**
-   * Accept a draft into the branch it was forked from.
+   * Move the current position one step back. Writes no record.
    * @param project - the project.
-   * @param target - the chat session whose draft it is, or the draft branch.
-   * @param surface - where the decision was made.
-   * @returns the accept record and the branch heads afterwards.
+   * @returns the last step and the current position afterwards.
    */
-  acceptDraft(project: string, target: DraftTarget, surface: ViewSurface): Promise<WireRecordResult> {
-    return this.post('/api/dv/drafts/accept', { project, ...target, surface })
+  undo(project: string): Promise<WireLine> {
+    return this.post('/api/dv/undo', { project })
   }
 
   /**
-   * Discard a draft, including the human's edits on it. Without `counts` this is a dry read that returns the counts
-   * to confirm; with the counts the human confirmed, the draft is discarded, or the call fails with code
-   * `draft_changed` when the draft changed meanwhile.
+   * Move the current position to a step of the history list, before or after it. Writes no record.
    * @param project - the project.
-   * @param target - the chat session whose draft it is, or the draft branch.
-   * @param surface - where the decision was made.
-   * @param counts - the counts the human confirmed; omitted for the dry read.
-   * @returns the draft's name and its counts.
+   * @param to - a step of the history list.
+   * @returns the last step and the current position afterwards.
    */
-  discardDraft(
-    project: string, target: DraftTarget, surface: ViewSurface, counts?: DraftCounts,
-  ): Promise<{ draft: string; counts: DraftCounts }> {
-    return this.post('/api/dv/drafts/discard', { project, ...target, surface, ...counts === undefined ? {} : { counts } })
+  moveTo(project: string, to: string): Promise<WireLine> {
+    return this.post('/api/dv/undo', { project, to })
   }
 
   /**
-   * Move the working branch of the session (its draft, else `main`) back by one step, or jump it to a step.
+   * Move the current position one step forward. Writes no record.
    * @param project - the project.
-   * @param surface - where the gesture came from.
-   * @param session - the chat session the view sits beside, or null.
-   * @param to - a record on the branch's effective chain or one of its redo steps; omit for one step back.
-   * @returns the undo (or redo, for a jump forward) record and the heads afterwards.
+   * @returns the last step and the current position afterwards.
    */
-  undo(project: string, surface: ViewSurface, session: string | null = null, to?: string): Promise<WireRecordResult> {
-    return this.post('/api/dv/undo', { project, surface, ...session === null ? {} : { session }, ...to === undefined ? {} : { to } })
-  }
-
-  /**
-   * Move the working branch of the session forward by one step that an undo removed.
-   * @param project - the project.
-   * @param surface - where the gesture came from.
-   * @param session - the chat session the view sits beside, or null.
-   * @returns the redo record and the heads afterwards.
-   */
-  redo(project: string, surface: ViewSurface, session: string | null = null): Promise<WireRecordResult> {
-    return this.post('/api/dv/redo', { project, surface, ...session === null ? {} : { session } })
+  redo(project: string): Promise<WireLine> {
+    return this.post('/api/dv/redo', { project })
   }
 
   /**
@@ -264,9 +240,9 @@ export class DvClient {
    * @param record - the stale record.
    * @param surface - where the decision was made.
    * @param session - the chat session the view sits beside, or null.
-   * @returns the accept record and the heads afterwards.
+   * @returns the accept record.
    */
-  acceptStale(project: string, record: string, surface: ViewSurface, session: string | null = null): Promise<WireRecordResult> {
+  acceptStale(project: string, record: string, surface: ViewSurface, session: string | null = null): Promise<ProjectRecord> {
     return this.post('/api/dv/stale/accept', { project, record, surface, ...session === null ? {} : { session } })
   }
 
@@ -276,7 +252,7 @@ export class DvClient {
    */
   async getLayout(project: string): Promise<CanvasLayout> {
     const layout = await this.get<Partial<CanvasLayout>>('/api/dv/layout', { project })
-    return { positions: layout.positions ?? {}, viewport: layout.viewport ?? null, placed: layout.placed ?? [] }
+    return { positions: layout.positions ?? {}, viewport: layout.viewport ?? null }
   }
 
   /**
@@ -290,23 +266,19 @@ export class DvClient {
   }
 
   /**
-   * Add assets to the project's canvas list, so each one gets a canvas node; an asset already on the list stays as it is.
+   * Put assets on the project's canvas (`asset.place`), or take them off it (`asset.unplace`);
+   * the assets stay in the asset pool either way.
    * @param project - the project.
-   * @param assetIds - the assets dropped on the canvas or referenced in a chat message.
-   * @returns the stored layout.
+   * @param assetIds - the assets.
+   * @param on - true to put them on the canvas, false to take them off.
+   * @param session - the chat session the view sits beside, recorded as the record's `session`.
+   * @returns the record.
    */
-  placeAssets(project: string, assetIds: string[]): Promise<CanvasLayout> {
-    return this.post('/api/dv/layout', { project, placed: assetIds })
-  }
-
-  /**
-   * Take assets off the project's canvas list; the assets stay in the asset pool.
-   * @param project - the project.
-   * @param assetIds - the assets whose canvas nodes the user removed.
-   * @returns the stored layout.
-   */
-  removeFromCanvas(project: string, assetIds: string[]): Promise<CanvasLayout> {
-    return this.post('/api/dv/layout', { project, removed: assetIds })
+  placeOnCanvas(project: string, assetIds: string[], on: boolean, session: string | null = null): Promise<ProjectRecord> {
+    return this.runOperation({
+      project, operation: on ? 'asset.place' : 'asset.unplace', surface: 'canvas', inputs: assetIds.map(ref => ({ role: 'asset', ref })),
+      ...session === null ? {} : { session },
+    })
   }
 
   /** @returns every project with its directory and Workspace, and the saved chat session bindings. */

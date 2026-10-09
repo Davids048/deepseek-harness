@@ -53,11 +53,11 @@ The `timeline` slice is `{timelines: Timeline[]}`; a `Timeline` is `{id, name, c
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-The operations write only their records. Each one's `execute` checks the call against the state at the record's parent and fails the record with a reason when a created timeline exists, another named timeline or the named clip does not exist, a position is outside the timeline, a split or trim names a placeholder clip ("Clip cl3 is still rendering."), a split time is outside the clip, or a trim range is empty. The operations are not `deterministic`, so the runner runs that check on every call instead of reusing an earlier record. The reducer applies each finished record and ignores records that do not apply; its `conflict` runs the same check, so accepting a draft on a `main` that moved stops at a clip edit whose clip `main` removed.
+The operations write only their records. Each one's `execute` checks the call against the state at the record's parent and fails the record with a reason when a created timeline exists, another named timeline or the named clip does not exist, a position is outside the timeline, a split or trim names a placeholder clip ("Clip cl3 is still rendering."), a split time is outside the clip, or a trim range is empty. The operations are not `deterministic`, so the runner runs that check on every call instead of reusing an earlier record. The reducer applies each finished record and ignores records that do not apply.
 
 **Placeholder clips.** `timeline.create` and `timeline.update` declare the `clip` input role in `OperationSpec.pendingInputRoles`, so a `clip` input may name the output of a render that is not done: the call runs at once and its record is done while the render runs. The reducer lays out each `clip` input as a clip with that `source`; the input's `resolved_asset`, and so the clip's `asset`, is null until the render is done, when the record's current form fills it. A failed render leaves the clip a placeholder. Move, remove and replace work on a placeholder; replace puts an asset in it and clears its `source`. The agent summary lists a placeholder clip as `{clip, asset: null, status, record, in_sec, out_sec}`, where `record` is the render it waits for.
 
-**Clip IDs.** The operations that add clips assign their clip IDs in `execute` and store them in the record's `report.clips`, in clip order: one per clip for `timeline.create` and `timeline.update`, one for `timeline.clip_insert`, and one for the second part of `timeline.clip_split` (the first part keeps the clip's ID). The number after `cl` is one more than the highest number in the `report.clips` of any Timeline record of the project on any branch, including undone and discarded records, and than any number assigned to a call still running, so no two clips of a project share an ID. The reducer reads clip IDs only from `report.clips`; accept replay repeats the report on each copy, so a replayed record keeps its clip IDs and the later draft records that name them still apply. A finished record whose `report.clips` does not match the clips it adds, or names an ID already in use, applies nothing and conflicts on replay.
+**Clip IDs.** The operations that add clips assign their clip IDs in `execute` and store them in the record's `report.clips`, in clip order: one per clip for `timeline.create` and `timeline.update`, one for `timeline.clip_insert`, and one for the second part of `timeline.clip_split` (the first part keeps the clip's ID). The number after `cl` is one more than the highest number in the `report.clips` of any Timeline record anywhere in the project's history list, including the steps after the current position, and than any number assigned to a call still running, so no two clips of the history list share an ID, whichever state they were added in. The reducer reads clip IDs only from `report.clips`. A finished record whose `report.clips` does not match the clips it adds, or names an ID already in use, applies nothing.
 
 | File | Content |
 | --- | --- |
@@ -71,7 +71,7 @@ The operations write only their records. Each one's `execute` checks the call ag
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`@dv/project`](../project/README.md): operations, reducers, drafts, and agent tools.
+- [`@dv/project`](../project/README.md): operations, reducers, undo, and agent tools.
 - [`@dv/deliver`](../deliver/README.md): exporting a timeline to one video file.
 - [`COMPONENT-TEMPLATE.md`](../COMPONENT-TEMPLATE.md): the layout this package follows.
 
@@ -112,7 +112,7 @@ Each result is appended to the conversation after its call; the cached prefix st
 
 #### What the model sees
 
-The skill catalog lists `timeline-editing` with its description and when to use it. When the agent loads the skill, it reads a table from the user's editing phrasings (trims, retakes, reference and style changes, reordering, deletion, going back to an earlier take, undo, export, accepting or discarding the draft) to the `dv_*` calls in order and their required arguments, and the rules that apply to every row. A retake calls the render tool of the clip's render mode (`dv_shot_render_ref2va` or `dv_shot_render_t2va`).
+The skill catalog lists `timeline-editing` with its description and when to use it. When the agent loads the skill, it reads a table from the user's editing phrasings (trims, retakes, reference and style changes, reordering, deletion, going back to an earlier take, undo, redo, export) to the `dv_*` calls in order and their required arguments, and the rules that apply to every row. A retake calls the render tool of the clip's render mode (`dv_shot_render_ref2va` or `dv_shot_render_t2va`).
 
 #### Token effect
 

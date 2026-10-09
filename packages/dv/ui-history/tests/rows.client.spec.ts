@@ -1,17 +1,16 @@
 /**
  * The History panel's pure readings: action rows and approval folds, labels with subjects, thumbnails, relative times,
- * mark badges, the branch filter query, timeline record sets, focus, and the working branch's steps.
+ * and the focus a selected step gives the canvas or the timeline.
  */
 import { describe, expect, it } from 'vitest'
 import type { HistoryEntry, ProjectRecord } from '@dv/ui-kit/types.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
 import {
-  actionLabel, actionRows, branchQuery, centerFocus, clipTimelines, markBadge, markStyle, operationLabel, relativeTime, stepPlace,
-  thumbnailOf, timelineRecords, workingSteps,
+  actionLabel, actionRows, centerFocus, clipTimelines, operationLabel, relativeTime, thumbnailOf,
 } from '../src/client/rows.ts'
 
-/** An entry of a record with a mark. */
-const entry = (fields: Partial<ProjectRecord> & { id: string }, mark: HistoryEntry['mark'] = 'main'): HistoryEntry => ({ record: record(fields), mark })
+/** An entry of a record, at or before the current position unless `place` says otherwise. */
+const entry = (fields: Partial<ProjectRecord> & { id: string }, place: HistoryEntry['place'] = 'before'): HistoryEntry => ({ record: record(fields), place })
 
 describe('actionRows', () => {
   it('folds the loaded records an approval scheduled under its row, in scheduled order', () => {
@@ -25,11 +24,6 @@ describe('actionRows', () => {
     expect(rows.map(row => [row.entry.record.id, row.children.map(child => child.record.id)])).toEqual([
       ['ap', ['g1', 'g2', 'tl']], ['h1', []],
     ])
-  })
-
-  it('lists no row for undo and redo records', () => {
-    const rows = actionRows([entry({ id: 'u', operation: 'proj.undo' }), entry({ id: 'r', operation: 'proj.redo' }), entry({ id: 'h1', operation: 'timeline.clip_move' })])
-    expect(rows.map(row => row.entry.record.id)).toEqual(['h1'])
   })
 
   it('keeps scheduled records as rows of their own while their approval is not loaded', () => {
@@ -81,23 +75,7 @@ describe('labels, thumbnails and times', () => {
   })
 })
 
-describe('marks', () => {
-  it('badges an accepted draft record, open drafts, undone, discarded and replayed records', () => {
-    expect(markBadge(entry({ id: 'm' }))).toBeNull()
-    expect(markBadge(entry({ id: 'a', branch: 'draft/s1' }))).toEqual({ zh: '已接受', en: 'Accepted' })
-    expect(markBadge(entry({ id: 'd', branch: 'draft/s1' }, 'draft'))).toEqual({ zh: '草稿', en: 'Draft' })
-    expect(markBadge(entry({ id: 'u' }, 'undone'))).toEqual({ zh: '已撤销', en: 'Undone' })
-    expect(markBadge(entry({ id: 'x', branch: 'draft/s1' }, 'discarded'))).toEqual({ zh: '已丢弃', en: 'Discarded' })
-    expect(markBadge(entry({ id: 'p', branch: 'draft/s1' }, 'replayed'))).toEqual({ zh: '已重放', en: 'Replayed' })
-    expect([markStyle('undone'), markStyle('discarded'), markStyle('replayed'), markStyle('draft')]).toEqual(['struck', 'struck', 'dimmed', 'normal'])
-  })
-
-  it('maps the branch filter to marks: main includes undone records, a draft its open records', () => {
-    expect(branchQuery('')).toEqual({})
-    expect(branchQuery('main')).toEqual({ marks: ['main', 'undone'] })
-    expect(branchQuery('draft/s5')).toEqual({ branch: 'draft/s5', marks: ['draft'] })
-  })
-
+describe('operation labels', () => {
   it('labels an operation by its tool label, and an unknown one by its name', () => {
     expect(operationLabel('timeline.clip_move')).toEqual(['移动片段', 'Move clip'])
     expect(operationLabel('other.thing')).toEqual(['other.thing', 'other.thing'])
@@ -118,35 +96,15 @@ describe('timelines and focus', () => {
     expect(Object.fromEntries(clipTimelines(records))).toEqual({ cl1: 't1', cl2: 't1', cl3: 't2', cl4: 't1' })
   })
 
-  it('collects a timeline\'s records and the records that made its clips\' assets', () => {
-    expect(timelineRecords(records, { 'a.mp4': 'g1' }, 't1', ['a.mp4', 'b.mp4']).sort()).toEqual(['c', 'e', 'g1', 'm', 's'])
-    expect(timelineRecords(records, {}, 't2', ['z.mp4'])).toEqual(['c2', 'm2'])
-  })
-
-  it('focuses a clip record on the timeline, a render on the canvas, and nothing for proj records or other branches', () => {
+  it('focuses a clip record on the timeline, a render on the canvas, and nothing for proj records or steps after the current position', () => {
     const owner = clipTimelines(records)
-    expect(centerFocus({ record: records[3] as ProjectRecord, mark: 'main' }, owner))
-      .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl4' } })
-    expect(centerFocus({ record: records[0] as ProjectRecord, mark: 'draft' }, owner))
-      .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl1' } })
     const render = fixtureState().components.proj.records.find(item => item.id === 'g1') as ProjectRecord
-    expect(centerFocus({ record: render, mark: 'main' }, owner)).toEqual({ event: 'dv:canvas-focus', detail: { recordId: 'g1' } })
-    expect(centerFocus({ record: render, mark: 'undone' }, owner)).toBeNull()
-    expect(centerFocus(entry({ id: 'u', operation: 'proj.undo' }), owner)).toBeNull()
-  })
-})
-
-describe('workingSteps', () => {
-  it('makes the newest step of the chain current, the older steps before it, and the redo steps after it', () => {
-    const chain = [
-      record({ id: 'c', operation: 'proj.create' }), record({ id: 'a', operation: 'timeline.create' }),
-      record({ id: 'b', operation: 'timeline.rename' }), record({ id: 'u', operation: 'proj.undo' }),
-      record({ id: 'w', operation: 'proj.draft_accept' }),
-    ]
-    const steps = workingSteps(chain, ['d', 'e'])
-    expect(steps.current).toBe('b')
-    expect(['c', 'a', 'b', 'u', 'w', 'd', 'x'].map(id => stepPlace(id, steps)))
-      .toEqual(['before', 'before', 'current', null, null, 'after', null])
-    expect(workingSteps([], []).current).toBeNull()
+    expect(centerFocus({ record: records[3] as ProjectRecord, place: 'before' }, owner))
+      .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl4' } })
+    expect(centerFocus({ record: records[0] as ProjectRecord, place: 'current' }, owner))
+      .toEqual({ event: 'dv:timeline-focus', detail: { timelineId: 't1', clipId: 'cl1' } })
+    expect(centerFocus({ record: render, place: 'before' }, owner)).toEqual({ event: 'dv:canvas-focus', detail: { recordId: 'g1' } })
+    expect(centerFocus({ record: render, place: 'after' }, owner)).toBeNull()
+    expect(centerFocus(entry({ id: 's', operation: 'proj.stale_accept' }), owner)).toBeNull()
   })
 })

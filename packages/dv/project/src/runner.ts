@@ -1,13 +1,13 @@
 /**
  * The operation runner: the operation registry and the single change path of operations. `run` checks a request,
- * writes its pending record on the right branch, then executes the operation now or hands the record to the
+ * writes its pending record after the project's current position, then executes the operation now or hands the record to the
  * scheduler. The agent's confirmation (`OperationSpec.confirm`) is checked earlier, in the agent tool call.
  *
  * Lock scope: the runner holds the project lock (from the record store) while it checks and appends a record and
  * while it writes each update line. It releases the lock while `execute` runs, so a long render does not block other
  * edits, and an operation's `execute` may itself call `dvProject.run`.
  *
- * Calls: the record store (lock, append, update, records), drafts (`branchForWrite`, `workingBranch`), the reducer
+ * Calls: the record store (lock, head, append, update, records), the reducer
  * registry (state at a record's parent, character, location and style assets), the scheduler (`enqueue`), and the
  * asset store. Called by the service and by the scheduler (`execute`).
  *
@@ -17,9 +17,9 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { validateArgs } from '@deepseek-ai/dsh-tools'
-import type { Drafts } from './drafts.ts'
+import { discardedSteps } from './history.ts'
 import type { ReducerRegistry } from './reducers.ts'
-import type { RecordStore } from './record-store.ts'
+import type { RecordLineInput, RecordStore } from './record-store.ts'
 import type { Scheduler } from './scheduler.ts'
 import { COMPONENT_KEYS, ProjectError } from './shared.ts'
 import type {
@@ -48,10 +48,12 @@ export interface RunnerAssets {
   ): AssetId
 }
 
+/** The failure of a record whose step a later write discarded before it finished. */
+const DISCARDED: RecordFailure = { code: 'discarded', message: 'A new step after an undo discarded this step before it finished.' }
+
 /** The modules and services the runner calls. */
 export interface RunnerDeps {
   store: RecordStore
-  drafts: Drafts
   reducers: ReducerRegistry
   assets: RunnerAssets
   scheduler: Scheduler
@@ -103,6 +105,10 @@ function originOf(request: RunRequest): RecordOrigin {
 /** The operation registry and the change path. */
 export class Runner {
   private readonly operations = new Map<string, OperationSpec>()
+  /** The abort controller of every executing record, so a write that discards the record's step can stop it. */
+  private readonly executing = new Map<RecordId, AbortController>()
+  /** Records a write discarded before they started executing; `execute` ends them at once. */
+  private readonly discarded = new Set<RecordId>()
 
   /**
    * @param deps - the modules and services the runner calls.
@@ -147,7 +153,7 @@ export class Runner {
    * @returns the record, its outputs and report.
    */
   async run(request: RunRequest): Promise<RunResult> {
-    const { store, drafts, reducers, scheduler } = this.deps
+    const { store, reducers, scheduler } = this.deps
     const spec = this.operations.get(request.operation)
     if (spec === undefined) throw new ProjectError('unknown_operation', `Operation ${request.operation} is not registered.`)
     store.getProject(request.project)
@@ -156,20 +162,18 @@ export class Runner {
     if (spec.readOnly === true) return await this.runRead(spec, request)
 
     const pending = await store.lock(request.project, async () => {
-      // Inputs resolve before `branchForWrite`, which may open a draft, so that a refused call writes nothing. A newly
-      // opened draft starts at the head of the session's working branch, so the state there is the state at the parent.
+      // Inputs resolve before the append, so that a refused call writes nothing; the state at the head is the state at
+      // the new record's parent.
       for (const record of request.after ?? []) store.getRecord(request.project, record)
-      const working = drafts.workingBranch(request.project, request.session)
-      const state = reducers.getState(request.project, working.name)
+      const state = reducers.getState(request.project)
       const inputs = this.resolveInputs(spec, request, state, request.after !== undefined)
       // The operation's own rule refuses the call before anything is written; the lock keeps the state it read current.
       await spec.precondition?.(request, state)
       // The operation names the records it replaces itself; the caller may name more.
       const supersedes = [...new Set([...request.supersedes ?? [], ...spec.supersedes?.(request.params, state) ?? []])]
-      const branch = drafts.branchForWrite(request.project, request)
       const origin = originOf(request)
-      return store.append(request.project, {
-        parents: [this.headOf(request.project, branch)], branch, kind: 'operation', component: spec.component, operation: spec.name,
+      return this.appendStep(request.project, {
+        parents: [this.headOf(request.project)], kind: 'operation', component: spec.component, operation: spec.name,
         operation_version: spec.version, ...origin, params: request.params, inputs, outputs: [], based_on: request.based_on ?? null,
         supersedes, deterministic: spec.deterministic, status: 'pending',
       })
@@ -194,6 +198,7 @@ export class Runner {
    */
   async execute(project: ProjectId, record: RecordId, signal?: AbortSignal): Promise<ProjectRecord> {
     const { store, reducers, assets } = this.deps
+    if (this.discarded.delete(record)) return await this.finish(project, record, 'cancelled', DISCARDED)
     const pending = store.getRecord(project, record)
     const spec = pending.operation === null ? undefined : this.operations.get(pending.operation)
     if (spec === undefined) {
@@ -217,16 +222,22 @@ export class Runner {
       })
     }
 
+    // The run request's signal stops the call ('stopped'); a write that discards the step aborts it too ('discarded').
+    const controller = new AbortController()
+    const stop = (): void => { controller.abort('stopped') }
+    if (signal?.aborted === true) stop()
+    signal?.addEventListener('abort', stop, { once: true })
+    this.executing.set(record, controller)
     const running = await this.update(project, { update: record, status: 'running', started_at: new Date().toISOString() })
     let scratchDir: string | null = null
     try {
       // `parents[0]` always exists: an operation record follows at least the project's `proj.create` record.
-      const state = reducers.stateAt(project, running.branch, running.parents[0] ?? running.id)
+      const state = reducers.stateAt(project, running.parents[0] ?? running.id)
       scratchDir = await mkdtemp(join(tmpdir(), 'dv-operation-'))
       const started = performance.now()
       const result = await spec.execute({
         project, record: running, params: running.params, inputs: running.inputs, state, scratchDir,
-        signal: signal ?? new AbortController().signal,
+        signal: controller.signal,
         importAsset: (source, meta) => assets.importAsset(source, meta, record),
       })
       const wallSeconds = Math.round(performance.now() - started) / 1000
@@ -236,32 +247,34 @@ export class Runner {
         ...result.report === undefined ? {} : { report: result.report },
       })
     } catch (error: unknown) {
-      if (signal?.aborted === true) {
+      if (controller.signal.reason === 'discarded') return await this.finish(project, record, 'cancelled', DISCARDED)
+      if (controller.signal.aborted) {
         return await this.finish(project, record, 'cancelled', {
           code: 'stopped', message: `The turn was stopped while ${spec.name} ran: ${messageOf(error)}`,
         })
       }
       return await this.finish(project, record, 'failed', { code: 'operation_failed', message: messageOf(error) })
     } finally {
+      this.executing.delete(record)
+      signal?.removeEventListener('abort', stop)
       if (scratchDir !== null) await rm(scratchDir, { recursive: true, force: true })
     }
   }
 
   /**
-   * Accept a stale record's result: append `proj.stale_accept` with `params {record}` on the branch for the origin's
-   * write (`drafts.branchForWrite`). Takes the project lock.
+   * Accept a stale record's result: append `proj.stale_accept` with `params {record}` after the head. Takes the project
+   * lock.
    * @param project - the project.
-   * @param record - a record that is stale on that branch.
+   * @param record - a record that is stale in the current state.
    * @param origin - who accepts it.
    * @returns the `proj.stale_accept` record.
    */
   acceptStale(project: ProjectId, record: RecordId, origin: RecordOrigin): Promise<ProjectRecord> {
-    const { store, drafts } = this.deps
+    const { store } = this.deps
     return store.lock(project, () => {
       store.getRecord(project, record)
-      const branch = drafts.branchForWrite(project, origin)
-      return store.append(project, {
-        parents: [this.headOf(project, branch)], branch, kind: 'operation', component: 'proj', operation: 'proj.stale_accept',
+      return this.appendStep(project, {
+        parents: [this.headOf(project)], kind: 'operation', component: 'proj', operation: 'proj.stale_accept',
         operation_version: '1', ...origin, params: { record }, inputs: [], outputs: [], based_on: null, supersedes: [],
         deterministic: true, status: 'done',
       })
@@ -270,7 +283,7 @@ export class Runner {
 
   /**
    * At service start, end the records an earlier process left unfinished: every `pending` or `running` operation
-   * record is updated to `cancelled` with `error {code: 'stopped', message}`, so no draft stays busy forever.
+   * record is updated to `cancelled` with `error {code: 'stopped', message}`, so no record stays unfinished forever.
    */
   async recover(): Promise<void> {
     const { store } = this.deps
@@ -302,15 +315,14 @@ export class Runner {
   }
 
   /**
-   * Run a read-only operation on the head of the session's working branch: no lock, no record, no confirmation.
+   * Run a read-only operation on the project's current state: no lock, no record, no confirmation.
    * @param spec - a read-only operation.
    * @param request - the call.
    * @returns the outputs and the report; the record is null.
    */
   private async runRead(spec: OperationSpec, request: RunRequest): Promise<RunResult> {
-    const { drafts, reducers, assets } = this.deps
-    const branch = drafts.workingBranch(request.project, request.session).name
-    const state = reducers.getState(request.project, branch)
+    const { reducers, assets } = this.deps
+    const state = reducers.getState(request.project)
     const inputs = this.resolveInputs(spec, request, state, false)
     await spec.precondition?.(request, state)
     const scratchDir = await mkdtemp(join(tmpdir(), 'dv-operation-'))
@@ -391,13 +403,33 @@ export class Runner {
 
   /**
    * @param project - the project.
-   * @param branch - an existing branch name.
-   * @returns the branch's head record.
+   * @returns the project's current position; every project has its `proj.create` record.
    */
-  private headOf(project: ProjectId, branch: string): RecordId {
-    const stored = this.deps.store.getBranch(project, branch)
-    if (stored === undefined) throw new ProjectError('unknown_branch', `Branch ${branch} does not exist in project ${project}.`)
-    return stored.head
+  private headOf(project: ProjectId): RecordId {
+    return this.deps.store.requireLine(project).at
+  }
+
+  /**
+   * Append a step after the current position under the project lock the caller holds. The steps after the current
+   * position leave the history list; each of them that has not finished is cancelled: a queued scheduled record leaves
+   * the queue and ends `cancelled` at once, an executing record is aborted, and a pending record that has not started
+   * ends when it starts. Every such record ends with `error {code: 'discarded'}`.
+   * @param project - the project.
+   * @param line - the record line.
+   * @returns the stored record.
+   */
+  private appendStep(project: ProjectId, line: RecordLineInput): ProjectRecord {
+    const { store, scheduler } = this.deps
+    const dropped = discardedSteps(store, project)
+    const appended = store.append(project, line)
+    for (const record of dropped) {
+      if (record.status !== 'pending' && record.status !== 'running') continue
+      const controller = this.executing.get(record.id)
+      if (controller !== undefined) controller.abort('discarded')
+      else if (scheduler.cancel(project, record.id)) store.update(project, { update: record.id, status: 'cancelled', finished_at: new Date().toISOString(), error: DISCARDED })
+      else this.discarded.add(record.id)
+    }
+    return appended
   }
 
   /**

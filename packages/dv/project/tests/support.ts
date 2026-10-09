@@ -9,13 +9,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { onTestFinished } from 'vitest'
-import { Drafts } from '../src/drafts.ts'
 import { History } from '../src/history.ts'
 import { RecordStore } from '../src/record-store.ts'
 import { projReducer, ReducerRegistry } from '../src/reducers.ts'
 import { Runner, type RunnerAssets } from '../src/runner.ts'
 import { Scheduler } from '../src/scheduler.ts'
-import { MAIN_BRANCH } from '../src/shared.ts'
 import { Subscriptions } from '../src/subscriptions.ts'
 import type {
   AssetId, AssetStore, ProjectEvent, ProjectId, RecordId, RecordInputRef, RecordOrigin, SessionId, TurnId,
@@ -143,7 +141,6 @@ export interface ProjectModules {
   store: RecordStore
   subscriptions: Subscriptions
   reducers: ReducerRegistry
-  drafts: Drafts
   history: History
   scheduler: Scheduler
   runner: Runner
@@ -168,20 +165,19 @@ export function startModules(limits = { cpu: 4, gpu: 1 }): ProjectModules {
     if (event.kind === 'update' && ['done', 'failed', 'cancelled'].includes(event.record.status)) holder.scheduler?.recordFinished(project)
   })
   const reducers = new ReducerRegistry(store)
-  const drafts = new Drafts(store, reducers)
   const history = new History(store)
   const assets = new FakeAssets()
   const scheduler = new Scheduler(store, (project, record) => {
     if (holder.runner === null) throw new Error('runner not built')
     return holder.runner.execute(project, record)
   }, limits)
-  const runner = new Runner({ store, drafts, reducers, scheduler, assets })
+  const runner = new Runner({ store, reducers, scheduler, assets })
   holder.scheduler = scheduler
   holder.runner = runner
   store.load()
   reducers.register('proj', projReducer)
   onTestFinished(() => { scheduler.dispose() })
-  return { root, store, subscriptions, reducers, drafts, history, scheduler, runner, assets, events }
+  return { root, store, subscriptions, reducers, history, scheduler, runner, assets, events }
 }
 
 /**
@@ -196,7 +192,7 @@ export function readLines(root: string, project: ProjectId): Array<Record<string
 }
 
 /**
- * Create a project the way `DvProject.createProject` does: `project.json`, then a `proj.create` record on `main`.
+ * Create a project the way `DvProject.createProject` does: `project.json`, then its first record, `proj.create`.
  * @param modules - the module set.
  * @param title - the project title.
  * @returns the project ID.
@@ -205,7 +201,7 @@ export async function createTestProject(modules: ProjectModules, title = 'Test p
   const id = brandString<ProjectId>(`project-${String(modules.store.listProjects().length + 1)}`)
   modules.store.createProject({ id, title, created_at: new Date().toISOString() })
   await modules.store.lock(id, () => modules.store.append(id, {
-    parents: [], branch: MAIN_BRANCH, kind: 'operation', component: 'proj', operation: 'proj.create', operation_version: '1',
+    parents: [], kind: 'operation', component: 'proj', operation: 'proj.create', operation_version: '1',
     ...userOrigin({ session: null, intent: `create project ${title}` }), params: { title }, inputs: [], outputs: [], based_on: null,
     supersedes: [], deterministic: true, status: 'done',
   }))

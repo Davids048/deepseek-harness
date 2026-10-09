@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the web application a timeline editor beside the chat. The editor shows one tab per timeline, a viewer that plays the selected timeline across its clips, and one video track whose clips are as wide as they play and are marked when stale or a draft. You move, trim, split, and remove clips on the track, and insert assets from the asset pool by dropping them there or choosing them with ＋. The `dv-timeline` tab type of the right Sidebar wraps the editor in the branch bar; `TimelineView` is the shell's center 时间线 view.
+Use this package to give the web application a timeline editor beside the chat. The editor shows one tab per timeline, a viewer that plays the selected timeline across its clips, and one video track whose clips are as wide as they play and are marked when stale. You move, trim, split, and remove clips on the track, and insert assets from the asset pool by dropping them there or choosing them with ＋. The `dv-timeline` tab type of the right Sidebar wraps the editor in the project bar; `TimelineView` is the shell's center 时间线 view. Both show the project's current state and follow it when it changes.
 
 ## Table of Contents
 
@@ -26,7 +26,7 @@ Use this package to give the web application a timeline editor beside the chat. 
 
 Mount the plugin in a profile that stacks `dsh-web-app` and `@dv/api`, and build the browser bundle first with `pnpm run build`.
 
-The editor also has a toolbar and a ruler, and each clip carries its producer's last frame. Dragging a clip moves it, dragging its edges trims it, the toolbar splits the clip under the playhead, its 撤销 / Undo and 重做 / Redo step the working branch back and forward one step (whichever view made the step), and Delete removes the selected clip.
+The editor also has a toolbar and a ruler, and each clip carries its producer's last frame. Dragging a clip moves it, dragging its edges trims it, the toolbar splits the clip under the playhead, its 撤销 / Undo and 重做 / Redo move the project's current position one step back or forward (whichever view made the step) and write no record, 重做 / Redo being disabled while the current position is the last step, and Delete removes the selected clip.
 
 ```yaml
 - id: dv-ui-timeline
@@ -46,9 +46,9 @@ The Host half registers nothing. The browser half registers the `dv-timeline` ta
 | Export | One `deliver.timeline_export {timeline}` call; the link opens the exported video |
 | "Keep anyway" for a selected stale clip | `POST /api/dv/stale/accept` for the record that made the clip's asset (`proj.stale_accept`) |
 
-Every record carries `surface: 'timeline'`, the chat session the view sits beside (so the record lands on that session's draft), and an intent in the DSH interface language naming the gesture. The selected timeline is shared through `@dv/ui-kit/current-timeline.ts`, so the shell keeps it in the URL. `TimelineView` follows `<html lang>` through `@dv/ui-kit/locale.ts`; switching timeline tabs stops playback and resets the viewer and playhead. Clicking a clip selects it and sends nothing. While a `draft/*` branch is shown the gestures are disabled. The working-branch bar of `@dv/ui-kit/WorkingBranchBar.tsx` above the tabs names the branch the edits go to, shows the `intent` of the draft's latest record that has one, and accepts or discards the open draft. A clip whose asset reports no duration is drawn as five seconds.
+Every record carries `surface: 'timeline'`, the chat session the view sits beside (stored as the record's `session`; the record is a step after the project's current position), and an intent in the DSH interface language naming the gesture. The selected timeline is shared through `@dv/ui-kit/current-timeline.ts`, so the shell keeps it in the URL. `TimelineView` follows `<html lang>` through `@dv/ui-kit/locale.ts`; switching timeline tabs stops playback and resets the viewer and playhead. Clicking a clip selects it and sends nothing. A clip whose asset reports no duration is drawn as five seconds.
 
-The DOM carries test IDs `dv-timeline-body`, `dv-timeline-editor`, `dv-timeline-viewer`, `dv-timeline-viewer-empty`, `dv-timeline-time`, `dv-timeline-exported`, `dv-timeline-ruler` and `dv-timeline-playhead`; each clip carries `data-clip` (its clip ID), `data-clip-position`, `data-clip-stale` and `data-clip-draft`, and each tab carries `data-timeline`.
+The DOM carries test IDs `dv-timeline-body`, `dv-timeline-editor`, `dv-timeline-viewer`, `dv-timeline-viewer-empty`, `dv-timeline-time`, `dv-timeline-exported`, `dv-timeline-ruler` and `dv-timeline-playhead`; each clip carries `data-clip` (its clip ID), `data-clip-position` and `data-clip-stale`, and each tab carries `data-timeline`.
 
 -----
 
@@ -58,16 +58,17 @@ The DOM carries test IDs `dv-timeline-body`, `dv-timeline-editor`, `dv-timeline-
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`TimelineBody` holds the view session from `@dv/ui-kit/useView.ts` and renders the branch bar above `TimelineEditor`. `TimelineView` reads the branch state itself and shows the open draft of its chat session with the draft's clips marked. `placeTimeline` turns one timeline of the state into positioned clips; `useTimelinePlayer` plays them through two stacked `<video>` elements. Each gesture is one `DvClient.runOperation` call followed by a state refetch.
+`TimelineBody` holds the view session from `@dv/ui-kit/useView.ts` and renders the project bar above `TimelineEditor`. `TimelineView` reads the project's current state itself. `placeTimeline` turns one timeline of the state into positioned clips; `useTimelinePlayer` plays them through two stacked `<video>` elements. Each gesture is one `DvClient.runOperation` call followed by a state refetch.
 
 | File | Content |
 | --- | --- |
 | [`src/client/index.ts`](src/client/index.ts) | Registrations |
 | [`src/client/definition.ts`](src/client/definition.ts) | The tab type |
-| [`src/client/TimelineBody.tsx`](src/client/TimelineBody.tsx) | The tab body: branch bar and editor |
-| [`src/client/TimelineView.tsx`](src/client/TimelineView.tsx) | The center view: state, draft overlay, writes |
+| [`src/client/TimelineBody.tsx`](src/client/TimelineBody.tsx) | The tab body: project bar and editor |
+| [`src/client/TimelineView.tsx`](src/client/TimelineView.tsx) | The center view: state and writes |
 | [`src/client/TimelineEditor.tsx`](src/client/TimelineEditor.tsx) | The editor: tabs, viewer, toolbar, ruler, tracks, gestures |
 | [`src/client/timelines.ts`](src/client/timelines.ts) | Clip placement, drop position, timecode |
+| [`src/client/first-frame.ts`](src/client/first-frame.ts) | The first frame of a video, read once per page; a track clip without a still image repeats it across its width |
 | [`src/client/player.ts`](src/client/player.ts) | Continuous playback across clips |
 | [`src/client/locales.ts`](src/client/locales.ts) | The `dvTimeline` dictionaries |
 

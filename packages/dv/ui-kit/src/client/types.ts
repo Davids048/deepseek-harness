@@ -52,7 +52,6 @@ export interface RecordFailure {
 export interface ProjectRecord {
   id: string
   parents: string[]
-  branch: string
   kind: 'operation'
   /** The component key that owns the operation, for example `timeline`. */
   component: string
@@ -90,26 +89,6 @@ export interface ProjectInfo {
   created_at: string
 }
 
-/** How many records a draft holds, as a discard confirmation shows them. */
-export interface DraftCounts {
-  agent_changes: number
-  human_edits: number
-}
-
-/** One branch of a project. */
-export interface Branch {
-  /** `main` or `draft/<session>`. */
-  name: string
-  head: string
-  /** The branch an accept merges into; null for `main`. */
-  base: string | null
-  forked_at: string | null
-  /** The chat session that owns the draft; null for `main`. */
-  session: string | null
-  /** The draft's counts; null for branches that are not open drafts. */
-  counts: DraftCounts | null
-}
-
 /** One stored asset of the asset pool. */
 export interface Asset {
   id: string
@@ -122,6 +101,15 @@ export interface Asset {
   width: number | null
   height: number | null
   duration_sec: number | null
+}
+
+/**
+ * An asset as one project sees it: `name` and `created_at` are the project's own import name and time, and `made_by`
+ * is the operation of the current-state record that created it, else `asset.import` for an asset the project imported
+ * anywhere in its history, else null.
+ */
+export interface ProjectAsset extends Asset {
+  made_by: string | null
 }
 
 /** One version of a character in the story bible. */
@@ -221,7 +209,7 @@ export interface TimelineState {
 /** The state slices of the components the browser reads, sent verbatim by the server. */
 export interface ComponentStates {
   proj: {
-    /** The records of the branch's effective chain, oldest first. */
+    /** The records of the effective chain, oldest first. */
     records: ProjectRecord[]
     /** Stale records: record → the record whose change made it stale. */
     stale: Record<string, string>
@@ -234,21 +222,20 @@ export interface ComponentStates {
   plan: PlanState
   shot: ShotState
   timeline: TimelineState
+  /** The assets on the canvas, in the order they were placed. */
+  asset: { placed: string[] }
 }
 
-/** The state of one branch at its head, with the branches and assets the views need beside it. */
+/** The project's current state, with the assets the views need beside it. */
 export interface WireState {
   project: ProjectInfo
-  /** The branch the state is for. */
-  branch: string
+  /** The current position: the step whose state this is. */
   head: string
-  heads: Record<string, string>
-  /** Every branch of the project; an open draft has `counts`. */
-  branches: Branch[]
+  /** The last step of the history list; redo can move the current position up to it. */
+  tip: string
   components: ComponentStates
-  /** The steps that redo brings back on the branch, oldest first; empty when nothing can be redone. */
-  redo_steps: string[]
-  assets: Asset[]
+  /** Every asset of the current state, and every asset the project imported anywhere in its history. */
+  assets: ProjectAsset[]
 }
 
 /** One property of an operation's parameter schema, in the DSH parameter format. */
@@ -282,37 +269,32 @@ export interface WireProject {
   id: string
   title: string
   created_at: string
-  heads: Record<string, string>
   /** Whether the chat session the view sits beside is bound to this project. */
   current?: boolean
 }
 
-/**
- * One project change, as the event stream sends it: an appended record, a record update, or a branch that was created,
- * moved (`branch` set), or removed (`branch` null).
- */
+/** The last step of the history list and the current position, as undo and redo answer them. */
+export interface WireLine {
+  tip: string
+  at: string
+}
+
+/** One project change, as the event stream sends it: an appended record, a record update, or a move of the position. */
 export type ProjectEvent =
   | { kind: 'record'; record: ProjectRecord }
   | { kind: 'update'; record: ProjectRecord }
-  | { kind: 'branch'; name: string; branch: Branch | null }
+  | ({ kind: 'line' } & WireLine)
 
-/** One entry of the history list: a record in its current form and where it stands. */
+/** One entry of the history list: one step and where it stands relative to the current position. */
 export interface HistoryEntry {
   record: ProjectRecord
-  /**
-   * `main` (on the effective chain of `main`), `draft` (on an open draft), `undone` (left behind by an undo),
-   * `discarded` (on a discarded draft), or `replayed` (a draft record that accept copied onto `main`).
-   */
-  mark: 'main' | 'draft' | 'undone' | 'discarded' | 'replayed'
+  /** `current` for the current position, `before` for a step before it, `after` for a step redo brings back. */
+  place: 'before' | 'current' | 'after'
 }
 
 /** What `POST /api/dv/history` selects (the JSON body). Every filter is optional; filters combine with AND. */
 export interface HistoryQuery {
   project: string
-  /** Only records appended to this branch name. */
-  branch?: string
-  /** Only entries with one of these marks. */
-  marks?: Array<HistoryEntry['mark']>
   actor?: Actor
   /** A component key, such as `timeline`. */
   component?: string
@@ -348,20 +330,11 @@ export interface OperationRequest {
   params?: Record<string, unknown>
   intent?: string
   surface: 'canvas' | 'timeline' | 'asset_pool'
-  /** The chat session the view sits beside; the record goes to that session's working branch (its open draft). */
+  /** The chat session the view sits beside, recorded as the record's `session`. */
   session?: string
   based_on?: string
   supersedes?: string[]
 }
-
-/** The record a project-level route wrote (accept, undo, redo, stale accept), with the branch heads afterwards. */
-export interface WireRecordResult {
-  record: ProjectRecord
-  heads: Record<string, string>
-}
-
-/** Which draft an accept or discard addresses: the draft of a chat session, or a draft branch by name. */
-export type DraftTarget = { session: string } | { branch: string }
 
 /** Where a canvas node sits, in canvas units. */
 export interface NodePosition {
@@ -376,12 +349,10 @@ export interface CanvasViewport {
   zoom: number
 }
 
-/** A project's stored canvas layout: node positions keyed by canvas node ID, and the assets placed on the canvas. */
+/** A project's stored canvas layout: node positions keyed by canvas node ID, and the viewport. */
 export interface CanvasLayout {
   positions: Record<string, NodePosition>
   viewport: CanvasViewport | null
-  /** The canvas list: the imported assets that have a canvas node. */
-  placed: string[]
 }
 
 /** One project as `GET /api/dv/workspaces` lists it. */

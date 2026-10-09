@@ -42,24 +42,24 @@ function freshPng(): Buffer {
 }
 
 /**
- * The scripted agent. `只回复<X>` answers `收到<X>`; `做草稿` imports a reference, plans two shots, approves, and waits,
- * leaving an open draft whose assets the panel flags.
+ * The scripted agent. `只回复<X>` answers `收到<X>`; `做广告` imports a reference, plans one shot, approves, and waits;
+ * every record goes at the end of the project's history at once.
  */
 const RULES: ScriptedRule[] = [
   { match: /只回复\S+/, steps: [view => ({ text: `收到${/只回复(\S+)/.exec(view.userText)?.[1] ?? ''}` })] },
   {
-    match: '做草稿',
+    match: '做广告',
     steps: [
-      { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: solidPng([200, 40, 40]).toString('base64'), mime: 'image/png', name: 'draft-product.png' } }] },
+      { calls: [{ name: 'dv_asset_import', args: { reason: '产品图', base64: solidPng([200, 40, 40]).toString('base64'), mime: 'image/png', name: 'agent-product.png' } }] },
       view => ({ calls: [{ name: 'dv_plan_create', args: {
-        reason: '规划', title: '草稿广告', references: [assetIdOf(view.toolResults[0], 'asset')],
-        shots: [{ prompt: '草稿镜头一', duration_sec: 1, mode: 'ref2va' }],
+        reason: '规划', title: '智能体广告', references: [assetIdOf(view.toolResults[0], 'asset')],
+        shots: [{ prompt: '广告镜头一', duration_sec: 1, mode: 'ref2va' }],
       } }] }),
       // The story's project is new, so its first plan is p1.
       { calls: [{ name: 'dv_plan_approve', args: { reason: '用户同意', plan: 'p1', user_approved: true } }] },
       { calls: [{ name: 'dv_proj_wait', args: {} }] },
     ],
-    endText: '镜头已渲染。草稿待确认',
+    endText: '镜头已渲染。',
   },
 ]
 
@@ -148,33 +148,42 @@ describe('The asset pool panel', () => {
     return shot.outputs[0] ?? ''
   }
 
-  /** The folded state of a project branch, `main` by default. */
-  const stateOf = async (projectId: string, branch = 'main'): Promise<WireState> =>
-    await harness.api.get(`/api/dv/state?project=${projectId}&branch=${encodeURIComponent(branch)}`) as WireState
+  /** The project's current state. */
+  const stateOf = async (projectId: string): Promise<WireState> =>
+    await harness.api.get(`/api/dv/state?project=${projectId}`) as WireState
 
   /**
-   * Ask the scripted agent for a draft in the open project's chat and wait until the draft is open.
+   * Ask the scripted agent for the ad in the open project's chat and wait until its turn ends.
    * @param page - the page with the project open.
-   * @param projectId - the project.
-   * @returns the draft branch and its chat session.
    */
-  async function openDraft(page: Page, projectId: string): Promise<{ branch: string; session: string }> {
+  async function agentAd(page: Page): Promise<void> {
     const composer = page.locator('[data-dv-chat] [contenteditable="true"]:visible').first()
     await composer.click()
-    await page.keyboard.type('做草稿')
+    await page.keyboard.type('做广告')
     await page.keyboard.press('Enter')
-    await page.locator('[data-dv-chat]').getByText('草稿待确认').first().waitFor({ timeout: 60_000 })
-    const draft = (await stateOf(projectId)).branches.find(branch => branch.session !== null)
-    if (draft === undefined || draft.session === null) throw new Error('the chat opened no draft')
-    return { branch: draft.name, session: draft.session }
+    await page.locator('[data-dv-chat]').getByText('镜头已渲染。').first().waitFor({ timeout: 60_000 })
+  }
+
+  /**
+   * Import one image through the API as a user's canvas edit; it goes at the end of the project's history.
+   * @param projectId - the project.
+   * @param name - the file name.
+   * @returns the asset ID.
+   */
+  async function seedImage(projectId: string, name: string): Promise<string> {
+    const record = await harness.api.post('/api/dv/operation', {
+      project: projectId, operation: 'asset.import', params: { base64: freshPng().toString('base64'), mime: 'image/png', name },
+      inputs: [], surface: 'canvas', intent: 'seed',
+    }) as ProjectRecord
+    return record.outputs[0] ?? ''
   }
 
   /** Open the 素材库 / Asset pool tab of the right panel. */
   async function openAssets(page: Page, lang: 'zh' | 'en' = 'zh'): Promise<void> {
-    // The tab strip of the right panel; 面板 / Panels reopens a collapsed panel.
+    // The tab strip of the right panel; the right-panel button reopens a collapsed panel.
     const tab = page.locator('[role="tab"]', { hasText: lang === 'zh' ? /^素材库$/ : /^Asset pool$/ }).filter({ visible: true }).first()
     // The panels open by themselves once the project's chat session is in place; wait for that before reopening them.
-    if (!await tab.waitFor({ timeout: 5000 }).then(() => true, () => false)) await page.getByRole('button', { name: lang === 'zh' ? '面板' : 'Panels', exact: true }).click()
+    if (!await tab.waitFor({ timeout: 5000 }).then(() => true, () => false)) await page.getByRole('button', { name: lang === 'zh' ? '打开右侧面板' : 'Open the right panel', exact: true }).click()
     // A project switch remounts the right panel's session seat, so the tab found first can be replaced mid-click.
     for (let attempt = 0; attempt < 4; attempt++) {
       if (await tab.click({ timeout: 3000 }).then(() => true, () => false)) break
@@ -280,17 +289,35 @@ describe('The asset pool panel', () => {
       expect(errors).toEqual([])
     })
 
-    it('flags the assets of an open draft with 草稿', async () => {
+    it('lists an import also after its step is discarded, and a render only while its step is at or before the current step; the canvas takes a drop of an undone import', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
+      const video = await seedVideo(project.id, 'kept prompt')
+      const undone = await seedImage(project.id, 'undone-import.png')
+      await harness.api.post('/api/dv/undo', { project: project.id })
+      // The current state no longer has the import, and the panel still lists its asset.
+      const state = await stateOf(project.id)
+      expect(state.components.proj.created_by[undone]).toBeUndefined()
+      expect(state.assets.map(asset => asset.id)).toContain(undone)
       await openProject(page, project.title)
-      const composer = page.locator('[data-dv-chat] [contenteditable="true"]:visible').first()
-      await composer.click()
-      await page.keyboard.type('做草稿')
-      await page.keyboard.press('Enter')
-      await page.locator('[data-dv-chat]').getByText('草稿待确认').first().waitFor({ timeout: 60_000 })
       await openAssets(page)
-      await expect.poll(() => assetsPanel(page).locator('[data-asset-id]').filter({ hasText: '草稿' }).count(), { timeout: 10_000 }).toBeGreaterThan(0)
+      await expect.poll(() => assetsPanel(page).locator(`[data-asset-id="${video}"]`).count(), { timeout: 15_000 }).toBe(1)
+      await expect.poll(() => assetsPanel(page).locator(`[data-asset-id="${undone}"]`).count(), { timeout: 15_000 }).toBe(1)
+      // The canvas takes a drop of the undone import: an asset.place step and a node for the asset. The new step discards
+      // the import's step, and the panel still lists the imported asset.
+      const canvas = page.locator('[data-testid="dv-canvas-view"]')
+      await canvas.waitFor()
+      await assetsPanel(page).locator(`[data-asset-id="${undone}"]`).first().dragTo(canvas)
+      await expect.poll(async () => (await stateOf(project.id)).components.asset.placed, { timeout: 10_000 }).toEqual([undone])
+      await expect.poll(() => page.locator(`[data-node-id="asset:${undone}"]`).count(), { timeout: 15_000 }).toBe(1)
+      const listed = (await harness.api.post('/api/dv/history', { project: project.id, limit: 200 }) as { entries: Array<{ record: ProjectRecord }> }).entries
+      expect(listed.some(entry => entry.record.outputs.includes(undone))).toBe(false)
+      expect(await assetsPanel(page).locator(`[data-asset-id="${undone}"]`).count()).toBe(1)
+      // Undo the drop and then the render: the render's video leaves the panel, the imported asset stays.
+      await harness.api.post('/api/dv/undo', { project: project.id })
+      await harness.api.post('/api/dv/undo', { project: project.id })
+      await expect.poll(() => assetsPanel(page).locator(`[data-asset-id="${video}"]`).count(), { timeout: 15_000 }).toBe(0)
+      expect(await assetsPanel(page).locator(`[data-asset-id="${undone}"]`).count()).toBe(1)
       expect(errors).toEqual([])
     })
 
@@ -313,37 +340,36 @@ describe('The asset pool panel', () => {
       expect(errors).toEqual([])
     })
 
-    it('imports into the open draft of the chat session beside the panel, not into main', async () => {
+    it('an import from the panel goes at the end of the project\'s history and its asset shows in the panel', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
       await openProject(page, project.title)
-      const draft = await openDraft(page, project.id)
       await openAssets(page)
-      const file = { name: 'into-draft.png', mimeType: 'image/png', buffer: freshPng() }
+      const file = { name: 'into-history.png', mimeType: 'image/png', buffer: freshPng() }
       await assetsPanel(page).locator('input[type="file"]').setInputFiles(file)
-      const names = async (branch: string): Promise<string[]> => (await stateOf(project.id, branch)).assets.map(asset => asset.name)
-      await expect.poll(() => names(draft.branch), { timeout: 10_000 }).toContain('into-draft.png')
-      expect(await names('main')).not.toContain('into-draft.png')
+      const names = async (): Promise<string[]> => (await stateOf(project.id)).assets.map(asset => asset.name)
+      await expect.poll(names, { timeout: 10_000 }).toContain('into-history.png')
+      const [newest] = (await harness.api.post('/api/dv/history', { project: project.id, limit: 1 }) as { entries: Array<{ record: ProjectRecord }> }).entries
+      expect(newest?.record).toMatchObject({ operation: 'asset.import', surface: 'asset_pool' })
       expect(errors).toEqual([])
     })
 
-    it('插入片段 inside a chat session with an open draft inserts into the draft\'s timeline, not into main', async () => {
+    it('插入片段 after an agent turn inserts into the timeline that turn made', async () => {
       const { page, errors } = await openPage()
       const project = await createProject()
-      const video = await seedVideo(project.id, 'draft insert prompt')
+      const video = await seedVideo(project.id, 'agent insert prompt')
       await openProject(page, project.title)
-      const draft = await openDraft(page, project.id)
-      // The approved plan's timeline exists only on the draft, so the insert must read the draft to find it.
-      const draftClips = async (): Promise<Array<{ asset: string | null }>> =>
-        (await stateOf(project.id, draft.branch)).components.timeline.timelines[0]?.clips ?? []
-      const before = (await draftClips()).length
+      await agentAd(page)
+      // The approved plan's timeline is in the project at once; no accept step comes between.
+      const clips = async (): Promise<Array<{ asset: string | null }>> =>
+        (await stateOf(project.id)).components.timeline.timelines[0]?.clips ?? []
+      const before = (await clips()).length
       expect(before).toBeGreaterThan(0)
       await openAssets(page)
       await assetsPanel(page).locator(`[data-asset-id="${video}"]`).click()
       await page.getByRole('dialog').getByRole('button', { name: '插入片段' }).click()
-      await expect.poll(async () => (await draftClips()).length, { timeout: 10_000 }).toBe(before + 1)
-      expect((await draftClips()).at(-1)?.asset).toBe(video)
-      expect((await stateOf(project.id)).components.timeline.timelines ?? []).toEqual([])
+      await expect.poll(async () => (await clips()).length, { timeout: 10_000 }).toBe(before + 1)
+      expect((await clips()).at(-1)?.asset).toBe(video)
       expect(errors).toEqual([])
     })
 

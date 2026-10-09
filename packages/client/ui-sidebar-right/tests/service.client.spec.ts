@@ -99,6 +99,28 @@ describe('SidebarRightController — opening', () => {
     } finally { release() }
   })
 
+  it('publishes whether the mounted column is expanded, and false once no seat is mounted', () => {
+    const h = harness()
+    const seen: boolean[] = []
+    const stop = h.controller.expanded.subscribe(() => { seen.push(h.controller.expanded.getSnapshot()) })
+    expect(h.controller.expanded.getSnapshot()).toBe(false)
+    h.publish()
+    h.expand()
+    h.publish()
+    expect(h.controller.expanded.getSnapshot()).toBe(true)
+    // A republished binding with the same expansion is silent.
+    h.publish()
+    h.instance.actions.setExpanded(SESSION, false)
+    h.publish()
+    expect(h.controller.expanded.getSnapshot()).toBe(false)
+    h.expand()
+    const release = h.publish()
+    release()
+    expect(h.controller.expanded.getSnapshot()).toBe(false)
+    stop()
+    expect(seen).toEqual([true, false, true, false])
+  })
+
   it('refuses every write while no seat is mounted', () => {
     const { controller } = harness()
     expect(() => { controller.openResource('dsh-resource://file/session/s-test/a.txt') }).toThrow('no session surface is mounted')

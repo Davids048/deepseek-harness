@@ -129,15 +129,6 @@ export const bibleReducer: Reducer<'bible'> = {
     const byId = { ...versionsOf(slice, operation.kind), [id]: [...versions, nextVersion(versions, id, record)] }
     return { ...slice, [FIELD[operation.kind]]: byId }
   },
-  conflict(slice, record) {
-    const operation = parseBibleOperation(record.operation)
-    if (operation === null || record.status !== 'done') return null
-    const id = String(record.params[operation.kind])
-    const kind = kindOf(slice, id)
-    if (operation.verb === 'create' && kind !== null) return `main already has a ${kind} with the ID ${id}.`
-    if (operation.verb === 'update' && kind !== operation.kind) return `main has no ${operation.kind} with the ID ${id}.`
-    return null
-  },
   assetsOf(slice, ref) {
     return versionOf(slice, ref)?.references ?? null
   },

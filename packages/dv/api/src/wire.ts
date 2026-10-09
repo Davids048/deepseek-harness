@@ -1,36 +1,46 @@
 /**
- * The JSON the browser receives: the state of one branch (`ProjectState` with its component slices sent verbatim) with
- * the asset pool entries it references, the branch heads and branches (with the counts of each open draft), the history
- * list, and the operation declarations the canvas turns into parameter forms. Records travel as `ProjectRecord`, unchanged.
+ * The JSON the browser receives: the project's current state (`ProjectState` with its component slices sent verbatim)
+ * with the asset pool entries of the whole project, the history list, and the operation declarations the canvas turns
+ * into parameter forms. Records travel as `ProjectRecord`, unchanged.
  *
  * @module @dv/api/wire
  */
-import type { Asset } from '@dv/asset-pool'
+import { importedAssets, type Asset } from '@dv/asset-pool'
 import type {
-  AssetId, Branch, ComponentStates, HistoryEntry, OperationSpec, ProjectId, ProjectInfo, ProjectState, RecordId,
+  AssetId, ComponentStates, HistoryEntry, OperationSpec, ProjectId, ProjectInfo, ProjectLine, ProjectRecord, ProjectState, RecordId,
 } from '@dv/project'
 import type {} from '@dv/shot-plan'
 import type {} from '@dv/shot-render'
 import type {} from '@dv/story-bible'
 import type {} from '@dv/timeline'
 
-/** The state of one branch as the browser reads it. */
+/** The project's current state as the browser reads it. */
 export interface WireState {
   project: ProjectInfo
-  /** The branch the state is for. */
-  branch: string
-  /** The branch's head record. */
+  /** The current position: the step whose state this is. */
   head: RecordId
-  /** The head record of every branch, by branch name. */
-  heads: Record<string, RecordId>
-  /** Every branch of the project; an open draft has `counts`. */
-  branches: Branch[]
+  /** The last step of the history list; redo can move the current position up to it. */
+  tip: RecordId
   /** One slice per registered reducer, as Project computed them. */
   components: ComponentStates
-  /** The steps that redo brings back on the branch, oldest first (`ProjectState.redo_steps`). */
-  redo_steps: RecordId[]
-  /** The asset pool entry of every asset a record created, imported, or still references. */
-  assets: Asset[]
+  /**
+   * The assets of the project as the views read them (see {@link mentionedAssets}): every asset of the current state,
+   * and every asset the project imported anywhere in its history.
+   */
+  assets: ProjectAsset[]
+}
+
+/**
+ * An asset as one project sees it: the asset pool entry with this project's own name and time, and the operation that
+ * made it. The pool keeps the name and time of the first import of identical bytes in any project, so `name` and
+ * `created_at` come from this project's first finished `asset.import` record of the asset when it has one.
+ */
+export type ProjectAsset = Asset & {
+  /**
+   * The operation of the current-state record that created the asset, else `asset.import` for an asset the project
+   * imported anywhere in its history, else null (an asset the project only references).
+   */
+  made_by: string | null
 }
 
 /** The history list as the browser reads it (`POST /api/dv/history`). */
@@ -56,17 +66,21 @@ export interface WireOperation {
 }
 
 /**
- * Collect every asset a state mentions: created assets, record outputs, resolved inputs, character, location and
- * style references, and timeline clips. Records that failed before creating anything add nothing.
- * @param state - a branch state.
+ * Collect the assets of a project as the views read them: every asset the current state mentions (the outputs and
+ * resolved inputs of its records, its created assets, the character, location and style references, and the timeline
+ * clips), and every asset that an `asset.import` record of the project output, discarded steps included. A generated
+ * asset of a step after the current position, or of a discarded step, is left out; an imported asset never is.
+ * @param state - the project's current state.
+ * @param imported - the project's imported assets, as `importedAssets` of `@dv/asset-pool` returns them.
  * @returns the asset IDs, each once, in first-mention order.
  */
-export function mentionedAssets(state: ProjectState): AssetId[] {
+export function mentionedAssets(state: ProjectState, imported: ReadonlyMap<AssetId, unknown>): AssetId[] {
   const seen = new Set<AssetId>(Object.keys(state.components.proj.created_by) as AssetId[])
   for (const record of state.components.proj.records) {
     for (const id of record.outputs) seen.add(id)
     for (const input of record.inputs) if (input.resolved_asset !== null) seen.add(input.resolved_asset)
   }
+  for (const id of imported.keys()) seen.add(id)
   const { characters, locations, styles } = state.components.bible
   for (const versions of [...Object.values(characters), ...Object.values(locations), ...Object.values(styles)]) {
     for (const version of versions) for (const id of version.references) seen.add(id)
@@ -79,27 +93,35 @@ export function mentionedAssets(state: ProjectState): AssetId[] {
 }
 
 /**
- * Turn a branch state into the wire form.
- * @param state - the branch state.
- * @param branches - the project's branches.
+ * Turn the project's current state into the wire form.
+ * @param state - the current state.
+ * @param line - the last step and the current position.
+ * @param records - every record of the project, oldest first, discarded records included, for the imports.
  * @param asset - looks an asset up; unknown IDs return null and are left out.
  * @returns the wire state.
  */
-export function toWireState(state: ProjectState, branches: Branch[], asset: (id: AssetId) => Asset | null): WireState {
-  const assets = mentionedAssets(state).flatMap((id) => {
+export function toWireState(
+  state: ProjectState, line: ProjectLine, records: readonly ProjectRecord[], asset: (id: AssetId) => Asset | null,
+): WireState {
+  // This project's first finished import of each asset; the pool keeps the first import in any project.
+  const imported = importedAssets(records)
+  const { proj } = state.components
+  const byId = new Map(proj.records.map(record => [record.id, record]))
+  const assets = mentionedAssets(state, imported).flatMap((id): ProjectAsset[] => {
     const found = asset(id)
-    return found === null ? [] : [found]
+    if (found === null) return []
+    const importRecord = imported.get(id)
+    const name = importRecord?.params['name']
+    const creator = proj.created_by[id]
+    const madeBy = creator === undefined ? null : byId.get(creator)?.operation ?? null
+    return [{
+      ...found,
+      ...typeof name === 'string' && name.length > 0 ? { name } : {},
+      ...importRecord === undefined ? {} : { created_at: importRecord.created_at },
+      made_by: madeBy ?? (importRecord === undefined ? null : 'asset.import'),
+    }]
   })
-  return {
-    project: state.project,
-    branch: state.branch,
-    head: state.head,
-    heads: Object.fromEntries(branches.map(branch => [branch.name, branch.head])),
-    branches,
-    components: state.components,
-    redo_steps: state.redo_steps,
-    assets,
-  }
+  return { project: state.project, head: line.at, tip: line.tip, components: state.components, assets }
 }
 
 /**

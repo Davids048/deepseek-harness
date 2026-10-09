@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Timeline editor copy: timeline tabs, viewer, toolbar, tracks, and the branch bar. */
+    /** Timeline editor copy: timeline tabs, viewer, toolbar, tracks, and the project bar. */
     dvTimeline: DvTimelineKey
   }
 }
@@ -19,13 +19,9 @@ export const zh = {
   'guide.title': '时间线',
   'guide.description': '查看和编辑项目的每条时间线：拆分、裁剪、移动、导出',
   'bar.project': '项目',
-  'bar.branch': '分支',
-  'bar.accept': '接受',
-  'bar.discard': '丢弃',
   'bar.undo': '撤销',
   'bar.newProject': '新建项目',
   'bar.newProjectPrompt': '新项目的标题',
-  'bar.draft': '草稿',
   'bar.noProject': '没有项目',
   'empty.projects': '还没有项目。在对话里让智能体新建一个项目。',
   loading: '正在读取…',
@@ -59,7 +55,6 @@ export const zh = {
   'track.trimStart': '拖动裁剪片段 {position} 的开头',
   'track.trimEnd': '拖动裁剪片段 {position} 的结尾',
   'track.stale': '过期',
-  'track.draft': '草稿',
   'track.rendering': '渲染中…',
   'track.renderFailed': '渲染失败',
   'track.add': '插入片段',
@@ -67,7 +62,6 @@ export const zh = {
   'track.noAssets': '项目里还没有视频素材',
   'track.fileDrop': '时间线轨道只接受素材库里的视频。请先在对话里导入文件，再从素材库拖到轨道上。',
   'track.playhead': '播放头',
-  'draftHead': '草稿还没确认，虚线框的片段来自草稿。接受或丢弃草稿后才能修改。',
   'intent.create': '在时间线里新建 {name}',
   'intent.rename': '把时间线改名为 {name}',
   'intent.delete': '在时间线里删除 {name}',
@@ -88,13 +82,9 @@ export const en = {
   'guide.title': 'Timeline',
   'guide.description': 'View and edit each timeline of the project: split, trim, move, export',
   'bar.project': 'Project',
-  'bar.branch': 'Branch',
-  'bar.accept': 'Accept',
-  'bar.discard': 'Discard',
   'bar.undo': 'Undo',
   'bar.newProject': 'Create project',
   'bar.newProjectPrompt': 'Title of the new project',
-  'bar.draft': 'Draft',
   'bar.noProject': 'No project',
   'empty.projects': 'No projects yet. Ask the agent in the chat to create one.',
   loading: 'Loading…',
@@ -128,7 +118,6 @@ export const en = {
   'track.trimStart': 'Drag to trim the start of clip {position}',
   'track.trimEnd': 'Drag to trim the end of clip {position}',
   'track.stale': 'stale',
-  'track.draft': 'draft',
   'track.rendering': 'Rendering…',
   'track.renderFailed': 'Render failed',
   'track.add': 'Insert clip',
@@ -136,7 +125,6 @@ export const en = {
   'track.noAssets': 'The project has no video assets yet',
   'track.fileDrop': 'The timeline track takes videos from the asset pool only. Import the file in the chat first, then drag it from the asset pool.',
   'track.playhead': 'Playhead',
-  'draftHead': 'The draft is not reviewed yet; clips with a dashed outline come from it. Accept or discard the draft to edit.',
   'intent.create': 'Create {name} in the timeline',
   'intent.rename': 'Rename the timeline to {name}',
   'intent.delete': 'Delete {name} in the timeline',
