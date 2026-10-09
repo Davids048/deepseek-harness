@@ -174,9 +174,10 @@
   text-decoration: underline;
 }
 
+/* The fold toggle lines up with the row text above it: approval rows have no thumbnail. */
 .fold {
   display: block;
-  padding: 0 0 6px 60px;
+  padding: 0 0 6px 8px;
   color: var(--dv-text-2);
 }
 
@@ -191,8 +192,9 @@
   transition: background-color 120ms var(--dv-ease);
 }
 
+/* Folded rows indent one step past the toggle's arrow, under the toggle's words. */
 .row[data-nested] {
-  padding: 4px 8px 4px 60px;
+  padding: 4px 8px 4px 24px;
 }
 
 .row:hover {
