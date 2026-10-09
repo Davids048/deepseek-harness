@@ -99,7 +99,7 @@ describe('selectChatMedia', () => {
 describe('ChatMediaView', () => {
   const view = (matched: ChatMedia) => render(<p><ChatMediaView matched={matched} /></p>)
 
-  it('shows the first frame and plays the video in the card on click', () => {
+  it('shows the first frame, and a click plays the video in a page-wide player that Escape, the backdrop, and 关闭 close', () => {
     const { container } = view({ kind: 'video', asset: 'v1.mp4', shot: 2 })
     const preview = container.querySelector('video')
     expect(preview?.getAttribute('src')).toBe('/dv/assets/v1.mp4#t=0.1')
@@ -107,10 +107,25 @@ describe('ChatMediaView', () => {
     expect(preview?.getAttribute('preload')).toBe('metadata')
     expect(preview?.hasAttribute('controls')).toBe(false)
     expect(screen.getByTitle('镜头 2').textContent).toBe('镜头 2')
-    fireEvent.click(screen.getByRole('button', { name: '播放: 镜头 2' }))
-    const player = container.querySelector('video')
-    expect(player?.getAttribute('src')).toBe('/dv/assets/v1.mp4')
-    expect(player?.hasAttribute('controls')).toBe(true)
+    const card = screen.getByRole('button', { name: '播放: 镜头 2' })
+    card.focus()
+    fireEvent.click(card)
+    const player = screen.getByRole('dialog', { name: '镜头 2' })
+    // The player sits in document.body, outside the chat message, and the card keeps only its preview.
+    expect(container.contains(player)).toBe(false)
+    expect(player.querySelector('video')?.getAttribute('src')).toBe('/dv/assets/v1.mp4')
+    expect(player.querySelector('video')?.hasAttribute('controls')).toBe(true)
+    expect(container.querySelectorAll('video')).toHaveLength(1)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭' }))
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(card)
+    fireEvent.click(card)
+    fireEvent.mouseDown(screen.getByRole('dialog'))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(card)
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
     expect(container.querySelector('a')).toBeNull()
   })
 
@@ -121,20 +136,6 @@ describe('ChatMediaView', () => {
     document.documentElement.lang = 'en'
     view({ kind: 'video', asset: 'v1.mp4', shot: 3 })
     expect(screen.getByRole('button', { name: 'Play: Shot 3' })).toBeTruthy()
-  })
-
-  it('pauses the playing card when another card starts playing', () => {
-    const { container } = view({ kind: 'grid', shots: [{ asset: 'v1.mp4', caption: '1' }, { asset: 'v2.mp4', caption: '2' }] })
-    fireEvent.click(screen.getByRole('button', { name: '播放: 1' }))
-    fireEvent.click(screen.getByRole('button', { name: '播放: 2' }))
-    const [first, second] = [...container.querySelectorAll('video')]
-    if (first === undefined || second === undefined) throw new Error('expected two card players')
-    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-    vi.spyOn(first, 'paused', 'get').mockReturnValue(false)
-    vi.spyOn(second, 'paused', 'get').mockReturnValue(false)
-    fireEvent.play(second)
-    expect(pause.mock.contexts).toEqual([first])
-    pause.mockRestore()
   })
 
   it('lays out a grid of cards with their captions', () => {
@@ -299,7 +300,7 @@ describe('registerChatMedia', () => {
     await runtime.dispose()
   })
 
-  it('keeps a playing card mounted while the asset index changes, and keeps the default link for other assets', async () => {
+  it('keeps an open player mounted while the asset index changes, and keeps the default link for other assets', async () => {
     const events = fakeEvents()
     const states: Record<string, unknown> = { p1: state([['v1.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']], [take(1, 'v1.mp4')]) }
     const fetchImpl = stateFetch(states)
@@ -330,10 +331,10 @@ describe('registerChatMedia', () => {
     await vi.waitFor(() => { expect(view.getByRole('button', { name: '播放: 镜头 1' })).toBeTruthy() })
     expect(view.getByRole('link', { name: '配乐' })).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: '播放: 镜头 1' }))
-    const player = view.container.querySelector('video[controls]')
+    const player = document.querySelector('[data-testid="dv-chat-video-player"] video')
     expect(player).not.toBeNull()
 
-    // Another shot finishes rendering: the index changes, and the playing card stays the same DOM node.
+    // Another shot finishes rendering: the index changes, and the open player stays the same DOM node.
     states['p1'] = state([['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']], [take(1, 'v1.mp4')])
     const fetches = fetchImpl.mock.calls.length
     await act(async () => {
@@ -341,7 +342,7 @@ describe('registerChatMedia', () => {
       await vi.waitFor(() => { expect(fetchImpl.mock.calls.length).toBeGreaterThan(fetches) })
       await new Promise(resolve => setTimeout(resolve, 0))
     })
-    expect(view.container.querySelector('video[controls]')).toBe(player)
+    expect(document.querySelector('[data-testid="dv-chat-video-player"] video')).toBe(player)
     await runtime.dispose()
   })
 })
