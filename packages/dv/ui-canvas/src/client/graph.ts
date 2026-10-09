@@ -8,6 +8,7 @@
 import type {
   Character, Clip, Location, PlanVersion, ProjectRecord, RecordInput, RecordInputRef, StoryBibleState, Style, WireState,
 } from '@dv/ui-kit/types.ts'
+import { isRenderOperation } from '@dv/ui-kit/state.ts'
 
 /** What a node represents; the canvas colors nodes by it. */
 export type CanvasNodeKind = 'bible' | 'asset' | 'plan' | 'take'
@@ -77,15 +78,16 @@ export interface CanvasGraph {
   assetNodes: Record<string, string>
 }
 
+/** Width of every node card, in canvas units: a take's 16:9 frame fills it (208 × 117 at 100%). */
+export const NODE_WIDTH = 208
 /** Default spacing of the automatic layout, in canvas units. */
-export const NODE_WIDTH = 280
-const COLUMN = 360
-/** Row pitch; it leaves room for a card whose text has grown at the lowest zoom and that carries a badge row. */
-export const ROW = 380
+const COLUMN = 240
+/** Row pitch; it leaves room for a take card (147 at 100%) whose text has grown at a low zoom. */
+export const ROW = 200
 
 /** A `shot.render_ref2va` or `shot.render_t2va` record, whose outputs are the takes the creator judges. */
 function isRender(record: ProjectRecord): boolean {
-  return record.operation === 'shot.render_ref2va' || record.operation === 'shot.render_t2va'
+  return isRenderOperation(record.operation)
 }
 
 /**
@@ -477,4 +479,26 @@ function layout(nodes: CanvasNode[], edges: CanvasEdge[]): void {
     })
     x += Math.ceil(ordered.length / rowsPer) * COLUMN
   }
+}
+
+/** The media a plan node's mini grid shows for one shot. */
+export interface PlanShotFrame {
+  thumb: string | null
+  video: string | null
+}
+
+/**
+ * The frame of each shot of a plan, for the plan node's mini grid: the newest finished take node of that plan and shot
+ * (a retake carries the plan and shot of its source take) that has an image or a video.
+ * @param nodes - the drawn nodes, in record order.
+ * @param planId - the plan (`p1`).
+ * @param shotCount - the number of shots of the plan's latest version.
+ * @returns one entry per shot, null for a shot without a drawn finished take.
+ */
+export function planShotFrames(nodes: readonly CanvasNode[], planId: string, shotCount: number): Array<PlanShotFrame | null> {
+  return Array.from({ length: shotCount }, (_unused, index) => {
+    const take = nodes.findLast(node => node.kind === 'take' && node.record?.status === 'done' && node.record.params['plan'] === planId
+      && node.record.params['shot'] === index + 1 && (node.thumb !== null || node.video !== null))
+    return take === undefined ? null : { thumb: take.thumb, video: take.video }
+  })
 }
