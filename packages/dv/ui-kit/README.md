@@ -46,6 +46,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | `compose.ts`, `workspace-events.ts` | The window events `dv:compose`, `dv:timeline-insert`, `dv:canvas-focus`, `dv:history-focus`, `dv:trajectory-focus`, `dv:timeline-focus` (`DV_*_EVENT`) and the asset drag type `application/x-dv-asset` |
 | `tool-labels.ts` | `DV_TOOL_LABELS`: the zh and en label of every `dv_*` tool, shown by the composer's tool cards and the History panel |
 | `current-project.ts`, `current-timeline.ts` | The open project and the selected timeline, kept on `window.__dvCurrentProject` and `window.__dvCurrentTimeline` and announced with `dv:current-project` and `dv:current-timeline` |
+| `zoom.ts` | `useZoomPresence(value, openerOf, onOpened?)`: the zoom transition of the pop-ups (the chat video player, the canvas node editor, the asset pool preview). The pop-up grows out of the element that opened it in 300 ms and shrinks back into it in 250 ms while its backdrop fades; it stays on screen until it has shrunk back, whatever closed it. When the opener is gone or off screen, the pop-up scales a little and fades instead; under `prefers-reduced-motion` it only fades. A pop-up closed while it still grows shrinks from where it is on screen. `mediaBox(width, height, maxWidth, maxHeight)` sizes an image or a video of known dimensions before it loads, so a pop-up whose media sets its size has its final box when the transition measures it |
 | `locale.ts` | `useText`, `pickText`: the Chinese or English string of a pair, following `<html lang>` |
 
 `subscribe` uses `EventSource` when the browser has it and polls every three seconds otherwise. Every bundle that follows a project shares one stream per project through `window.__dvEventSources`; `window.__dvStreams` counts the open streams.
@@ -66,6 +67,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | [`src/client/form.ts`](src/client/form.ts) | The form model |
 | [`src/client/timeline.ts`](src/client/timeline.ts) | Timeline helpers |
 | [`src/client/references.ts`](src/client/references.ts) | Shot reference images and `Picture N` tokens |
+| [`src/client/zoom.ts`](src/client/zoom.ts) | The pop-up zoom transition |
 | [`src/client/useProject.ts`](src/client/useProject.ts), [`src/client/useView.ts`](src/client/useView.ts) | The hooks |
 | [`src/client/ProjectBar.tsx`](src/client/ProjectBar.tsx) | The shared bar |
 

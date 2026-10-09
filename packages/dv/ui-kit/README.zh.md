@@ -46,6 +46,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | `compose.ts`、`workspace-events.ts` | 窗口事件 `dv:compose`、`dv:timeline-insert`、`dv:canvas-focus`、`dv:history-focus`、`dv:trajectory-focus`、`dv:timeline-focus`（`DV_*_EVENT`）和素材拖拽类型 `application/x-dv-asset` |
 | `tool-labels.ts` | `DV_TOOL_LABELS`：每个 `dv_*` 工具的中英文标签，由输入框的工具卡片和历史面板显示 |
 | `current-project.ts`、`current-timeline.ts` | 打开的项目和选中的时间线，存在 `window.__dvCurrentProject` 和 `window.__dvCurrentTimeline` 上，用 `dv:current-project` 和 `dv:current-timeline` 通知 |
+| `zoom.ts` | `useZoomPresence(value, openerOf, onOpened?)`：弹窗（对话视频播放器、画布节点编辑器、素材库预览）的缩放过渡。弹窗用 300 ms 从打开它的元素放大出来，关闭时用 250 ms 缩回该元素，背景同时淡入淡出；无论用哪种方式关闭，弹窗都等缩回结束才移除。打开它的元素已不存在或在屏幕外时，弹窗改为轻微缩放加淡出；开启 `prefers-reduced-motion` 时只淡入淡出。弹窗还在放大时被关闭，会从屏幕上的当前状态开始缩回。`mediaBox(width, height, maxWidth, maxHeight)` 在已知尺寸的图片或视频加载前就定好它的大小，这样由媒体决定大小的弹窗在过渡测量时已是最终尺寸 |
 | `locale.ts` | `useText`、`pickText`：按 `<html lang>` 取一对中英文字符串中的一个 |
 
 `subscribe` 在浏览器有 `EventSource` 时用它，否则每三秒轮询一次。跟随项目的每个 bundle 通过 `window.__dvEventSources` 为每个项目共享一条流；`window.__dvStreams` 记录打开的流数。
@@ -66,6 +67,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | [`src/client/form.ts`](src/client/form.ts) | 表单模型 |
 | [`src/client/timeline.ts`](src/client/timeline.ts) | 时间线辅助函数 |
 | [`src/client/references.ts`](src/client/references.ts) | 镜头参考图和 `Picture N` 标记 |
+| [`src/client/zoom.ts`](src/client/zoom.ts) | 弹窗的缩放过渡 |
 | [`src/client/useProject.ts`](src/client/useProject.ts)、[`src/client/useView.ts`](src/client/useView.ts) | hook |
 | [`src/client/ProjectBar.tsx`](src/client/ProjectBar.tsx) | 共用的栏 |
 

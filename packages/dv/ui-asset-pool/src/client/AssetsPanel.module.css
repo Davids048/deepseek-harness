@@ -126,10 +126,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* A layer of its own, so it fades with the preview while the dialog zooms. */
+.backdrop {
+  position: absolute;
+  inset: 0;
   background: var(--dv-overlay);
 }
 
 .dialog {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;

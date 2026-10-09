@@ -44,6 +44,8 @@ export interface NodeEditorProps {
   onRender: (request: OperationRequest & { based_on: string }) => Promise<void>
   /** Take an asset off the project's canvas list; the asset stays in the asset pool. */
   onRemoveFromCanvas: (assetId: string) => void
+  /** The zoom transition's ref for the panel, which grows out of the node and shrinks back into it. */
+  zoomRef: (element: HTMLElement | null) => void
 }
 
 /** The editor panel's position and size in px, relative to the canvas area's top-left corner. */
@@ -451,7 +453,8 @@ export function NodeEditor(props: NodeEditorProps): ReactNode {
   }
   return (
     <section
-      ref={panelRef} style={{ ...panel, left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
+      ref={(element) => { panelRef.current = element; props.zoomRef(element) }}
+      style={{ ...panel, left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
       role="dialog" aria-label={title} data-testid="dv-canvas-node-editor" data-dv-scroll-island="" onPointerDown={(event) => { event.stopPropagation() }}
     >
       <header style={{ flex: 'none', padding: '16px 16px 12px 20px', display: 'flex', flexDirection: 'column', gap: 12, borderBottom: '1px solid var(--dv-line)' }}>

@@ -1,7 +1,8 @@
 /**
  * The project canvas as a standalone component: an infinite surface of story bible, asset, plan, and take nodes. Drag
  * empty space to pan, scroll to zoom around the cursor, drag a node to move it, click a node to select it and open its
- * editor panel. Closing the editor keeps the node selected (the accent ring); a click on empty canvas with no editor open
+ * editor panel, which grows out of the node and shrinks back into it on close (`@dv/ui-kit/zoom.ts`). Closing the
+ * editor keeps the node selected (the accent ring); a click on empty canvas with no editor open
  * clears the selection. A scroll over an overlay marked `data-dv-scroll-island`, such as the editor panel, scrolls that
  * overlay. Node positions and the viewport are stored per project through `/api/dv/layout`; a project without a stored
  * viewport opens at 100%, or fitted when its nodes do not fit the view at 100%. A node without a stored position gets the
@@ -25,6 +26,7 @@ import type { CanvasViewport, NodePosition, OperationRequest } from '@dv/ui-kit/
 import { DV_ASSET_DRAG_TYPE, DV_CANVAS_FOCUS_EVENT } from '@dv/ui-kit/workspace-events.ts'
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
+import { useZoomPresence } from '@dv/ui-kit/zoom.ts'
 import { buildCanvasGraph, freePositions, NODE_WIDTH, planShotFrames, referenceText, ROW } from './graph.ts'
 import type { CanvasEdge, CanvasNode } from './graph.ts'
 import { NodeCard, nodeHeight, nodeTitle } from './NodeCard.tsx'
@@ -714,7 +716,11 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
       </div>
     )
   }
-  const editingNode = graph?.nodes.find(node => node.id === editing) ?? null
+  // The editor on screen lags `editing` while it shrinks back into its node.
+  const nodeCard = (id: string): Element | null =>
+    [...container.current?.querySelectorAll('[data-node-id]') ?? []].find(card => card.getAttribute('data-node-id') === id) ?? null
+  const editorZoom = useZoomPresence(editing, nodeCard)
+  const editingNode = graph?.nodes.find(node => node.id === editorZoom.shown) ?? null
   return (
     <div
       ref={container}
@@ -744,13 +750,14 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
         <button type="button" className="dv-canvas-btn" style={{ ...toolButton, padding: '0 8px' }} onClick={() => { autoFit.current = true; fit(); scheduleSave() }}>{t('canvas.fit')}</button>
       </div>
       {editingNode !== null && graph !== null
-        ? <div aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'var(--dv-overlay)', zIndex: 9 }} />
+        ? <div ref={editorZoom.fadeRef} aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'var(--dv-overlay)', zIndex: 9 }} />
         : null}
       {editingNode !== null && graph !== null
         ? (
           <NodeEditor
             key={editingNode.id}
             node={editingNode}
+            zoomRef={editorZoom.targetRef}
             state={graph.state}
             client={client}
             project={projectId}
