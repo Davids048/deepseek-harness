@@ -2,7 +2,7 @@
  * Browser half of the DreamVerse shell: the center workspace in place of DSH's main Conversation, the DreamVerse
  * navigator and brand in the left sidebar, the DreamVerse theme, the 对话 / 轨迹 right-panel tabs and the right panel's
  * default width, DSH's New Session action redirected into the open project, the `dv:trajectory-focus` link that opens
- * 轨迹 at one tool call, and the Ctrl+Z / Shift+Ctrl+Z keys that undo and redo on the working branch of the open project.
+ * 轨迹 at one tool call, and the Ctrl+Z and Shift+Ctrl+Z keys that undo and redo one step of the open project.
  *
  * @module @dv/ui-shell/client
  */
@@ -94,7 +94,7 @@ export function apply(ctx: ClientContext): void {
     const timer = setInterval(read, LINKS_POLL_MS)
     return () => { clearInterval(timer) }
   }, 'ui-shell: links poll')
-  ctx.effect(listenHistoryKeys, 'ui-shell: Ctrl+Z / Shift+Ctrl+Z on the working branch')
+  ctx.effect(listenHistoryKeys, 'ui-shell: Ctrl+Z undo and Shift+Ctrl+Z redo of the open project')
   ctx.effect(() => {
     const seat = injected.shell.mountedSeat
     let stopWaiting = (): void => {}

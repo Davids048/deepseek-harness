@@ -16,7 +16,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { assetUrl } from '@dv/ui-kit/api.ts'
 import type { DvClient } from '@dv/ui-kit/api.ts'
-import { dispatchCompose } from '@dv/ui-kit/compose.ts'
+import { dispatchCompose, type DvComposeRef } from '@dv/ui-kit/compose.ts'
 import { pictureParts, referenceImages, shotReferences } from '@dv/ui-kit/references.ts'
 import type { PlanVersion, Shot, WireState } from '@dv/ui-kit/types.ts'
 import { bibleItems, bibleVersions, referenceText } from './graph.ts'
@@ -30,10 +30,8 @@ export interface NodeEditorProps {
   state: WireState
   client: DvClient
   project: string
-  /** The chat session the canvas sits beside; writes go to its working branch (its open draft, else `main`). */
+  /** The chat session the canvas sits beside, recorded as the `session` of the editor's writes. */
   session: string | null
-  /** True while the viewed branch is a draft: render buttons are disabled. */
-  readOnly: boolean
   t: CanvasTranslate
   onClose: () => void
   /** Run a write and report its failure. */
@@ -272,7 +270,7 @@ interface EditedInput {
 
 /**
  * The asset that shows a reference: the latest reference image of a character, location or style, or the asset itself.
- * @param state - the branch state.
+ * @param state - the project state.
  * @param ref - reference text such as `hero@1` or an asset ID.
  * @returns the asset ID, or null.
  */
@@ -284,7 +282,7 @@ function refImage(state: WireState, ref: string): string | null {
 
 /**
  * A reference chip label: the name of the character, location or style, or the asset's name.
- * @param state - the branch state.
+ * @param state - the project state.
  * @param ref - reference text.
  * @returns the label.
  */
@@ -423,15 +421,11 @@ export function NodeEditor(props: NodeEditorProps): ReactNode {
   const placement = useEditorPlacement()
   const askAgent = (): void => {
     const shown = node.thumb ?? node.video ?? node.references[0] ?? null
-    dispatchCompose({
-      text: t('compose.text', { title }),
-      refs: [{
-        kind: node.bibleKind ?? 'record',
-        id: node.bibleId ?? node.record?.id ?? node.id,
-        label: title,
-        ...shown === null ? {} : { assetId: shown },
-      }],
-    })
+    // An asset node without a record (`asset:<id>`) is referenced as the asset itself.
+    const ref: DvComposeRef = node.kind === 'asset' && node.record === null && shown !== null
+      ? { kind: 'asset', id: shown, label: title, assetId: shown }
+      : { kind: node.bibleKind ?? 'record', id: node.bibleId ?? node.record?.id ?? node.id, label: title, ...shown === null ? {} : { assetId: shown } }
+    dispatchCompose({ text: t('compose.text', { title }), refs: [ref] })
     onClose()
   }
   let body: ReactNode
@@ -475,13 +469,12 @@ export function NodeEditor(props: NodeEditorProps): ReactNode {
           : null}
       </header>
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: node.kind === 'plan' ? 12 : 16 }}>
-        {props.readOnly ? <p style={{ margin: '0 0 8px', color: 'var(--dv-warn)' }}>{t('editor.readOnly')}</p> : null}
         {staleRecord !== null
           ? (
             <p style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 8px', color: 'var(--dv-danger)' }}>
               {t('node.stale')}
               <button
-                type="button" className="dv-canvas-btn" disabled={props.readOnly} style={{ ...secondaryButton, height: 28, opacity: props.readOnly ? 0.5 : 1 }}
+                type="button" className="dv-canvas-btn" style={{ ...secondaryButton, height: 28 }}
                 onClick={() => { void props.run(() => props.client.acceptStale(props.project, staleRecord.id, 'canvas', props.session)) }}
               >
                 {t('editor.keepAnyway')}
@@ -558,7 +551,7 @@ function AssetPanel(
  * @returns the element.
  */
 function TakeForm(
-  { node, state, client, project, session, readOnly, t, onClose, run, title }: NodeEditorProps & { title: string },
+  { node, state, client, project, session, t, onClose, run, title }: NodeEditorProps & { title: string },
 ): ReactNode {
   const record = node.record
   const [prompt, setPrompt] = useState(() => typeof record?.params['prompt'] === 'string' ? record.params['prompt'] : '')
@@ -634,7 +627,7 @@ function TakeForm(
         </div>
       </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-        <button type="button" className="dv-canvas-soft" disabled={readOnly || operation === null} style={{ ...button, opacity: readOnly || operation === null ? 0.5 : 1 }} onClick={renderTake}>{t('editor.renderTake')}</button>
+        <button type="button" className="dv-canvas-soft" disabled={operation === null} style={{ ...button, opacity: operation === null ? 0.5 : 1 }} onClick={renderTake}>{t('editor.renderTake')}</button>
       </div>
     </div>
   )
@@ -645,7 +638,7 @@ function TakeForm(
  * @param props - editor props.
  * @returns the element.
  */
-function BibleForm({ node, state, client, project, session, readOnly, t, run }: NodeEditorProps): ReactNode {
+function BibleForm({ node, state, client, project, session, t, run }: NodeEditorProps): ReactNode {
   const bibleId = node.bibleId ?? ''
   const kind = node.bibleKind ?? 'character'
   const latest = bibleVersions(state, bibleId)?.at(-1)
@@ -680,13 +673,13 @@ function BibleForm({ node, state, client, project, session, readOnly, t, run }: 
         : null}
       <span style={label}>{t('editor.replaceRef')}</span>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <select aria-label={t('editor.replaceRef')} disabled={readOnly} style={{ ...field, width: 'auto' }} value="" onChange={(event) => { if (event.target.value !== '') replace(event.target.value) }}>
+        <select aria-label={t('editor.replaceRef')} style={{ ...field, width: 'auto' }} value="" onChange={(event) => { if (event.target.value !== '') replace(event.target.value) }}>
           <option value="">{t('editor.replaceRef')}</option>
           {images.map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}
         </select>
-        <label className="dv-canvas-btn" style={{ ...secondaryButton, opacity: readOnly ? 0.5 : 1 }}>
+        <label className="dv-canvas-btn" style={secondaryButton}>
           {t('editor.import')}
-          <input type="file" accept="image/*" disabled={readOnly} style={{ display: 'none' }} onChange={importImage} />
+          <input type="file" accept="image/*" style={{ display: 'none' }} onChange={importImage} />
         </label>
       </div>
     </div>

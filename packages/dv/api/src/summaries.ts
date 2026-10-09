@@ -1,7 +1,7 @@
 /**
  * Project card summaries for the DreamVerse shell's entry page and session switcher: per project, the cover, the shot
- * count and total duration of its plans, and the last edit time, computed from branch states so the browser reads one
- * small list instead of every project's whole state.
+ * count and total duration of its plans, and the last edit time, computed from each project's current state so the
+ * browser reads one small list instead of every project's whole state.
  *
  * @module @dv/api/summaries
  */
@@ -32,41 +32,34 @@ export interface WireProjectSummary {
   shots: number
   /** Total duration of those shots in seconds; 0 when no shot states one. */
   duration_sec: number
-  /** When the last record of the summarized branch was written (its `finished_at`, else `created_at`), ISO-8601. */
+  /** When the last record of the current state was written (its `finished_at`, else `created_at`), ISO-8601. */
   edited_at: string | null
 }
 
-/** One branch's summary, with whether its cover is a rendered take. */
-export interface BranchSummary extends Omit<WireProjectSummary, 'project'> {
-  /** Whether the cover is a rendered take; false for an imported image or no cover. */
-  rendered: boolean
-}
-
-/** The slices of a branch state that a summary reads: the records and the plans. */
+/** The slices of the project's current state that a summary reads: the records and the plans. */
 export interface SummarySource {
   components: Pick<ComponentStates, 'proj' | 'plan'>
 }
 
 /**
- * Summarize one branch state of a project.
- * @param state - the branch state.
+ * Summarize a project from its current state.
+ * @param projectId - the project.
+ * @param state - the project's current state.
  * @param mimeOf - the MIME type of an asset, or null for an asset the pool does not hold.
  * @returns the cover (the outputs of the first finished `shot.render_*` record with a video or image output, else the
  *   first image of a finished `asset.import` record), the shot count and total duration, and the last edit time.
  */
-export function summarizeBranch(state: SummarySource, mimeOf: (id: AssetId) => string | null): BranchSummary {
+export function summarizeProject(projectId: ProjectId, state: SummarySource, mimeOf: (id: AssetId) => string | null): WireProjectSummary {
   const records = state.components.proj.records
   const firstOf = (outputs: AssetId[], kind: 'image/' | 'video/'): AssetId | null =>
     outputs.find(id => mimeOf(id)?.startsWith(kind) === true) ?? null
   let cover: WireProjectCover | null = null
-  let rendered = false
   for (const record of records) {
     if (record.status !== 'done' || record.operation === null || !RENDER_OPERATIONS.has(record.operation)) continue
     const video = firstOf(record.outputs, 'video/')
     const image = firstOf(record.outputs, 'image/')
     if (video === null && image === null) continue
     cover = { video, image }
-    rendered = true
     break
   }
   if (cover === null) {
@@ -82,26 +75,6 @@ export function summarizeBranch(state: SummarySource, mimeOf: (id: AssetId) => s
   const shots = latest.reduce((sum, list) => sum + list.length, 0)
   const durationSec = latest.flat().reduce((sum, shot) => sum + (shot.duration_sec ?? 0), 0)
   const last = records.at(-1)
-  return { cover, rendered, shots, duration_sec: durationSec, edited_at: last === undefined ? null : last.finished_at ?? last.created_at }
-}
-
-/**
- * Summarize a project from `main` when `main` has a rendered take, else from its first open draft branch, because the
- * plans and takes of a chat session stay on its draft until they are accepted and a draft state includes `main`.
- * @param projectId - the project.
- * @param readState - reads a branch state of the project.
- * @param draftBranch - the name of the project's first open draft branch, or null when none is open.
- * @param mimeOf - the MIME type of an asset, or null for an asset the pool does not hold.
- * @returns the project's card summary.
- */
-export function summarizeProject(
-  projectId: ProjectId,
-  readState: (branch: string) => SummarySource,
-  draftBranch: string | null,
-  mimeOf: (id: AssetId) => string | null,
-): WireProjectSummary {
-  let summary = summarizeBranch(readState('main'), mimeOf)
-  if (!summary.rendered && draftBranch !== null) summary = summarizeBranch(readState(draftBranch), mimeOf)
-  const { cover, shots, duration_sec: durationSec, edited_at: editedAt } = summary
+  const editedAt = last === undefined ? null : last.finished_at ?? last.created_at
   return { project: projectId, cover, shots, duration_sec: durationSec, edited_at: editedAt }
 }

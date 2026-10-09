@@ -156,9 +156,8 @@ export default class VhStream extends Service {
     if (project !== undefined) {
       try {
         stops.push(project.subscribe(projectId, (event: ProjectEvent) => {
-          // A removed draft branch has no head, so its `head` message carries `to: null`.
-          const message = event.kind === 'branch'
-            ? { type: 'head', branch: event.name, to: event.branch?.head ?? null }
+          const message = event.kind === 'line'
+            ? { type: 'line', tip: event.tip, at: event.at }
             : { type: 'op', change: event.kind === 'record' ? 'append' : 'patch', op: event.record }
           server.sendText(JSON.stringify(message))
         }))

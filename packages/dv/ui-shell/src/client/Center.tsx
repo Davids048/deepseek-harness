@@ -1,10 +1,10 @@
 /**
  * The center of the DreamVerse shell, shadowing DSH's `main.conversation`. Without an open project it is the entry
  * page: a DreamVerse headline, the DSH composer, the template chips, and recent project cards, and the chat itself
- * once it starts. With a project open it is the workspace: a top bar (session switcher,
- * 画布 | 时间线 toggle, right panel toggle) above the canvas or the timeline editor, each of which shows the
- * working-branch bar that accepts or discards the session's draft. The left sidebar collapses while a project is open
- * and expands again on the entry page.
+ * once it starts. With a project open it is the workspace: a top bar (session switcher, 画布 | 时间线 toggle, right
+ * panel open button) above the canvas or the timeline editor. Every view shows the project's current state, the state at
+ * the current position of its history. The left sidebar collapses while a project is open and expands again on the
+ * entry page.
  *
  * The center also keeps the shell's open project and the DSH main session together: once the client lists are ready
  * it restores the location the URL names, and afterwards it adopts the project of a main session that moves to
@@ -20,7 +20,6 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { DV_CURRENT_TIMELINE_EVENT, getTimelineOf, publishCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
 import { pickText, useText } from '@dv/ui-kit/locale.ts'
-import { sessionDraft } from '@dv/ui-kit/state.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
   DV_CANVAS_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT, DV_TIMELINE_INSERT_EVENT, type DvWorkspaceEventMap,
@@ -330,16 +329,17 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     const row = sessionId === undefined ? undefined : s.byId[sessionId]
     return row?.blank === false ? row.displayTitle : undefined
   })
-  const state = useProjectState(client, projectId, 'main')
-  // The chat session the workspace sits beside: its draft is the one the views' working-branch bar accepts or discards,
-  // and the views' edits go to its working branch. Until the main session belongs to this project, edits go to `main`.
+  // The project's current state, which every view shows and every edit follows.
+  const state = useProjectState(client, projectId)
+  // The chat session the workspace sits beside, recorded as the `session` of the views' edits; none until the main
+  // session belongs to this project.
   const session = sessionInProject ? sessionId ?? null : null
-  const draft = state.value === null ? null : sessionDraft(state.value, session)
-  // The state of the session's working branch (its open draft, else `main`), where 插入片段 picks and writes the timeline.
-  const working = useProjectState(client, projectId, draft?.branch ?? 'main')
-  // The switcher's cover, read again whenever the working branch's state is refetched after a project change.
-  const cover = useProjectSummaries(projectId, working.value)?.get(projectId)?.cover ?? null
+  // The switcher's cover, read again whenever the current state is refetched after a project change.
+  const cover = useProjectSummaries(projectId, state.value)?.get(projectId)?.cover ?? null
   const mounted = useSyncExternalStore(shell.mountedSeat.subscribe, shell.mountedSeat.getSnapshot)
+  // The right panel's own strip holds its collapse control while it is shown, so the open button sits in the same
+  // top-right corner only while the panel is hidden.
+  const panelExpanded = useSyncExternalStore(shell.panelExpanded.subscribe, shell.panelExpanded.getSnapshot)
   const opened = useRef(new Set<string>())
   useEffect(() => {
     // The canvas and the timeline get the width: an open project starts with the left sidebar collapsed.
@@ -396,10 +396,10 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     window.addEventListener(DV_TIMELINE_FOCUS_EVENT, focus)
     return () => { window.removeEventListener(DV_TIMELINE_FOCUS_EVENT, focus) }
   }, [projectId])
-  // 插入片段 appends the asset to the timeline selected in the timeline editor, else to the working branch's first
-  // timeline; a working branch without timelines gets timeline `t1` holding the clip.
+  // 插入片段 appends the asset to the timeline selected in the timeline editor, else to the project's first timeline;
+  // a project without timelines gets timeline `t1` holding the clip.
   const insertClip = (assetId: string): void => {
-    const timelines = working.value?.components.timeline.timelines ?? []
+    const timelines = state.value?.components.timeline.timelines ?? []
     const timeline = timelines.find(item => item.id === getTimelineOf(projectId)) ?? timelines[0]
     const at = (timeline?.clips.length ?? 0) + 1
     const call = timeline === undefined
@@ -410,7 +410,7 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
       }
     if (timeline === undefined) publishCurrentTimeline(projectId, 't1')
     void client.runOperation({ project: projectId, ...call, surface: 'timeline', ...session === null ? {} : { session } })
-      .then(() => { working.reload() }, (error: unknown) => { console.warn('ui-shell: insert failed', error) })
+      .then(() => { state.reload() }, (error: unknown) => { console.warn('ui-shell: insert failed', error) })
   }
   const insertRef = useRef(insertClip)
   insertRef.current = insertClip
@@ -424,18 +424,18 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
     window.addEventListener(DV_TIMELINE_INSERT_EVENT, insert)
     return () => { window.removeEventListener(DV_TIMELINE_INSERT_EVENT, insert) }
   }, [])
-  const togglePanels = (): void => {
+  const showPanels = (): void => {
     // Until the main session belongs to this project, the panels would open for the entry chat; the session's own
     // panels open when it mounts.
     if (!sessionInProject) return
     try {
-      shell.togglePanels()
+      shell.showPanels()
     } catch (error) {
       // No session seat is mounted yet; the chat tab opens when the session's seat mounts.
-      console.warn('ui-shell: toggle panels failed', error)
+      console.warn('ui-shell: open panels failed', error)
     }
   }
-  const panelLabel = t('显示或隐藏右侧面板', 'Show or hide the right panel')
+  const panelLabel = t('打开右侧面板', 'Open the right panel')
   return (
     <div className={`${css.center} ${css.workspace}`} data-dv-workspace="">
       <header className={css.topbar}>
@@ -455,15 +455,19 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
           ))}
         </div>
         <div className={css.barEnd}>
-          <button type="button" className={css.iconButton} aria-label={panelLabel} title={panelLabel} onClick={togglePanels}>
-            <SidebarRightIcon />
-          </button>
+          {panelExpanded
+            ? null
+            : (
+              <button type="button" className={css.iconButton} aria-label={panelLabel} title={panelLabel} onClick={showPanels}>
+                <SidebarRightIcon />
+              </button>
+            )}
         </div>
       </header>
       <div className={css.viewArea}>
         {view === 'canvas'
-          ? <CanvasView projectId={projectId} branch="main" client={client} session={session} />
-          : <TimelineView projectId={projectId} branch="main" client={client} session={session} />}
+          ? <CanvasView projectId={projectId} client={client} session={session} />
+          : <TimelineView projectId={projectId} client={client} session={session} />}
       </div>
     </div>
   )

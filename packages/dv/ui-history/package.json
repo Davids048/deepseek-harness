@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "DreamVerse History panel as a right-Sidebar tab: every record of the project, newest first and grouped by turn, with filters, marks, output previews, and focus of a record on the canvas or the timeline.",
+  "description": "DreamVerse History panel as a right-Sidebar tab: every record of the project's one history line, newest first, with output previews, 回到这一步 on a row, and focus of a record on the canvas or the timeline.",
   "exports": {
     ".": "./src/index.ts",
     "./client": {

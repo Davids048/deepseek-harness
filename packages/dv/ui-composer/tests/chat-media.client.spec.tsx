@@ -164,12 +164,9 @@ describe('ChatMediaView', () => {
 /** A record of a project state, in the fields the index reads. */
 interface StateRecord { operation: string; params: Record<string, unknown>; outputs: string[] }
 
-/** A project state with the given assets, branches, and records, in the fields the index reads. */
-function state(
-  assets: Array<[string, string]>, branches: Array<{ name: string; counts: object | null }> = [], records: StateRecord[] = [],
-) {
+/** A project state with the given assets and records, in the fields the index reads. */
+function state(assets: Array<[string, string]>, records: StateRecord[] = []) {
   return {
-    branches: [{ name: 'main', counts: null }, ...branches],
     assets: assets.map(([id, mime]) => ({ id, mime })),
     components: { proj: { records } },
   }
@@ -180,12 +177,12 @@ const take = (shot: number | undefined, ...outputs: string[]): StateRecord => ({
   operation: 'shot.render_ref2va', params: shot === undefined ? {} : { shot }, outputs,
 })
 
-/** Serve `/api/dv/state` from `states`, keyed by `<project>/<branch>`; other keys fail. */
+/** Serve `/api/dv/state` from `states`, keyed by project; other projects fail. */
 function stateFetch(states: Record<string, unknown>) {
   return vi.fn((input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     const query = new URL(url, 'http://dv.invalid').searchParams
-    const body = states[`${query.get('project') ?? ''}/${query.get('branch') ?? ''}`]
+    const body = states[query.get('project') ?? '']
     return Promise.resolve(body === undefined ? new Response('{}', { status: 404 }) : Response.json(body))
   })
 }
@@ -204,11 +201,10 @@ function fakeEvents() {
 }
 
 describe('followAssetKinds', () => {
-  it('reads main and open drafts, follows project events and project changes, and stops', async () => {
+  it('reads the current state, follows project events and project changes, and stops', async () => {
     const events = fakeEvents()
     const states: Record<string, unknown> = {
-      'p1/main': state([['v1.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']], [{ name: 'draft/s1', counts: {} }, { name: 'old', counts: null }]),
-      'p1/draft/s1': state([['i1.png', 'image/png']]),
+      p1: state([['v1.mp4', 'video/mp4'], ['a1.wav', 'audio/wav'], ['i1.png', 'image/png']]),
     }
     const seen: AssetKinds[] = []
     publishCurrentProject('p1')
@@ -220,10 +216,10 @@ describe('followAssetKinds', () => {
     // A burst of events causes one refetch; an unchanged refetch publishes nothing; a new asset publishes again.
     events.send()
     events.send()
-    await vi.waitFor(() => { expect(fetchImpl).toHaveBeenCalledTimes(4) })
+    await vi.waitFor(() => { expect(fetchImpl).toHaveBeenCalledTimes(2) })
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(seen).toHaveLength(1)
-    states['p1/main'] = state([['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4']])
+    states['p1'] = state([['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4']])
     events.send()
     await vi.waitFor(() => { expect(seen).toHaveLength(2) })
     expect([...seen[1]!]).toEqual([['v1.mp4', { kind: 'video', shot: null }], ['v2.mp4', { kind: 'video', shot: null }]])
@@ -239,7 +235,7 @@ describe('followAssetKinds', () => {
     fakeEvents()
     const seen: AssetKinds[] = []
     publishCurrentProject('p1')
-    const fetchImpl = stateFetch({ 'p1/main': state([['v1.mp4', 'video/mp4']]) })
+    const fetchImpl = stateFetch({ p1: state([['v1.mp4', 'video/mp4']]) })
     const stop = followAssetKinds(new DvClient(fetchImpl), (kinds) => { seen.push(kinds) })
     publishCurrentProject('gone')
     await vi.waitFor(() => { expect(fetchImpl).toHaveBeenCalledTimes(2) })
@@ -248,15 +244,16 @@ describe('followAssetKinds', () => {
     stop()
   })
 
-  it('gives each take video the shot number of its render record, from main and open drafts', async () => {
+  it('gives each take video the shot number of its render record', async () => {
     const events = fakeEvents()
-    const assets: Array<[string, string]> = [['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4'], ['v3.mp4', 'video/mp4'], ['s1.png', 'image/png']]
-    const states: Record<string, unknown> = {
-      'p1/main': state(assets, [{ name: 'draft/s1', counts: {} }], [
-        take(3, 'v1.mp4', 's1.png'), take(undefined, 'v2.mp4'), { operation: 'timeline.trim', params: { shot: 5 }, outputs: ['v3.mp4'] },
-      ]),
-      'p1/draft/s1': state([['v4.mp4', 'video/mp4']], [], [take(4, 'v4.mp4')]),
-    }
+    const assets: Array<[string, string]> = [
+      ['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4'], ['v3.mp4', 'video/mp4'], ['s1.png', 'image/png'], ['v4.mp4', 'video/mp4'],
+    ]
+    const records = (fourth: number): StateRecord[] => [
+      take(3, 'v1.mp4', 's1.png'), take(undefined, 'v2.mp4'), { operation: 'timeline.trim', params: { shot: 5 }, outputs: ['v3.mp4'] },
+      take(fourth, 'v4.mp4'),
+    ]
+    const states: Record<string, unknown> = { p1: state(assets, records(4)) }
     const seen: AssetKinds[] = []
     publishCurrentProject('p1')
     const stop = followAssetKinds(new DvClient(stateFetch(states)), (kinds) => { seen.push(kinds) })
@@ -267,7 +264,7 @@ describe('followAssetKinds', () => {
     })
 
     // A changed shot number publishes the index again.
-    states['p1/draft/s1'] = state([['v4.mp4', 'video/mp4']], [], [take(6, 'v4.mp4')])
+    states['p1'] = state(assets, records(6))
     events.send()
     await vi.waitFor(() => { expect(seen).toHaveLength(2) })
     expect(seen[1]!.get('v4.mp4')).toEqual({ kind: 'video', shot: 6 })
@@ -282,7 +279,7 @@ describe('followAssetKinds', () => {
 describe('registerChatMedia', () => {
   it('registers one shape-only chain entry per declaration and removes it when the plugin unloads', async () => {
     fakeEvents()
-    vi.stubGlobal('fetch', stateFetch({ 'p1/main': state([['v1.mp4', 'video/mp4']]) }))
+    vi.stubGlobal('fetch', stateFetch({ p1: state([['v1.mp4', 'video/mp4']]) }))
     const runtime = await SlotTestRuntime.create()
     await runtime.declare({ 'conversation.chat.markdown': { kind: 'chain', scope: 'session' } })
     const entries = () => runtime.slots.entries('conversation.chat.markdown')
@@ -304,7 +301,7 @@ describe('registerChatMedia', () => {
 
   it('keeps a playing card mounted while the asset index changes, and keeps the default link for other assets', async () => {
     const events = fakeEvents()
-    const states: Record<string, unknown> = { 'p1/main': state([['v1.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']], [], [take(1, 'v1.mp4')]) }
+    const states: Record<string, unknown> = { p1: state([['v1.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']], [take(1, 'v1.mp4')]) }
     const fetchImpl = stateFetch(states)
     vi.stubGlobal('fetch', fetchImpl)
     const runtime = await SlotTestRuntime.create()
@@ -337,7 +334,7 @@ describe('registerChatMedia', () => {
     expect(player).not.toBeNull()
 
     // Another shot finishes rendering: the index changes, and the playing card stays the same DOM node.
-    states['p1/main'] = state([['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']], [], [take(1, 'v1.mp4')])
+    states['p1'] = state([['v1.mp4', 'video/mp4'], ['v2.mp4', 'video/mp4'], ['a1.wav', 'audio/wav']], [take(1, 'v1.mp4')])
     const fetches = fetchImpl.mock.calls.length
     await act(async () => {
       events.send()

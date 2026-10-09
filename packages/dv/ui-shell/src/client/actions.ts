@@ -69,8 +69,6 @@ export interface ShellActions {
   showPanels(): void
   /** Collapse the right panel of the mounted session. */
   hidePanels(): void
-  /** Collapse an expanded right panel, or show the panels. Throws while no session seat is mounted. */
-  togglePanels(): void
   /**
    * Collapse DSH's left sidebar when it is expanded, remembering that the shell collapsed it. Takes effect at once for
    * a following collapse or restore, before DSH's frame renders the fold.
@@ -80,6 +78,8 @@ export interface ShellActions {
   restoreSidebar(): void
   /** The session whose right-panel seat is mounted, observed by the center. */
   mountedSeat: { getSnapshot(): SessionId | undefined; subscribe(fn: () => void): () => void }
+  /** Whether the right panel is expanded, observed by the center to show its open button only while it is hidden. */
+  panelExpanded: { getSnapshot(): boolean; subscribe(fn: () => void): () => void }
 }
 
 /**
@@ -374,12 +374,9 @@ export function createActions(ctx: ClientContext): ShellActions {
     hidePanels() {
       if (ctx.sidebarRight.isExpanded()) ctx.sidebarRight.toggleExpanded()
     },
-    togglePanels() {
-      if (ctx.sidebarRight.isExpanded()) ctx.sidebarRight.toggleExpanded()
-      else showPanels()
-    },
     collapseSidebar: () => { sidebar.collapse() },
     restoreSidebar: () => { sidebar.restore() },
     mountedSeat: ctx.sidebarRight.mounted,
+    panelExpanded: ctx.sidebarRight.expanded,
   }
 }

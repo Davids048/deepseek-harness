@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包把 DSH web 应用变成 DreamVerse。没有打开项目时，中间区域显示首页：对话输入框、模板标签和最近项目。打开项目后，它显示画布或时间线编辑器，用 画布 | 时间线 切换，左侧栏默认收起。左侧栏显示导航：新建项目、首页，以及 项目 → 对话 树。右侧面板多出 对话 和 轨迹 标签。外壳还注入 DreamVerse 主题：所有 DreamVerse 包使用的 `--dv-*` 变量，以及指向同一套配色的 DSH 别名变量。在文本框以外，Ctrl+Z 和 Shift+Ctrl+Z（macOS 上用 Cmd）撤销和重做主对话的当前分支。
+使用本包把 DSH web 应用变成 DreamVerse。没有打开项目时，中间区域显示首页：对话输入框、模板标签和最近项目。打开项目后，它显示画布或时间线编辑器，用 画布 | 时间线 切换，左侧栏默认收起。左侧栏显示导航：新建项目、首页，以及 项目 → 对话 树。右侧面板多出 对话 和 轨迹 标签。外壳还注入 DreamVerse 主题：所有 DreamVerse 包使用的 `--dv-*` 变量，以及指向同一套配色的 DSH 别名变量。在文本框以外，Ctrl+Z（macOS 上用 Cmd+Z）把所打开项目往回移一步，Shift+Ctrl+Z（Shift+Cmd+Z）往前移一步；这些按键移动历史列表的当前位置，不写记录。
 
 ## 目录
 
@@ -24,14 +24,14 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在叠了 `dsh-web-app`（提供侧栏、会话和 Workspace 服务以及客户端模块加载器）和 `@dv/api`（提供外壳调用的路由）的 profile 里挂载插件。同时挂载 `@dv/ui-asset-pool` 和 `@dv/ui-history`：右侧面板开关和右侧面板的指南页会打开它们的标签。先构建浏览器 bundle：`pnpm run build` 会写出 `lib/client.js`。
+在叠了 `dsh-web-app`（提供侧栏、会话和 Workspace 服务以及客户端模块加载器）和 `@dv/api`（提供外壳调用的路由）的 profile 里挂载插件。同时挂载 `@dv/ui-asset-pool` 和 `@dv/ui-history`：右侧面板按钮和右侧面板的指南页会打开它们的标签。先构建浏览器 bundle：`pnpm run build` 会写出 `lib/client.js`。
 
 ```yaml
 - id: dv-ui-shell
   name: '@dv/ui-shell'
 ```
 
-Host 半边不注册任何东西。浏览器半边以优先级 -1 注册中间区域、导航和品牌名 DreamVerse 以覆盖 DSH 的条目，注册 `dv-chat` 和 `dv-trajectory` 标签类型及其标签主体，以及提供 对话、素材库、历史 和 轨迹 的右侧面板指南页。它还隐藏 DreamVerse 不用的 DSH 界面（欢迎提示、侧栏的品牌图标、新会话按钮和插件入口、输入框统计、上下文用量、Host 斜杠命令），改写几条 DSH 文字，并在浏览器标签页上用 DreamVerse 图标替换 DSH 的图标。工作区顶栏显示会话切换器（项目封面、项目名和对话标题；其菜单提供 首页、新建项目、本项目的对话和 新建会话，以及其他项目）、画布 | 时间线 切换和右侧面板开关；右侧面板开关显示 对话、素材库 和 历史。右侧面板默认宽 392 px，正好放下三个标签，用户拖动边缘后改用拖动的宽度。首页显示标题 今天想拍点什么？、不可用的 从模板开始 标签，以及以封面卡片显示的两个最新项目（全部项目 显示其余项目）。URL hash 的形式为 `#project=<id>&view=timeline&timeline=t2&session=<id>`，所以刷新、后退和前进都能恢复位置。
+Host 半边不注册任何东西。浏览器半边以优先级 -1 注册中间区域、导航和品牌名 DreamVerse 以覆盖 DSH 的条目，注册 `dv-chat` 和 `dv-trajectory` 标签类型及其标签主体，以及提供 对话、素材库、历史 和 轨迹 的右侧面板指南页。它还隐藏 DreamVerse 不用的 DSH 界面（欢迎提示、侧栏的品牌图标、新会话按钮和插件入口、输入框统计、上下文用量、Host 斜杠命令），改写几条 DSH 文字，并在浏览器标签页上用 DreamVerse 图标替换 DSH 的图标。工作区顶栏显示会话切换器（项目封面、项目名和对话标题；其菜单提供 首页、新建项目、本项目的对话和 新建会话，以及其他项目）、画布 | 时间线 切换和右侧面板按钮；右侧面板按钮是一个 16 px 图标按钮，标签为 打开右侧面板 / Open the right panel，点击后打开 对话、素材库 和 历史。该按钮只在右侧面板收起时出现（`ctx.sidebarRight.expanded`），位置就是面板展开时它自己收起按钮所在的角落。右侧面板默认宽 392 px，正好放下三个标签，用户拖动边缘后改用拖动的宽度。首页显示标题 今天想拍点什么？、不可用的 从模板开始 标签，以及以封面卡片显示的两个最新项目（全部项目 显示其余项目）。URL hash 的形式为 `#project=<id>&view=timeline&timeline=t2&session=<id>`，所以刷新、后退和前进都能恢复位置。
 
 | 手势 | 请求或事件 |
 | --- | --- |
@@ -45,12 +45,12 @@ Host 半边不注册任何东西。浏览器半边以优先级 -1 注册中间�
 | 删除项目（行菜单，然后确认） | `POST /api/dv/projects/delete`（项目移到回收目录）；关联的 Workspace 被删除，打开中的项目回到 首页 |
 | 重命名或删除对话（行菜单） | DSH 的会话重命名，或停止其活动后归档 |
 | 主会话位于某项目的 Workspace 但没有绑定 | `POST /api/dv/workspaces/bind` |
-| 素材库 面板里的 插入片段（`dv:timeline-insert` `{assetId}`） | `POST /api/dv/operation`，`timeline.clip_insert` 插在所选时间线（否则第一条）末尾；当前分支没有时间线时为 `timeline.create`，新建包含该片段的 `t1`；`surface: 'timeline'`；然后显示时间线视图 |
+| 素材库 面板里的 插入片段（`dv:timeline-insert` `{assetId}`） | `POST /api/dv/operation`，`timeline.clip_insert` 插在所选时间线（否则第一条）末尾；当前状态没有时间线时为 `timeline.create`，新建包含该片段的 `t1`；`surface: 'timeline'`；然后显示时间线视图 |
 | `dv:canvas-focus` | 显示画布视图 |
 | `dv:timeline-focus` `{timelineId, clipId}` | 选中该时间线并显示时间线视图 |
 | `dv:trajectory-focus` `{session, toolCall}` | 主会话移到 `session`，然后打开 轨迹 并滚动到该工具调用 |
 
-只有主会话属于打开的项目时，工作区才把对话传给画布和时间线编辑器；在此之前它们的编辑写入 `main`。打开的项目每次变化都以 `dv:current-project` 发布给其他 DreamVerse bundle。
+只有主会话属于打开的项目时，工作区才把对话传给画布和时间线编辑器；在此之前它们的编辑不带对话。打开的项目每次变化都以 `dv:current-project` 发布给其他 DreamVerse bundle。
 
 -----
 
@@ -79,7 +79,7 @@ Host 半边不注册任何东西。浏览器半边以优先级 -1 注册中间�
 | [`src/client/icons.tsx`](src/client/icons.tsx) | 外壳的 16 px 线条图标 |
 | [`src/client/Navigator.tsx`](src/client/Navigator.tsx) | 左侧导航和品牌名 |
 | [`src/client/tabs.tsx`](src/client/tabs.tsx) | 对话 和 轨迹 的标签类型与主体 |
-| [`src/client/undo-keys.ts`](src/client/undo-keys.ts) | 调用 `/api/dv/undo` 和 `/api/dv/redo` 的 Ctrl+Z / Shift+Ctrl+Z 窗口监听 |
+| [`src/client/undo-keys.ts`](src/client/undo-keys.ts) | `historyKey` 和 `listenHistoryKeys`：窗口监听，Ctrl+Z（Cmd+Z）时调用 `/api/dv/undo`，Shift+Ctrl+Z（Shift+Cmd+Z）时调用 `/api/dv/redo` |
 | [`src/client/chrome.tsx`](src/client/chrome.tsx) | 隐藏和改写的 DSH 界面、右侧面板指南页，以及随界面语言变化的标签标题 |
 | [`src/client/InlineRename.tsx`](src/client/InlineRename.tsx) | 行内标题输入框和 ⋯ 行菜单 |
 | [`src/client/views.ts`](src/client/views.ts) | 画布和时间线视图，从各自包的源码引入本 bundle |

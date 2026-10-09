@@ -10,7 +10,7 @@ let counter = 0
 function record(operation: string | null, params: Record<string, unknown> = {}, fields: Partial<ProjectRecord> = {}): ProjectRecord {
   counter += 1
   return {
-    id: brandString<RecordId>(`record-${counter}`), parents: [], branch: 'main', kind: 'operation', component: 'plan', operation,
+    id: brandString<RecordId>(`record-${counter}`), parents: [], kind: 'operation', component: 'plan', operation,
     operation_version: '1', actor: 'user', surface: 'api', turn: null, session: null, tool_call: null, intent: 'x', params, inputs: [],
     outputs: [], based_on: null, supersedes: [], deterministic: true, status: 'done', created_at: new Date().toISOString(), ...fields,
   }

@@ -137,9 +137,9 @@ export default class DvTimeline extends Service {
 
   /**
    * Assign new clip IDs in a project. The number after `cl` is one more than the highest number that any Timeline
-   * record of the project stored in `report.clips`, on any branch (`main` and drafts, including undone and discarded
-   * records), and than any number this service assigned to a call still running. So no two clips of a project ever share
-   * an ID, whichever branches they were added on.
+   * record of the project stored in `report.clips`, anywhere in its history (including records an undo took back), and
+   * than any number this service assigned to a call still running. So no two clips of a project ever share an ID, even
+   * after an undo.
    * @param project - the project.
    * @param count - how many IDs to assign.
    * @returns the IDs in order.

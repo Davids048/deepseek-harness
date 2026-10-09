@@ -1,8 +1,8 @@
-/** Canvas nodes and edges derived from the shared branch state. */
+/** Canvas nodes and edges derived from the shared project state. */
 import { describe, expect, it } from 'vitest'
 import type { PlanVersion, ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
 import { asset, fixtureState, record } from '../../ui-kit/tests/fixture.client.tsx'
-import { buildCanvasGraph, overlayDraft, referenceText, withImportNames } from '../src/client/graph.ts'
+import { buildCanvasGraph, referenceText } from '../src/client/graph.ts'
 
 /** Six shot prompts of plan p1 version 1; versions 2 and 3 change shot 3 and add shot 7, version 4 returns to these. */
 const PROMPTS = ['rain', 'alley', 'door', 'stairs', 'roof', 'dawn']
@@ -91,7 +91,7 @@ function drawn(state: WireState): string[][] {
 
 describe('buildCanvasGraph', () => {
   it('draws characters, locations, styles, plans, and takes, and hides reference imports, exports, still grabs, and timeline records', () => {
-    const graph = buildCanvasGraph(fixtureState(), new Set(['g3']))
+    const graph = buildCanvasGraph(fixtureState())
     expect(graph.nodes.map(node => [node.id, node.kind])).toEqual([
       ['bible:hero', 'bible'], ['plan:p1', 'plan'], ['g1', 'take'], ['g2', 'take'], ['g3', 'take'],
     ])
@@ -100,7 +100,7 @@ describe('buildCanvasGraph', () => {
     expect(byId.get('g1')).toMatchObject({ thumb: 'shot1-last.png', video: 'shot1.mp4', durationSec: 4 })
     expect(byId.get('g2')?.flags.stale).toBe(true)
     expect(byId.get('g2')?.badges).toEqual(['trim'])
-    expect(byId.get('g3')?.flags).toMatchObject({ draft: true, rendering: true })
+    expect(byId.get('g3')?.flags).toMatchObject({ rendering: true })
     expect(graph.edges).toEqual([
       { from: 'bible:hero', to: 'g1', kind: 'reference' },
       { from: 'bible:hero', to: 'g2', kind: 'reference' },
@@ -135,15 +135,28 @@ describe('buildCanvasGraph', () => {
       id: 'g9', operation: 'shot.render_ref2va', deterministic: false, params: { prompt: 'alone' },
       inputs: [{ role: 'reference', ref: { asset: 'used.png' }, resolved_asset: 'used.png' }],
     }))
-    const graph = buildCanvasGraph(state, new Set(), new Set(['listed.png', 'side.png', 'ref.png']))
+    const graph = buildCanvasGraph(state, new Set(['listed.png', 'side.png', 'ref.png']))
     expect(graph.nodes.filter(node => node.kind === 'asset').map(node => node.id)).toEqual(['u4'])
     expect(graph.nodes.find(node => node.id === 'bible:hero')?.references).toEqual(['ref.png', 'side.png'])
     expect(graph.edges.filter(edge => edge.to === 'g9')).toEqual([])
     expect(graph.assetNodes).toMatchObject({ 'listed.png': 'u4', 'side.png': 'bible:hero' })
     expect([graph.assetNodes['pool.png'], graph.assetNodes['used.png']]).toEqual([undefined, undefined])
     // On the list, used.png is drawn with an edge to the take that reads it.
-    const listed = buildCanvasGraph(state, new Set(), new Set(['listed.png', 'used.png']))
+    const listed = buildCanvasGraph(state, new Set(['listed.png', 'used.png']))
     expect(listed.edges).toContainEqual({ from: 'u3', to: 'g9', kind: 'reference' })
+  })
+
+  it('draws a placed asset that no record of the current state imported as asset:<id>, and no second node for a take output', () => {
+    const state = fixtureState()
+    // An undo went back past the import of undone.png: the asset pool keeps it, the current state has no import record.
+    state.assets.push(asset('undone.png', 'image/png', 'u9', null, 'asset.import'))
+    const graph = buildCanvasGraph(state, new Set(['undone.png', 'shot1-last.png', 'export-last.png']))
+    const node = graph.nodes.find(candidate => candidate.id === 'asset:undone.png')
+    expect(node).toMatchObject({ kind: 'asset', title: 'undone.png', thumb: 'undone.png', video: null, record: null })
+    // The take g1 already shows its still; the grabbed still of the export has no other node, so it gets one.
+    expect(graph.nodes.filter(candidate => candidate.kind === 'asset').map(candidate => candidate.id).sort())
+      .toEqual(['asset:export-last.png', 'asset:undone.png'])
+    expect(graph.assetNodes['undone.png']).toBe('asset:undone.png')
   })
 
   it('draws one node for an asset imported twice', () => {
@@ -154,7 +167,7 @@ describe('buildCanvasGraph', () => {
       record({ id: 'u3', operation: 'asset.import', params: { name: 'twice.png' }, outputs: ['twice.png'] }),
     )
     state.components.proj.created_by['twice.png'] = 'u3'
-    const graph = buildCanvasGraph(state, new Set(), new Set(['twice.png']))
+    const graph = buildCanvasGraph(state, new Set(['twice.png']))
     expect(graph.nodes.filter(node => node.kind === 'asset').map(node => node.id)).toEqual(['u2'])
     expect(graph.assetNodes['twice.png']).toBe('u2')
   })
@@ -213,54 +226,6 @@ describe('buildCanvasGraph', () => {
     const pending = rollbackProject('q4')
     expect(pending.components.plan.plans['p1']?.at(-1)?.approved_by).toBeNull()
     expect(drawn(pending).filter(([, kind]) => kind === 'take').map(([id]) => id)).toEqual(['r1', 'r2', 'r3', 'r4', 's7', 'w5', 'r6'].sort(byRecordOrder))
-  })
-
-  it('overlays draft records the base state lacks and flags them as drafts', () => {
-    const base = fixtureState()
-    base.components.proj.records = base.components.proj.records.filter(record => record.id !== 'g3')
-    base.components.bible.characters = {}
-    base.components.plan.plans = {}
-    const draft = fixtureState()
-    draft.components.proj.records = draft.components.proj.records.map(record => record.id === 'g3' ? { ...record, branch: 'main' } : record)
-    const merged = overlayDraft(base, draft)
-    const graph = buildCanvasGraph(merged, new Set(['g3']))
-    expect(graph.nodes.find(node => node.id === 'g3')?.flags.draft).toBe(true)
-    expect(merged.components.bible.characters['hero']?.length).toBe(1)
-    expect(merged.components.plan.plans['p1']?.length).toBe(1)
-    expect(overlayDraft(base, null)).toBe(base)
-  })
-
-  it('overlays the draft as the working branch: a record undone on the draft stays out, a later base record comes in', () => {
-    const base = fixtureState()
-    const [firstAsset] = base.assets
-    if (firstAsset === undefined) throw new Error('fixture lacks an asset')
-    // Another session imported m9 on main after the draft forked at x1.
-    base.components.proj.records = [
-      ...base.components.proj.records.filter(record => record.id !== 'g3'),
-      record({ id: 'm9', operation: 'asset.import', params: { name: 'later.png' }, outputs: ['later.png'], created_at: '2026-10-05T01:00:00Z' }),
-    ]
-    base.components.proj.created_by['later.png'] = 'm9'
-    base.assets.push({ ...firstAsset, id: 'later.png', name: 'later.png' })
-    // The draft undid g2, which main still holds from before the fork.
-    const draft = fixtureState()
-    draft.branch = 'draft/s5'
-    draft.components.proj.records = draft.components.proj.records.filter(record => record.id !== 'g2')
-    delete draft.components.proj.stale['g2']
-    const merged = overlayDraft(base, draft)
-    expect(merged.components.proj.records.map(record => record.id)).toEqual(expect.arrayContaining(['g3', 'm9']))
-    expect(merged.components.proj.records.some(record => record.id === 'g2')).toBe(false)
-    const ids = buildCanvasGraph(merged, new Set(['g3']), new Set(['later.png'])).nodes.map(node => node.id)
-    expect(ids).toEqual(expect.arrayContaining(['g1', 'g3', 'm9']))
-    expect(ids).not.toContain('g2')
-  })
-
-  it('names an imported asset by this project\'s record, not by the shared asset pool', () => {
-    const full = fixtureState()
-    const [firstAsset] = full.assets
-    if (firstAsset === undefined) throw new Error('fixture lacks an asset')
-    full.components.proj.records.push(record({ id: 'u9', operation: 'asset.import', params: { name: 'yi-name.png' }, outputs: ['shared.png'] }))
-    const state = withImportNames({ ...full, assets: [...full.assets, { ...firstAsset, id: 'shared.png', mime: 'image/png', name: 'jia-name.png' }] })
-    expect(buildCanvasGraph(state, new Set(), new Set(['shared.png'])).nodes.find(node => node.id === 'u9')?.title).toBe('yi-name.png')
   })
 
   it('writes stored input references as the reference text of an operation request', () => {

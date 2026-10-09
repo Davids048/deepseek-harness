@@ -149,7 +149,7 @@ describe('agent tools', () => {
     const grabbed = value(result)
     const record = fixture.project.getRecord(projectId, brandString<RecordId>(grabbed.record))
     expect(record).toMatchObject({
-      actor: 'agent', surface: 'chat', session: 's1', turn: '3', tool_call: 'call-2', intent: 'the kite', params: { prompt: 'kite' }, branch: 'draft/s1',
+      actor: 'agent', surface: 'chat', session: 's1', turn: '3', tool_call: 'call-2', intent: 'the kite', params: { prompt: 'kite' },
     })
     expect(grabbed).toMatchObject({
       status: 'done', summary: 'made from kite', scheduled: [], params: { prompt: 'kite' },
@@ -304,7 +304,7 @@ describe('agent tools', () => {
     expect(fixture.project.listOperations()).toEqual([])
   })
 
-  it('gives the agent the dv:project prompt section: Project\'s rules, and the summary of the bound session\'s working branch', async () => {
+  it('gives the agent the dv:project prompt section: Project\'s rules, and the summary of the bound project\'s current state', async () => {
     const fixture = await start()
     const sectionOf = async (session: string): Promise<string | undefined> => {
       const assembly = await fixture.context.systemPrompt.assemble({ agent: { id: session } as never })
@@ -313,11 +313,15 @@ describe('agent tools', () => {
     const unbound = await sectionOf('s1')
     expect(unbound).toContain('DreamVerse project rules:')
     expect(unbound).toContain('ask in the conversation with the question in bold')
+    expect(unbound).toContain('is a step of the project history at once; the user does not accept changes.')
+    expect(unbound).toContain('dv_proj_redo goes forward one step. These moves add no step.')
+    expect(unbound).toContain('A new change after a move discards the steps after the current one for good')
+    expect(unbound).not.toMatch(/branch/)
     expect(unbound).toMatch(/No project is bound to this conversation yet: start the work with dv_proj_create\.$/)
     const projectId = await boundProject(fixture)
     const bound = await sectionOf('s1')
     expect(bound).toContain(`This conversation belongs to project ${projectId}`)
-    expect(bound).toContain('Project summary of the branch you write to (main), as dv_proj_state returns it:')
+    expect(bound).toContain('Project summary of the current state, as dv_proj_state returns it:')
     expect(bound).toContain(`"project_id": "${projectId}"`)
     expect(bound).not.toContain('selection')
   })

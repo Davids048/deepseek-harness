@@ -118,21 +118,6 @@
   line-height: 16px;
 }
 
-.draftBadge {
-  padding: 0 4px;
-  border-radius: 4px;
-  background: var(--dv-accent);
-  color: #fff;
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.thumb .draftBadge {
-  position: absolute;
-  left: 4px;
-  top: 4px;
-}
-
 /* The preview dialog over the dimmed page. */
 .overlay {
   position: fixed;

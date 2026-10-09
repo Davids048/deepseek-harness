@@ -1,5 +1,5 @@
 /**
- * Subscriptions: per-project listeners for record appends, record updates and branch changes. The record store calls
+ * Subscriptions: per-project listeners for record appends, record updates and moves of the line. The record store calls
  * {@link Subscriptions.emit} after each change is on disk; the live stream (`/dv/events`) and the stream service
  * subscribe through `dvProject.subscribe`.
  *

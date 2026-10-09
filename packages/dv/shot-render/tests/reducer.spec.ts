@@ -8,7 +8,7 @@ import type { ShotState } from '../src/types.ts'
 /** A finished `shot.render_ref2va` record with the given ID and `based_on`, changed by `overrides`. */
 function record(id: string, basedOn: string | null, overrides: Partial<ProjectRecord> = {}): ProjectRecord {
   return {
-    id: brandString<RecordId>(id), parents: [], branch: 'main', kind: 'operation', component: 'shot', operation: 'shot.render_ref2va',
+    id: brandString<RecordId>(id), parents: [], kind: 'operation', component: 'shot', operation: 'shot.render_ref2va',
     operation_version: '1', actor: 'user', surface: 'canvas', turn: null, session: null, tool_call: null, intent: id, params: {},
     inputs: [], outputs: [], based_on: basedOn === null ? null : brandString<RecordId>(basedOn), supersedes: [], deterministic: false,
     status: 'done', created_at: '2026-10-06T00:00:00Z', ...overrides,

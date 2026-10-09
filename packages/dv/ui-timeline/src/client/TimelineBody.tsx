@@ -1,13 +1,14 @@
 /**
- * The right-sidebar tab body: the branch bar for choosing a project and branch, then the timeline editor of that branch.
+ * The right-sidebar tab body: the project and undo bar (`ProjectBar`) for choosing a project, then the timeline editor of
+ * that project's current state.
  */
 import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { DvClient } from '@dv/ui-kit/api.ts'
-import { BranchBar } from '@dv/ui-kit/BranchBar.tsx'
-import type { BranchBarLabels } from '@dv/ui-kit/BranchBar.tsx'
+import { ProjectBar } from '@dv/ui-kit/ProjectBar.tsx'
+import type { ProjectBarLabels } from '@dv/ui-kit/ProjectBar.tsx'
 import { useViewSession } from '@dv/ui-kit/useView.ts'
 import { TimelineEditor } from './TimelineEditor.tsx'
 import type {} from './locales.ts'
@@ -21,15 +22,14 @@ export interface TimelineInjected {
 export type TimelineBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & TimelineInjected & PropsLocale<'dvTimeline'>
 
 /**
- * The branch bar's copy in the timeline namespace.
+ * The project and undo bar's copy in the timeline namespace.
  * @param t - namespace-bound translate.
  * @returns the labels.
  */
-export function barLabels(t: TimelineBodyProps['t']): BranchBarLabels {
+export function barLabels(t: TimelineBodyProps['t']): ProjectBarLabels {
   return {
-    project: t('bar.project'), branch: t('bar.branch'), accept: t('bar.accept'), discard: t('bar.discard'), undo: t('bar.undo'),
-    newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
-    draftTitle: t('bar.draft'), noProject: t('bar.noProject'),
+    project: t('bar.project'), undo: t('bar.undo'), newProject: t('bar.newProject'), newProjectPrompt: t('bar.newProjectPrompt'),
+    noProject: t('bar.noProject'),
   }
 }
 
@@ -49,17 +49,15 @@ export function TimelineBody({ client, t }: TimelineBodyProps): ReactNode {
   else {
     content = (
       <TimelineEditor
-        client={client} t={t} project={view.project} branch={view.branch} session={view.session} state={state}
-        readOnly={view.readOnly} run={view.run}
+        client={client} t={t} project={view.project} session={view.session} state={state} run={view.run}
       />
     )
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, fontSize: 12, lineHeight: '16px' }} data-testid="dv-timeline-body">
-      <BranchBar {...view.bar} labels={labels} />
+      <ProjectBar {...view.bar} labels={labels} />
       {view.notice !== null ? <p role="alert" style={{ margin: 0, padding: '4px 12px', color: 'var(--dv-danger)', fontSize: 13, lineHeight: '20px' }}>{t('error', { message: view.notice })}</p> : null}
       <div style={{ flex: 1, minHeight: 0 }}>{content}</div>
-      {view.discardDialog}
     </div>
   )
 }

@@ -1,9 +1,9 @@
 /**
- * Types of the Project component: IDs, the record format of `records.jsonl`, branches, operations, reducers, project
- * state, history queries, and run requests.
+ * Types of the Project component: IDs, the record format of `records.jsonl`, operations, reducers, project state,
+ * history queries, and run requests.
  *
- * Field case: types that are written to disk or sent over the wire (records, update lines, `branches.json`,
- * `project.json`, run requests, history queries) use snake_case fields, matching the record format. Types that only
+ * Field case: types that are written to disk or sent over the wire (records, update lines, `project.json`, run
+ * requests, history queries) use snake_case fields, matching the record format. Types that only
  * code sees (operation specs, the execute context, reducers) use camelCase members.
  *
  * @module @dv/project/types
@@ -106,10 +106,8 @@ export interface RecordFailure {
  */
 export interface ProjectRecord {
   id: RecordId
-  /** The record this one follows on its branch; empty only for the first record of a project. */
+  /** The record written just before this one; empty only for the first record of a project. */
   parents: RecordId[]
-  /** The branch the record was appended to: `main` or `draft/<session>`. */
-  branch: string
   kind: RecordKind
   /** The component key that owns the operation, for example `timeline`. */
   component: string
@@ -192,30 +190,6 @@ export interface ProjectInfo {
   created_at: string
 }
 
-/** How many records a draft holds, as the discard dialog shows them. */
-export interface DraftCounts {
-  /** Operation records on the draft whose actor is `agent` or `system`. */
-  agent_changes: number
-  /** Operation records on the draft whose actor is `user`. */
-  human_edits: number
-}
-
-/** One branch of a project: a named pointer to a record. `branches.json` stores every field except `counts`. */
-export interface Branch {
-  /** `main` or `draft/<session>`. */
-  name: string
-  /** The record the branch points at. */
-  head: RecordId
-  /** The branch that accepting this draft merges into (`main`); null for `main`. */
-  base: string | null
-  /** The head of `base` when the draft was opened, or when an accept last replayed it; null for `main`. */
-  forked_at: RecordId | null
-  /** The chat session that owns the draft; null for `main`. */
-  session: SessionId | null
-  /** The draft's record counts; null for branches that are not drafts. Computed on read, never stored. */
-  counts: DraftCounts | null
-}
-
 /** The result of an operation's execute function. */
 export interface OperationResult {
   /** The created assets, in the order the operation declares them. */
@@ -234,7 +208,7 @@ export interface OperationContext {
   params: Record<string, unknown>
   /** The record's inputs; every `resolved_asset` is set. */
   inputs: RecordInput[]
-  /** The project state at the record's parent on its branch (for a read, at the head of the working branch). */
+  /** The project state at the record's parent (for a read, the project's current state). */
   state: ProjectState
   /** A directory the call may write temporary files into; the runner removes it after the call. */
   scratchDir: string
@@ -281,7 +255,7 @@ export interface OperationToolCall {
   args: Record<string, unknown>
   /** The run request Project will send; `prepareToolCall` may change its `params` and `inputs`. */
   request: RunRequest
-  /** The state of the session's working branch, which the inputs were parsed against. */
+  /** The project's current state, which the inputs were parsed against. */
   state: ProjectState
   /** The DSH tool call: the calling agent, the call ID and the stop signal. */
   exec: ToolRunContext
@@ -328,7 +302,7 @@ export interface OperationSpec {
    * What an agent call will do and cost, for the refusal text. `registerOperation` refuses a spec whose `confirm` is
    * not `never` and that has no `confirmSummary` (`invalid_params`).
    * @param call - the parsed call, after the operation's `prepareToolCall`.
-   * @param state - the state of the session's working branch.
+   * @param state - the project's current state.
    * @returns `text`: what the agent shows the user before asking (for `plan.approve`: one line per shot it renders);
    *   `gpu_seconds`: the call's GPU estimate, which also counts against the turn's budget.
    */
@@ -348,7 +322,7 @@ export interface OperationSpec {
   /**
    * The records a call of this operation replaces; the runner adds them to the record's `supersedes`.
    * @param params - the call's parameters.
-   * @param state - the state of the working branch the call writes to.
+   * @param state - the project's current state, which the call writes after.
    * @returns the replaced records; omit the function for operations that replace nothing by themselves.
    */
   supersedes?(params: Record<string, unknown>, state: ProjectState): RecordId[]
@@ -371,7 +345,7 @@ export interface OperationSpec {
    * needs a reference image). The runner calls it under the project lock, after the params and inputs are valid, so
    * it must stay fast and must never call `dvProject.run`.
    * @param request - the call.
-   * @param state - the state of the working branch the call writes to (or reads, for a read-only operation).
+   * @param state - the project's current state, which the call writes after (or reads, for a read-only operation).
    * @throws Error that rejects `run` unchanged; nothing is written.
    */
   precondition?(request: RunRequest, state: ProjectState): Promise<void>
@@ -396,7 +370,7 @@ export interface OperationSpec {
  */
 export interface ComponentStates {
   proj: {
-    /** The records of the branch's effective chain, oldest first (undo and redo records jump; see the history module). */
+    /** The records of the history list up to the current position, oldest first. */
     records: ProjectRecord[]
     /** Stale records: record → the record whose change made it stale. */
     stale: Record<RecordId, RecordId>
@@ -411,7 +385,7 @@ export interface ComponentStates {
 type ComponentKey = keyof ComponentStates
 
 /**
- * A component's reducer: it turns the records of a branch into the component's state slice. Reducers are pure: they
+ * A component's reducer: it turns the records up to the current position into the component's state slice. Reducers are pure: they
  * read only their arguments and return a new slice or the same slice unchanged.
  */
 export interface Reducer<K extends ComponentKey = ComponentKey> {
@@ -420,20 +394,13 @@ export interface Reducer<K extends ComponentKey = ComponentKey> {
    */
   initial(): ComponentStates[K]
   /**
-   * Apply one record. The reducer receives every record of the effective chain, of every component, in order, and
+   * Apply one record. The reducer receives every record of the chain, of every component, in order, and
    * ignores the records it does not interpret.
    * @param slice - the slice before the record.
    * @param record - the record in its current form.
    * @returns the slice after the record.
    */
   reduce(slice: ComponentStates[K], record: ProjectRecord): ComponentStates[K]
-  /**
-   * Whether a record from a draft can apply on a slice computed from a different `main`; accept replay calls it.
-   * @param slice - the slice on the new `main` before the record.
-   * @param record - a draft record.
-   * @returns a reason a creator can read when the record conflicts, else null.
-   */
-  conflict?(slice: ComponentStates[K], record: ProjectRecord): string | null
   /**
    * The assets a character, location or style reference stands for (Story bible's reducer defines it). The runner
    * calls it; at most one registered reducer defines it.
@@ -456,35 +423,26 @@ export interface Reducer<K extends ComponentKey = ComponentKey> {
    * `dv_proj_*` tools return. Project merges the fields of every reducer that defines it, in component key order,
    * after the record count and before the stale records; a field name that Project or another component already uses
    * throws `invalid_params`.
-   * @param slice - the slice at the branch head.
+   * @param slice - the slice of the current state.
    * @param assets - the asset store, for the URLs of the assets the slice names.
-   * @param state - the whole state at the branch head, for the records the slice refers to.
+   * @param state - the whole current state, for the records the slice refers to.
    * @returns the fields by name.
    */
   agentSummary?(slice: ComponentStates[K], assets: Pick<AssetStore, 'url'>, state: ProjectState): Record<string, JsonValue>
 }
 
-/** The state of one branch at its head. */
+/** The state of a project at one record: the result of the chain that ends there. */
 export interface ProjectState {
   project: ProjectInfo
-  /** The branch the state was computed for. */
-  branch: string
-  /** The record the branch points at. */
+  /** The record the state is computed at; for the current state, the current position. */
   head: RecordId
   /** One slice per registered reducer. */
   components: ComponentStates
-  /**
-   * The steps that `proj.redo` brings back on the branch, oldest first; empty when nothing can be redone. Set by
-   * `dvProject.getState`; states computed for other purposes (accept replay, an operation's input state) leave it empty.
-   */
-  redo_steps: RecordId[]
 }
 
 /** What a history query selects. Every filter is optional; filters combine with AND. */
 export interface HistoryQuery {
   project: ProjectId
-  /** Only records appended to this branch name. */
-  branch?: string
   actor?: Actor
   component?: string
   operation?: string
@@ -494,8 +452,6 @@ export interface HistoryQuery {
   turn?: TurnId
   /** Only records written by this tool call. */
   tool_call?: string
-  /** Only entries whose mark is one of these. */
-  marks?: Array<HistoryEntry['mark']>
   /** Only these records. */
   records?: RecordId[]
   /** Only records written before this record, for paging. */
@@ -504,15 +460,11 @@ export interface HistoryQuery {
   limit?: number
 }
 
-/** One entry of the history list. */
+/** One entry of the history list: one step and where it stands relative to the current position. */
 export interface HistoryEntry {
   record: ProjectRecord
-  /**
-   * Where the record stands: `main` (on the effective chain of `main`), `draft` (on an open draft), `undone` (left
-   * behind by an undo), `discarded` (on a discarded draft), `replayed` (a draft record that accept replay copied onto
-   * `main`; the copy has its own entry).
-   */
-  mark: 'main' | 'draft' | 'undone' | 'discarded' | 'replayed'
+  /** `current` for the current position, `before` for a step before it, `after` for a step redo brings back. */
+  place: 'before' | 'current' | 'after'
 }
 
 /** One operation call through `dvProject.run`. */
@@ -541,12 +493,20 @@ export interface RunResult {
   report: Record<string, unknown> | null
 }
 
+/** The history list's last step and the current position, as `line.json` stores them. */
+export interface ProjectLine {
+  /** The last step of the history list; the list is its `parents[0]` ancestry. */
+  tip: RecordId
+  /** The current position: a record of the history list; the project state is the state at it. */
+  at: RecordId
+}
+
 /** What a subscriber learns about a project change. */
 export type ProjectEvent =
   | { kind: 'record'; record: ProjectRecord }
   | { kind: 'update'; record: ProjectRecord }
-  /** A branch was created or its pointer moved (`branch` set), or a closed draft was removed (`branch` null). */
-  | { kind: 'branch'; name: string; branch: Branch | null }
+  /** The current position or the last step changed (an append, undo, redo, or a move to a step). */
+  | ({ kind: 'line' } & ProjectLine)
 
 /**
  * The asset pool as Project sees it: Project checks that input assets exist, imports the files operations produce,

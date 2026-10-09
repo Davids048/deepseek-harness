@@ -2,8 +2,8 @@
  * The `@` source that lists the project items of the project the shell has open: clips by timeline name and position
  * (`时间线 1 · 片段 2`, or `Timeline 1 · Clip 2` in English, for an unnamed timeline), characters, locations, styles,
  * and assets. A pick inserts a reference chip whose text is `@[<label>](dv:<kind>/<id>)`; the host plugin
- * `@dv/chat-references` expands that address into record and asset IDs for the model. Sending a message that holds a
- * `dv:asset/<id>` chip places that asset on the open project's canvas (`DvClient.placeAssets`).
+ * `@dv/chat-references` expands that address into record and asset IDs for the model, and puts the assets of the
+ * `dv:asset/<id>` chips of a sent message on the canvas.
  *
  * @module @dv/ui-composer/mention
  */
@@ -67,10 +67,10 @@ function bibleItems(kind: 'character' | 'location' | 'style', versions: Record<s
 }
 
 /**
- * The project items of a branch state: every clip of every timeline, the characters, locations and styles, and the
+ * The project items of a project state: every clip of every timeline, the characters, locations and styles, and the
  * assets. Labels and group names follow the interface language at call time, so the label a pick inserts is in that
  * language.
- * @param state - the state of `main`.
+ * @param state - the project's current state.
  * @returns the items in display order.
  */
 export function projectItems(state: WireState): Item[] {
@@ -109,16 +109,6 @@ export function projectItems(state: WireState): Item[] {
 }
 
 /**
- * The asset ID a reference text names, when it names an asset.
- * @param text - the chip text, `@[<label>](dv:<kind>/<id>)`.
- * @returns the asset ID, or undefined for a clip, character, location, or style.
- */
-function assetOfReference(text: string): string | undefined {
-  const match = /\(dv:asset\/([^)]+)\)$/.exec(text)
-  return match?.[1] === undefined ? undefined : decodeURIComponent(match[1])
-}
-
-/**
  * The `@` source over the `/api/dv` routes.
  * @returns the source.
  */
@@ -132,7 +122,7 @@ export function projectMentionSource(): InputTriggerSource {
       // The project the shell has open; the entry page lists nothing.
       const projectId = getCurrentProject()
       if (projectId === null) return []
-      const state = await client.getState(projectId, 'main', signal)
+      const state = await client.getState(projectId, signal)
       const needle = query.toLowerCase()
       // The menu shows a candidate name that differs from its label as a trailing alias, so the name is the label
       // (numbered when labels repeat) and the `dv:` address travels in `value`.
@@ -157,14 +147,7 @@ export function projectMentionSource(): InputTriggerSource {
     },
     codec: {
       clipboardText: ref => ref,
-      serialize: (ref) => {
-        // The message is being sent: an asset it references goes on the open project's canvas. A failed write leaves
-        // the canvas as it was and does not stop the message.
-        const assetId = assetOfReference(ref)
-        const projectId = getCurrentProject()
-        if (assetId !== undefined && projectId !== null) void client.placeAssets(projectId, [assetId]).catch(() => null)
-        return Promise.resolve(ref)
-      },
+      serialize: ref => Promise.resolve(ref),
     },
   }
 }

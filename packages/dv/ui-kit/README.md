@@ -1,5 +1,5 @@
 ---
-description: "Browser code the DreamVerse views share: the /api/dv client, the wire types, the parameter form model, the track geometry, the window events, the view session hooks, and the branch bar."
+description: "Browser code the DreamVerse views share: the /api/dv client, the wire types, the parameter form model, the track geometry, the window events, the view session hooks, and the project bar."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package from a DreamVerse browser plugin to talk to `@dv/api` and to read the state it sends. `DvClient` wraps every `/api/dv` route and follows `/dv/events`; `fieldsOf` and `paramsOf` turn an operation's parameter schema into form fields and back; `useViewSession` keeps a view's project, branch, state, and operations in step with the host; `BranchBar` is the project, branch, draft, and undo bar both views show; the event modules own the `dv:*` window events and page globals the panels exchange. The package is a library: it registers nothing and is bundled into each consumer.
+Use this package from a DreamVerse browser plugin to talk to `@dv/api` and to read the state it sends. `DvClient` wraps every `/api/dv` route and follows `/dv/events`; `fieldsOf` and `paramsOf` turn an operation's parameter schema into form fields and back; `useViewSession` keeps a view's project, the project's current state, and the operations in step with the host; `ProjectBar` is the project and undo bar of the Sidebar views; the event modules own the `dv:*` window events and page globals the panels exchange. The package is a library: it registers nothing and is bundled into each consumer.
 
 ## Table of Contents
 
@@ -34,17 +34,15 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 
 | Module | Content |
 | --- | --- |
-| `types.ts` | `WireState`, `ProjectRecord`, `Branch`, `Asset`, `Timeline`, `Clip`, `WireOperation`, `WireProject`, `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry`, `WireHistory`, `PlanVersion`, `Shot` (with its render `mode`, `ref2va` or `t2va`, and `continue_previous`): the JSON `@dv/api` sends and receives, as structural types |
-| `api.ts` | `DvClient` (`listProjects`, `listProjectSummaries`, `getState`, `listOperations`, `runOperation`, `importAsset`, `acceptDraft`, `discardDraft`, `undo`, `redo`, `acceptStale`, `listHistory`, project, layout, workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
+| `types.ts` | `WireState` (`head` is the current position, `tip` the last step of the history list), `WireLine` (`{tip, at}`, the answer of undo and redo), `ProjectRecord`, `Asset`, `ProjectAsset` (an asset with this project's import name and time and `made_by`), `Timeline`, `Clip`, `WireOperation`, `WireProject`, `WireProjectSummary` and `WireProjectCover` (a project card's cover, shot count, duration, and last edit time), `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry` (`{record, place}`), `WireHistory`, `PlanVersion`, `Shot` (with its render `mode`, `ref2va` or `t2va`, and `continue_previous`): the JSON `@dv/api` sends and receives, as structural types |
+| `api.ts` | `DvClient` (`listProjects`, `listProjectSummaries` (`GET /api/dv/projects/summary`), `getState` (the current state), `listOperations`, `runOperation`, `importAsset`, `undo` (one step back), `moveTo` (to a step of the history list), `redo` (one step forward), `acceptStale`, `listHistory`, `placeOnCanvas` (`asset.place` or `asset.unplace` on the canvas surface), project, layout (positions and viewport), workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`, `paramsOf(fields)`, `FieldParseError`: one control per schema property, typed coercion |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`, `timelineName(timeline, numbered)`, `formatSeconds` |
 | `references.ts` | `shotReferences(version, shot)`, `referenceImages(state, references)`, `pictureParts(prompt)`: the reference images a shot sends to the video model in the order its prompt names them `Picture 1`, `Picture 2`, …, and the prompt split at those tokens; a `t2va` shot has no reference images |
-| `state.ts` | `openDrafts`, `sessionDraft`, `branchNames` (`main`, then the drafts), `assetIndex`, `videoAssets` |
+| `state.ts` | `assetIndex`, `videoAssets` |
 | `useProject.ts` | `useProjects`, `useOperations`, `useProjectState`: loaders that refetch on every project event |
-| `useView.ts` | `useViewSession(client, surface, session?)`: the project choice, the branch the view shows, the branch state, the operations, the last failure, the branch-bar callbacks, and `discardDialog` for the body to render; `sessionFromLocation` reads the chat session from the page's `?session=` so the view opens on that session's project |
-| `BranchBar.tsx` | The bar: project and branch pickers, a new-project button, undo, and one accept/discard chip per open draft; its copy arrives as `labels`, already localized by the owning plugin |
-| `WorkingBranchBar.tsx` | `WorkingBranchBar`: the working branch of the view's chat session (its open draft, else `main`) with accept and discard for the draft; the canvas and the timeline editor show it (test ID `dv-kit-working-branch`, attribute `data-branch`) |
-| `DiscardDraftDialog.tsx` | `useDiscardDraft(client, project, surface, onChange?)`: every discard reads the draft's counts, asks in a dialog how many agent changes and own edits will be lost (test ID `dv-kit-discard-dialog`), and sends the confirmed counts; on `draft_changed` it shows the current counts again and calls `onChange` |
+| `useView.ts` | `useViewSession(client, surface, session?)`: the project choice, the project's current state, the operations, the last failure, and the project-bar callbacks; `sessionFromLocation` reads the chat session from the page's `?session=` so the view opens on that session's project |
+| `ProjectBar.tsx` | The Sidebar bar (test ID `dv-kit-project-bar`): the project picker, a new-project button, and undo, drawn as 28 px secondary controls with the `--dv-*` theme tokens; its copy arrives as `labels`, already localized by the owning plugin |
 | `compose.ts`, `workspace-events.ts` | The window events `dv:compose`, `dv:timeline-insert`, `dv:canvas-focus`, `dv:history-focus`, `dv:trajectory-focus`, `dv:timeline-focus` (`DV_*_EVENT`) and the asset drag type `application/x-dv-asset` |
 | `tool-labels.ts` | `DV_TOOL_LABELS`: the zh and en label of every `dv_*` tool, shown by the composer's tool cards and the History panel |
 | `current-project.ts`, `current-timeline.ts` | The open project and the selected timeline, kept on `window.__dvCurrentProject` and `window.__dvCurrentTimeline` and announced with `dv:current-project` and `dv:current-timeline` |
@@ -60,7 +58,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`DvClient` decodes every error body into a `DvApiError` that keeps the HTTP status, the `ProjectError` code, and the rest of the body, such as a changed draft's `counts`; `listProjectSummaries` also checks every field type of the summaries and throws an `Error` for a malformed answer. `useLoader` keeps the last value while a reload is in flight and ignores a response whose inputs changed; `useProjectState` folds several project events of one burst into one refetch. The types in `types.ts` copy the `@dv/project` and component types by hand because host packages cannot be imported into a browser bundle; a record arrives as `ProjectRecord` with its inputs' `ref` as the stored object.
+`DvClient` decodes every error body into a `DvApiError` that keeps the HTTP status and the `ProjectError` code; `listProjectSummaries` also checks every field type of the summaries and throws an `Error` for a malformed answer. `useLoader` keeps the last value while a reload is in flight and ignores a response whose inputs changed; `useProjectState` reads the project's current state and folds several project events of one burst into one refetch, so an undo or redo made anywhere refreshes every view. The types in `types.ts` copy the `@dv/project` and component types by hand because host packages cannot be imported into a browser bundle; a record arrives as `ProjectRecord` with its inputs' `ref` as the stored object.
 
 | File | Content |
 | --- | --- |
@@ -69,8 +67,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | [`src/client/timeline.ts`](src/client/timeline.ts) | Timeline helpers |
 | [`src/client/references.ts`](src/client/references.ts) | Shot reference images and `Picture N` tokens |
 | [`src/client/useProject.ts`](src/client/useProject.ts), [`src/client/useView.ts`](src/client/useView.ts) | The hooks |
-| [`src/client/BranchBar.tsx`](src/client/BranchBar.tsx) | The shared bar |
-| [`src/client/WorkingBranchBar.tsx`](src/client/WorkingBranchBar.tsx), [`src/client/DiscardDraftDialog.tsx`](src/client/DiscardDraftDialog.tsx) | The working-branch bar and the discard confirmation |
+| [`src/client/ProjectBar.tsx`](src/client/ProjectBar.tsx) | The shared bar |
 
 </details>
 
@@ -81,7 +78,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 
 - [`@dv/api`](../api/README.md) — the routes and the JSON this client reads.
 - [`@dv/ui-canvas`](../ui-canvas/README.md) and [`@dv/ui-timeline`](../ui-timeline/README.md) — the two views that use the hooks and the bar.
-- [DreamVerse packages](../../../docs/subsystems/video-harness.md) — what a record, a draft, and a stale mark mean.
+- [DreamVerse packages](../../../docs/subsystems/video-harness.md) — what a record, the history rules, and a stale mark mean.
 
 -----
 

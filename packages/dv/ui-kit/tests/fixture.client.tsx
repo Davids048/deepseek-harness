@@ -1,9 +1,9 @@
 /**
- * A branch state the view tests share: one character, one approved plan whose shots were rendered and put on a timeline,
- * a running retake on the open draft of chat session `s5`, a failed export, and an exploration branch. Also a scripted
- * `fetch` that answers the `/api/dv` routes from such a state and records every write.
+ * A project state the view tests share: one character, one approved plan whose shots were rendered and put on a
+ * timeline, a failed export, and a running retake as the last record. Also a scripted `fetch` that answers the
+ * `/api/dv` routes from such a state and records every write.
  */
-import type { Asset, OperationRequest, ProjectRecord, WireOperation, WireProject, WireState } from '../src/client/types.ts'
+import type { OperationRequest, ProjectAsset, ProjectRecord, WireOperation, WireProject, WireState } from '../src/client/types.ts'
 
 /**
  * A record with defaults for everything a test does not set.
@@ -13,7 +13,7 @@ import type { Asset, OperationRequest, ProjectRecord, WireOperation, WireProject
 export function record(partial: Partial<ProjectRecord> & { id: string }): ProjectRecord {
   const operation = partial.operation ?? null
   return {
-    parents: [], turn: 't1', session: null, branch: 'main', kind: 'operation', component: operation?.split('.')[0] ?? 'proj',
+    parents: [], turn: 't1', session: null, kind: 'operation', component: operation?.split('.')[0] ?? 'proj',
     operation, operation_version: operation === null ? null : '1', actor: 'user', surface: 'chat', tool_call: null, intent: '',
     inputs: [], params: {}, outputs: [], based_on: null, supersedes: [], status: 'done', deterministic: true,
     created_at: '2026-10-05T00:00:00Z',
@@ -27,17 +27,20 @@ export function record(partial: Partial<ProjectRecord> & { id: string }): Projec
  * @param mime - the MIME type.
  * @param createdBy - the record that created it.
  * @param durationSec - the duration for videos.
+ * @param madeBy - the operation of the project record that output it.
  * @returns the asset.
  */
-export function asset(id: string, mime: string, createdBy: string | null, durationSec: number | null = null): Asset {
+export function asset(
+  id: string, mime: string, createdBy: string | null, durationSec: number | null = null, madeBy: string | null = null,
+): ProjectAsset {
   return {
     id, mime, name: id, size_bytes: 3, created_by: createdBy, created_at: `2026-10-05T00:00:0${String(id.length % 10)}Z`,
-    width: null, height: null, duration_sec: durationSec,
+    width: null, height: null, duration_sec: durationSec, made_by: madeBy,
   }
 }
 
 /** The project of the fixture. */
-export const PROJECT: WireProject = { id: 'p1', title: 'Demo', created_at: '2026-10-05T00:00:00Z', heads: { main: 's1' } }
+export const PROJECT: WireProject = { id: 'p1', title: 'Demo', created_at: '2026-10-05T00:00:00Z' }
 
 /**
  * The shared state.
@@ -73,20 +76,14 @@ export function fixtureState(): WireState {
       outputs: ['export-last.png'],
     }),
     record({
-      id: 'g3', turn: 't5', session: 's5', branch: 'draft/s5', actor: 'agent', operation: 'shot.render_ref2va', deterministic: false, based_on: 'g1',
+      id: 'g3', turn: 't5', session: 's5', actor: 'agent', operation: 'shot.render_ref2va', deterministic: false, based_on: 'g1',
       inputs: [hero], params: { prompt: 'hero walks, wider' }, status: 'running',
     }),
   ]
   return {
     project: { id: 'p1', title: 'Demo', created_at: '2026-10-05T00:00:00Z' },
-    branch: 'main',
-    head: 's1',
-    heads: { main: 's1', 'draft/s5': 'g3' },
-    branches: [
-      { name: 'main', head: 's1', base: null, forked_at: null, session: null, counts: null },
-      { name: 'draft/s5', head: 'g3', base: 'main', forked_at: 'x1', session: 's5', counts: { agent_changes: 1, human_edits: 0 } },
-    ],
-    redo_steps: [],
+    head: 'g3',
+    tip: 'g3',
     components: {
       proj: {
         records,
@@ -104,6 +101,7 @@ export function fixtureState(): WireState {
       },
       plan: { plans: { p1: [{ version: 1, shots: [{ prompt: 'hero walks', mode: 'ref2va' }, { prompt: 'hero turns', mode: 'ref2va', continue_previous: true }], created_by: 'p1', approved_by: 'a1' }] } },
       shot: { takes: { g1: ['g1', 'g3'] }, roots: { g3: 'g1' } },
+      asset: { placed: [] },
       timeline: {
         timelines: [{
           id: 't1', name: '', clips: [
@@ -114,13 +112,13 @@ export function fixtureState(): WireState {
       },
     },
     assets: [
-      asset('ref.png', 'image/png', 'u1'),
-      asset('shot1.mp4', 'video/mp4', 'g1', 4),
-      asset('shot1-last.png', 'image/png', 'g1'),
-      asset('shot2.mp4', 'video/mp4', 'g2', 6),
-      asset('shot2-last.png', 'image/png', 'g2'),
-      asset('export.mp4', 'video/mp4', 'c1', 3),
-      asset('export-last.png', 'image/png', 'x1'),
+      asset('ref.png', 'image/png', 'u1', null, 'asset.import'),
+      asset('shot1.mp4', 'video/mp4', 'g1', 4, 'shot.render_ref2va'),
+      asset('shot1-last.png', 'image/png', 'g1', null, 'shot.render_ref2va'),
+      asset('shot2.mp4', 'video/mp4', 'g2', 6, 'shot.render_ref2va'),
+      asset('shot2-last.png', 'image/png', 'g2', null, 'shot.render_ref2va'),
+      asset('export.mp4', 'video/mp4', 'c1', 3, 'deliver.timeline_export'),
+      asset('export-last.png', 'image/png', 'x1', null, 'asset.grab_still'),
     ],
   }
 }
@@ -154,7 +152,7 @@ export interface Recorded {
 /** What the scripted fetch answers with. */
 export interface ScriptedRoutes {
   projects?: WireProject[]
-  state?: WireState | ((branch: string) => WireState)
+  state?: WireState | (() => WireState)
   operations?: WireOperation[]
   /** Answer a POST; return `{status, body}` or throw. Default echoes a done record. */
   post?: (path: string, body: unknown) => { status: number; body: unknown }
@@ -181,13 +179,15 @@ export function scriptedFetch(routes: ScriptedRoutes = {}): { fetch: typeof fetc
         const request = body as OperationRequest
         return Promise.resolve(json(record({ id: `new-${String(writes.length)}`, operation: request.operation, params: request.params ?? {}, outputs: ['new.mp4'] })))
       }
-      return Promise.resolve(json({ heads: { main: 'x' }, record: record({ id: 'b1' }) }))
+      // Undo and redo move the current position and answer the line.
+      if (url.pathname === '/api/dv/undo' || url.pathname === '/api/dv/redo') return Promise.resolve(json({ tip: 'g3', at: 'g3' }))
+      return Promise.resolve(json({ record: record({ id: 'b1' }) }))
     }
     switch (url.pathname) {
       case '/api/dv/projects': return Promise.resolve(json(routes.projects ?? [PROJECT]))
       case '/api/dv/state': {
         const state = routes.state ?? fixtureState
-        return Promise.resolve(json(typeof state === 'function' ? state(url.searchParams.get('branch') ?? 'main') : state))
+        return Promise.resolve(json(typeof state === 'function' ? state() : state))
       }
       case '/api/dv/operations': return Promise.resolve(json(routes.operations ?? OPERATIONS))
       default: return Promise.resolve(json({ error: `no route ${url.pathname}` }, 404))

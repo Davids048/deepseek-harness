@@ -1,12 +1,11 @@
 /**
- * Canvas node positions per project, so a user's arrangement survives reloads, and the assets the user placed on the
- * canvas. The layout is view state, not project history: it lives in one JSON file per project under
- * `<state root>/canvas-layout` and is never written as records. The keys of `positions` are canvas node IDs; `placed`
- * is the project's canvas list: the imported assets that have a canvas node.
+ * Canvas node positions and the viewport per project, so a user's arrangement survives reloads. The layout is view
+ * state, not project history: it lives in one JSON file per project under `<state root>/canvas-layout` and is never
+ * written as records. The keys of `positions` are canvas node IDs. Which assets are on the canvas is project content:
+ * the `asset` slice of the project state, written by `asset.place`, `asset.unplace` and `asset.import`.
  *
  * Route: `GET /api/dv/layout?project=<id>` returns the stored layout; `POST /api/dv/layout` with
- * `{project, positions?, viewport?, placed?, removed?}` merges the given node positions into the stored ones, replaces
- * the viewport, adds the asset IDs of `placed` to the canvas list, and then takes the asset IDs of `removed` off it.
+ * `{project, positions?, viewport?}` merges the given node positions into the stored ones and replaces the viewport.
  * Errors use the body `{error, code}` of every `/api/dv` route: 400 `invalid_params` for a malformed project or too many
  * positions, 404 `unknown_project` for an unknown project.
  *
@@ -39,19 +38,15 @@ export interface CanvasViewport {
 export interface CanvasLayout {
   positions: Record<string, NodePosition>
   viewport: CanvasViewport | null
-  /** The canvas list: the asset IDs placed on the canvas, in the order they were placed. */
-  placed: string[]
 }
 
-/** A change of one project's layout: positions to set, the viewport, and asset IDs to add to or take off the canvas list. */
+/** A change of one project's layout: positions to set and the viewport. */
 export interface CanvasLayoutPatch {
   positions?: Record<string, NodePosition>
   viewport?: CanvasViewport | null
-  placed?: string[]
-  removed?: string[]
 }
 
-/** The most node positions, and separately the most placed assets, one project keeps; a larger request is refused. */
+/** The most node positions one project keeps; a larger request is refused. */
 const MAX_POSITIONS = 5000
 
 /** One project's layout file, as JSON on disk. */
@@ -65,33 +60,27 @@ export class CanvasLayoutStore {
   read(projectId: ProjectId): CanvasLayout {
     try {
       const raw: unknown = JSON.parse(readFileSync(this.path(projectId), 'utf8'))
-      return layoutOf(raw) ?? { positions: {}, viewport: null, placed: [] }
+      return layoutOf(raw) ?? { positions: {}, viewport: null }
     } catch {
       // No file yet, or a file this version cannot read: start from an empty layout.
-      return { positions: {}, viewport: null, placed: [] }
+      return { positions: {}, viewport: null }
     }
   }
 
   /**
-   * Merge positions, replace the viewport, add `placed` to the canvas list and take `removed` off it, then write
-   * atomically.
+   * Merge positions and replace the viewport, then write atomically.
    * @param projectId - a project.
-   * @param patch - the positions to set, the viewport, and the asset IDs to add and to take off, when given.
+   * @param patch - the positions to set and the viewport, when given.
    * @returns the stored layout afterwards.
    */
   write(projectId: ProjectId, patch: CanvasLayoutPatch): CanvasLayout {
-    const removed = new Set(patch.removed ?? [])
     const current = this.read(projectId)
     const next: CanvasLayout = {
       positions: { ...current.positions, ...patch.positions },
       viewport: patch.viewport === undefined ? current.viewport : patch.viewport,
-      placed: [...new Set([...current.placed, ...patch.placed ?? []])].filter(id => !removed.has(id)),
     }
     if (Object.keys(next.positions).length > MAX_POSITIONS) {
       throw new ApiRequestError(400, `A layout keeps at most ${String(MAX_POSITIONS)} positions.`, 'invalid_params')
-    }
-    if (next.placed.length > MAX_POSITIONS) {
-      throw new ApiRequestError(400, `A layout keeps at most ${String(MAX_POSITIONS)} placed assets.`, 'invalid_params')
     }
     mkdirSync(this.root, { recursive: true })
     const target = this.path(projectId)
@@ -116,7 +105,7 @@ export class CanvasLayoutStore {
 }
 
 /**
- * The positions, viewport, and placed assets in a raw JSON value, keeping only finite numbers and non-empty strings.
+ * The positions and viewport in a raw JSON value, keeping only finite numbers.
  * @param value - parsed JSON.
  * @returns the layout, or null when the value is not an object.
  */
@@ -138,9 +127,7 @@ export function layoutOf(value: unknown): CanvasLayout | null {
     const { x, y, zoom } = rawViewport as Record<string, unknown>
     if (typeof x === 'number' && typeof y === 'number' && typeof zoom === 'number' && [x, y, zoom].every(Number.isFinite) && zoom > 0) viewport = { x, y, zoom }
   }
-  const rawPlaced = record['placed']
-  const placed = Array.isArray(rawPlaced) ? rawPlaced.filter((id): id is string => typeof id === 'string' && id !== '') : []
-  return { positions, viewport, placed }
+  return { positions, viewport }
 }
 
 /**
@@ -155,11 +142,8 @@ export function layoutRoutes(project: Pick<DvProject, 'openProject'>, store: Can
     const body: unknown = await request.json().catch(() => ({}))
     const record = typeof body === 'object' && body !== null ? body as Record<string, unknown> : {}
     const projectId: ProjectId = requireProject(project, record['project'])
-    const parsed = layoutOf(record) ?? { positions: {}, viewport: null, placed: [] }
-    const removed = layoutOf({ placed: record['removed'] })?.placed ?? []
-    return store.write(projectId, {
-      positions: parsed.positions, placed: parsed.placed, removed, ...record['viewport'] === undefined ? {} : { viewport: parsed.viewport },
-    })
+    const parsed = layoutOf(record) ?? { positions: {}, viewport: null }
+    return store.write(projectId, { positions: parsed.positions, ...record['viewport'] === undefined ? {} : { viewport: parsed.viewport } })
   })
   return [{ path: LAYOUT_ROUTE, methods: ['GET', 'POST'], requestBody: 'buffered', fetch: handle }]
 }

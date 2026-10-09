@@ -696,19 +696,18 @@ describe('navigation, projects, sessions, and panels', () => {
       await waitFor(async () => !(await rightTabs(page)).includes(tab), `${tab} closed`, 5000)
     }
     expect(await rightTabs(page)).toEqual([])
-    // The top bar's right-panel toggle brings back 对话 / 素材库 / 历史 with 对话 in front, and hides an open panel.
-    const panels = page.getByRole('button', { name: '显示或隐藏右侧面板' })
+    // Closing the last tab collapses the right panel, so the top bar shows its open button, which brings back
+    // 对话 / 素材库 / 历史 with 对话 in front.
+    const panels = page.getByRole('button', { name: '打开右侧面板', exact: true })
     await panels.click()
     await waitFor(async () => (await rightTabs(page)).length === 3, 'tabs reopened', 10_000)
     await chat(page).waitFor({ timeout: 10_000 })
+    // While the panel is shown, its own strip holds the collapse control and the top bar has no open button.
+    await expect.poll(() => panels.count()).toBe(0)
     await page.getByRole('button', { name: '收起右侧边栏' }).click()
     await waitFor(async () => (await rightTabs(page)).length === 0, 'right panel collapsed', 5000)
     await panels.click()
     await waitFor(async () => (await rightTabs(page)).length === 3, 'right panel expanded', 10_000)
-    await panels.click()
-    await waitFor(async () => (await rightTabs(page)).length === 0, 'right panel hidden by the toggle', 5000)
-    await panels.click()
-    await waitFor(async () => (await rightTabs(page)).length === 3, 'right panel shown by the toggle', 10_000)
     // The left sidebar starts collapsed in a project: open it, collapse it, and open it again.
     await showNavigator(page)
     await page.getByRole('button', { name: '收起侧边栏', exact: true }).click()
@@ -756,7 +755,9 @@ describe('navigation, projects, sessions, and panels', () => {
       for (const label of ['Create project', 'Home', 'Projects']) expect(nav).toContain(label)
       const bar = await page.locator('[data-dv-workspace] header').innerText()
       for (const label of ['Canvas', 'Timeline', 'New chat']) expect(bar).toContain(label)
-      expect(await page.getByRole('button', { name: 'Show or hide the right panel' }).count()).toBe(1)
+      // The right panel is shown, so the top bar has no open button.
+      const header = page.locator('[data-dv-workspace] header')
+      expect(await header.getByRole('button', { name: 'Open the right panel', exact: true }).count()).toBe(0)
       expect([...await rightTabs(page)].sort()).toEqual(['Asset pool', 'Chat', 'History'])
     } finally {
       // The language is a durable DSH preference shared by every browser of this harness; restore Chinese.

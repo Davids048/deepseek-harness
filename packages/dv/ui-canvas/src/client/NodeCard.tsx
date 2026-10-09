@@ -256,7 +256,6 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown, plan, f
       style={style}
       data-node-id={node.id}
       data-node-kind={node.kind}
-      data-node-draft={String(flags.draft)}
       data-node-stale={String(flags.stale)}
       onPointerDown={onPointerDown}
       role="button"

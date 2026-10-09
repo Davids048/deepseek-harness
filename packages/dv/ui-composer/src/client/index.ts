@@ -2,8 +2,7 @@
  * Browser half of the DreamVerse composer additions:
  * - an `@` source listing the bound project's clips, characters, and assets;
  * - a 引用 row in the composer's ＋ menu that opens that `@` list at the end of the draft;
- * - an invisible `conversation.input.left` entry that makes each session's composer a `dv:compose` target and places
- *   the images of each sent chat message on the open project's canvas list;
+ * - an invisible `conversation.input.left` entry that makes each session's composer a `dv:compose` target;
  * - thumbnail cards for the project's video and image assets in settled chat Markdown (`chat-media.ts`);
  * - the `dv_shot_render_ref2va` and `dv_shot_render_t2va` tool cards, which show the prompt, status, and rendered video;
  * - creator-facing names for the other `dv_*` tools in their chat rows and in the running group title;
@@ -16,19 +15,16 @@
  * @module @dv/ui-composer/client
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionInput } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ClientSessionContext } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { IconLinkOutlineRegular, type IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import { createElement, useEffect, useRef, type ComponentType } from 'react'
-import { DvClient } from '@dv/ui-kit/api.ts'
+import { createElement, useEffect, type ComponentType } from 'react'
 import { DV_COMPOSE_EVENT, type DvComposeDetail } from '@dv/ui-kit/compose.ts'
 import { getCurrentProject } from '@dv/ui-kit/current-project.ts'
 import { pickText } from '@dv/ui-kit/locale.ts'
-import { placeSubmittedImages } from './attachments.ts'
 import { registerChatMedia } from './chat-media.ts'
 import { deliverCompose, mountComposer } from './compose.ts'
 import { MENTION_SOURCE, projectMentionSource } from './mention.ts'
@@ -106,15 +102,10 @@ export function apply(ctx: ClientContext): void {
     }), 'dv-composer: ＋ menu reference row')
   })
 
-  // Each mounted session composer takes `dv:compose` prefills while it is mounted, and the images of each message it
-  // sends join the open project's canvas list; the entry renders nothing.
-  const client = new DvClient()
-  function ComposeTarget(props: { sessionId: SessionId; useSession: <S>(select: (snapshot: SessionSnapshot) => S) => S }) {
+  // Each mounted session composer takes `dv:compose` prefills while it is mounted; the entry renders nothing.
+  function ComposeTarget(props: { sessionId: SessionId }) {
     const { sessionId } = props
     useEffect(() => mountComposer(() => inputOf(sessionId)), [sessionId])
-    const submissions = props.useSession(snapshot => snapshot.pendingSubmissions)
-    const handled = useRef(new Set<string>())
-    useEffect(() => { void placeSubmittedImages(submissions, handled.current, getCurrentProject(), client) }, [submissions])
     return null
   }
   ctx.slots.inject('conversation.input.left', () => ctx.slots.register(

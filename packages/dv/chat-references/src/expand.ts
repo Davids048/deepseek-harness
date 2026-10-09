@@ -35,6 +35,17 @@ export function parseMentions(text: string): Mention[] {
 }
 
 /**
+ * The assets a text mentions with `dv:asset/<AssetId>`, each once, in order.
+ * @param text - user text.
+ * @returns the asset IDs.
+ */
+export function mentionedAssetIds(text: string): AssetId[] {
+  return [...new Set(parseMentions(text).flatMap(mention => mention.uri.startsWith('dv:asset/')
+    ? [brandString<AssetId>(decodeURIComponent(mention.uri.slice('dv:asset/'.length)))]
+    : []))]
+}
+
+/**
  * Format one mention the way the composer serializes it.
  * @param label - the chip label, such as `时间线 1·片段 2`.
  * @param uri - the `dv:` URI.
@@ -46,7 +57,7 @@ export function formatMention(label: string, uri: string): string {
 
 /** What expansion reads from the Project service. */
 export interface ExpansionSources {
-  /** The state of the session's working branch of a project. */
+  /** The current state of a project. */
   getState(projectId: ProjectId): ProjectState
   /** A record, or undefined when the project has no such record. */
   getRecord(projectId: ProjectId, record: RecordId): ProjectRecord | undefined
@@ -78,7 +89,7 @@ export function describeMention(mention: Mention, projectId: ProjectId, sources:
       const byId: Record<string, ReadonlyArray<Character | Location | Style>> =
         kind === 'character' ? characters : kind === 'location' ? locations : styles
       const latest = byId[id]?.at(-1)
-      if (latest === undefined) return `${head}: no ${kind} ${id} on ${state.branch}`
+      if (latest === undefined) return `${head}: no ${kind} ${id} in the current state`
       const version = `${id}@${String(latest.version)}`
       return `${head}: ${kind} ${version} "${latest.name}", reference images [${latest.references.join(', ')}]; pass it as input ${version}`
     }
@@ -90,7 +101,7 @@ export function describeMention(mention: Mention, projectId: ProjectId, sources:
 }
 
 /**
- * A clip of a timeline on the working branch: its timeline (with its name when it has one), its 1-based position, its
+ * A clip of a timeline in the current state: its timeline (with its name when it has one), its 1-based position, its
  * asset, and the record that produced the asset. A placeholder clip names the render record it waits for, whose
  * status tells whether the render is still running or failed.
  */
@@ -105,7 +116,7 @@ function clipText(state: ProjectState, clipId: string, projectId: ProjectId, sou
       + `${clip.asset === null ? 'a placeholder clip (no asset until its render is done), its render' : `asset ${clip.asset}`}`
       + producerText(projectId, producer, sources)
   }
-  return `no clip ${clipId} on ${state.branch}`
+  return `no clip ${clipId} in the current state`
 }
 
 /** The producing record of an asset, as ` made by …` text. */

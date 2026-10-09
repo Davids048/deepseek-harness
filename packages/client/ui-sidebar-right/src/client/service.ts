@@ -162,6 +162,12 @@ export interface ISidebarRight {
    */
   readonly mounted: ObservableSnapshot<SessionId | undefined>
   /**
+   * Whether the mounted seat's column is showing its panel; `false` while it is collapsed to its rail or no seat is
+   * on screen. Moves when the seat republishes its binding after a commit that expands or collapses the column, so a
+   * control outside the column (such as a host's own expand button) can show only while the panel is hidden.
+   */
+  readonly expanded: ObservableSnapshot<boolean>
+  /**
    * Open a resource: claim it, place it, reveal the column, record the navigation.
    *
    * Without `options.kind` the registry ranks the types whose globs and
@@ -232,6 +238,9 @@ export class SidebarRightController implements ISidebarRight {
   private readonly mountedSession = createSnapshotStore<SessionId | undefined>(undefined)
   /** The mounted seat's session; see {@link ISidebarRight.mounted}. */
   readonly mounted: ObservableSnapshot<SessionId | undefined> = this.mountedSession
+  private readonly expandedState = createSnapshotStore<boolean>(false)
+  /** Whether the mounted seat's column is expanded; see {@link ISidebarRight.expanded}. */
+  readonly expanded: ObservableSnapshot<boolean> = this.expandedState
   private binding: SidebarRightBinding | undefined
   private readonly closeHandlers = new Map<string, SidebarRightCloseHandler>()
 
@@ -297,10 +306,15 @@ export class SidebarRightController implements ISidebarRight {
     }
   }
 
-  /** Publish the mounted session only when it changes; a republished binding for the same session is silent. */
+  /**
+   * Publish the mounted session and whether its column is expanded, each only when it changes; a republished binding
+   * with the same values is silent.
+   */
   private publishMounted(): void {
     const next = this.binding?.sessionId
     if (this.mountedSession.getSnapshot() !== next) this.mountedSession.set(next)
+    const expanded = next === undefined ? false : this.binding?.surfaces[next]?.layout.expanded ?? false
+    if (this.expandedState.getSnapshot() !== expanded) this.expandedState.set(expanded)
   }
 
   /**

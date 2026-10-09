@@ -1,13 +1,20 @@
 /** Subscriptions tests: delivery order, removal, delivery during changes to the listener set, and listener errors. */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { describe, expect, it } from 'vitest'
-import { MAIN_BRANCH } from '../src/shared.ts'
 import { Subscriptions } from '../src/subscriptions.ts'
-import type { ProjectEvent, ProjectId } from '../src/types.ts'
+import type { ProjectEvent, ProjectId, RecordId } from '../src/types.ts'
 
 const PROJECT = brandString<ProjectId>('project-1')
 const OTHER_PROJECT = brandString<ProjectId>('project-2')
-const EVENT: ProjectEvent = { kind: 'branch', name: MAIN_BRANCH, branch: null }
+const EVENT: ProjectEvent = {
+  kind: 'record',
+  record: {
+    id: brandString<RecordId>('record-1'), parents: [], kind: 'operation', component: 'proj', operation: 'proj.create',
+    operation_version: '1', actor: 'user', surface: 'canvas', turn: null, session: null, tool_call: null, intent: 'create',
+    params: {}, inputs: [], outputs: [], based_on: null, supersedes: [], deterministic: true, status: 'done',
+    created_at: '2026-01-01T00:00:00.000Z',
+  },
+}
 
 describe('Subscriptions', () => {
   it('delivers events in subscription order and stops after removal', () => {

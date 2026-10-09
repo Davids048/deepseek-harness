@@ -5,8 +5,8 @@
  * that shows the waveform of the clip's own audio once it decodes. A drag handle above the track area sets the track
  * area's height, which each browser remembers. Every edit
  * is one `/api/dv/operation` call of a `timeline.*` operation with `surface: 'timeline'`; the clip operations name the
- * clip by its clip ID. The working-branch bar on top names the branch these edits go to and accepts or discards the open
- * draft; a selected stale clip offers "仍然保留", which keeps the record that made its asset (`proj.stale_accept`). A
+ * clip by its clip ID, and every edit goes after the current position of the project's history, the state the editor
+ * shows. A selected stale clip offers "仍然保留", which keeps the record that made its asset (`proj.stale_accept`). A
  * placeholder clip, whose render is still running (渲染中…) or failed (渲染失败), keeps its place and its planned length on
  * the track; it cannot be trimmed or split, playback skips it, and export waits until every clip is ready.
  */
@@ -20,26 +20,22 @@ import { timelineName } from '@dv/ui-kit/timeline.ts'
 import { assetIndex, videoAssets } from '@dv/ui-kit/state.ts'
 import type { OperationRequest, WireState } from '@dv/ui-kit/types.ts'
 import { DV_ASSET_DRAG_TYPE, DV_TIMELINE_FOCUS_EVENT, type DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
-import { WorkingBranchBar } from '@dv/ui-kit/WorkingBranchBar.tsx'
+import { useFirstFrames } from './first-frame.ts'
 import { useTimelinePlayer } from './player.ts'
 import { clipPeaks, useAudioEnvelope } from './waveform.ts'
 import { clipIndexAt, dropPosition, nextTimelineId, placeTimeline, timecode, timelinesOf } from './timelines.ts'
 import type { TrackClip } from './timelines.ts'
 import type { DvTimelineKey } from './locales.ts'
 
-/** The editor's inputs: the project and branch it shows, the chat session it writes for, the state, and the write runner. */
+/** The editor's inputs: the project it shows, the chat session it writes for, the state, and the write runner. */
 export interface TimelineEditorProps {
   client: DvClient
   t: Translate<DvTimelineKey>
   project: string
-  branch: string
-  /** The chat session the editor sits beside; its edits go to that session's working branch (its open draft). */
+  /** The chat session the editor sits beside, recorded as the `session` of the editor's writes. */
   session?: string | null
+  /** The project's current state. */
   state: WireState
-  /** The `main` state while a draft is shown, to tell the draft's clips apart. */
-  baseState?: WireState | null
-  /** Whether the editor shows a draft without writing to it. */
-  readOnly: boolean
   /** Run one write and refetch the state; resolves to whether the write succeeded. */
   run: (work: () => Promise<unknown>) => Promise<boolean>
 }
@@ -50,7 +46,7 @@ export type Gesture = Omit<OperationRequest, 'project' | 'surface' | 'session'>
 /**
  * The operation request of one gesture.
  * @param project - the project.
- * @param session - the chat session the editor sits beside, whose working branch the record goes to; null for `main`.
+ * @param session - the chat session the editor sits beside, recorded as the record's `session`; null for none.
  * @param gesture - the operation, inputs, params, and intent.
  * @returns the request body.
  */
@@ -360,12 +356,10 @@ function rulerSteps(px: number): { tick: number; label: number } {
 
 /**
  * The timeline editor.
- * @param props - the client, copy, project, branch, state, and write runner.
+ * @param props - the client, copy, project, state, and write runner.
  * @returns the element.
  */
-export function TimelineEditor(
-  { client, t, project, branch, session = null, state, baseState = null, readOnly, run }: TimelineEditorProps,
-): ReactNode {
+export function TimelineEditor({ client, t, project, session = null, state, run }: TimelineEditorProps): ReactNode {
   const timelines = useMemo(() => timelinesOf(state), [state])
   // The selected timeline is shared on `window`, so the shell can keep it in the URL and restore it.
   const activeId = useCurrentTimeline(project)
@@ -373,12 +367,11 @@ export function TimelineEditor(
   // A timeline created here is selected before the refetched state lists it.
   const pendingTimeline = useRef<string | null>(null)
   const timeline = timelines.find(entry => entry.id === activeId) ?? timelines[0] ?? null
-  const baseClips = useMemo(
-    () => baseState === null || timeline === null ? [] : timelinesOf(baseState).find(entry => entry.id === timeline.id)?.clips ?? [],
-    [baseState, timeline],
-  )
-  const { clips, total } = useMemo(() => placeTimeline(state, timeline, branch, baseClips), [state, timeline, branch, baseClips])
+  const { clips, total } = useMemo(() => placeTimeline(state, timeline), [state, timeline])
   const assets = useMemo(() => assetIndex(state), [state])
+  // A clip without a still image repeats its video's first frame across its width.
+  const unstilled = clips.flatMap(clip => clip.thumbnail === null && clip.assetId !== null ? [assetUrl(clip.assetId)] : [])
+  const frames = useFirstFrames(unstilled)
   const candidates = useMemo(() => videoAssets(state), [state])
   const timelineId = timeline?.id ?? null
   const [playbackRate, setPlaybackRate] = useState(readPlaybackRate)
@@ -416,7 +409,9 @@ export function TimelineEditor(
   const [resizing, setResizing] = useState<{ startY: number; startHeight: number } | null>(null)
 
   // The clip selection, the asset picker, the tab menu, the rename box, and the export link belong to one timeline.
-  useEffect(() => { setChosenClip(null); setPicking(false); setExported(null); setMenu(null); setRenaming(null) }, [timelineId])
+  useEffect(() => {
+    setChosenClip(null); setPicking(false); setExported(null); setMenu(null); setRenaming(null)
+  }, [timelineId])
 
   // Publish the timeline shown when the shared value names none or a timeline this project no longer has.
   useEffect(() => {
@@ -495,7 +490,6 @@ export function TimelineEditor(
       })
   }
   const startRename = (id: string): void => {
-    if (readOnly) return
     setMenu(null)
     setRenaming({ id, name: nameOf(timelines.findIndex(entry => entry.id === id)) })
   }
@@ -510,14 +504,13 @@ export function TimelineEditor(
   const deleteTimeline = (id: string): void => {
     setMenu(null)
     const name = nameOf(timelines.findIndex(entry => entry.id === id))
-    if (readOnly || !window.confirm(t('tabs.deleteConfirm', { name }))) return
+    if (!window.confirm(t('tabs.deleteConfirm', { name }))) return
     void run(() => client.runOperation(request(project, session, { operation: 'timeline.delete', params: { timeline: id }, intent: t('intent.delete', { name }) })))
   }
-  // Undo and redo step the chat session's working branch, the branch this editor shows, through its history, whichever
-  // view made the step; redo is offered while the branch has steps to bring back.
-  const canRedo = state.redo_steps.length > 0
-  const undo = (): void => { void run(() => client.undo(project, 'timeline', session)) }
-  const redo = (): void => { void run(() => client.redo(project, 'timeline', session)) }
+  // Undo and redo move the whole project's current position one step, whichever view made the step.
+  const undo = (): void => { void run(() => client.undo(project)) }
+  const redo = (): void => { void run(() => client.redo(project)) }
+  const canRedo = state.head !== state.tip
   const remove = (position: number): void => {
     const clip = clips.find(placed => placed.position === position)
     if (clip === undefined) return
@@ -534,12 +527,6 @@ export function TimelineEditor(
   const keepStale = (): void => {
     if (staleRecord !== null) void run(() => client.acceptStale(project, staleRecord, 'timeline', session))
   }
-  // The bar names the intent of the latest record among the shown draft's own records that states one.
-  const draftIntent = useMemo(() => {
-    if (baseState === null) return ''
-    const known = new Set(baseState.components.proj.records.map(record => record.id))
-    return state.components.proj.records.filter(record => !known.has(record.id) && record.intent !== '').at(-1)?.intent ?? ''
-  }, [state, baseState])
   // The clip under the playhead; a placeholder there blanks the viewer and cannot be split.
   const playheadClip = clips[clipIndexAt(clips, player.position)]
   const splitAtPlayhead = (): void => {
@@ -588,7 +575,7 @@ export function TimelineEditor(
       }
       return
     }
-    if (!moved || readOnly || clip.status !== 'ready') return
+    if (!moved || clip.status !== 'ready') return
     const inSec = current.kind === 'trimStart' ? round(Math.max(0, Math.min(clip.inSec + deltaSec, clip.outSec - 0.1))) : clip.rawIn
     const outSec = current.kind === 'trimEnd' ? round(Math.max(clip.inSec + 0.1, Math.min(clip.outSec + deltaSec, clip.assetSeconds))) : clip.rawOut
     // An unset end of the range is left out: the operation reads a missing in or out point as the asset's own end.
@@ -598,14 +585,12 @@ export function TimelineEditor(
 
   const clipHandlers = (clip: TrackClip, kind: ClipDrag['kind']) => ({
     onPointerDown: (event: PointerEvent<HTMLElement>) => {
-      if (kind !== 'move' && readOnly) return
       event.stopPropagation()
       capture(event)
       setDrag({ kind, position: clip.position, startX: event.clientX, dx: 0 })
     },
     onPointerMove: (event: PointerEvent<HTMLElement>) => {
       if (drag === null || drag.position !== clip.position || drag.kind !== kind) return
-      if (kind === 'move' && readOnly) return
       setDrag({ ...drag, dx: event.clientX - drag.startX })
     },
     onPointerUp: (event: PointerEvent<HTMLElement>) => {
@@ -616,7 +601,7 @@ export function TimelineEditor(
   })
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if ((event.key === 'Delete' || event.key === 'Backspace') && selected !== null && !readOnly) {
+    if ((event.key === 'Delete' || event.key === 'Backspace') && selected !== null) {
       event.preventDefault()
       remove(selected)
     } else if (event.key === ' ' && event.target === event.currentTarget) {
@@ -778,11 +763,11 @@ export function TimelineEditor(
           {nameOf(index)}
         </button>
       ))}
-      <button type="button" className="dv-tl-btn" disabled={readOnly} onClick={createTimeline} style={buttonStyle(readOnly, textButton)}>{t('tabs.new')}</button>
+      <button type="button" className="dv-tl-btn" onClick={createTimeline} style={{ ...button, ...textButton }}>{t('tabs.new')}</button>
       {menu !== null ? (
         <div ref={menuRef} role="menu" style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 20, background: palette.panel, border: `1px solid ${palette.line}`, borderRadius: 'var(--dv-radius-xl)', padding: 6, boxShadow: 'var(--dv-shadow-2)', minWidth: 140 }}>
-          <button type="button" role="menuitem" className="dv-tl-btn" disabled={readOnly} onClick={() => { startRename(menu.id) }} style={buttonStyle(readOnly, { border: 'none', display: 'flex', width: '100%', textAlign: 'left' })}>{t('tabs.rename')}</button>
-          <button type="button" role="menuitem" className="dv-tl-btn" disabled={readOnly} onClick={() => { deleteTimeline(menu.id) }} style={buttonStyle(readOnly, { border: 'none', display: 'flex', width: '100%', textAlign: 'left', color: palette.danger })}>{t('tabs.delete')}</button>
+          <button type="button" role="menuitem" className="dv-tl-btn" onClick={() => { startRename(menu.id) }} style={{ ...button, border: 'none', display: 'flex', width: '100%', textAlign: 'left' }}>{t('tabs.rename')}</button>
+          <button type="button" role="menuitem" className="dv-tl-btn" onClick={() => { deleteTimeline(menu.id) }} style={{ ...button, border: 'none', display: 'flex', width: '100%', textAlign: 'left', color: palette.danger }}>{t('tabs.delete')}</button>
         </div>
       ) : null}
     </div>
@@ -843,20 +828,20 @@ export function TimelineEditor(
     </section>
   )
 
-  const canSplit = !readOnly && playheadClip?.status === 'ready'
+  const canSplit = playheadClip?.status === 'ready'
   const toolbar = (
     <div role="toolbar" aria-label={t('tool.aria')} style={{ display: 'flex', gap: 2, alignItems: 'center', padding: '6px 12px', borderBottom: `1px solid ${palette.line}`, flexWrap: 'wrap' }}>
-      <IconButton icon="undo" label={t('tool.undo')} disabled={readOnly} onClick={undo} />
-      <IconButton icon="redo" label={t('tool.redo')} disabled={readOnly || !canRedo} onClick={redo} />
+      <IconButton icon="undo" label={t('tool.undo')} disabled={false} onClick={undo} />
+      <IconButton icon="redo" label={t('tool.redo')} disabled={!canRedo} onClick={redo} />
       <span style={{ width: 1, height: 18, background: palette.lineStrong, margin: '0 6px' }} />
       <IconButton icon="split" label={t('tool.split')} disabled={!canSplit} onClick={splitAtPlayhead} />
-      <IconButton icon="delete" label={t('tool.delete')} disabled={readOnly || selected === null} onClick={() => { if (selected !== null) remove(selected) }} />
+      <IconButton icon="delete" label={t('tool.delete')} disabled={selected === null} onClick={() => { if (selected !== null) remove(selected) }} />
       {staleRecord !== null
-        ? <button type="button" className="dv-tl-btn" style={buttonStyle(readOnly, { marginLeft: 6, color: palette.danger })} disabled={readOnly} onClick={keepStale}>{t('tool.keepAnyway')}</button>
+        ? <button type="button" className="dv-tl-btn" style={{ ...button, marginLeft: 6, color: palette.danger }} onClick={keepStale}>{t('tool.keepAnyway')}</button>
         : null}
       <span style={{ flex: 1 }} />
       {waiting.length > 0 ? <span data-testid="dv-timeline-export-waiting" style={{ color: palette.muted, fontSize: 12, lineHeight: '16px', marginRight: 6 }}>{t('tool.exportWaiting', { positions: waiting.join(', ') })}</span> : null}
-      <button type="button" className="dv-tl-btn" style={buttonStyle(readOnly || exporting || clips.length === 0 || waiting.length > 0)} disabled={readOnly || exporting || clips.length === 0 || waiting.length > 0} onClick={exportTimeline}>
+      <button type="button" className="dv-tl-btn" style={buttonStyle(exporting || clips.length === 0 || waiting.length > 0)} disabled={exporting || clips.length === 0 || waiting.length > 0} onClick={exportTimeline}>
         <Icon name="export" />{exporting ? t('tool.exporting') : t('tool.export')}
       </button>
       {exported !== null ? <a href={assetUrl(exported)} target="_blank" rel="noreferrer" data-testid="dv-timeline-exported" style={{ color: palette.accentFg, marginLeft: 6 }}>{t('tool.exported')}</a> : null}
@@ -904,7 +889,7 @@ export function TimelineEditor(
           onDrop={(event) => {
             const asset = event.dataTransfer.getData(DV_ASSET_DRAG_TYPE)
             const box = lane.current?.getBoundingClientRect()
-            if (asset.length === 0 || readOnly) return
+            if (asset.length === 0) return
             event.preventDefault()
             event.stopPropagation()
             insert(dropPosition(clips, box === undefined ? total : (event.clientX - box.left) / px, null), asset)
@@ -917,26 +902,28 @@ export function TimelineEditor(
             // Trim handles take at most a quarter of the clip each, so a short clip keeps a body to select and drag.
             const handle = Math.max(2, Math.min(7, Math.floor(clip.seconds * px / 4)))
             const caption = `${String(clip.position)} · ${clip.seconds.toFixed(1)}s${ready ? '' : ` · ${statusText}`}`
-              + `${clip.stale ? ` · ${t('track.stale')}` : ''}${clip.draft ? ` · ${t('track.draft')}` : ''}`
+              + `${clip.stale ? ` · ${t('track.stale')}` : ''}`
             // The visible label names the shot and any state that changes what the clip can do.
-            const label = [t('track.clipLabel', { position: clip.position }), ...ready ? [] : [statusText], ...clip.stale ? [t('track.stale')] : [], ...clip.draft ? [t('track.draft')] : []].join(' · ')
+            const label = [t('track.clipLabel', { position: clip.position }), ...ready ? [] : [statusText], ...clip.stale ? [t('track.stale')] : []].join(' · ')
             // A placeholder clip is striped, in the danger color when its render failed.
             const placeholderFill = `repeating-linear-gradient(135deg, ${clip.status === 'failed' ? palette.dangerSoft : palette.lineStrong} 0 8px, ${palette.fill} 8px 16px)`
             const isSelected = selected === clip.position
+            // The still image of the clip, else its video's first frame once read, repeated across the clip.
+            const firstFrame = clip.assetId === null ? null : frames.get(assetUrl(clip.assetId)) ?? null
+            const clipFrame = clip.thumbnail !== null ? assetUrl(clip.thumbnail) : firstFrame
             return (
               <div
                 key={clip.clip} role="listitem" aria-label={t('track.clipAria', { position: clip.position, name })} aria-pressed={isSelected}
-                data-clip={clip.clip} data-clip-position={clip.position} data-clip-status={clip.status} data-clip-stale={clip.stale} data-clip-draft={clip.draft} title={caption} {...clipHandlers(clip, 'move')}
+                data-clip={clip.clip} data-clip-position={clip.position} data-clip-status={clip.status} data-clip-stale={clip.stale} title={caption} {...clipHandlers(clip, 'move')}
                 style={{
-                  ...isSelected ? { zIndex: 1 } : {}, ...blockGeometry(clip), boxSizing: 'border-box', borderRadius: 'var(--dv-radius-sm)', overflow: 'hidden', cursor: readOnly ? 'pointer' : 'grab', touchAction: 'none',
-                  background: !ready ? placeholderFill : clip.thumbnail === null ? palette.fill : `${palette.fill} url("${assetUrl(clip.thumbnail)}") left center / auto 100% repeat-x`,
+                  ...isSelected ? { zIndex: 1 } : {}, ...blockGeometry(clip), boxSizing: 'border-box', borderRadius: 'var(--dv-radius-sm)', overflow: 'hidden', cursor: 'grab', touchAction: 'none',
+                  background: !ready ? placeholderFill : clipFrame === null ? palette.fill : `${palette.fill} url("${clipFrame}") left center / auto 100% repeat-x`,
                   // A border in the track color keeps a visible gap between neighboring clips.
                   border: `1px solid ${palette.panel}`,
                   boxShadow: [isSelected ? `0 0 0 2px ${palette.accent}` : null, `inset 0 0 0 ${clip.stale ? `2px ${palette.danger}` : `1px ${palette.line}`}`].filter(shadow => shadow !== null).join(', '),
-                  outline: clip.draft ? `2px dashed ${palette.accent}` : undefined, outlineOffset: clip.draft ? -4 : undefined,
                 }}
               >
-                {clip.thumbnail === null && clip.assetId !== null ? <video src={assetUrl(clip.assetId)} preload="metadata" muted style={{ height: '100%', pointerEvents: 'none' }} /> : null}
+                {clipFrame === null && clip.assetId !== null ? <video src={assetUrl(clip.assetId)} preload="metadata" muted style={{ height: '100%', pointerEvents: 'none' }} /> : null}
                 <span style={{ position: 'absolute', left: 0, right: 0, top: 0, height: 3, background: clip.status === 'failed' ? palette.danger : palette.take, pointerEvents: 'none' }} />
                 <span style={{ position: 'absolute', left: handle + 3, bottom: 4, maxWidth: `calc(100% - ${String(handle * 2 + 6)}px)`, boxSizing: 'border-box', padding: '0 5px', borderRadius: 4, background: palette.panel, color: palette.fg, fontSize: 12, lineHeight: '16px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', pointerEvents: 'none' }}>
                   {label}
@@ -952,8 +939,8 @@ export function TimelineEditor(
           })}
           {timeline === null ? null : (
             <button
-              type="button" className="dv-tl-btn" aria-label={t('track.add')} title={t('track.add')} disabled={readOnly} onClick={() => { setPicking(!picking) }}
-              style={buttonStyle(readOnly, { position: 'absolute', left: total * px + 8, top: (VIDEO_HEIGHT - 32) / 2, width: 32, height: 32, padding: 0, justifyContent: 'center', color: palette.muted })}
+              type="button" className="dv-tl-btn" aria-label={t('track.add')} title={t('track.add')} onClick={() => { setPicking(!picking) }}
+              style={{ ...button, position: 'absolute', left: total * px + 8, top: (VIDEO_HEIGHT - 32) / 2, width: 32, height: 32, padding: 0, justifyContent: 'center', color: palette.muted }}
             >
               <Icon name="add" />
             </button>
@@ -1031,12 +1018,7 @@ export function TimelineEditor(
       style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, background: palette.bg, color: palette.fg, fontFamily: 'var(--dv-font-sans)', fontSize: 13, lineHeight: '20px', outline: 'none' }}
     >
       <style>{EDITOR_CSS}</style>
-      <WorkingBranchBar
-        client={client} project={project} session={session} surface="timeline" state={state} intent={draftIntent} run={run}
-        style={{ padding: '4px 12px', borderBottom: `1px solid ${palette.line}` }}
-      />
       {tabs}
-      {readOnly ? <p style={{ margin: 0, padding: '4px 12px', color: palette.muted, fontSize: 12, lineHeight: '16px' }}>{t('draftHead')}</p> : null}
       {dropNotice ? <p role="status" style={{ margin: 0, padding: '4px 12px', color: palette.muted, fontSize: 12, lineHeight: '16px' }}>{t('track.fileDrop')}</p> : null}
       {viewer}
       {resizeHandle}

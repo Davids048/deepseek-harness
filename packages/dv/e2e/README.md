@@ -39,10 +39,10 @@ DSH_PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome-linux/chrome \
 
 | Story file | What the stories cover |
 | --- | --- |
-| [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | Canvas fit, pan, zoom, and the node editor panel; takes and plan versions; timeline tabs, playback, split, trim, reorder, undo, and export; the working branch, discard confirmation, and stale marks |
-| [`tests/stories/assets.e2e.ts`](tests/stories/assets.e2e.ts) | The asset pool panel: imports through the file chooser, the drop zone, and the chat; draft flags; previews; insertion into the timeline and the canvas |
-| [`tests/stories/history.e2e.ts`](tests/stories/history.e2e.ts) | The History panel: row order, labels, marks, approval folds, filters, focus on the canvas or the timeline, and live updates |
-| [`tests/stories/chat.e2e.ts`](tests/stories/chat.e2e.ts) | The chat and its composer: drafts across turns, confirmation in the conversation, attached images, `@` mentions, and what the model request received |
+| [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | Canvas fit, pan, zoom, and the node editor panel; takes and plan versions; timeline tabs, playback, split, trim, reorder, undo and redo, and export; no branch controls, 回到这一步 to an earlier state and forward to the later step again, and stale marks |
+| [`tests/stories/assets.e2e.ts`](tests/stories/assets.e2e.ts) | The asset pool panel: imports through the file chooser, the drop zone, and the chat; every asset of the project: an import also after its step is discarded, and a render only while its step is at or before the current position; previews; insertion into the timeline and the canvas |
+| [`tests/stories/history.e2e.ts`](tests/stories/history.e2e.ts) | The History panel: row order, labels, approval folds, focus on the canvas or the timeline, live updates, undo, redo and 回到这一步 moving 当前 without adding a row, greyed steps after 当前 that a new edit discards, and Ctrl+Z and Shift+Ctrl+Z |
+| [`tests/stories/chat.e2e.ts`](tests/stories/chat.e2e.ts) | The chat and its composer: agent changes as steps of the history at once across turns, the agent's change after an undo that discards the undone step, confirmation in the conversation, attached images, `@` mentions, and what the model request received |
 | [`tests/stories/navigation.e2e.ts`](tests/stories/navigation.e2e.ts) | Projects, chat sessions, panels, reloads, project links, browser history, and the language switch |
 
 -----

@@ -78,48 +78,86 @@
   cursor: default;
 }
 
-/* 接受草稿: a soft accent button. */
-.softButton {
-  border-color: transparent;
-  background: var(--dv-accent-soft);
-  color: var(--dv-accent-text);
+/* A 28 px icon-only button: undo, redo, and a row's ⋮. */
+.iconButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--dv-radius-md);
+  background: transparent;
+  color: var(--dv-text-2);
+  cursor: pointer;
+  transition: background-color 120ms var(--dv-ease), color 120ms var(--dv-ease);
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--dv-surface-3);
+  color: var(--dv-text);
+}
+
+.iconButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* A row's ⋮ button and the menu it opens. */
+.stepActions {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.moreButton {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--dv-radius-sm);
+}
+
+.menu {
+  position: absolute;
+  z-index: 20;
+  top: 100%;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  margin-top: 4px;
+  padding: 6px;
+  border-radius: var(--dv-radius-xl);
+  background: var(--dv-surface-1);
+  box-shadow: 0 0 0 1px var(--dv-line-strong), var(--dv-shadow-2);
+}
+
+.menuItem {
+  height: 32px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--dv-radius-md);
+  background: transparent;
+  color: var(--dv-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 120ms var(--dv-ease);
+}
+
+.menuItem:hover {
+  background: var(--dv-surface-3);
 }
 
 .loadMore {
   margin: 8px 0;
 }
 
-.select {
-  max-width: 110px;
-  height: 28px;
-  padding: 0 6px;
-  border: 1px solid var(--dv-line-strong);
-  border-radius: var(--dv-radius-md);
-  background: transparent;
-  color: var(--dv-text);
-  font: inherit;
-  font-size: 12px;
-  line-height: 16px;
-  cursor: pointer;
-  transition: background-color 120ms var(--dv-ease);
-}
-
-.select:hover {
-  background: var(--dv-surface-3);
-}
-
-/* A select that still shows its filter name (no filter chosen). */
-.select[data-empty] {
-  color: var(--dv-text-2);
-}
-
-/* The options render in the browser's own list, which takes the panel's surface. */
-.select option {
-  background: var(--dv-surface-1);
-  color: var(--dv-text);
-}
-
-/* Text-only actions: 在轨迹中查看 and 回到这一步 read as links; the fold toggle reads as metadata. */
+/* Text-only actions: 在轨迹中查看 reads as a link; the fold toggle reads as metadata. */
 .link {
   padding: 0;
   border: 0;
@@ -226,13 +264,6 @@
   border-radius: 3px;
 }
 
-.badge {
-  padding: 0 6px;
-  border-radius: var(--dv-radius-sm);
-  background: var(--dv-surface-3);
-  color: var(--dv-text-2);
-}
-
 .currentBadge {
   padding: 0 6px;
   border-radius: var(--dv-radius-sm);
@@ -244,11 +275,6 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.jump {
-  flex: none;
-  margin-left: auto;
 }
 
 .thumb {
@@ -281,7 +307,8 @@
 }
 
 .button:focus-visible,
-.select:focus-visible,
+.iconButton:focus-visible,
+.menuItem:focus-visible,
 .link:focus-visible {
   outline: 2px solid var(--dv-accent);
   outline-offset: 2px;
@@ -294,7 +321,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .button,
-  .select,
+  .iconButton,
+  .menuItem,
   .row {
     transition: none;
   }

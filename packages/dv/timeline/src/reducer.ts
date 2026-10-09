@@ -4,9 +4,7 @@
  *
  * A clip is named by its ID (`cl1`, `cl2`, …). The operations that add clips (`timeline.create`, `timeline.update`,
  * `timeline.clip_insert`, `timeline.clip_split`) store the IDs they assigned in the record's `report.clips`, and the
- * reducer reads them only from there, so a record that accept replay copies onto a moved `main` keeps its IDs. The
- * operations check a call against the state before they record anything; `conflict` runs the same checks when a draft
- * replays on a `main` that moved.
+ * reducer reads them only from there. The operations check a call against the state before they record anything.
  *
  * A `clip` input of `timeline.create` or `timeline.update` that names a render output (`{record, output}`) becomes a
  * clip with that `source`; while the render is not done, its `resolved_asset` is null and the clip is a placeholder that
@@ -108,9 +106,9 @@ function wholeClip(id: ClipId, asset: AssetId | null, source: Clip['source'] = n
 
 /**
  * The status of a clip: `ready` with an asset, `rendering` while its source record is pending or running, else `failed`
- * (the source record ended without the output, or the branch does not hold it).
+ * (the source record ended without the output, or the state does not hold it).
  * @param clip - a clip.
- * @param records - the records of the branch, in their current form.
+ * @param records - the records of the state, in their current form.
  * @returns the status.
  */
 function clipStatusOf(clip: Clip, records: ProjectRecord[]): ClipStatus {
@@ -169,8 +167,7 @@ function timelineProblem(slice: Slice, call: TimelineCall): string | null {
 /**
  * Why a `timeline.*` call cannot apply to a slice: a timeline that a create finds or another call misses, an insert
  * position outside the timeline, a clip ID that no timeline holds, a move position outside the clip's timeline, a split
- * time outside the clip, or an empty trim range. The operations throw it before they record; accept replay reports it
- * as the conflict of a draft record (a clip that `main` removed).
+ * time outside the clip, or an empty trim range. The operations throw it before they record.
  * @param slice - the slice the call applies to.
  * @param call - the call's operation and params.
  * @returns the reason a creator can read, or null when the call applies.
@@ -306,8 +303,7 @@ function isTimelineCall(record: TimelineCall): boolean {
 
 /**
  * The `timeline` reducer: the timelines and their clips, from the finished `timeline.*` records. A record that does
- * not apply to the slice it reaches (a replayed record whose clip `main` removed, or a record without the clip IDs it
- * needs) leaves the slice unchanged.
+ * not apply to the slice it reaches (a record without the clip IDs it needs) leaves the slice unchanged.
  */
 export const timelineReducer: Reducer<'timeline'> = {
   initial: () => ({ timelines: [] }),
@@ -315,11 +311,6 @@ export const timelineReducer: Reducer<'timeline'> = {
     if (record.status !== 'done' || !isTimelineCall(record)) return slice
     if (clipProblem(slice, record) !== null || clipIdProblem(slice, record) !== null) return slice
     return { timelines: applyCall(slice, record) }
-  },
-  conflict(slice, record) {
-    // A record that did not finish done changes no slice, so it cannot conflict.
-    if (record.status !== 'done' || !isTimelineCall(record)) return null
-    return clipProblem(slice, record) ?? clipIdProblem(slice, record)
   },
   agentSummary(slice, assets, state) {
     // Clips are named by their ID, the way the `clip` param of the timeline operations names them; a placeholder clip

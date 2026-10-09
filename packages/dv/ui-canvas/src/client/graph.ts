@@ -1,12 +1,12 @@
 /**
- * Canvas nodes and edges derived from a branch state. The canvas shows the current state of the working branch only: a
+ * Canvas nodes and edges derived from a project state. The canvas shows the project's current state only: a
  * node is an item a creator works with now: a character, a location or a style at its current version, an imported asset
  * on the project's canvas list (see {@link buildCanvasGraph}), a plan at its latest version, the current take of each
  * shot of that version, a take that is not part of a plan, and a take whose outputs are in use. Deterministic edits
  * (still grabs, timeline records) do not become nodes; a timeline trim shows as a badge on the take it shortened.
  */
 import type {
-  Character, Clip, Location, PlanState, PlanVersion, ProjectRecord, RecordInput, RecordInputRef, StoryBibleState, Style, WireState,
+  Character, Clip, Location, PlanVersion, ProjectRecord, RecordInput, RecordInputRef, StoryBibleState, Style, WireState,
 } from '@dv/ui-kit/types.ts'
 
 /** What a node represents; the canvas colors nodes by it. */
@@ -20,8 +20,6 @@ const BIBLE_SLICES: Record<BibleKind, keyof StoryBibleState> = { character: 'cha
 
 /** Display states of a node. */
 export interface CanvasNodeFlags {
-  /** On an open draft that the user has not accepted yet. */
-  draft: boolean
   stale: boolean
   /** The record is pending or running. */
   rendering: boolean
@@ -106,7 +104,7 @@ function approvalLayout(version: PlanVersion, records: ReadonlyMap<string, Proje
 }
 
 /**
- * The render records the canvas draws, which make up the current state of the branch:
+ * The render records the canvas draws, which make up the current state of the project:
  * - for each shot of each plan's latest version, its current take together with the retakes of the same original take.
  *   The current take is the take the shot's clip on the plan's timeline plays (the clip at the shot's position, when it
  *   plays a take of that shot), else the newest done take of that shot and version or the earlier take the version's
@@ -115,7 +113,7 @@ function approvalLayout(version: PlanVersion, records: ReadonlyMap<string, Proje
  * - every take whose outputs are in use: played by a timeline clip, named as a reference by a current story bible or plan
  *   version, or read as an input by a drawn take.
  * Takes of shots a later plan version removed, and takes of earlier versions that nothing uses, are left out.
- * @param state - a branch state.
+ * @param state - a project state.
  * @returns the record IDs.
  */
 function shownTakes(state: WireState): Set<string> {
@@ -195,7 +193,7 @@ function shownTakes(state: WireState): Set<string> {
 
 /**
  * Every character, location and style of a state with its latest version.
- * @param state - a branch state.
+ * @param state - a project state.
  * @returns one entry per story bible item, characters first.
  */
 export function bibleItems(state: WireState): Array<{ kind: BibleKind; id: string; versions: Character[] | Location[] | Style[] }> {
@@ -206,7 +204,7 @@ export function bibleItems(state: WireState): Array<{ kind: BibleKind; id: strin
 
 /**
  * The versions of one character, location or style.
- * @param state - a branch state.
+ * @param state - a project state.
  * @param id - the character, location or style ID.
  * @returns its versions, oldest first, or undefined when the story bible has no such ID.
  */
@@ -242,91 +240,18 @@ function bibleIdOf(ref: RecordInputRef): string | undefined {
 }
 
 /**
- * Name each imported asset by this project's own `asset.import` record. The asset pool keeps the name of the first
- * import of identical bytes in any project, so another project's file name would otherwise show here.
- * @param state - a branch state.
- * @returns the state with import names applied; `state` itself when no name differs.
- */
-export function withImportNames(state: WireState): WireState {
-  const names = new Map<string, string>()
-  for (const record of state.components.proj.records) {
-    const name = record.params['name']
-    if (record.operation !== 'asset.import' || record.status !== 'done' || typeof name !== 'string' || name === '') continue
-    for (const id of record.outputs) names.set(id, name)
-  }
-  if (!state.assets.some(asset => names.has(asset.id) && names.get(asset.id) !== asset.name)) return state
-  return { ...state, assets: state.assets.map(asset => ({ ...asset, name: names.get(asset.id) ?? asset.name })) }
-}
-
-/**
- * The state of the working branch when a chat session has an open draft: the draft's own state, plus the records that
- * reached the base branch after the draft forked (another session's work), with their story bible and plan versions.
- * A record the base holds from before the fork and the draft lacks was undone on the draft, so it stays out.
- * @param base - the state of the viewed branch.
- * @param draft - the state of an open draft branch, or null.
- * @returns the merged state; `base` itself when there is no draft.
- */
-export function overlayDraft(base: WireState, draft: WireState | null): WireState {
-  if (draft === null) return base
-  const proj = base.components.proj
-  const draftProj = draft.components.proj
-  const inDraft = new Set(draftProj.records.map(record => record.id))
-  const forkedAt = draft.branches.find(entry => entry.name === draft.branch)?.forked_at ?? null
-  const forkTime = [...draftProj.records, ...proj.records].find(record => record.id === forkedAt)?.created_at ?? null
-  // Records the base branch appended after the fork; the draft never saw them.
-  const later = proj.records.filter(record => !inDraft.has(record.id) && forkTime !== null && record.created_at > forkTime)
-  const laterIds = new Set(later.map(record => record.id))
-  const fromLater = <T>(entries: Record<string, T>): Record<string, T> =>
-    Object.fromEntries(Object.entries(entries).filter(([id]) => laterIds.has(id)))
-  const bible: StoryBibleState = { ...draft.components.bible }
-  for (const key of Object.values(BIBLE_SLICES)) {
-    const merged = { ...bible[key] }
-    for (const [id, versions] of Object.entries(base.components.bible[key])) {
-      const written = versions.at(-1)?.created_by
-      if (written !== undefined && laterIds.has(written) && (merged[id]?.length ?? 0) < versions.length) merged[id] = versions
-    }
-    bible[key] = merged
-  }
-  const plans: PlanState['plans'] = { ...draft.components.plan.plans }
-  for (const [id, versions] of Object.entries(base.components.plan.plans)) {
-    const written = versions.at(-1)?.created_by
-    if (written !== undefined && laterIds.has(written) && (plans[id]?.length ?? 0) < versions.length) plans[id] = versions
-  }
-  const assets = new Set(draft.assets.map(asset => asset.id))
-  return {
-    ...base,
-    assets: [...draft.assets, ...base.assets.filter(asset => !assets.has(asset.id))],
-    components: {
-      ...draft.components,
-      bible,
-      plan: { plans },
-      proj: {
-        ...draftProj,
-        records: [...draftProj.records, ...later],
-        stale: { ...fromLater(proj.stale), ...draftProj.stale },
-        superseded: { ...fromLater(proj.superseded), ...draftProj.superseded },
-        created_by: {
-          ...Object.fromEntries(Object.entries(proj.created_by).filter(([, producer]) => laterIds.has(producer))),
-          ...draftProj.created_by,
-        },
-      },
-    },
-  }
-}
-
-/**
- * The canvas graph of a branch state, with a default layout: story bible items and assets in column 0, plans in
+ * The canvas graph of a project state, with a default layout: story bible items and assets in column 0, plans in
  * column 1, takes from column 2 rightwards by first-frame chain depth, retakes in their source take's column.
- * An imported image or video gets one node, drawn from its first `asset.import` record, when its asset ID is on the
- * project's canvas list (`placed`) and it is not a reference image of a character, location or style, which that story
- * bible node shows. A take that reads an asset off the list has no edge from it.
- * @param state - a branch state, possibly with a draft overlaid by {@link overlayDraft}.
- * @param draftRecords - IDs of records that belong to an open draft.
- * @param placed - the project's canvas list: asset IDs from the stored canvas layout.
+ * Every image or video on the project's canvas (`placed`) gets one node, unless a story bible node (a reference image) or
+ * a take node (a take output) already shows it: drawn from its first `asset.import` record of the current state when
+ * there is one, else as `asset:<id>` with no record (an import that an undo went back past, a still, an export). A take that
+ * reads an asset off the canvas has no edge from it.
+ * @param state - a project state.
+ * @param placed - the assets on the canvas; defaults to the state's `asset` slice.
  * @returns the nodes and edges.
  */
 export function buildCanvasGraph(
-  state: WireState, draftRecords: ReadonlySet<string> = new Set(), placed: ReadonlySet<string> = new Set(),
+  state: WireState, placed: ReadonlySet<string> = new Set(state.components.asset.placed),
 ): CanvasGraph {
   const proj = state.components.proj
   const assets = new Map(state.assets.map(asset => [asset.id, asset]))
@@ -334,7 +259,6 @@ export function buildCanvasGraph(
   const isImage = (id: string | undefined): boolean => id !== undefined && assets.get(id)?.mime.startsWith('image/') === true
   const isVideo = (id: string | undefined): boolean => id !== undefined && assets.get(id)?.mime.startsWith('video/') === true
   const flagsOf = (record: ProjectRecord | null): CanvasNodeFlags => ({
-    draft: record !== null && draftRecords.has(record.id),
     stale: record !== null && proj.stale[record.id] !== undefined,
     rendering: record !== null && (record.status === 'pending' || record.status === 'running'),
     failed: record?.status === 'failed',
@@ -371,7 +295,7 @@ export function buildCanvasGraph(
   }
   for (const record of proj.records) {
     if (record.operation === 'asset.import') {
-      // An import off the canvas list stays in the asset pool only.
+      // An import off the canvas stays in the asset pool only.
       const imported = record.outputs.find(id => isImage(id) || isVideo(id))
       if (imported === undefined || !placed.has(imported) || bibleOfAsset.has(imported) || importNodes.has(imported)) continue
       importNodes.set(imported, record.id)
@@ -392,6 +316,20 @@ export function buildCanvasGraph(
       })
     } else continue
     byRecord.add(record.id)
+  }
+  // A placed asset that no node shows yet (an import that an undo went back past, a still, an export, or another take
+  // output) gets its own node, `asset:<id>`, with no record.
+  const shownByTake = new Set(proj.records.flatMap(record => byRecord.has(record.id) && isRender(record) ? record.outputs : []))
+  for (const assetId of placed) {
+    const shown = bibleOfAsset.has(assetId) || importNodes.has(assetId) || shownByTake.has(assetId)
+    if (!(isImage(assetId) || isVideo(assetId)) || shown) continue
+    const id = `asset:${assetId}`
+    importNodes.set(assetId, id)
+    nodes.push({
+      id, kind: 'asset', title: assets.get(assetId)?.name ?? assetId, subtitle: '', thumb: isImage(assetId) ? assetId : null, references: [],
+      video: isVideo(assetId) ? assetId : null, durationSec: assets.get(assetId)?.duration_sec ?? null,
+      record: null, flags: flagsOf(null), badges: [], take: null, x: 0, y: 0,
+    })
   }
   const nodeIds = new Set(nodes.map(node => node.id))
   /** The node an asset comes from: its story bible node, its import node, or the nearest drawn record up its producer chain. */
@@ -468,7 +406,7 @@ function numberTakes(nodes: CanvasNode[], edges: CanvasEdge[]): void {
 
 /**
  * Mark takes that a timeline trims: a timeline clip with an in or out point.
- * @param state - the branch state.
+ * @param state - the project state.
  * @param nodes - the drawn nodes, badged in place.
  * @param nodeOfAsset - resolves an asset to its node.
  */

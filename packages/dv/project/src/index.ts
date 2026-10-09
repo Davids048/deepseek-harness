@@ -1,26 +1,19 @@
 /**
- * The Project component as the `dvProject` Cordis service. Project owns the records of every project, its branches
- * and drafts, undo and redo, the operation runner and scheduler, the reducer registry, history queries, and change
- * subscriptions. Every change to a project goes through this service and is written as a record:
+ * The Project component as the `dvProject` Cordis service. Project owns the records of every project, the history
+ * list with its current position, the operation runner and scheduler, the reducer registry, history queries, and
+ * change subscriptions. Every change to a project's content goes through this service and is written as a record:
  * - operations of every component go through {@link DvProject.run}, the single change path;
  * - Project's own actions (`proj.*`) go through the methods named after them, which write `proj.*` records.
- * Reads (`getState`, `getRecord`, `listHistory`, `listBranches`, `workingBranch`, `openProject`, `listProjects`)
- * write no record.
+ * Reads (`getState`, `getRecord`, `listHistory`, `openProject`, `listProjects`) write no record.
  *
- * Working branch. Each chat session has at most one open draft, `draft/<session>`, which spans turns. The working
- * branch of a session is its open draft, else `main`; an action without a session works on `main`. The first `agent`
- * write of a session without an open draft opens the draft, forked from `main`. A human edit with a session goes to
- * that session's draft when one is open, else to the session's working branch; human and `system` writes never open a
- * draft. Project never accepts or discards a draft by itself.
- *
- * Accept merges the draft into the branch it was forked from (normally `main`). When that branch moved after the draft
- * was opened, accept replays the draft's records on it and stops with `DraftConflictError`, writing nothing, at the
- * first record that conflicts. Discard drops the draft, including the human's edits on it, after the caller confirms
- * the counts it showed.
+ * History, as in the History panel of an image editor. Each record is a step of the project's history list; the
+ * current position is one step of it, and the project state is the state at that step. `undo`, `redo` and `moveTo`
+ * only move the current position and write no record. A write follows the current position, so the steps that were
+ * after it are discarded; a discarded step that has not finished is cancelled.
  *
  * Concurrency: one lock per project. A run holds it while it checks and appends its record and while it writes each
- * update line, and releases it while the operation executes. Accept, discard, undo, redo and project creation hold it
- * for their whole duration.
+ * update line, and releases it while the operation executes. Moves and project creation hold it for their whole
+ * duration.
  *
  * Agent tools. While the DSH `tools` registry is mounted, every registered operation also has its agent tool
  * `dv_<operation name with _>`, built by the `agent-tools` module. A tool call runs the operation as the agent on the
@@ -28,13 +21,13 @@
  * for the user's agreement refuses a call without it (`OperationSpec.confirm`). Project also registers its own
  * `dv_proj_*` tools (the `proj-tools` module); they bind the session to its project and return the project summary,
  * to which each component's reducer adds its fields through `Reducer.agentSummary`. While the DSH `systemPrompt`
- * service is mounted, Project's rules and the summary of the session's working branch reach the agent at every step
+ * service is mounted, Project's rules and the summary of the project's current state reach the agent at every step
  * as the `dv:project` prompt section (the `agent-context` module).
  *
  * The asset pool registers itself with {@link DvProject.registerAssetStore}; until it does, a run that names an input
  * asset or imports an output fails.
  *
- * The internal modules (`record-store`, `runner`, `scheduler`, `drafts`, `history`, `reducers`, `subscriptions`,
+ * The internal modules (`record-store`, `runner`, `scheduler`, `history`, `reducers`, `subscriptions`,
  * `sessions`, `agent-tools`, `proj-tools`, `agent-context`) are private; `CONTRACTS.md` in this package specifies each of them.
  *
  * @module @dv/project
@@ -47,29 +40,28 @@ import type {} from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
 import { PROMPT_SECTION, projectContext } from './agent-context.ts'
 import { AgentTools, parseInputs, turnOf } from './agent-tools.ts'
-import { Drafts } from './drafts.ts'
 import { History } from './history.ts'
 import { projTools, type ProjToolDeps } from './proj-tools.ts'
 import { RecordStore } from './record-store.ts'
 import { projReducer, ReducerRegistry } from './reducers.ts'
 import { Runner } from './runner.ts'
 import { Scheduler } from './scheduler.ts'
-import { MAIN_BRANCH, ProjectError } from './shared.ts'
+import { ProjectError } from './shared.ts'
 import { Sessions } from './sessions.ts'
 import { Subscriptions } from './subscriptions.ts'
 import type {
-  AssetId, AssetStore, Branch, ComponentStates, DraftCounts, HistoryEntry, HistoryQuery, OperationSpec,
+  AssetId, AssetStore, ComponentStates, ProjectLine, HistoryEntry, HistoryQuery, OperationSpec,
   ProjectEvent, ProjectId, ProjectInfo, ProjectRecord, ProjectState, RecordId, RecordInputRef, RecordOrigin, Reducer,
   RunRequest, RunResult, SessionId,
 } from './types.ts'
 
 export * from './types.ts'
-export { DraftConflictError, MAIN_BRANCH, ProjectError, draftBranch } from './shared.ts'
+export { ProjectError } from './shared.ts'
 export { formatInputRef, sessionOf, toolNameOf, type OperationToolValue } from './agent-tools.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** The Project component: records, branches and drafts, undo and redo, operations, state and history. */
+    /** The Project component: records, undo, operations, state and history. */
     dvProject: DvProject
   }
 }
@@ -107,7 +99,6 @@ export default class DvProject extends Service {
   private readonly subscriptions = new Subscriptions()
   private readonly store: RecordStore
   private readonly reducers: ReducerRegistry
-  private readonly drafts: Drafts
   private readonly history: History
   private readonly runner: Runner
   private readonly scheduler: Scheduler
@@ -132,7 +123,6 @@ export default class DvProject extends Service {
       if (event.kind === 'update' && ['done', 'failed', 'cancelled'].includes(event.record.status)) this.scheduler.recordFinished(project)
     })
     this.reducers = new ReducerRegistry(this.store)
-    this.drafts = new Drafts(this.store, this.reducers)
     this.history = new History(this.store)
     // The scheduler runs ready records through the runner, which is created next; the callback reads it at call time.
     this.scheduler = new Scheduler(this.store, (project, record) => this.runner.execute(project, record), {
@@ -140,7 +130,7 @@ export default class DvProject extends Service {
     })
     // The runner reaches the asset pool through the registered store, read at call time.
     this.runner = new Runner({
-      store: this.store, drafts: this.drafts, reducers: this.reducers, scheduler: this.scheduler,
+      store: this.store, reducers: this.reducers, scheduler: this.scheduler,
       assets: {
         has: asset => this.requireAssetStore().has(asset),
         importAsset: (source, meta, createdBy) => this.requireAssetStore().importAsset(source, meta, createdBy),
@@ -152,7 +142,7 @@ export default class DvProject extends Service {
       assets: () => this.requireAssetStore(),
       confirmGpuSecondsThreshold: config.confirmGpuSecondsThreshold,
       listOperations: () => this.listOperations(),
-      workingState: (project, session) => this.getState(project, this.workingBranch(project, session).name),
+      currentState: project => this.getState(project),
       versionCreatedBy: (state, ref) => this.reducers.versionCreatedBy(state, ref),
       run: request => this.run(request),
       getRecord: (project, record) => this.getRecord(project, record),
@@ -207,7 +197,7 @@ export default class DvProject extends Service {
     const info: ProjectInfo = { id: brandString<ProjectId>(randomUUID()), title, created_at: new Date().toISOString() }
     this.store.createProject(info)
     await this.store.lock(info.id, () => this.store.append(info.id, {
-      parents: [], branch: MAIN_BRANCH, kind: 'operation', component: 'proj', operation: 'proj.create', operation_version: '1',
+      parents: [], kind: 'operation', component: 'proj', operation: 'proj.create', operation_version: '1',
       ...origin, params: { title }, inputs: [], outputs: [], based_on: null, supersedes: [], deterministic: true, status: 'done',
     }))
     return info
@@ -247,8 +237,8 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Run one operation call: the single change path for every component's operations. The record goes to the working
-   * branch of `request.session` (an `agent` call opens the session's draft first when none is open). With `after`,
+   * Run one operation call: the single change path for every component's operations. The record goes after the
+   * project's current position (see the module comment). With `after`,
    * the call is scheduled and the result holds the `pending` record. A read-only operation writes no record and
    * returns its answer in `report`.
    * @param request - the call.
@@ -260,57 +250,47 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Accept the draft of `origin.session` into the branch it was forked from, replaying it when that branch moved.
-   * Writes a `proj.draft_accept` record.
+   * Move the current position one step back. Writes no record. Rules in the history module.
    * @param project - the project.
-   * @param origin - who accepts; `session` names the draft.
-   * @returns the `proj.draft_accept` record. Throws `no_open_draft`, `draft_busy`, or `DraftConflictError`.
+   * @returns the last step and the current position afterwards. Throws `nothing_to_undo` at the first record.
    */
-  acceptDraft(project: ProjectId, origin: RecordOrigin): Promise<ProjectRecord> {
-    return this.store.lock(project, () => this.drafts.accept(project, origin))
+  undo(project: ProjectId): Promise<ProjectLine> {
+    return this.store.lock(project, () => this.history.undo(project))
   }
 
   /**
-   * Discard the draft of `origin.session`, including the human's edits on it. Writes a `proj.draft_discard` record.
-   * The caller first shows the draft's `counts` (from {@link DvProject.workingBranch}) in a confirmation dialog and
-   * passes them here; when the draft changed meanwhile the call throws `draft_changed` and discards nothing.
+   * Move the current position to a step of the history list, before or after it. Writes no record. Rules in the history
+   * module.
    * @param project - the project.
-   * @param origin - who discards; `session` names the draft.
-   * @param counts - the counts the dialog showed.
-   * @returns the counts of the discarded records. Throws `no_open_draft`, `draft_busy`, or `draft_changed`.
+   * @param to - a step of the history list.
+   * @returns the last step and the current position afterwards. Throws `unknown_record`, or `invalid_params` for a
+   *   discarded record.
    */
-  discardDraft(project: ProjectId, origin: RecordOrigin, counts: DraftCounts): Promise<DraftCounts> {
-    return this.store.lock(project, () => this.drafts.discard(project, origin, counts))
+  moveTo(project: ProjectId, to: RecordId): Promise<ProjectLine> {
+    return this.store.lock(project, () => this.history.moveTo(project, to))
   }
 
   /**
-   * Move the working branch of `origin.session` back by one step, or jump it to a step: writes a `proj.undo` record on
-   * that branch whose `params.to` names the record whose state the branch returns to (a jump forward to a redo step
-   * writes `proj.redo`). Rules in the history module.
+   * Move the current position one step forward, toward the last step. Writes no record.
    * @param project - the project.
-   * @param origin - who undoes, from where; `session` selects the working branch.
-   * @param to - a record on the branch's effective chain or one of its redo steps; undefined for one step back.
-   * @returns the written record. Throws `nothing_to_undo`, `unknown_record`, or `invalid_params`.
+   * @returns the last step and the current position afterwards. Throws `nothing_to_redo`.
    */
-  undo(project: ProjectId, origin: RecordOrigin, to?: RecordId): Promise<ProjectRecord> {
-    return this.store.lock(project, () =>
-      this.history.undo(project, this.drafts.workingBranch(project, origin.session).name, origin, to))
+  redo(project: ProjectId): Promise<ProjectLine> {
+    return this.store.lock(project, () => this.history.redo(project))
   }
 
   /**
-   * Move the working branch of `origin.session` forward by one redo step: writes a `proj.redo` record with
-   * `params.to` on that branch. Any other write on the branch after an undo drops its redo steps.
    * @param project - the project.
-   * @param origin - who redoes, from where; `session` selects the working branch.
-   * @returns the `proj.redo` record. Throws `nothing_to_redo`.
+   * @returns the last step of the history list and the current position. Throws `unknown_project`, or `invalid_params`
+   *   before the first record.
    */
-  redo(project: ProjectId, origin: RecordOrigin): Promise<ProjectRecord> {
-    return this.store.lock(project, () => this.history.redo(project, this.drafts.workingBranch(project, origin.session).name, origin))
+  line(project: ProjectId): ProjectLine {
+    return this.store.requireLine(project)
   }
 
   /**
-   * Accept a stale record's result: write a `proj.stale_accept` record with `params {record}` on the origin's working
-   * branch, which removes the record's stale mark from then on.
+   * Accept a stale record's result: write a `proj.stale_accept` record with `params {record}` after the current position,
+   * which removes the record's stale mark from then on.
    * @param project - the project.
    * @param record - a stale record.
    * @param origin - who accepts it.
@@ -321,13 +301,12 @@ export default class DvProject extends Service {
   }
 
   /**
-   * The state of a branch at its head: one slice per registered reducer, and the branch's redo steps.
+   * The project's current state: one slice per registered reducer, computed at the current position.
    * @param project - the project.
-   * @param branch - a branch name; defaults to `main`. Use `workingBranch(project, session).name` for a session.
-   * @returns the state. Throws `unknown_project` or `unknown_branch`.
+   * @returns the state. Throws `unknown_project`.
    */
-  getState(project: ProjectId, branch: string = MAIN_BRANCH): ProjectState {
-    return { ...this.reducers.getState(project, branch), redo_steps: this.history.redoSteps(project, branch) }
+  getState(project: ProjectId): ProjectState {
+    return this.reducers.getState(project)
   }
 
   /**
@@ -340,30 +319,23 @@ export default class DvProject extends Service {
   }
 
   /**
-   * List a project's records, newest first, with their marks (`main`, `draft`, `undone`, `discarded`, `replayed`).
+   * Every record of a project in write order, discarded records included (a discarded import keeps its asset in the
+   * asset pool). A read: it writes no record.
+   * @param project - the project.
+   * @returns the records in their current form.
+   */
+  listRecords(project: ProjectId): ProjectRecord[] {
+    return this.store.listRecords(project)
+  }
+
+  /**
+   * List the steps of a project's history list, newest first, each with its place relative to the current position;
+   * discarded records are not listed.
    * @param query - the project and the filters.
    * @returns the entries.
    */
   listHistory(query: HistoryQuery): HistoryEntry[] {
     return this.history.list(query)
-  }
-
-  /**
-   * @param project - the project.
-   * @returns every branch with draft counts; `main` first.
-   */
-  listBranches(project: ProjectId): Branch[] {
-    return this.drafts.listBranches(project)
-  }
-
-  /**
-   * The branch a session reads and writes: its open draft, else `main`.
-   * @param project - the project.
-   * @param session - a chat session, or null for an action outside any chat session (always `main`).
-   * @returns the branch, with `counts` when it is a draft.
-   */
-  workingBranch(project: ProjectId, session: SessionId | null): Branch {
-    return this.drafts.workingBranch(project, session)
   }
 
   /**
@@ -377,7 +349,7 @@ export default class DvProject extends Service {
   }
 
   /**
-   * Receive a project's record appends, record updates and branch changes, after each is on disk.
+   * Receive a project's record appends and record updates, after each is on disk.
    * @param project - the project.
    * @param listener - called synchronously for each change.
    * @returns a function that removes the listener.
@@ -421,7 +393,7 @@ export default class DvProject extends Service {
 
   /**
    * The assets a character, location or style version stands for, read through `assetsOf` of the reducer that defines it.
-   * @param state - the state to read the version in, normally the caller's working branch.
+   * @param state - the state to read the version in, normally the project's current state.
    * @param ref - a versioned input reference.
    * @returns the version's assets, or null for an unknown version or when no reducer answers.
    */
@@ -434,7 +406,7 @@ export default class DvProject extends Service {
    * record, `<id>@<n>` a character, location or style version, anything else an asset.
    * @param operation - a registered operation name.
    * @param raw - role → reference text or a list of them; undefined for none.
-   * @param state - the state the references are read against, normally the caller's working branch.
+   * @param state - the state the references are read against, normally the project's current state.
    * @param callerName - the name the error messages give the call: the tool name for an agent tool call, the operation
    *   name (the default) for a view request or a call made by another operation.
    * @returns the inputs. Throws `unknown_operation`, or an `Error` naming the role and `callerName` for an unknown role,

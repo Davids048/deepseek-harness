@@ -1,7 +1,7 @@
 /**
  * The media kind of each asset of the open DreamVerse project, and the shot number of each take video, followed outside
- * React and read by the chat Markdown cards through a selector hook. The index holds the assets that the `main` branch
- * and every open draft branch mention, and it is fetched again after the project's change events.
+ * React and read by the chat Markdown cards through a selector hook. The index holds the assets of the project's current
+ * state, and it is fetched again after the project's change events.
  *
  * @module @dv/ui-composer/asset-kinds
  */
@@ -58,30 +58,24 @@ function sameKinds(a: AssetKinds, b: AssetKinds): boolean {
 }
 
 /**
- * Fetch the assets and records of `main` and of every open draft branch.
+ * Fetch the assets and records of the project's current state.
  * @param client - the API client.
  * @param project - the project.
- * @param signal - cancels the requests.
+ * @param signal - cancels the request.
  * @returns the index.
  */
 async function fetchKinds(client: DvClient, project: string, signal: AbortSignal): Promise<AssetKinds> {
-  const main = await client.getState(project, 'main', signal)
-  const drafts = main.branches.filter(branch => branch.name !== 'main' && branch.counts !== null)
-  const states = [main, ...await Promise.all(drafts.map(branch => client.getState(project, branch.name, signal)))]
+  const state = await client.getState(project, signal)
   const shots = new Map<string, number>()
-  for (const state of states) {
-    for (const record of state.components.proj.records) {
-      const shot = record.params['shot']
-      if (!RENDER_OPERATIONS.has(record.operation ?? '') || typeof shot !== 'number') continue
-      for (const output of record.outputs) shots.set(output, shot)
-    }
+  for (const record of state.components.proj.records) {
+    const shot = record.params['shot']
+    if (!RENDER_OPERATIONS.has(record.operation ?? '') || typeof shot !== 'number') continue
+    for (const output of record.outputs) shots.set(output, shot)
   }
   const kinds = new Map<string, AssetEntry>()
-  for (const state of states) {
-    for (const asset of state.assets) {
-      const kind = kindOf(asset.mime)
-      if (kind !== undefined) kinds.set(asset.id, { kind, shot: shots.get(asset.id) ?? null })
-    }
+  for (const asset of state.assets) {
+    const kind = kindOf(asset.mime)
+    if (kind !== undefined) kinds.set(asset.id, { kind, shot: shots.get(asset.id) ?? null })
   }
   return kinds
 }

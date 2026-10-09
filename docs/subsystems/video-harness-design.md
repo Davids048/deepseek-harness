@@ -11,7 +11,7 @@ This page is a pointer. The design rationale behind the [DreamVerse packages](vi
 - The operation record: append-only, single-parent DAG, named heads, folding as replay, undo as a pointer move, and the deterministic cache.
 - How chat, timeline, and canvas derive from one log and how each surface's gestures become records.
 - Structured tools versus arbitrary commands, and which commands become tools.
-- The policies for staleness, drafts, confirmation, scheduling modes, reference resolution, characters and locations, and agent edits to manual work.
+- The policies for staleness, branches, confirmation, scheduling modes, reference resolution, characters and locations, and agent edits to manual work.
 - The six-step test case and the two acknowledged awkward points.
 - The minimal scope and the extension points.
 

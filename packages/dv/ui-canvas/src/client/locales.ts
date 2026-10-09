@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Canvas tab name, guide entry, node cards, node editor, and branch bar copy. */
+    /** Canvas tab name, guide entry, node cards, node editor, and project bar copy. */
     dvCanvas: DvCanvasKey
   }
 }
@@ -19,13 +19,9 @@ export const zh = {
   'guide.title': '视频画布',
   'guide.description': '按素材流向查看项目的记录，改参数后重跑',
   'bar.project': '项目',
-  'bar.branch': '分支',
-  'bar.accept': '接受',
-  'bar.discard': '丢弃',
   'bar.undo': '撤销',
   'bar.newProject': '新建项目',
   'bar.newProjectPrompt': '新项目的标题',
-  'bar.draft': '草稿',
   'bar.noProject': '没有项目',
   'empty.projects': '还没有项目。在对话里让智能体新建一个项目。',
   loading: '正在读取…',
@@ -69,7 +65,6 @@ export const zh = {
   'editor.removeFromCanvas': '从画布移除',
   'editor.description': '描述',
   'editor.shots': '镜头',
-  'editor.readOnly': '正在查看草稿；接受或丢弃后再编辑。',
   'editor.keepAnyway': '仍然保留',
   'editor.planApproved': '已批准',
   'editor.planPending': '待批准',
@@ -95,9 +90,7 @@ export const zh = {
   'intent.replaceRef': '在画布上更换 {name} 的参考图',
   'intent.import': '在画布导入 {name}',
   'compose.text': '修改 {title}：',
-  'drop.noNode': '这个素材在画布上没有对应的节点。',
   'drop.notMedia': '「{name}」不是图片或视频，画布只接受图片和视频。',
-  'drop.readOnly': '正在查看草稿；接受或丢弃后再往画布里拖素材。',
 } satisfies Record<string, string>
 
 /** Every key of the namespace. */
@@ -109,13 +102,9 @@ export const en = {
   'guide.title': 'Video canvas',
   'guide.description': 'See the project\'s records as asset flow; change params and rerun',
   'bar.project': 'Project',
-  'bar.branch': 'Branch',
-  'bar.accept': 'Accept',
-  'bar.discard': 'Discard',
   'bar.undo': 'Undo',
   'bar.newProject': 'Create project',
   'bar.newProjectPrompt': 'Title of the new project',
-  'bar.draft': 'Draft',
   'bar.noProject': 'No project',
   'empty.projects': 'No projects yet. Ask the agent in the chat to create one.',
   loading: 'Loading…',
@@ -159,7 +148,6 @@ export const en = {
   'editor.removeFromCanvas': 'Remove from canvas',
   'editor.description': 'Description',
   'editor.shots': 'Shots',
-  'editor.readOnly': 'You are viewing a draft; accept or discard it before editing.',
   'editor.keepAnyway': 'Keep anyway',
   'editor.planApproved': 'Approved',
   'editor.planPending': 'Awaiting approval',
@@ -185,7 +173,5 @@ export const en = {
   'intent.replaceRef': 'Replace the reference image of {name} from the canvas',
   'intent.import': 'Import {name} from the canvas',
   'compose.text': 'Change {title}: ',
-  'drop.noNode': 'This asset has no node on the canvas.',
   'drop.notMedia': '"{name}" is not an image or a video; the canvas accepts images and videos only.',
-  'drop.readOnly': 'You are viewing a draft; accept or discard it before dropping assets on the canvas.',
 } satisfies Record<DvCanvasKey, string>

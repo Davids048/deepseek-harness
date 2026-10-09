@@ -1,13 +1,12 @@
 /**
  * The asset import route over the real Project service and asset pool: a stored file becomes an `asset.import` record
- * on the working branch of the named chat session, and malformed requests are refused with their status.
+ * at the end of the project's history, with the named chat session, and malformed requests are refused with their status.
  */
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { brandString } from '@deepseek-ai/dsh-brand'
-import type { AssetId, ProjectRecord, SessionId, TurnId } from '@dv/project'
+import type { AssetId, ProjectRecord } from '@dv/project'
 import { encodeClip, startBase, type BaseFixture } from './support.ts'
 import { ASSET_IMPORT_ROUTE, assetImportRoutes } from '../src/asset-import.ts'
 
@@ -36,17 +35,14 @@ it('stores an imported file as an asset.import record with the caller\'s surface
   expect(fixture.assets.read(asset).equals(lastFrame)).toBe(true)
   expect(record.outputs).toEqual([asset])
   expect(record).toMatchObject({
-    actor: 'user', surface: 'canvas', operation: 'asset.import', status: 'done', branch: 'main', params: { name: 'ref.png', mime: 'image/png' },
+    actor: 'user', surface: 'canvas', operation: 'asset.import', status: 'done', params: { name: 'ref.png', mime: 'image/png', place: true },
   })
 
-  // With a chat session whose draft is open, the import lands on that draft.
-  await fixture.project.run({
-    project: projectId, operation: 'asset.import', params: { base64: 'QQ==', mime: 'text/plain' }, inputs: [], actor: 'agent', surface: 'chat',
-    session: brandString<SessionId>('s1'), turn: brandString<TurnId>('t1'), tool_call: 'c1', intent: 'open the draft',
-  })
+  // An import from the asset pool panel follows the canvas import, records the chat session beside the panel, and does
+  // not put the asset on the canvas.
   const fromPanel = { project: projectId, name: 'ref.png', mime: 'image/png', surface: 'asset_pool', session: 's1' }
-  const onDraft = await post(fromPanel, new Uint8Array(lastFrame))
-  expect(onDraft.json).toMatchObject({ record: { branch: 'draft/s1', session: 's1', actor: 'user', surface: 'asset_pool' } })
+  const panel = await post(fromPanel, new Uint8Array(lastFrame))
+  expect(panel.json).toMatchObject({ record: { parents: [record.id], session: 's1', actor: 'user', surface: 'asset_pool', params: { place: false } } })
 
   // The surface names the caller, the canvas or the asset pool panel; a missing or other surface is refused.
   for (const surface of [undefined, 'timeline', 'chat']) {

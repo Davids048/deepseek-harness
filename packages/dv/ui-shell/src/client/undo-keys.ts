@@ -1,7 +1,7 @@
 /**
- * The page-wide undo and redo keys of an open project: Ctrl+Z steps the chat session's working branch back one step and
- * Shift+Ctrl+Z steps it forward (Cmd instead of Ctrl on macOS). Keys typed into a text field, a select, or an editable
- * element (the chat composer) keep their text-editing meaning.
+ * The page-wide undo and redo keys of an open project: Ctrl+Z (Cmd+Z on macOS) moves the whole project one step back,
+ * and Shift+Ctrl+Z (Shift+Cmd+Z) one step forward. Both only move the current position of the history list. Keys typed
+ * into a text field, a select, or an editable element (the chat composer) keep their text-editing meaning.
  *
  * @module @dv/ui-shell/undo-keys
  */
@@ -9,10 +9,10 @@ import { DvApiError } from '@dv/ui-kit/api.ts'
 import { getShell, shellClient } from './store.ts'
 
 /**
- * Which history move a key press asks for.
+ * Which history key a key press is.
  * @param event - the key press.
  * @param mac - whether the page runs on macOS, where Cmd takes the place of Ctrl.
- * @returns `undo`, `redo`, or null for any other key.
+ * @returns `undo` for Ctrl+Z (Cmd+Z on macOS), `redo` with Shift, null for any other key or with Alt.
  */
 export function historyKey(
   event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>, mac: boolean,
@@ -22,7 +22,7 @@ export function historyKey(
   return event.shiftKey ? 'redo' : 'undo'
 }
 
-/** @returns whether a key press's target edits text, where Ctrl+Z belongs to the text. */
+/** @returns whether a key press's target edits text, where Ctrl+Z and Shift+Ctrl+Z belong to the text. */
 function editsText(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   return target.isContentEditable || target.closest('input, textarea, select, [contenteditable="true"]') !== null
@@ -35,16 +35,15 @@ function editsText(target: EventTarget | null): boolean {
 export function listenHistoryKeys(): () => void {
   const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
   const onKey = (event: KeyboardEvent): void => {
-    const move = historyKey(event, mac)
-    const { projectId, sessionId, view } = getShell()
-    if (move === null || event.defaultPrevented || event.repeat || projectId === null || editsText(event.target)) return
+    const { projectId } = getShell()
+    const key = historyKey(event, mac)
+    if (key === null || event.defaultPrevented || event.repeat || projectId === null || editsText(event.target)) return
     event.preventDefault()
-    const session = sessionId ?? null
-    const work = move === 'undo' ? shellClient.undo(projectId, view, session) : shellClient.redo(projectId, view, session)
-    work.catch((error: unknown) => {
-      // At either end of the history the key does nothing.
+    const move = key === 'undo' ? shellClient.undo(projectId) : shellClient.redo(projectId)
+    move.catch((error: unknown) => {
+      // At either end of the history list the key does nothing.
       if (error instanceof DvApiError && (error.code === 'nothing_to_undo' || error.code === 'nothing_to_redo')) return
-      console.warn(`ui-shell: ${move} failed`, error)
+      console.warn(`ui-shell: ${key} failed`, error)
     })
   }
   window.addEventListener('keydown', onKey)
