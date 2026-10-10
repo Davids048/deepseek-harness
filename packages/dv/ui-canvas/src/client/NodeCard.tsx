@@ -2,6 +2,7 @@
  * One canvas node as a card on the `--dv-*` theme variables. Every card has a kind dot: pink for characters, locations,
  * styles and imported assets, orange for plans, teal for takes. A take or an imported asset shows a header row (dot,
  * title, duration) above its 16:9 frame at full card width; a failed take is a compact danger row instead of a frame. A
+ * finished take that the user has not opened yet shows an accent dot in its header row. A
  * story bible card shows a 40 × 40 reference image beside its kind and name. A plan card shows its version, a mini grid
  * of its shots' frames when any shot has one, and its shot count and total duration.
  */
@@ -89,6 +90,10 @@ export interface NodeCardProps {
   frames?: Array<PlanShotFrame | null>
   /** For a failed take, renders it again; omitted when the canvas is read-only. */
   onRetry?: () => void
+  /** For a failed take, true while its retry is starting: the retry button is disabled and reads 渲染中…. */
+  retrying?: boolean
+  /** For a finished take, true until the user opens it in the editor. */
+  unseen?: boolean
 }
 
 /** The zoom at and above which node text keeps its base size; below it text scales up to stay readable. */
@@ -125,7 +130,9 @@ function Media({ thumb, video }: { thumb: string | null; video: string | null })
  * @param props - the node, its position, the canvas zoom, the plan data of a plan node, and the gesture callbacks.
  * @returns the element.
  */
-export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown, plan, frames = [], onRetry }: NodeCardProps): ReactNode {
+export function NodeCard(
+  { node, x, y, selected, zoom, t, onPointerDown, plan, frames = [], onRetry, retrying = false, unseen = false }: NodeCardProps,
+): ReactNode {
   const { flags } = node
   const scale = Math.min(MAX_TEXT_SCALE, Math.max(1, READABLE_ZOOM / zoom))
   const size = (base: number): number => Math.round(base * scale)
@@ -166,19 +173,19 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown, plan, f
         </svg>
         <span style={{ ...text(12), flex: 1, minWidth: 0 }}>
           <span style={{ display: 'block', ...ellipsis }}>{nodeTitle(node, t)}</span>
-          <span style={{ display: 'block', color: 'var(--dv-text-2)' }}>{marker}</span>
+          <span style={{ display: 'block', color: 'var(--dv-text-2)', ...ellipsis }}>{marker}</span>
         </span>
         {stale}
         {onRetry === undefined
           ? null
           : (
             <button
-              type="button" className="dv-canvas-btn"
-              style={{ fontFamily: 'inherit', ...text(12), flex: 'none', height: 24, padding: '0 8px', border: '1px solid var(--dv-line-strong)', borderRadius: 'var(--dv-radius-sm)', color: 'var(--dv-text)', cursor: 'pointer' }}
+              type="button" className="dv-canvas-btn" disabled={retrying}
+              style={{ fontFamily: 'inherit', ...text(12), flex: 'none', height: 24, padding: '0 8px', border: '1px solid var(--dv-line-strong)', borderRadius: 'var(--dv-radius-sm)', color: 'var(--dv-text)', cursor: retrying ? 'default' : 'pointer', opacity: retrying ? 0.6 : 1 }}
               onPointerDown={(event) => { event.stopPropagation() }}
               onClick={onRetry}
             >
-              {t('node.retry')}
+              {retrying ? t('node.rendering') : t('node.retry')}
             </button>
           )}
       </div>
@@ -234,6 +241,9 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown, plan, f
         <div style={{ minHeight: size(HEADER_HEIGHT), boxSizing: 'border-box', padding: '0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
           {dot}
           <span style={{ ...text(13), flex: 1, minWidth: 0, fontWeight: 500, ...ellipsis }}>{nodeTitle(node, t)}</span>
+          {unseen
+            ? <span role="img" aria-label={t('node.unseen')} title={t('node.unseen')} style={{ flex: 'none', width: size(8), height: size(8), borderRadius: 9999, background: 'var(--dv-accent)' }} />
+            : null}
           {stale}
           {node.durationSec !== null ? <span style={{ ...text(12), ...mono, flex: 'none', color: 'var(--dv-text-2)' }}>{`${node.durationSec.toFixed(1)}s`}</span> : null}
         </div>
@@ -253,6 +263,8 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown, plan, f
       data-node-id={node.id}
       data-node-kind={node.kind}
       data-node-stale={String(flags.stale)}
+      data-node-selected={selected ? 'true' : undefined}
+      data-node-unseen={unseen ? 'true' : undefined}
       onPointerDown={onPointerDown}
       role="button"
       tabIndex={0}

@@ -21,15 +21,17 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.useRealTimers()
   window.localStorage.removeItem(EDITOR_RECT_KEY)
+  window.localStorage.removeItem('dv-canvas-seen:p1')
 })
 
 /**
  * Mount the canvas over scripted `/api/dv` routes and a scripted layout route.
  * @param withTranslate - whether the host passes the Chinese translate.
  * @param edit - changes to the fixture state, applied to every state the route serves.
+ * @param holdOperations - whether `POST /api/dv/operation` stays unanswered, as a render does until it ends.
  * @returns the rendered view, the recorded writes, and a node lookup.
  */
-function mount(withTranslate = true, edit: (state: WireState) => void = () => undefined) {
+function mount(withTranslate = true, edit: (state: WireState) => void = () => undefined, holdOperations = false) {
   const scripted = scriptedFetch({
     state: () => {
       const state = fixtureState()
@@ -43,6 +45,10 @@ function mount(withTranslate = true, edit: (state: WireState) => void = () => un
       if (init?.method === 'POST') layoutWrites.push(JSON.parse(String(init.body)))
       const layout = { positions: { g1: { x: 10, y: 20 } }, viewport: { x: 0, y: 0, zoom: 1 } }
       return Promise.resolve(new Response(JSON.stringify(layout)))
+    }
+    if (holdOperations && input === '/api/dv/operation') {
+      void scripted.fetch(input, init)
+      return new Promise<Response>(() => undefined)
     }
     return scripted.fetch(input, init)
   }
@@ -58,18 +64,77 @@ function mount(withTranslate = true, edit: (state: WireState) => void = () => un
 }
 
 describe('CanvasView', () => {
-  it('draws the project\'s current state with nodes at stored positions, and stores a dragged position', async () => {
+  it('draws the project\'s current state with nodes at stored positions, stores the others\' spots, and stores a dragged position', async () => {
     const { view, node, layoutWrites } = mount()
     await waitFor(() => { node('g3') })
     expect(node('g1').style.left).toBe('10px')
     expect(node('g2').getAttribute('data-node-stale')).toBe('true')
     expect(view.getByText(zh['badge.trim'])).toBeTruthy()
+    // Every node without a stored position gets its spot stored once, without the viewport.
+    await waitFor(() => { expect(layoutWrites).toHaveLength(1) })
+    expect(layoutWrites[0]).toEqual({ project: 'p1', positions: expect.objectContaining({ g2: { x: 720, y: 0 } }) })
+    expect(Object.keys((layoutWrites[0] as { positions: object }).positions)).not.toContain('g1')
     fireEvent.pointerDown(node('g2'), { button: 0, clientX: 0, clientY: 0, pointerId: 1 })
     fireEvent.pointerMove(view.getByTestId('dv-canvas-view'), { clientX: 50, clientY: 30, pointerId: 1 })
     fireEvent.pointerUp(view.getByTestId('dv-canvas-view'), { pointerId: 1 })
-    await waitFor(() => { expect(layoutWrites).toHaveLength(1) }, { timeout: 2000 })
-    expect(layoutWrites[0]).toMatchObject({ project: 'p1', positions: { g2: { x: 720 + 50, y: 0 + 30 } } })
+    await waitFor(() => { expect(layoutWrites).toHaveLength(2) }, { timeout: 2000 })
+    expect(layoutWrites[1]).toMatchObject({ project: 'p1', positions: { g2: { x: 720 + 50, y: 0 + 30 } } })
   })
+
+  it('keeps the node selected after its editor closes; a click on empty canvas then clears the selection', async () => {
+    const { view, node } = mount()
+    await waitFor(() => { node('g1') })
+    const canvas = view.getByTestId('dv-canvas-view')
+    fireEvent.pointerDown(node('g1'), { button: 0, clientX: 5, clientY: 5, pointerId: 1 })
+    fireEvent.pointerUp(canvas, { pointerId: 1 })
+    await view.findByTestId('dv-canvas-node-editor')
+    fireEvent.click(view.getByRole('button', { name: zh['editor.close'] }))
+    expect(view.queryByTestId('dv-canvas-node-editor')).toBeNull()
+    expect(node('g1').getAttribute('data-node-selected')).toBe('true')
+    fireEvent.pointerDown(canvas, { button: 0, clientX: 700, clientY: 500, pointerId: 1 })
+    fireEvent.pointerUp(canvas, { pointerId: 1 })
+    expect(node('g1').getAttribute('data-node-selected')).toBeNull()
+  })
+
+  it('渲染新版本 reads 渲染中… until the new take appears, then the editor closes and the new take is selected', async () => {
+    let started = false
+    const { view, node } = mount(true, (state) => {
+      if (!started) return
+      state.components.proj.records.push(record({
+        id: 'n1', operation: 'shot.render_ref2va', deterministic: false, based_on: 'g1', params: { prompt: 'hero runs' }, status: 'running',
+      }))
+    }, true)
+    await waitFor(() => { node('g1') })
+    fireEvent.pointerDown(node('g1'), { button: 0, clientX: 5, clientY: 5, pointerId: 1 })
+    fireEvent.pointerUp(view.getByTestId('dv-canvas-view'), { pointerId: 1 })
+    await view.findByTestId('dv-canvas-node-editor')
+    fireEvent.click(view.getByText(zh['editor.renderTake']))
+    const button = view.getByRole('button', { name: zh['node.rendering'] })
+    expect(button.hasAttribute('disabled')).toBe(true)
+    // The host wrote the pending record; the next state refetch (a 3-second poll without EventSource) shows its node.
+    started = true
+    await waitFor(() => { expect(node('n1').getAttribute('data-node-selected')).toBe('true') }, { timeout: 6000 })
+    expect(view.queryByTestId('dv-canvas-node-editor')).toBeNull()
+    expect(node('g1').getAttribute('data-node-selected')).toBeNull()
+  }, 10_000)
+
+  it('marks a take that finished after the first load as unseen until its editor opens', async () => {
+    let finished = false
+    const { view, node } = mount(true, (state) => {
+      if (!finished) return
+      state.components.proj.records = state.components.proj.records.map(entry => entry.id === 'g3' ? { ...entry, status: 'done' as const, outputs: ['shot2.mp4'] } : entry)
+    })
+    await waitFor(() => { node('g3') })
+    // Takes that were finished at the first load count as seen.
+    expect(view.container.querySelectorAll('[data-node-unseen]')).toHaveLength(0)
+    finished = true
+    await waitFor(() => { expect(node('g3').getAttribute('data-node-unseen')).toBe('true') }, { timeout: 6000 })
+    fireEvent.pointerDown(node('g3'), { button: 0, clientX: 5, clientY: 5, pointerId: 1 })
+    fireEvent.pointerUp(view.getByTestId('dv-canvas-view'), { pointerId: 1 })
+    await view.findByTestId('dv-canvas-node-editor')
+    expect(node('g3').getAttribute('data-node-unseen')).toBeNull()
+    expect(JSON.parse(window.localStorage.getItem('dv-canvas-seen:p1') ?? '[]')).toContain('g3')
+  }, 10_000)
 
   it('draws a character as its name and its first reference image with a count of the rest', async () => {
     const references = ['ref.png', 'r2.png', 'r3.png', 'r4.png', 'r5.png', 'r6.png']
