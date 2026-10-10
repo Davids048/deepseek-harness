@@ -1,4 +1,5 @@
 /** Chat-owned Slot declarations and composed component props. */
+import type { ReactNode } from 'react'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -11,7 +12,7 @@ import type {
   SlotHookFactory, SnapshotSelectorHook,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownElement, MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { createChatStore } from '../stores.ts'
 import type { ChatPresentationPolicy } from '../presentation-policy.ts'
@@ -50,6 +51,14 @@ export interface TurnTailOwnerProps {
   turn: TurnLocation
   seq: number
   openFile: (path: string) => void
+}
+
+/** Owner currency of one settled Markdown element offered to the `conversation.chat.markdown` chain. */
+export interface ChatMarkdownOwnerProps {
+  /** Parsed link, image, or table data; destinations are authored text and unsanitized. */
+  readonly element: MarkdownElement
+  /** The default rendering of the element, for an elected entry that keeps the element unchanged. */
+  readonly fallback: ReactNode
 }
 
 /** Owner currency of finalized-assistant actions. */
@@ -183,6 +192,8 @@ export interface ChatViewInjected {
   hooks: {
     /** Live presentation policy derived from the accepted work-details mode. */
     presentation: ObservableSnapshot<ChatPresentationPolicy>
+    /** Whether `conversation.chat.markdown` has an entry; without one, Markdown renders without slot outlets. */
+    markdownReplaced: ObservableSnapshot<boolean>
   }
   keyedHooks: {
     /** Resolve the stable source for one Chat Node key. */
@@ -212,7 +223,7 @@ export interface ChatViewInjected {
 /** Full Chat view props. */
 export type ChatViewSlotProps =
   PropsRuntime<'conversation.view'>
-  & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images'>
+  & PropsRenderSlots<'conversation.chat.node' | 'conversation.message.images' | 'conversation.chat.markdown'>
   & PropsStore<ChatStore>
   & InjectFace<ChatViewInjected>
   & PropsLocale<'chat'>
@@ -251,6 +262,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * registration replaces the shipped gallery; without one, images are omitted.
      */
     'conversation.message.images': { kind: 'single'; scope: 'session'; owner: MessageImagesOwnerProps }
+    /**
+     * Replacement renderers for settled links, images outside links, and
+     * tables in Markdown inside the Chat view. Each entry's `select` reads the
+     * parsed element; the first non-null result renders in the element's
+     * place, and an all-decline renders the default element.
+     */
+    'conversation.chat.markdown': { kind: 'chain'; scope: 'session'; owner: ChatMarkdownOwnerProps }
     /**
      * Command row keyed by the command name. The component receives the folded
      * command lifecycle and linked compaction when present. Reusing a key

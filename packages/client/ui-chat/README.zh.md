@@ -35,6 +35,8 @@ Chat 在节点列表外通过一个 `MarkdownDelegateProvider` 提供文件及 H
 
 独立的 Markdown 图片以内嵌预览显示，点击打开共享图片浮层；本地路径在消息落定后基于当前查看的工作区解析。图片文件链接保持点击打开侧栏，鼠标停留或键盘聚焦时显示缩略图，Esc 关闭缩略图。图片加载失败时保留本地化状态与图片说明；不执行重复图片过滤。
 
+Chat 视图中已落定的 Markdown 链接、链接外的图片和表格可通过 `conversation.chat.markdown` chain slot 替换。其 owner 值为 `{ element, fallback }`：`MarkdownDelegateProvider.renderElement` 收到的解析数据，以及该元素的默认渲染。第一个 `select` 返回非 null 值的条目在该元素位置渲染，并可渲染 `fallback` 以保持元素不变；所有条目都拒绝时渲染默认元素。链接或图片的 outlet 是 `display: contents` 的 `<span>`，因此在段落内仍是合法嵌套；表格的 outlet 是 `<div>`。该 slot 没有条目时，Chat 不传入渲染器，Markdown 渲染不带 slot outlet。
+
 设置 → 通用设置 → 网页链接默认打开方式控制普通点击 Chat HTTP(S) 链接时的目标：「应用内侧边栏」（默认）打开新的右侧 Sidebar Browser tab，「默认浏览器」打开外部标签页。该设置项仅在 Sidebar Browser 可用时显示。若 Sidebar Browser 未注册，两种选择均使用外部浏览器；带修饰键的点击保留原生行为。`ui-chat.linkOpening` 偏好在回环地址浏览器中持久化，设置无法持久化写入时仅在当前进程内生效。已发送的文件引用及消息日志确认调用的 skill 也可在右侧栏打开预览。文件路径使用当前查看的 Session；skill 名称由该 Session 当前的输入触发源解析。两者悬停或聚焦时均使用正文文件链接的虚线下划线。会话、目录和命令标签仍只作为引用展示。
 
 <a id="system-prompt-row"></a>

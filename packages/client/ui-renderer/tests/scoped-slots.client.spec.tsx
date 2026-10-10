@@ -16,7 +16,7 @@ import type { SessionReference } from '@deepseek-ai/dsh-api-session-controller/c
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import {
   SlotOwnershipError, StaleAuthorizationError,
-  type ActionsDecl, type SessionProviderComponent, type SlotEntryDef,
+  type ActionsDecl, type ChainRenderOpts, type SessionProviderComponent, type SlotEntryDef,
   type SlotSpec, type StoreHandle, type StoredEntry,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
@@ -27,11 +27,7 @@ import { createSlotRenderer } from '../src/client/scoped-slots.tsx'
 
 type AnyProps = Record<string, unknown>
 type RenderSlotFn = (key: string, owner: object, opts?: RenderOpts) => ReactNode
-type RenderSlotChainFn = (
-  key: string,
-  owner: object,
-  opts?: { fallback?: ReactNode; fallbackOnly?: boolean; overlay?: boolean },
-) => ReactNode
+type RenderSlotChainFn = (key: string, owner: object, opts?: ChainRenderOpts) => ReactNode
 type DeclaredSpec = SlotSpec<SlotEntryDef>
 /** Entry literal helper: fake entries default the mandatory options bag. */
 const entryOf = (partial: Omit<StoredEntry, 'options'> & { options?: StoredEntry['options'] }): StoredEntry =>
@@ -498,6 +494,19 @@ describe('chain outlets and the renderSlotChain binding', () => {
     expect(view.container.textContent).toBe('IN')
     act(() => { dispose() })
     expect(view.container.textContent).toBe('none')
+  })
+
+  it('anchors an inline chain outlet with a span so it can sit in a paragraph', () => {
+    const h = makeHost()
+    h.declare('k.chain', CHAIN_ROOT)
+    h.add('k.chain', chainEntryOf({ component: () => <b>IN</b>, select: () => ({}) }))
+    const { view } = mountChainRoot(h, { 'k.chain': CHAIN_ROOT }, renderSlotChain => <>
+      <p>{renderSlotChain('k.chain', {}, { inline: true })}</p>
+      <section>{renderSlotChain('k.chain', {})}</section>
+    </>)
+    expect(view.container.querySelector('p [data-slot="k.chain"]')?.tagName).toBe('SPAN')
+    expect(view.container.querySelector('p')?.textContent).toBe('IN')
+    expect(view.container.querySelector('section [data-slot="k.chain"]')?.tagName).toBe('DIV')
   })
 
   it('orders the chain by ascending priority with registration sequence breaking ties', () => {

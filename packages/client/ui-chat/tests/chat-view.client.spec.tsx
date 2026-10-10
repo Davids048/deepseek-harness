@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useEffect } from 'react'
 import type {
-  AssistantMessageNode, ChatNode, ChatNodeHookContext, ChatNodeOwnerProps, ChatSnapshot,
+  AssistantMessageNode, ChatMarkdownOwnerProps, ChatNode, ChatNodeHookContext, ChatNodeOwnerProps, ChatSnapshot,
   ChatViewSlotProps, CommandNode, CompactionSummaryNode, ContextMessageNode, ConversationNode,
   LegacyConversationSlice, ModelRetryNode, StartedToolCall, SteeringMessageNode,
   ToolCallBlock, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UseChatNodeTurnData,
@@ -24,7 +24,7 @@ import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controlle
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionStatusSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { KeyedSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { EMPTY_CONVERSATION_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
@@ -405,6 +405,7 @@ function makeHarness(
   // SessionProvider seat arrives with the session-scope child declaration;
   // ChatView never invokes it (pass-through stub).
   const SessionProviderStub: ChatViewSlotProps['SessionProvider'] = ({ children }) => <>{children}</>
+  const markdownReplaced = createSnapshotStore(false)
   const props: ChatViewSlotProps = {
     usePanelInfo: selector => selector({ activePanelId: null }),
     sessionId: SID,
@@ -439,7 +440,9 @@ function makeHarness(
     useStore: bindSnapshotSelector(chat),
     actions: chat.actions,
     usePresentation: bindSnapshotSelector(derivePresentationPolicy(transcriptView)),
+    useMarkdownReplaced: bindSnapshotSelector(markdownReplaced),
     renderSlot,
+    renderSlotChain: (_key, _owner, opts) => opts?.fallback ?? null,
     SessionProvider: SessionProviderStub,
     inspectCall: (callId: string) => { openView('trajectory', callId) },
     viewRequest: null,
@@ -486,6 +489,7 @@ function makeHarness(
       conversation.set({ ...conversation.getSnapshot() })
     },
     setTranscriptView: (mode: TranscriptViewMode) => { transcriptView.set(mode) },
+    setMarkdownReplaced: (replaced: boolean) => { markdownReplaced.set(replaced) },
     setNodeRenderer: (renderer: React.ComponentProps<typeof ChatNodeSeat>['renderSlot']) => {
       nodeSlotOverride = renderer
     },
@@ -577,6 +581,63 @@ describe('Chat node rendering', () => {
     const view = render(<h.ChatView {...h.props} />)
     fireEvent.click(view.getByRole('button', { name: 'source' }))
     expect(h.openFile).toHaveBeenCalledWith('src/index.ts', { line: 24 })
+  })
+
+  it('offers settled Markdown elements to the markdown chain only while it has entries', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'show'), assistant(2, 'Shot [Play](https://example.com/v1)', 1)],
+      turnEnds: new Map([[1, 2]]),
+    })
+    const owners: ChatMarkdownOwnerProps[] = []
+    h.props.renderSlotChain = ((_key: string, owner: ChatMarkdownOwnerProps, opts?: { fallback?: React.ReactNode }) => {
+      owners.push(owner)
+      return owner.element.kind === 'link' ? <span data-testid="card">{owner.element.href}</span> : opts?.fallback
+    }) as ChatViewSlotProps['renderSlotChain']
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByRole('link', { name: 'Play' })).toBeTruthy()
+    expect(owners).toEqual([])
+
+    act(() => { h.setMarkdownReplaced(true) })
+    expect(view.getByTestId('card').textContent).toBe('https://example.com/v1')
+    expect(view.queryByRole('link', { name: 'Play' })).toBeNull()
+    expect(owners.at(-1)?.element).toEqual({ kind: 'link', href: 'https://example.com/v1' })
+
+    act(() => { h.setMarkdownReplaced(false) })
+    expect(view.getByRole('link', { name: 'Play' })).toBeTruthy()
+  })
+
+  it('renders a replaced paragraph link through an inline outlet and passes the default link to the entry', async () => {
+    const h = makeHarness({
+      nodes: [user(1, 'show'), assistant(2, 'Shot [Play](https://example.com/v1) and [Keep](https://example.com/v2)', 1)],
+      turnEnds: new Map([[1, 2]]),
+    })
+    h.setMarkdownReplaced(true)
+    const runtime = await SlotTestRuntime.create()
+    try {
+      await runtime.sessions.add({ id: SID })
+      using reference = runtime.sessions.retain(SID)
+      await runtime.root.declare({ 'conversation.chat.markdown': { kind: 'chain', scope: 'session' } }, props => (
+        <props.SessionProvider session={reference}>
+          <h.ChatView {...h.props} renderSlotChain={props.renderSlotChain} />
+        </props.SessionProvider>
+      ))
+      await act(async () => {
+        runtime.slots.register({
+          name: 'conversation.chat.markdown',
+          select: ({ element }) => element.kind === 'link' && element.href === 'https://example.com/v1' ? 'Play' : null,
+        }, ({ matched, fallback }) => <span data-testid="card">{matched}{fallback}</span>)
+      })
+      const view = runtime.renderRoot()
+      const paragraph = view.getByTestId('card').closest('p')
+      expect(paragraph).not.toBeNull()
+      expect(paragraph?.querySelector('div')).toBeNull()
+      expect([...paragraph!.querySelectorAll('[data-slot="conversation.chat.markdown"]')].map(anchor => anchor.tagName))
+        .toEqual(['SPAN', 'SPAN'])
+      expect(within(view.getByTestId('card')).getByRole('link', { name: 'Play' })).toBeTruthy()
+      expect(view.getByRole('link', { name: 'Keep' })).toBeTruthy()
+    } finally {
+      await runtime.dispose()
+    }
   })
 
   it('threads the injected file-mention vocabulary into the closing prose only', () => {
