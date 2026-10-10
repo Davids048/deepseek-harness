@@ -1,22 +1,26 @@
 /**
- * One canvas node as a card: a colored kind accent, the asset thumbnail, title, badges, and state markers. A story bible
- * card has no large thumbnail: it shows the kind, the name, and a row of small reference images, so a character, location
- * or style reads differently from an image. Violet accents mark story bible items, pink accents assets, orange accents
- * plans, green accents rendered takes. Surfaces, borders, and text use the DSH theme tokens, so the card follows the light
- * and dark themes.
+ * One canvas node as a card on the `--dv-*` theme variables. Every card has a kind dot: pink for characters, locations,
+ * styles and imported assets, orange for plans, teal for takes. A take or an imported asset shows a header row (dot,
+ * title, duration) above its 16:9 frame at full card width; a failed take is a compact danger row instead of a frame. A
+ * story bible card shows a 40 × 40 reference image beside its kind and name. A plan card shows its version, a mini grid
+ * of its shots' frames when any shot has one, and its shot count and total duration.
  */
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { assetUrl } from '@dv/ui-kit/api.ts'
+import { clockText } from '@dv/ui-kit/timeline.ts'
+import type { PlanVersion, Shot } from '@dv/ui-kit/types.ts'
 import { NODE_WIDTH } from './graph.ts'
-import type { CanvasNode } from './graph.ts'
+import type { CanvasNode, PlanShotFrame } from './graph.ts'
 import type {} from './locales.ts'
 
 /** The canvas namespace translate. */
 export type CanvasTranslate = TranslateNS<'dvCanvas'>
 
-/** The accent color of each node kind. */
-export const KIND_COLOR: Record<CanvasNode['kind'], string> = { bible: '#8b6cf0', asset: '#e86fa8', plan: '#f0a14a', take: '#4cc38a' }
+/** The kind dot color of each node kind. */
+export const KIND_COLOR: Record<CanvasNode['kind'], string> = {
+  bible: 'var(--dv-kind-character)', asset: 'var(--dv-kind-character)', plan: 'var(--dv-kind-plan)', take: 'var(--dv-kind-take)',
+}
 
 /**
  * The node's title as the user reads it.
@@ -34,7 +38,7 @@ export function nodeTitle(node: CanvasNode, t: CanvasTranslate): string {
 }
 
 /**
- * The kind label shown above the thumbnail.
+ * The kind label shown beside the kind dot.
  * @param node - the node.
  * @param t - translate.
  * @returns the label.
@@ -49,6 +53,26 @@ export function kindLabel(node: CanvasNode, t: CanvasTranslate): string {
   }
 }
 
+/** Header row height of a card with a frame. */
+const HEADER_HEIGHT = 30
+/** Height of the 16:9 frame at full card width. */
+const FRAME_HEIGHT = Math.round(NODE_WIDTH * 9 / 16)
+
+/**
+ * The approximate rendered height of a card at its base text size, used to anchor edges and to center a focused node.
+ * @param node - the node.
+ * @param hasFrames - for a plan node, whether its mini grid shows.
+ * @returns the height in canvas units.
+ */
+export function nodeHeight(node: CanvasNode, hasFrames = false): number {
+  switch (node.kind) {
+    case 'take': return node.flags.failed ? 52 : HEADER_HEIGHT + FRAME_HEIGHT
+    case 'asset': return HEADER_HEIGHT + FRAME_HEIGHT
+    case 'bible': return 60
+    case 'plan': return hasFrames ? 140 : 76
+  }
+}
+
 /** Props of {@link NodeCard}. */
 export interface NodeCardProps {
   node: CanvasNode
@@ -59,71 +83,170 @@ export interface NodeCardProps {
   zoom: number
   t: CanvasTranslate
   onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void
+  /** For a plan node, the plan's latest version. */
+  plan?: PlanVersion
+  /** For a plan node, the frame of each shot of the latest version; null for a shot without one. */
+  frames?: Array<PlanShotFrame | null>
+  /** For a failed take, renders it again; omitted when the canvas is read-only. */
+  onRetry?: () => void
 }
 
 /** The zoom at and above which node text keeps its base size; below it text scales up to stay readable. */
 const READABLE_ZOOM = 0.8
 /** The largest text enlargement, reached near the minimum zoom. */
 const MAX_TEXT_SCALE = 2.6
-/** Above this enlargement the subtitle line is hidden, so a grown card with a badge row stays shorter than the row pitch. */
-const SUBTITLE_MAX_SCALE = 2
 
-const thumbBox: CSSProperties = {
-  position: 'relative', aspectRatio: '16 / 9', background: 'var(--dsw-alias-interactive-bg-hover)', display: 'flex', alignItems: 'center',
-  justifyContent: 'center', overflow: 'hidden',
-}
-const media: CSSProperties = { width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }
-/** The most reference images a story bible card shows; the rest count in a "+N" chip. Five 44-unit boxes fit the card. */
-const MAX_CARD_REFERENCES = 4
-const referenceBox: CSSProperties = {
-  flex: 'none', width: 44, height: 44, borderRadius: 8, overflow: 'hidden', background: 'var(--dsw-alias-interactive-bg-hover)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-}
-const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+const media: CSSProperties = { width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', display: 'block' }
+export const ellipsis: CSSProperties = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+export const mono: CSSProperties = { fontFamily: 'var(--dv-font-mono)', fontVariantNumeric: 'tabular-nums' }
 
 /**
- * The card: a light surface in the DSH theme with a colored kind accent, the media thumbnail, and the title block.
- * @param props - the node, its position, the canvas zoom, and the drag handler.
+ * @param shots - a plan version's shots.
+ * @returns their total duration in seconds, or null when the version has no shots or a shot has no duration.
+ */
+export function planTotalSec(shots: readonly Shot[]): number | null {
+  const durations = shots.flatMap(shot => shot.duration_sec === undefined ? [] : [shot.duration_sec])
+  return durations.length > 0 && durations.length === shots.length ? durations.reduce((sum, duration) => sum + duration, 0) : null
+}
+
+/**
+ * The image or video of an asset, filling its box.
+ * @param props - the image and video asset IDs.
+ * @returns the element, or null when there is neither.
+ */
+function Media({ thumb, video }: { thumb: string | null; video: string | null }): ReactNode {
+  if (thumb !== null) return <img src={assetUrl(thumb)} alt="" style={media} draggable={false} />
+  if (video !== null) return <video src={assetUrl(video)} muted preload="metadata" style={media} />
+  return null
+}
+
+/**
+ * The card.
+ * @param props - the node, its position, the canvas zoom, the plan data of a plan node, and the gesture callbacks.
  * @returns the element.
  */
-export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown }: NodeCardProps): ReactNode {
-  const color = KIND_COLOR[node.kind]
+export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown, plan, frames = [], onRetry }: NodeCardProps): ReactNode {
   const { flags } = node
   const scale = Math.min(MAX_TEXT_SCALE, Math.max(1, READABLE_ZOOM / zoom))
   const size = (base: number): number => Math.round(base * scale)
-  let border = '1px solid var(--dsw-alias-border-l3)'
-  if (flags.stale) border = '2px solid var(--dsw-alias-state-error-primary)'
-  else if (selected) border = `2px solid ${color}`
+  // Type scale pairs: 12/16 metadata, 13/20 titles, 14/22 names.
+  const text = (base: 12 | 13 | 14): CSSProperties => ({ fontSize: size(base), lineHeight: `${String(size({ 12: 16, 13: 20, 14: 22 }[base]))}px` })
+  const take = node.kind === 'take'
+  const failedTake = take && flags.failed
+  // A selected card wears the accent ring; a stale card a danger outline; any other card the plain outline.
+  let ring = '0 0 0 1px var(--dv-line-strong), var(--dv-shadow-1)'
+  if (selected) ring = '0 0 0 2px var(--dv-accent), 0 0 0 6px var(--dv-accent-soft)'
+  else if (flags.stale) ring = '0 0 0 1px var(--dv-danger), var(--dv-shadow-1)'
+  else if (failedTake) ring = '0 0 0 1px var(--dv-line)'
   const style: CSSProperties = {
-    position: 'absolute', left: x, top: y, width: NODE_WIDTH, background: 'var(--dsw-alias-bg-layer-3)', color: 'var(--dsw-alias-label-primary)',
-    borderRadius: 12, border,
-    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06), 0 6px 16px rgba(0, 0, 0, 0.08)', cursor: 'grab', userSelect: 'none', overflow: 'hidden',
+    position: 'absolute', left: x, top: y, width: NODE_WIDTH, boxSizing: 'border-box', background: failedTake ? 'var(--dv-danger-soft)' : 'var(--dv-surface-2)',
+    color: 'var(--dv-text)', borderRadius: 'var(--dv-radius-lg)', boxShadow: ring, cursor: 'grab', userSelect: 'none', overflow: 'hidden',
     opacity: flags.superseded ? 0.55 : 1, touchAction: 'none',
   }
-  let thumb: ReactNode
-  if (node.thumb !== null) thumb = <img src={assetUrl(node.thumb)} alt="" style={media} draggable={false} />
-  else if (node.video !== null) thumb = <video src={assetUrl(node.video)} muted preload="metadata" style={media} />
-  else if (node.kind === 'plan') thumb = <span style={{ fontSize: size(16), fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' }}>{t('node.planShots', { count: node.subtitle })}</span>
-  else thumb = null
-  // A take's record renders a shot; every other record runs a non-render operation.
-  const take = node.kind === 'take'
   let marker: string | null = null
   if (flags.rendering) marker = take ? t('node.rendering') : t('node.running')
   else if (flags.failed) marker = take ? t('node.renderFailed') : t('node.failed')
-  // A plan node shows its latest version, which the `plan.create` or `plan.update` record reports.
-  const planVersion = node.kind === 'plan' ? node.record?.report?.['version'] : undefined
-  const extraReferences = node.references.length - MAX_CARD_REFERENCES
-  // A story bible card shows its reference images as a row of small thumbnails in place of the media box.
-  const references = (
-    <div style={{ display: 'flex', gap: 6, padding: '0 12px 12px' }}>
-      {node.references.slice(0, MAX_CARD_REFERENCES).map(reference => (
-        <div key={reference} style={referenceBox}><img src={assetUrl(reference)} alt="" style={media} draggable={false} /></div>
-      ))}
-      {extraReferences > 0
-        ? <div style={{ ...referenceBox, fontSize: size(13), fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' }}>{t('node.moreReferences', { count: extraReferences })}</div>
-        : null}
-    </div>
-  )
+  const dot = <span style={{ flex: 'none', width: size(6), height: size(6), borderRadius: 9999, background: KIND_COLOR[node.kind] }} />
+  const stale = flags.stale ? <span style={{ ...text(12), flex: 'none', color: 'var(--dv-danger)' }}>{t('node.stale')}</span> : null
+  // Deterministic-edit badges, such as 已裁剪: over the frame's bottom-left corner, or a row under a card without a frame.
+  const badges = (overFrame: boolean): ReactNode => node.badges.length === 0
+    ? null
+    : (
+      <span style={overFrame ? { position: 'absolute', left: 6, bottom: 6, display: 'flex', gap: 4 } : { display: 'flex', gap: 4, padding: '0 10px 10px' }}>
+        {node.badges.map(badge => <span key={badge} style={{ ...text(12), padding: '0 6px', borderRadius: 'var(--dv-radius-sm)', background: 'var(--dv-surface-3)', color: 'var(--dv-text-2)' }}>{badge === 'trim' ? t('badge.trim') : badge}</span>)}
+      </span>
+    )
+  let body: ReactNode
+  if (failedTake) {
+    // A failed take has no frame: a compact row with the failure, the reason on hover, and 重试 when it can render again.
+    body = (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px' }}>
+        <svg width={size(16)} height={size(16)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', color: 'var(--dv-danger)' }} aria-hidden="true">
+          <circle cx="12" cy="12" r="9" /><path d="M12 8v5M12 16h.01" />
+        </svg>
+        <span style={{ ...text(12), flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', ...ellipsis }}>{nodeTitle(node, t)}</span>
+          <span style={{ display: 'block', color: 'var(--dv-text-2)' }}>{marker}</span>
+        </span>
+        {stale}
+        {onRetry === undefined
+          ? null
+          : (
+            <button
+              type="button" className="dv-canvas-btn"
+              style={{ fontFamily: 'inherit', ...text(12), flex: 'none', height: 24, padding: '0 8px', border: '1px solid var(--dv-line-strong)', borderRadius: 'var(--dv-radius-sm)', color: 'var(--dv-text)', cursor: 'pointer' }}
+              onPointerDown={(event) => { event.stopPropagation() }}
+              onClick={onRetry}
+            >
+              {t('node.retry')}
+            </button>
+          )}
+      </div>
+    )
+  } else if (node.kind === 'bible') {
+    const extra = node.references.length - 1
+    body = (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10 }}>
+        <div style={{ position: 'relative', flex: 'none', width: 40, height: 40, borderRadius: 'var(--dv-radius-md)', overflow: 'hidden', background: 'var(--dv-surface-3)' }}>
+          {node.references[0] === undefined ? null : <img src={assetUrl(node.references[0])} alt="" style={media} draggable={false} />}
+        </div>
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <span style={{ ...text(12), display: 'flex', alignItems: 'center', gap: 6, color: 'var(--dv-text-2)' }}>
+            {dot}{kindLabel(node, t)}
+            {extra > 0 ? <span style={mono}>{t('node.moreReferences', { count: extra })}</span> : null}
+            {stale}
+          </span>
+          <span style={{ ...text(14), fontWeight: 500, ...ellipsis }}>{node.title}</span>
+          {marker === null ? null : <span style={{ ...text(12), color: flags.failed ? 'var(--dv-danger)' : 'var(--dv-text-2)' }}>{marker}</span>}
+        </div>
+      </div>
+    )
+  } else if (node.kind === 'plan') {
+    const total = planTotalSec(plan?.shots ?? [])
+    const label = plan === undefined ? kindLabel(node, t) : `${kindLabel(node, t)} · ${t('node.planVersion', { version: plan.version })}`
+    body = (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 10 }}>
+        <span style={{ ...text(12), display: 'flex', alignItems: 'center', gap: 6, color: 'var(--dv-text-2)' }}>
+          {dot}<span style={{ flex: 1, minWidth: 0, ...ellipsis }}>{label}</span>{stale}
+        </span>
+        {frames.some(frame => frame !== null)
+          ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 3 }}>
+              {frames.map((frame, index) => (
+                <div key={index} style={{ aspectRatio: '16 / 9', borderRadius: 3, overflow: 'hidden', background: 'var(--dv-surface-3)' }}>
+                  {frame === null ? null : <Media {...frame} />}
+                </div>
+              ))}
+            </div>
+          )
+          : null}
+        <span style={{ ...text(14), fontWeight: 500 }}>
+          {t('node.planShots', { count: node.subtitle })}
+          {total === null ? null : <>{' · '}<span style={mono}>{clockText(total)}</span></>}
+        </span>
+        {marker === null ? null : <span style={{ ...text(12), color: flags.failed ? 'var(--dv-danger)' : 'var(--dv-text-2)' }}>{marker}</span>}
+      </div>
+    )
+  } else {
+    // A take or an imported asset: the header row above the 16:9 frame at full card width.
+    body = (
+      <>
+        <div style={{ minHeight: size(HEADER_HEIGHT), boxSizing: 'border-box', padding: '0 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {dot}
+          <span style={{ ...text(13), flex: 1, minWidth: 0, fontWeight: 500, ...ellipsis }}>{nodeTitle(node, t)}</span>
+          {stale}
+          {node.durationSec !== null ? <span style={{ ...text(12), ...mono, flex: 'none', color: 'var(--dv-text-2)' }}>{`${node.durationSec.toFixed(1)}s`}</span> : null}
+        </div>
+        <div style={{ position: 'relative', width: NODE_WIDTH, height: FRAME_HEIGHT, background: 'var(--dv-surface-3)', overflow: 'hidden' }}>
+          <Media thumb={node.thumb} video={node.video} />
+          {marker !== null
+            ? <span style={{ ...text(13), position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--dv-overlay)', color: 'var(--dv-text)', fontWeight: 500 }}>{marker}</span>
+            : null}
+          {badges(true)}
+        </div>
+      </>
+    )
+  }
   return (
     <div
       style={style}
@@ -134,43 +257,10 @@ export function NodeCard({ node, x, y, selected, zoom, t, onPointerDown }: NodeC
       role="button"
       tabIndex={0}
       aria-label={nodeTitle(node, t)}
+      title={failedTake ? node.record?.error?.message : undefined}
     >
-      <div style={{ height: 4, background: color }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', fontSize: size(12), color: 'var(--dsw-alias-label-secondary)' }}>
-        <span style={{ flex: 'none', width: size(8), height: size(8), borderRadius: '50%', background: color }} />
-        <span style={{ fontWeight: 600 }}>{kindLabel(node, t)}</span>
-        {flags.stale ? <span style={{ color: 'var(--dsw-alias-state-error-primary)' }}>{t('node.stale')}</span> : null}
-        {typeof planVersion === 'number' ? <span>{t('node.planVersion', { version: planVersion })}</span> : null}
-        <span style={{ flex: 1 }} />
-        {node.durationSec !== null ? <span style={{ color: 'var(--dsw-alias-label-tertiary)' }}>{node.durationSec.toFixed(1)}s</span> : null}
-      </div>
-      {node.kind === 'bible'
-        ? null
-        : (
-          <div style={thumbBox}>
-            {thumb}
-            {marker !== null
-              ? <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0, 0, 0, 0.55)', color: '#fff', fontSize: size(15), fontWeight: 600 }}>{marker}</span>
-              : null}
-          </div>
-        )}
-      <div style={{ padding: '10px 12px 12px' }}>
-        <div style={{ fontSize: size(16), fontWeight: 600, lineHeight: 1.3, ...ellipsis }}>{nodeTitle(node, t)}</div>
-        {node.kind === 'bible' && marker !== null
-          ? <div style={{ marginTop: 2, fontSize: size(13), fontWeight: 600, color: 'var(--dsw-alias-label-secondary)' }}>{marker}</div>
-          : null}
-        {node.kind !== 'plan' && node.subtitle !== '' && scale <= SUBTITLE_MAX_SCALE
-          ? <div style={{ marginTop: 2, fontSize: size(13), lineHeight: 1.35, color: 'var(--dsw-alias-label-secondary)', ...ellipsis }}>{node.subtitle}</div>
-          : null}
-        {node.badges.length > 0
-          ? (
-            <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-              {node.badges.map(badge => <span key={badge} style={{ fontSize: size(12), padding: '1px 8px', borderRadius: 10, background: 'var(--dsw-alias-interactive-bg-hover)', color: 'var(--dsw-alias-label-secondary)' }}>{badge === 'trim' ? t('badge.trim') : badge}</span>)}
-            </div>
-          )
-          : null}
-      </div>
-      {node.kind === 'bible' && node.references.length > 0 ? references : null}
+      {body}
+      {node.kind === 'take' || node.kind === 'asset' ? null : badges(false)}
     </div>
   )
 }
