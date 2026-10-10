@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to give the web application a 素材库 / Asset pool panel beside the chat. `AssetsPanel` lists every image and video of the open project once, grouped into images, videos, and stills extracted from generation: every asset of the current state, and every asset that a record of the project imported, discarded records included, so an undo hides a generated asset of a step after the current position and never hides an imported asset. You can import images and videos by dropping them on the panel, drag a thumbnail into the canvas or the timeline, and open a preview that inserts a video as a clip or asks the agent to use the asset. The `dv-asset-pool` right-Sidebar tab type shows the panel of the project the shell has open.
+Use this package to give the web application a 素材库 / Asset pool panel beside the chat. `AssetsPanel` lists every image and video of the open project once, grouped into images, videos, and stills extracted from generation: every asset of the current state, and every asset that a record of the project imported, discarded records included, so an undo hides a generated asset of a step after the current position and never hides an imported asset. You can import images and videos by dropping them on the panel, drag a thumbnail into the canvas or the timeline, and open a preview that inserts a video as a clip or asks the agent to use the asset. The preview grows out of the clicked thumbnail and shrinks back into it when it closes (`@dv/ui-kit/zoom.ts`). The `dv-asset-pool` right-Sidebar tab type shows the panel of the project the shell has open.
 
 ## Table of Contents
 
