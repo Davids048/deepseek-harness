@@ -1,8 +1,10 @@
 /**
  * The center of the DreamVerse shell, shadowing DSH's `main.conversation`. Without an open project it is the entry
- * page: a DreamVerse headline, the DSH composer, and recent project cards, and the chat itself once it starts. With a
- * project open it is the workspace: a top bar (breadcrumb, 画布 | 时间线 toggle, panel control) above the canvas or the
- * timeline editor. Every view shows the project's current state, the state at the current position of its history.
+ * page: a DreamVerse headline, the DSH composer, the template chips, and recent project cards, and the chat itself
+ * once it starts. With a project open it is the workspace: a top bar (session switcher, 画布 | 时间线 toggle, right
+ * panel open button) above the canvas or the timeline editor. Every view shows the project's current state, the state at
+ * the current position of its history. The left sidebar collapses while a project is open and expands again on the
+ * entry page.
  *
  * The center also keeps the shell's open project and the DSH main session together: once the client lists are ready
  * it restores the location the URL names, and afterwards it adopts the project of a main session that moves to
@@ -13,19 +15,20 @@
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { IconPanelLeftOutlineRegular, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationViewsProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { DV_CURRENT_TIMELINE_EVENT, getTimelineOf, publishCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
+import { DV_CURRENT_TIMELINE_EVENT, getTimelineOf, publishCurrentTimeline, useCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
 import { pickText, useText } from '@dv/ui-kit/locale.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
   DV_CANVAS_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT, DV_TIMELINE_INSERT_EVENT, type DvWorkspaceEventMap,
 } from '@dv/ui-kit/workspace-events.ts'
-import type { WireWorkspaces } from '@dv/ui-kit/types.ts'
+import type { WireProjectSummary, WireWorkspaces } from '@dv/ui-kit/types.ts'
 import type { ShellActions } from './actions.ts'
-import { InlineRename } from './InlineRename.tsx'
+import { CoverFrame, editedText, useProjectSummaries } from './cover.tsx'
+import { SidebarRightIcon } from './icons.tsx'
+import { SessionSwitcher } from './SessionSwitcher.tsx'
 import type { ShellLocation } from './store.ts'
 import {
   applyingLocation, formatLocation, getShell, NO_PROJECTS, parseLocation, projectOfSession, refreshLinks, setShell, shellClient,
@@ -47,6 +50,9 @@ const client = shellClient
 
 /** Milliseconds the URL restore waits for DSH's startup session before it proceeds without one. */
 const DSH_RESTORE_WAIT_MS = 4000
+
+/** How many recent projects the entry page shows before 全部项目 expands the grid. */
+const RECENT_COUNT = 2
 
 /** Whether the URL location was restored; the center adopts the main session's project only afterwards. */
 let restored = false
@@ -180,8 +186,9 @@ export function CenterPanel(props: CenterProps): ReactNode {
 }
 
 /**
- * The entry page: a DreamVerse headline, the DSH composer without its hero chrome, and recent projects while the chat
- * is still blank. The right panel stays collapsed, because nothing in it belongs to a project yet.
+ * The entry page: a DreamVerse headline, the DSH composer without its hero chrome, and the template chips and recent
+ * projects while the chat is still blank. The right panel stays collapsed, because nothing in it belongs to a project
+ * yet, and the left sidebar expands again when the workspace collapsed it.
  * @param props - the DSH UI slot props.
  * @returns the page.
  */
@@ -197,6 +204,9 @@ function EntryPage(props: CenterProps): ReactNode {
   const settling = sessionId !== undefined && !active && session?.openState === 'loading' && summaryBlank !== true
   const blank = !active && !settling
   useEffect(() => {
+    shell.restoreSidebar()
+  }, [shell])
+  useEffect(() => {
     if (sessionId === undefined || mounted !== sessionId) return
     try {
       shell.hidePanels()
@@ -207,40 +217,93 @@ function EntryPage(props: CenterProps): ReactNode {
   }, [mounted, sessionId, shell])
   return (
     <div className={css.center} data-dv-entry="" data-blank={blank ? '' : undefined}>
-      {blank && <h1 className={css.entryHeadline}>{t('今天想做一个什么视频？', 'What video do you want to make?')}</h1>}
+      {blank && (
+        <div className={css.entryIntro}>
+          <h1 className={css.entryHeadline}>{t('今天想拍点什么？', 'What are we making today?')}</h1>
+        </div>
+      )}
       <div className={css.entryChat}>
         {renderFactorySlot('conversation.content', { variant: 'embedded', phase: settling ? 'settling' : 'active', hero: false }, {
           slots: { views: ChatOnlyView, widthControls: NoWidthControls },
         })}
       </div>
+      {blank && <TemplateChips />}
       {blank && <RecentProjects shell={shell} />}
     </div>
   )
 }
 
+/** The 从模板开始 row: four template chips, disabled until templates exist. */
+function TemplateChips(): ReactNode {
+  const t = useText()
+  const templates = [t('直播高光', 'Stream highlight'), t('产品发布会', 'Product launch'), t('角色短剧', 'Character drama'), t('音乐 MV', 'Music video')]
+  const soon = t('即将推出', 'Coming soon')
+  return (
+    <div className={css.templates}>
+      <span className={css.templatesLabel}>{t('从模板开始', 'Start from a template')}</span>
+      <span className={css.soonTag}>{soon}</span>
+      {templates.map(name => (
+        <button key={name} type="button" className={css.templateChip} disabled title={soon}>{name}</button>
+      ))}
+    </div>
+  )
+}
+
 /**
- * Recent project cards.
+ * The recent projects grid: the newest projects as cover cards, and 全部项目 to show all of them.
  * @param props - the shell actions.
- * @returns the strip, or nothing without projects.
+ * @returns the section, or nothing without projects.
  */
 function RecentProjects({ shell }: ShellInjected): ReactNode {
   const t = useText()
   const projects = useShell(s => s.links?.projects ?? NO_PROJECTS)
-  const recent = useMemo(() => [...projects].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 8), [projects])
-  if (recent.length === 0) return null
+  const [showAll, setShowAll] = useState(false)
+  const sorted = useMemo(() => [...projects].sort((a, b) => b.created_at.localeCompare(a.created_at)), [projects])
+  // One summaries read for every card; a project added to the list reads them again.
+  const summaries = useProjectSummaries(null, sorted.map(project => project.id).join(' '))
+  if (sorted.length === 0) return null
+  const shown = showAll ? sorted : sorted.slice(0, RECENT_COUNT)
   return (
-    <section className={css.recent}>
-      <h3 className={css.recentTitle}>{t('最近项目', 'Recent projects')}</h3>
-      <div className={css.cards}>
-        {recent.map(project => (
-          <button key={project.id} type="button" className={css.card} onClick={() => { run(() => shell.openProject(project.id)) }}>
-            <div className={css.cardThumb} />
-            <span className={css.cardTitle}>{project.title}</span>
-            <span className={css.cardMeta}>{project.created_at.slice(0, 10)}</span>
+    <section className={css.recent} aria-labelledby="dv-recent-projects">
+      <div className={css.recentHeader}>
+        <h2 id="dv-recent-projects" className={css.recentTitle}>{t('最近项目', 'Recent projects')}</h2>
+        {sorted.length > RECENT_COUNT && (
+          <button type="button" className={css.textButton} onClick={() => { setShowAll(value => !value) }}>
+            {showAll ? t('收起', 'Show fewer') : t('全部项目', 'All projects')}
           </button>
+        )}
+      </div>
+      <div className={css.cards}>
+        {shown.map(project => (
+          <ProjectCard
+            key={project.id} shell={shell} projectId={project.id} title={project.title} createdAt={project.created_at}
+            summary={summaries?.get(project.id) ?? null}
+          />
         ))}
       </div>
     </section>
+  )
+}
+
+/**
+ * One recent project: its 16:9 cover, its title, and its last edit time.
+ * @param props - the shell actions, the project, and its summary (null while the summaries load).
+ * @returns the card.
+ */
+function ProjectCard(
+  { shell, projectId, title, createdAt, summary }:
+    ShellInjected & { projectId: string; title: string; createdAt: string; summary: WireProjectSummary | null },
+): ReactNode {
+  const t = useText()
+  const meta = editedText(summary?.edited_at ?? createdAt, t)
+  return (
+    <button type="button" className={css.card} onClick={() => { run(() => shell.openProject(projectId)) }}>
+      <CoverFrame cover={summary?.cover ?? null} className={css.cardCover} />
+      <span className={css.cardText}>
+        <span className={css.cardTitle}>{title}</span>
+        <span className={css.cardMeta}>{meta}</span>
+      </span>
+    </button>
   )
 }
 
@@ -253,22 +316,30 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
   const { sessionId, useSessions, projectId, sessionInProject, shell } = props
   const t = useText()
   const view = useShell(s => s.view)
-  const title = useShell(s => s.links?.projects.find(p => p.id === projectId)?.title ?? projectId)
+  const listed = useShell(s => s.links?.projects.find(p => p.id === projectId))
+  const project = useMemo(() => listed ?? { id: projectId, title: projectId, created_at: '', path: '', workspace_id: null }, [listed, projectId])
   const sessionTitle = useSessions((s) => {
     const row = sessionId === undefined ? undefined : s.byId[sessionId]
     return row?.blank === false ? row.displayTitle : undefined
   })
-  const [renaming, setRenaming] = useState(false)
   // The project's current state, which every view shows and every edit follows.
   const state = useProjectState(client, projectId)
   // The chat session the workspace sits beside, recorded as the `session` of the views' edits; none until the main
   // session belongs to this project.
   const session = sessionInProject ? sessionId ?? null : null
+  // The switcher's cover: the first clip of the selected timeline, read again whenever the current state is refetched
+  // after a project change or another timeline is selected.
+  const selectedTimeline = useCurrentTimeline(projectId)
+  const cover = useProjectSummaries(projectId, state.value, selectedTimeline)?.get(projectId)?.cover ?? null
   const mounted = useSyncExternalStore(shell.mountedSeat.subscribe, shell.mountedSeat.getSnapshot)
   // The right panel's own strip holds its collapse control while it is shown, so the open button sits in the same
   // top-right corner only while the panel is hidden.
   const panelExpanded = useSyncExternalStore(shell.panelExpanded.subscribe, shell.panelExpanded.getSnapshot)
   const opened = useRef(new Set<string>())
+  useEffect(() => {
+    // The canvas and the timeline get the width: an open project starts with the left sidebar collapsed.
+    shell.collapseSidebar()
+  }, [shell])
   useEffect(() => {
     // Once per session, the chat moves to the right panel when a session of this project mounts. The workspace renders
     // as soon as the project is chosen, while the main session is still the entry chat until openProject moves it;
@@ -359,28 +430,20 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
       console.warn('ui-shell: open panels failed', error)
     }
   }
+  const panelLabel = t('打开右侧面板', 'Open the right panel')
   return (
     <div className={`${css.center} ${css.workspace}`} data-dv-workspace="">
       <header className={css.topbar}>
-        <div className={css.crumbs}>
-          {renaming
-            ? (
-              <InlineRename
-                value={title}
-                onSave={(next) => { run(() => shell.renameProject(projectId, next)) }}
-                onClose={() => { setRenaming(false) }}
-              />
-            )
-            : (
-              <span className={css.crumbProject} title={t('双击重命名', 'Double-click to rename')} onDoubleClick={() => { setRenaming(true) }}>{title}</span>
-            )}
-          <span className={css.crumbSep}>/</span>
-          <span className={css.crumbSession}>{sessionTitle ?? t('新对话', 'New chat')}</span>
+        <div className={css.barStart}>
+          <SessionSwitcher
+            shell={shell} project={project} cover={cover} sessionTitle={sessionTitle ?? null}
+            useSessions={useSessions} useWorkspaces={props.useWorkspaces}
+          />
         </div>
-        <div className={css.toggle} role="tablist">
+        <div className={css.toggle} role="tablist" aria-label={t('视图', 'View')}>
           {(['canvas', 'timeline'] as const).map(id => (
             <button
-              key={id} type="button" role="tab" className={css.toggleItem}
+              key={id} type="button" role="tab" className={css.toggleItem} aria-selected={view === id}
               data-active={view === id ? '' : undefined}
               onClick={() => { setShell({ view: id }) }}
             >{id === 'canvas' ? t('画布', 'Canvas') : t('时间线', 'Timeline')}</button>
@@ -390,11 +453,9 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
           {panelExpanded
             ? null
             : (
-              <Tooltip label={t('打开对话、素材库和轨迹', 'Open Chat, Asset pool, and Trajectory')} side="bottom" delayMs={500}>
-                <button type="button" className={css.panelsButton} aria-label={t('打开右侧面板', 'Open the right panel')} onClick={showPanels}>
-                  <IconPanelLeftOutlineRegular className={css.panelsIcon} />
-                </button>
-              </Tooltip>
+              <button type="button" className={css.iconButton} aria-label={panelLabel} title={panelLabel} onClick={showPanels}>
+                <SidebarRightIcon />
+              </button>
             )}
         </div>
       </header>

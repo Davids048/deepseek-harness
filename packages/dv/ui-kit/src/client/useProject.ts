@@ -23,7 +23,7 @@ export interface Loading<T> {
  * @param deps - values whose change restarts the load.
  * @returns the loading state.
  */
-function useLoader<T>(load: (signal: AbortSignal) => Promise<T>, deps: unknown[]): Loading<T> {
+export function useLoader<T>(load: (signal: AbortSignal) => Promise<T>, deps: unknown[]): Loading<T> {
   const [value, setValue] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
