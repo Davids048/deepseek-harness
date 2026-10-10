@@ -1,0 +1,59 @@
+/* The DSH composer card in the DreamVerse 对话 tab, drawn with the DreamVerse theme tokens. The card, its ＋ button, and
+   its send button belong to `@deepseek-ai/dsh-client-ui-conversation` (InputBar), which has no styling slot, so the
+   rules select its `data-composer-card` attribute and its CSS-module class names, which end in `_add`, `_primary`, and
+   `_placeholder`. The `html body` prefix makes these rules win over InputBar's single-class rules. */
+html body [data-dv-chat] [data-composer-card] {
+  border: 1px solid var(--dv-line-strong);
+  border-radius: var(--dv-radius-xl);
+  background: var(--dv-surface-2);
+  box-shadow: none;
+}
+
+html body [data-dv-chat] [data-composer-card] [contenteditable] {
+  color: var(--dv-text);
+  caret-color: var(--dv-accent);
+}
+
+html body [data-dv-chat] [data-composer-card] [class$='_placeholder'] {
+  color: var(--dv-text-3);
+}
+
+/* ＋ opens the composer menu: a secondary 32 px circle. */
+html body [data-dv-chat] [data-composer-card] button[class$='_add'] {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--dv-line-strong);
+  background: transparent;
+  color: var(--dv-text);
+  transition: background-color 120ms var(--dv-ease);
+}
+
+html body [data-dv-chat] [data-composer-card] button[class$='_add']:hover:not(:disabled) {
+  background: var(--dv-surface-3);
+}
+
+/* Send (and stop while the agent runs): the one solid accent button of the screen. The arrow stays white on the
+   accent fill in both themes. */
+html body [data-dv-chat] [data-composer-card] button[class$='_primary'] {
+  width: 32px;
+  height: 32px;
+  background: var(--dv-accent);
+  color: #fff;
+  transform: none;
+  transition: background-color 120ms var(--dv-ease);
+}
+
+html body [data-dv-chat] [data-composer-card] button[class$='_primary']:hover:not(:disabled) {
+  background: var(--dv-accent-hover);
+}
+
+html body [data-dv-chat] [data-composer-card] button:focus-visible {
+  outline: 2px solid var(--dv-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html body [data-dv-chat] [data-composer-card] button {
+    transition: none;
+  }
+}

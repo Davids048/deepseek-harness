@@ -267,7 +267,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     hookContext: '',
     slotInject: '',
     declaredBy: 'an entry in \'conversation.view\' (client-ui-chat), so it exists while that entry is mounted',
-    occupants: [],
+    occupants: [
+      '@dv/ui-composer ChatMediaEntry',
+    ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'conversation.chat.markdown\', () => ctx.slots.register(\n      { name: \'conversation.chat.markdown\', select: owner => null },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-chat/src/client/contract/slots.ts:271',

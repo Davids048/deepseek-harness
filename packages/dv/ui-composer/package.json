@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Chat composer additions of DreamVerse: the @ source and the Reference row for project clips, characters, locations, styles, and assets; the render tool cards; tool rows with creator-facing names and a Show in history link; and the dv:compose prefill.",
+  "description": "Chat composer additions of DreamVerse: the @ source and the Reference row for project clips, characters, locations, styles, and assets; thumbnail cards for project videos and images in chat Markdown; the render tool cards; tool rows with creator-facing names and a Show in history link; and the dv:compose prefill.",
   "exports": {
     ".": "./src/index.ts",
     "./client": {
@@ -16,6 +16,7 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-chat",
         "@deepseek-ai/dsh-client-ui-conversation",
         "@deepseek-ai/dsh-client-ui-input-trigger",
         "@deepseek-ai/dsh-client-ui-renderer",
@@ -34,6 +35,8 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-api-session-controller": "workspace:*",
+    "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-chat": "workspace:*",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
     "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:*",
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
@@ -43,6 +46,8 @@
     "@deepseek-ai/dsh-client-ui-tool": "workspace:*",
     "@dv/ui-kit": "workspace:*",
     "@types/react": "~18.3.1",
-    "react": "^18.2.0"
+    "@types/react-dom": "~18.3.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   }
 }

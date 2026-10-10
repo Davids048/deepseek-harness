@@ -4,13 +4,10 @@
  *
  * @module @dv/ui-composer/views
  */
-import type { CSSProperties } from 'react'
 import { assetUrl } from '@dv/ui-kit/api.ts'
 import { useText } from '@dv/ui-kit/locale.ts'
 import { DV_HISTORY_FOCUS_EVENT, dispatchWorkspaceEvent } from '@dv/ui-kit/workspace-events.ts'
-
-const card: CSSProperties = { border: '1px solid var(--dsh-border, #3a3a3a)', borderRadius: 10, padding: 10, margin: '6px 0', fontSize: 13 }
-const secondary: CSSProperties = { padding: '4px 12px', borderRadius: 6, cursor: 'pointer', background: 'transparent', color: 'inherit', border: '1px solid var(--dsh-border, #3a3a3a)' }
+import css from './views.module.css'
 
 /** Parsed arguments of a render call, empty while they stream. */
 function argsOf(raw: string): Record<string, unknown> {
@@ -43,7 +40,7 @@ function wroteRecord(block: object): boolean {
 function HistoryLink(props: { sessionId: string; callId: string }) {
   const t = useText()
   const { sessionId, callId } = props
-  return <button type="button" data-testid="dv-composer-open-history" style={{ ...secondary, padding: '0 6px', fontSize: 12 }}
+  return <button type="button" data-testid="dv-composer-open-history" className={css.textButton}
     onClick={() => { dispatchWorkspaceEvent(DV_HISTORY_FOCUS_EVENT, { session: sessionId, toolCall: callId }) }}>
     {t('在历史中查看', 'Show in history')}
   </button>
@@ -85,13 +82,14 @@ export function RenderCard(props: RenderCardProps) {
   const failed = 'isError' in block && block.isError === true
   const video = outputsOf(block).find(output => output.mime.startsWith('video/'))
   const status = props.phase === 'result' ? (failed ? t('未渲染', 'Not rendered') : t('已渲染', 'Rendered')) : t('渲染中…', 'Rendering…')
-  return <div style={card} data-tool={props.toolName}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-      <strong>{t(props.label[0], props.label[1])}</strong><span style={{ opacity: 0.7 }}>{status}</span>
+  return <div className={css.card} data-tool={props.toolName}>
+    <div className={css.cardHeader}>
+      <span className={css.title}>{t(props.label[0], props.label[1])}</span>
+      <span className={css.status} data-failed={props.phase === 'result' && failed ? '' : undefined}>{status}</span>
     </div>
-    {prompt !== '' && <div style={{ marginTop: 4, opacity: 0.85 }}>{prompt}</div>}
-    {video !== undefined && <video src={video.url} controls muted style={{ marginTop: 8, width: '100%', borderRadius: 8 }} />}
-    {props.phase === 'result' && <div style={{ marginTop: 6 }}><HistoryLink sessionId={props.sessionId} callId={props.callId} /></div>}
+    {prompt !== '' && <div className={css.prompt}>{prompt}</div>}
+    {video !== undefined && <video src={video.url} controls muted className={css.video} />}
+    {props.phase === 'result' && <div className={css.cardFooter}><HistoryLink sessionId={props.sessionId} callId={props.callId} /></div>}
   </div>
 }
 
@@ -112,8 +110,9 @@ export function ToolLabelRow(props: {
   const t = useText()
   const failed = 'isError' in props.block && props.block.isError === true
   const status = props.phase !== 'result' ? t('进行中…', 'Running…') : failed ? t('未完成', 'Failed') : t('完成', 'Done')
-  return <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', margin: '4px 0', fontSize: 13 }} data-tool={props.toolName}>
-    <span>{t(props.label[0], props.label[1])}</span><span style={{ opacity: 0.6, fontSize: 12 }}>{status}</span>
+  return <div className={css.toolRow} data-tool={props.toolName}>
+    <span>{t(props.label[0], props.label[1])}</span>
+    <span className={css.status} data-failed={props.phase === 'result' && failed ? '' : undefined}>{status}</span>
     {props.phase === 'result' && wroteRecord(props.block) && <HistoryLink sessionId={props.sessionId} callId={props.callId} />}
   </div>
 }
