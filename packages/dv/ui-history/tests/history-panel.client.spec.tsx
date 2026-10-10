@@ -159,16 +159,37 @@ describe('HistoryPanel', () => {
     })
   })
 
+  it('keeps the thumbnail column on a render row that produced nothing, and gives other rows none', async () => {
+    const failed: HistoryEntry = {
+      record: record({ id: 'f1', operation: 'shot.render_t2va', status: 'failed', outputs: [] }), place: 'before',
+    }
+    const { row } = mount([failed, ...ENTRIES])
+    await waitFor(() => { row('f1') })
+    const columns = (id: string): string => row(id).querySelector<HTMLElement>('[style*="grid-template-columns"]')?.style.gridTemplateColumns ?? ''
+    expect(columns('f1')).toMatch(/^40px /)
+    expect(row('f1').querySelector('[data-testid="dv-history-thumb"]')).toBeNull()
+    expect(columns('m1')).toBe('minmax(0, 1fr) auto')
+  })
+
+  it('greys a render step after the current one with a faded, black-and-white thumbnail', async () => {
+    const { row } = mount(ENTRIES.map(entry => entry.record.id === 'g1' ? { ...entry, place: 'after' as const } : entry))
+    await waitFor(() => { row('g1') })
+    const thumb = row('g1').querySelector('[data-testid="dv-history-thumb"]')?.parentElement
+    expect(thumb?.style.opacity).toBe('0.3')
+    expect(thumb?.style.filter).toBe('grayscale(1)')
+  })
+
   it('greys the steps after the current one and offers 回到这一步 on every other step', async () => {
     const after: HistoryEntry = { record: record({ id: 'a1', operation: 'timeline.rename', params: { timeline: 't1', name: 'x' } }), place: 'after' }
     const { writes, row } = mount([after, ...ENTRIES])
     await waitFor(() => { row('a1') })
-    // The thumbnail and the text are greyed; the ⋮ menu is not, so it opens above the next row.
+    // The text is greyed; the ⋮ menu is not, so it opens above the next row. Rows other than renders have no thumbnail.
     const dimmed = (id: string): string[] => [...row(id).querySelectorAll<HTMLElement>('[style*="opacity"]')].map(element => element.style.opacity)
-    expect(dimmed('a1')).toEqual(['0.55', '0.55'])
+    expect(dimmed('a1')).toEqual(['0.3'])
     expect(row('a1').style.opacity).toBe('')
     expect(row('a1').getAttribute('data-place')).toBe('after')
-    expect(dimmed('m1')).toEqual(['1', '1'])
+    expect(row('a1').querySelector('[data-testid="dv-history-thumb"]')).toBeNull()
+    expect(dimmed('m1')).toEqual(['1'])
     // The current step has no ⋮; a step before it and a step after it both have 回到这一步.
     expect(row('m1').querySelector('[data-testid="dv-history-step-actions"]')).toBeNull()
     expect(menuOf(row('g1'))).toEqual(['Go back to this step'])

@@ -57,7 +57,7 @@ register 调用可以用 `store: defineStore(...)` 声明 store 席位：`init` 
 
 ### 注册与路由
 
-`SlotCore` 在构造时预置 `'root'` slot，并强制执行加载时验证。`ChainSelect` selector 按升序 `priority` 运行（相同值按注册顺序）；第一个非 null 返回值选中其条目，并成为组件的 `matched` prop；全部返回 null 时使用 owner 的 `renderSlotChain` fallback（`ChainRenderOpts`）。每个 key 都携带一个 declaration epoch，它只在声明与移除时递增；`ui-renderer` 将其用于 `ctx.slots.inject`，且与普通条目版本相互独立。实时检查使用严格的 `type: 'slot' | 'factory'` 节点，并把 Factory-owned child Slots 嵌套在其 definition 下。
+`SlotCore` 在构造时预置 `'root'` slot，并强制执行加载时验证。`ChainSelect` selector 按升序 `priority` 运行（相同值按注册顺序）；第一个非 null 返回值选中其条目，并成为组件的 `matched` prop；全部返回 null 时使用 owner 的 `renderSlotChain` fallback（`ChainRenderOpts`）；`ChainRenderOpts.inline` 用 `<span>` 作为 outlet 锚点，用于段落等短语内容中的位置。每个 key 都携带一个 declaration epoch，它只在声明与移除时递增；`ui-renderer` 将其用于 `ctx.slots.inject`，且与普通条目版本相互独立。实时检查使用严格的 `type: 'slot' | 'factory'` 节点，并把 Factory-owned child Slots 嵌套在其 definition 下。
 
 ### 渲染器约定
 

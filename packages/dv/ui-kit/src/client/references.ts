@@ -11,7 +11,7 @@
  */
 import type { PlanVersion, Shot, WireState } from './types.ts'
 
-/** One run of a prompt: plain text, or a `Picture N` token that names the N-th (1-based) reference image. */
+/** One run of a prompt: plain text, or a `Picture N` or `<Picture N>` token that names the N-th (1-based) reference image. */
 export type PicturePart = { text: string } | { picture: number; text: string }
 
 /**
@@ -55,15 +55,16 @@ export function referenceImages(state: WireState, references: readonly string[])
 }
 
 /**
- * Split a prompt at its `Picture N` and `picture N` tokens (N a whole number from 1).
+ * Split a prompt at its `Picture N` and `picture N` tokens (N a whole number from 1). A token in angle brackets, as in
+ * `<Picture 1>`, includes the brackets, so a view that draws the image drops them too.
  * @param prompt - the shot prompt.
  * @returns the text runs and tokens in prompt order; a token keeps its original text for alt text and screen readers.
  */
 export function pictureParts(prompt: string): PicturePart[] {
   const parts: PicturePart[] = []
   let last = 0
-  for (const match of prompt.matchAll(/\b[Pp]icture (\d+)\b/g)) {
-    const picture = Number(match[1])
+  for (const match of prompt.matchAll(/<[Pp]icture (\d+)>|\b[Pp]icture (\d+)\b/g)) {
+    const picture = Number(match[1] ?? match[2])
     if (picture < 1) continue
     if (match.index > last) parts.push({ text: prompt.slice(last, match.index) })
     parts.push({ picture, text: match[0] })

@@ -54,9 +54,9 @@ export function TimelineBody({ client, t }: TimelineBodyProps): ReactNode {
     )
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, fontSize: 12 }} data-testid="dv-timeline-body">
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, fontSize: 12, lineHeight: '16px' }} data-testid="dv-timeline-body">
       <ProjectBar {...view.bar} labels={labels} />
-      {view.notice !== null ? <p role="alert" style={{ margin: 0, padding: '4px 8px', color: 'var(--dv-accent, #b4432a)' }}>{t('error', { message: view.notice })}</p> : null}
+      {view.notice !== null ? <p role="alert" style={{ margin: 0, padding: '4px 12px', color: 'var(--dv-danger)', fontSize: 13, lineHeight: '20px' }}>{t('error', { message: view.notice })}</p> : null}
       <div style={{ flex: 1, minHeight: 0 }}>{content}</div>
     </div>
   )

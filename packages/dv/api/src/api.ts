@@ -1,7 +1,7 @@
 /**
- * The handlers behind the browser routes, independent of transport: list and create projects, read the project
- * state, list operations, run an operation as the human, undo and redo, accept a stale record, and list the history. The Fetch
- * routes and the tests call these methods directly.
+ * The handlers behind the browser routes, independent of transport: list and create projects, summarize projects for
+ * the project cards, read the project state, list operations, run an operation as the human, undo and redo, accept a
+ * stale record, and list the history. The Fetch routes and the tests call these methods directly.
  *
  * Every write goes through `dvProject` with actor `user`, the surface the request names, and the chat session the view
  * sits beside (`session`, when the request names one); it becomes a step after the project's current position.
@@ -16,6 +16,7 @@ import type {
   AssetId, HistoryEntry, HistoryQuery, ProjectId, ProjectInfo, ProjectLine, ProjectRecord, RecordId, RecordOrigin, RunRequest, SessionId,
   Surface,
 } from '@dv/project'
+import { summarizeProject, type WireProjectSummary } from './summaries.ts'
 import {
   projectIdOf, toWireOperation, toWireState, type WireHistory, type WireOperation, type WireState,
 } from './wire.ts'
@@ -254,6 +255,35 @@ export class ApiHandlers {
         id: info.id, title: info.title, created_at: info.created_at, current: info.id === bound,
       }))
       .sort((a, b) => Number(b.current) - Number(a.current) || b.created_at.localeCompare(a.created_at))
+  }
+
+  /**
+   * The card summary of every project, in the order of `dvProject.listProjects()`, or of the one project the request
+   * names: the cover and the last edit time, read from the project's current state. In the list of every project, a
+   * project whose state cannot be read or summarized gets an empty entry (`cover` and `edited_at` null) and a console
+   * warning, so the other projects still arrive.
+   * @param project - the raw `project` query value; null summarizes every project.
+   * @param timeline - the raw `timeline` query value: with `project`, the timeline whose first clip is the cover when the
+   *   project has it; ignored for the list of every project.
+   * @returns one summary per project.
+   * @throws ApiRequestError `invalid_params` when `project` is malformed, `unknown_project` when it names no project;
+   *   with `project`, also whatever its state read throws.
+   */
+  listProjectSummaries(project: string | null = null, timeline: string | null = null): WireProjectSummary[] {
+    const mimeOf = (id: AssetId): string | null => this.assetOrNull(id)?.mime ?? null
+    if (project !== null) {
+      const projectId = this.requireProject(project)
+      return [summarizeProject(projectId, this.services.project.getState(projectId), mimeOf, timeline)]
+    }
+    return this.services.project.listProjects().map((info) => {
+      try {
+        return summarizeProject(info.id, this.services.project.getState(info.id), mimeOf)
+      } catch (error) {
+        // One unreadable project must not hide the cards of the others.
+        console.warn(`dvApi: project ${info.id} summary failed: ${messageOf(error)}`)
+        return { project: info.id, cover: null, edited_at: null }
+      }
+    })
   }
 
   /**

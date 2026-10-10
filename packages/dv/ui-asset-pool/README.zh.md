@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用本包让 web 应用在对话旁边多一个 素材库 面板。`AssetsPanel` 把所打开项目的每个图片和视频列出一次，分为图片、视频和从生成中截取的帧：当前状态中的每个素材，加上项目的任何记录导入的每个素材，包括被丢弃的记录，所以撤销会隐藏当前位置之后的步骤生成的素材，但从不隐藏导入的素材。你可以把图片和视频拖到面板上导入，把缩略图拖进画布或时间线，并打开预览，把视频插入为片段或让智能体使用该素材。右侧栏的 `dv-asset-pool` 标签类型显示 shell 所打开项目的面板。
+使用本包让 web 应用在对话旁边多一个 素材库 面板。`AssetsPanel` 把所打开项目的每个图片和视频列出一次，分为图片、视频和从生成中截取的帧：当前状态中的每个素材，加上项目的任何记录导入的每个素材，包括被丢弃的记录，所以撤销会隐藏当前位置之后的步骤生成的素材，但从不隐藏导入的素材。你可以把图片和视频拖到面板上导入，把缩略图拖进画布或时间线，并打开预览，把视频插入为片段或让智能体使用该素材。预览从被点击的缩略图放大出来，关闭时缩回该缩略图（`@dv/ui-kit/zoom.ts`）。右侧栏的 `dv-asset-pool` 标签类型显示 shell 所打开项目的面板。
 
 ## 目录
 
@@ -58,9 +58,11 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-asset-pool` 标签�
 | 文件 | 内容 |
 | --- | --- |
 | [`src/index.ts`](src/index.ts) | Host 半边，不注册任何东西 |
+| [`src/css-modules.d.ts`](src/css-modules.d.ts) | CSS Module 导入的类型 |
 | [`src/client/index.ts`](src/client/index.ts) | 标签类型和标签主体的注册 |
 | [`src/client/definition.ts`](src/client/definition.ts) | 标签类型 |
 | [`src/client/AssetsPanel.tsx`](src/client/AssetsPanel.tsx) | 面板、拖放区、按组分的缩略图网格、预览和标签主体 |
+| [`src/client/AssetsPanel.module.css`](src/client/AssetsPanel.module.css) | 面板和预览的样式 |
 | [`src/client/library.ts`](src/client/library.ts) | 把项目的素材按媒体类型分组，并单列渲染静帧 |
 
 </details>

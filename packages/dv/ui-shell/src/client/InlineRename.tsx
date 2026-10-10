@@ -5,6 +5,7 @@
  */
 import type { ReactNode } from 'react'
 import { useEffect, useRef, useState } from 'react'
+import { MoreIcon } from './icons.tsx'
 import css from './shell.module.css'
 
 /**
@@ -73,7 +74,7 @@ export function RowMenu({ items, label }: { items: RowMenuItem[]; label: string 
       <button
         type="button" className={css.rowMenuButton} aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open}
         onClick={(event) => { event.stopPropagation(); setOpen(value => !value) }}
-      >⋯</button>
+      ><MoreIcon /></button>
       {open && (
         <span className={css.rowMenuList} role="menu">
           {items.map(item => (

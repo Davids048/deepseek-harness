@@ -1,26 +1,36 @@
 /**
  * The project canvas as a standalone component: an infinite surface of story bible, asset, plan, and take nodes. Drag
- * empty space to pan, scroll to zoom around the cursor, drag a node to move it, click a node to open its floating
- * editor. A scroll over an overlay marked `data-dv-scroll-island`, such as the floating editor, scrolls that overlay.
- * Node positions and the viewport are stored per project through `/api/dv/layout`. The canvas draws the project's
- * current state and follows every change of it; its writes go after the current position of the project's history. Colors
- * come from the DSH theme tokens, so the canvas follows the app's light and dark themes. An image or video that no take
- * or story bible node shows has a node only while it is on the project's canvas (the `asset` slice's `placed`):
- * dropping a 素材 tile on the canvas runs `asset.place` with its node under the pointer, dropping image and video files
- * imports them with `place`, and the asset node's "从画布移除" runs `asset.unplace`. Each of these is a record, so
- * History lists it and undo takes it back.
+ * empty space to pan, scroll to zoom around the cursor, drag a node to move it, click a node to select it and open its
+ * editor panel, which grows out of the node and shrinks back into it on close (`@dv/ui-kit/zoom.ts`). Closing the
+ * editor keeps the node selected (the accent ring); a click on empty canvas with no editor open
+ * clears the selection. A scroll over an overlay marked `data-dv-scroll-island`, such as the editor panel, scrolls that
+ * overlay. Node positions and the viewport are stored per project through `/api/dv/layout`; a project without a stored
+ * viewport opens at 100%, or fitted when its nodes do not fit the view at 100%. A node without a stored position gets the
+ * first free spot at or below its automatic position, and that spot is stored, so a node that appears later never moves
+ * or covers another. A render started from the take editor or a failed take's 重试 closes the editor once the new take's
+ * node appears, then centers and selects that node. A finished take that the user has not opened in this browser shows
+ * an accent dot; the opened takes are kept per project in `localStorage`, and a project opened for the first time in a
+ * browser starts with every finished take counted as opened. The canvas draws the project's current state and
+ * follows every change of it; its writes go after the current position of the project's history. Colors come from the
+ * `--dv-*` theme variables that `@dv/ui-shell` defines, so the canvas follows the app's light and dark themes. An image
+ * or video that no take or story bible node shows has a node only while it is on the project's canvas (the `asset`
+ * slice's `placed`): dropping a 素材 tile on the canvas runs `asset.place` with its node under the pointer, dropping
+ * image and video files imports them with `place`, and the asset node's "从画布移除" runs `asset.unplace`. Each of these
+ * is a record, so History lists it and undo takes it back.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { DvClient } from '@dv/ui-kit/api.ts'
 import { useLanguage } from '@dv/ui-kit/locale.ts'
-import type { CanvasViewport, NodePosition } from '@dv/ui-kit/types.ts'
+import type { CanvasViewport, NodePosition, OperationRequest } from '@dv/ui-kit/types.ts'
 import { DV_ASSET_DRAG_TYPE, DV_CANVAS_FOCUS_EVENT } from '@dv/ui-kit/workspace-events.ts'
 import type { DvWorkspaceEventMap } from '@dv/ui-kit/workspace-events.ts'
+import { readStored, writeStored } from '@dv/ui-kit/storage.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
-import { buildCanvasGraph, NODE_WIDTH, ROW } from './graph.ts'
+import { useZoomPresence } from '@dv/ui-kit/zoom.ts'
+import { buildCanvasGraph, freePositions, NODE_WIDTH, planShotFrames, referenceText, ROW } from './graph.ts'
 import type { CanvasEdge, CanvasNode } from './graph.ts'
-import { NodeCard } from './NodeCard.tsx'
+import { NodeCard, nodeHeight, nodeTitle } from './NodeCard.tsx'
 import type { CanvasTranslate } from './NodeCard.tsx'
 import { NodeEditor } from './NodeEditor.tsx'
 import { en, zh } from './locales.ts'
@@ -37,8 +47,6 @@ export interface CanvasViewProps {
   t?: CanvasTranslate
 }
 
-/** Approximate rendered node height, used for edge anchors. */
-const NODE_HEIGHT = 260
 /** The tallest a card grows (larger text at low zoom plus a badge row), used when fitting. */
 const FIT_NODE_HEIGHT = ROW - 20
 /** How far above the pointer a dropped node's top edge lands, in canvas units, so the pointer rests on its header. */
@@ -48,8 +56,21 @@ const MAX_ZOOM = 2
 const DRAG_THRESHOLD = 4
 const SAVE_DELAY_MS = 500
 
-/** Edge stroke per kind, dark enough to read on the light canvas and bright enough on the dark one. */
-const EDGE_COLOR: Record<CanvasEdge['kind'], string> = { reference: '#d0568f', first_frame: '#2fa66d', plan: '#e08a2e', take: 'var(--dsw-alias-label-tertiary)' }
+/** Edge stroke per kind: the kind color of the node the edge leaves (a reference leaves a character or an asset). */
+const EDGE_COLOR: Record<CanvasEdge['kind'], string> = {
+  reference: 'var(--dv-kind-character)', first_frame: 'var(--dv-kind-take)', plan: 'var(--dv-kind-plan)', take: 'var(--dv-kind-take)',
+}
+/** Canvas dot grid pitch at 100%, in canvas units. */
+const GRID = 20
+
+// Hover and focus states, which inline styles cannot express; scoped to the canvas by class name.
+const CANVAS_CSS = `
+.dv-canvas-btn { background: transparent; transition: background-color 120ms var(--dv-ease); }
+.dv-canvas-btn:hover:not(:disabled) { background: var(--dv-surface-3); }
+.dv-canvas-btn:focus-visible, .dv-canvas-soft:focus-visible, [data-node-id]:focus-visible { outline: 2px solid var(--dv-accent); outline-offset: 2px; }
+.dv-canvas-soft { background: var(--dv-accent-soft); color: var(--dv-accent-text); }
+@media (prefers-reduced-motion: reduce) { .dv-canvas-btn { transition: none; } }
+`
 
 /**
  * A translate over one `dvCanvas` dictionary, for hosts that mount the canvas without a locale binding.
@@ -77,6 +98,69 @@ if (typeof window !== 'undefined') {
 }
 
 const clampZoom = (zoom: number): number => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom))
+
+/** Zoom change per pixel of a mouse wheel's deltaY: one notch (about 100 px) zooms by about 14%. */
+const WHEEL_ZOOM_RATE = 0.0015
+/**
+ * Zoom change per pixel of a touchpad pinch's deltaY. Browsers report a pinch as wheel events with `ctrlKey` and
+ * deltas of a few pixels each, so the pinch needs a larger rate than a mouse wheel to follow the fingers.
+ */
+const PINCH_ZOOM_RATE = 0.01
+/** Pixels per line for wheel events that report `deltaMode` in lines (Firefox mouse wheels). */
+const LINE_HEIGHT_PX = 16
+
+/**
+ * The factor one wheel event multiplies the canvas zoom by.
+ * @param event - the wheel event's deltaY, deltaMode, and ctrlKey (set for a touchpad pinch).
+ * @returns the zoom factor; above 1 zooms in.
+ */
+export function wheelZoomFactor(event: Pick<WheelEvent, 'deltaY' | 'deltaMode' | 'ctrlKey'>): number {
+  const pixels = event.deltaMode === 1 ? event.deltaY * LINE_HEIGHT_PX : event.deltaY
+  return Math.exp(-pixels * (event.ctrlKey ? PINCH_ZOOM_RATE : WHEEL_ZOOM_RATE))
+}
+
+/** The `localStorage` key prefix of a project's opened takes, a JSON array of take node IDs. */
+const SEEN_KEY = 'dv-canvas-seen:'
+
+/**
+ * @param node - a node.
+ * @returns whether the node is a take whose render finished with an image or a video.
+ */
+function isFinishedTake(node: CanvasNode): boolean {
+  return node.kind === 'take' && !node.flags.rendering && (node.video !== null || node.thumb !== null)
+}
+
+/**
+ * @param projectId - the project.
+ * @returns the take node IDs opened in this browser, or null when the project has none stored.
+ */
+function readSeen(projectId: string): Set<string> | null {
+  const raw = readStored('local', SEEN_KEY + projectId)
+  if (raw === null) return null
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    return new Set(Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [])
+  } catch (error) {
+    // Malformed JSON counts as none stored.
+    void error
+    return null
+  }
+}
+
+/**
+ * @param projectId - the project.
+ * @param ids - the take node IDs opened in this browser.
+ */
+function writeSeen(projectId: string, ids: ReadonlySet<string>): void {
+  writeStored('local', SEEN_KEY + projectId, JSON.stringify([...ids]))
+}
+
+/** A render whose new take the canvas waits for: the take it is based on and every node drawn before the request. */
+interface AwaitedRender {
+  basedOn: string
+  known: ReadonlySet<string>
+  resolve: () => void
+}
 
 /** An in-progress pointer gesture. */
 type Gesture =
@@ -136,15 +220,27 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
       throw error
     })
   }
+  // The previous project's state stays loaded until the next project's arrives; the canvas draws only this project's.
   const graph = useMemo(() => {
-    if (base.value === null) return null
+    if (base.value === null || base.value.project.id !== projectId) return null
     return { state: base.value, ...buildCanvasGraph(base.value, placed) }
-  }, [base.value, placed])
+  }, [base.value, placed, projectId])
+  // Each plan node's latest version and its shots' frames, for the plan card's version label, mini grid, and duration.
+  // Memoized on the graph, because a pan or zoom re-renders the view on every pointer move.
+  const plans = useMemo(() => new Map(graph === null ? [] : graph.nodes.flatMap((node) => {
+    const latest = node.planId === undefined ? undefined : graph.state.components.plan.plans[node.planId]?.at(-1)
+    if (latest === undefined || node.planId === undefined) return []
+    return [[node.id, { latest, frames: planShotFrames(graph.nodes, node.planId, latest.shots.length) }] as const]
+  })), [graph])
 
   const [positions, setPositions] = useState<Record<string, NodePosition>>({})
   const [viewport, setViewport] = useState<CanvasViewport>({ x: 40, y: 40, zoom: 1 })
   const [layoutReady, setLayoutReady] = useState(false)
+  // The node with the accent ring, and the node whose editor is open; closing the editor keeps the ring.
   const [selected, setSelected] = useState<string | null>(null)
+  const [editing, setEditing] = useState<string | null>(null)
+  // The take node IDs opened in this browser, for the project they belong to; null until the graph first loads.
+  const [seen, setSeen] = useState<{ project: string; ids: ReadonlySet<string> } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const container = useRef<HTMLDivElement | null>(null)
   const gesture = useRef<Gesture | null>(null)
@@ -198,7 +294,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
 
   const positionOf = useCallback((node: CanvasNode): NodePosition => positions[node.id] ?? { x: node.x, y: node.y }, [positions])
 
-  /** Pan and zoom so every node is visible. */
+  /** Pan and zoom so every node is visible, at 100% at most: content that fits the view keeps its true size. */
   const fit = useCallback(() => {
     const element = container.current
     if (graph === null || graph.nodes.length === 0 || element === null) return
@@ -210,7 +306,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     const minY = Math.min(...points.map(point => point.y))
     const spanX = Math.max(...points.map(point => point.x)) + NODE_WIDTH - minX
     const spanY = Math.max(...points.map(point => point.y)) + FIT_NODE_HEIGHT - minY
-    const zoom = clampZoom(Math.min((width - 80) / spanX, (height - 80) / spanY, 1.25))
+    const zoom = clampZoom(Math.min((width - 80) / spanX, (height - 80) / spanY, 1))
     setViewport({ x: (width - spanX * zoom) / 2 - minX * zoom, y: (height - spanY * zoom) / 2 - minY * zoom, zoom })
   }, [graph, positionOf])
 
@@ -235,11 +331,23 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
 
   // Escape closes the floating editor wherever focus is.
   useEffect(() => {
-    if (selected === null) return
-    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') setSelected(null) }
+    if (editing === null) return
+    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') setEditing(null) }
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey) }
-  }, [selected])
+  }, [editing])
+
+  /** Pan so a node sits at the center of the canvas, keeping the zoom. */
+  const centerOn = useCallback((node: CanvasNode) => {
+    const rect = container.current?.getBoundingClientRect()
+    const position = positionsRef.current[node.id] ?? { x: node.x, y: node.y }
+    autoFit.current = false
+    setViewport(current => ({
+      ...current,
+      x: (rect?.width || 800) / 2 - (position.x + NODE_WIDTH / 2) * current.zoom,
+      y: (rect?.height || 600) / 2 - (position.y + nodeHeight(node) / 2) * current.zoom,
+    }))
+  }, [])
 
   // Open and center the node of a record that `dv:canvas-focus` asked for, once the layout and the graph are loaded.
   const [focusRequest, setFocusRequest] = useState(0)
@@ -260,16 +368,10 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
       ?? graph.nodes.find(candidate => candidate.id === outputNode)
     pendingFocus = null
     if (node === undefined) return
-    const rect = container.current?.getBoundingClientRect()
-    const position = positionsRef.current[node.id] ?? { x: node.x, y: node.y }
-    autoFit.current = false
-    setViewport(current => ({
-      ...current,
-      x: (rect?.width || 800) / 2 - (position.x + NODE_WIDTH / 2) * current.zoom,
-      y: (rect?.height || 600) / 2 - (position.y + NODE_HEIGHT / 2) * current.zoom,
-    }))
+    centerOn(node)
     setSelected(node.id)
-  }, [focusRequest, layoutReady, graph])
+    setEditing(node.id)
+  }, [focusRequest, layoutReady, graph, centerOn])
 
   /** Move a node to a canvas point and store the position. */
   const placeNode = useCallback((id: string, position: NodePosition) => {
@@ -294,6 +396,54 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
   }, [placeNode])
   useEffect(() => { placePending() }, [graph, placePending])
 
+  // Store a free spot for every node without a stored position. The ref is updated at once so that the reveal of a new
+  // take below centers on the stored spot; an earlier queued position, such as a dropped asset's, wins over the free spot.
+  useEffect(() => {
+    if (!layoutReady || graph === null) return
+    const added = freePositions(graph.nodes, positionsRef.current, node => nodeHeight(node, true))
+    if (Object.keys(added).length === 0) return
+    positionsRef.current = { ...added, ...positionsRef.current }
+    setPositions(all => ({ ...added, ...all }))
+    void client.updateLayout(projectId, { positions: added }).catch(() => null)
+  }, [layoutReady, graph, client, projectId])
+
+  // Reveal the take a render started: close the editor, center the new node, and select it.
+  const awaitedRender = useRef<AwaitedRender | null>(null)
+  // The failed take whose 重试 started the awaited render; its button reads 渲染中… until the render is settled.
+  const [retryingFrom, setRetryingFrom] = useState<string | null>(null)
+  const settleAwaited = (): void => {
+    awaitedRender.current = null
+    setRetryingFrom(null)
+  }
+  useEffect(() => {
+    const awaited = awaitedRender.current
+    if (awaited === null || graph === null) return
+    const node = graph.nodes.find(candidate => candidate.kind === 'take' && candidate.record?.based_on === awaited.basedOn && !awaited.known.has(candidate.id))
+    if (node === undefined) return
+    settleAwaited()
+    setEditing(null)
+    setSelected(node.id)
+    centerOn(node)
+    awaited.resolve()
+  }, [graph, centerOn])
+
+  // Load the opened takes once the graph is there, and count the take an editor opens as opened.
+  const seenIds = seen?.project === projectId ? seen.ids : null
+  useEffect(() => {
+    if (graph === null) return
+    if (seenIds === null) {
+      const ids = readSeen(projectId) ?? new Set(graph.nodes.filter(isFinishedTake).map(node => node.id))
+      writeSeen(projectId, ids)
+      setSeen({ project: projectId, ids })
+      return
+    }
+    const opened = editing === null ? undefined : graph.nodes.find(node => node.id === editing)
+    if (opened === undefined || !isFinishedTake(opened) || seenIds.has(opened.id)) return
+    const ids = new Set(seenIds).add(opened.id)
+    writeSeen(projectId, ids)
+    setSeen({ project: projectId, ids })
+  }, [graph, seenIds, editing, projectId])
+
   useEffect(() => {
     const element = container.current
     if (element === null) return
@@ -307,7 +457,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
       const py = event.clientY - rect.top
       autoFit.current = false
       setViewport((current) => {
-        const zoom = clampZoom(current.zoom * Math.exp(-event.deltaY * 0.0015))
+        const zoom = clampZoom(current.zoom * wheelZoomFactor(event))
         return { zoom, x: px - (px - current.x) / current.zoom * zoom, y: py - (py - current.y) / current.zoom * zoom }
       })
       scheduleSave()
@@ -360,11 +510,13 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     if (current === null) return
     if (current.kind === 'node' && !current.moved) {
       setSelected(current.id)
+      setEditing(current.id)
       return
     }
-    // A click on empty canvas closes the floating editor.
+    // A click on empty canvas closes the floating editor, or clears the selection when no editor is open.
     if (current.kind === 'pan' && !current.moved) {
-      setSelected(null)
+      if (editing === null) setSelected(null)
+      else setEditing(null)
       return
     }
     if (current.kind === 'node') moved.current.add(current.id)
@@ -389,6 +541,46 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     } catch (error) {
       setNotice(t('error', { message: error instanceof Error ? error.message : String(error) }))
     }
+  }
+  /**
+   * Start a render of a new take and wait for its node. The request itself returns when the render ends, so the canvas
+   * reveals the new take as soon as the project state shows its node. When the request returns first, as for a take that
+   * the canvas does not draw, the editor closes then.
+   * @param request - the render request; its `based_on` is the take it renders again.
+   * @returns settles once the new take is revealed; rejects with the error of a request that fails before that.
+   */
+  const startRender = (request: OperationRequest & { based_on: string }): Promise<void> => new Promise((resolve, reject) => {
+    const known = new Set(graphRef.current?.nodes.map(node => node.id) ?? [])
+    const awaited: AwaitedRender = { basedOn: request.based_on, known, resolve }
+    awaitedRender.current = awaited
+    setNotice(null)
+    client.runOperation(request).then(() => {
+      if (awaitedRender.current !== awaited) return
+      settleAwaited()
+      setEditing(null)
+      resolve()
+    }, (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error)
+      if (awaitedRender.current !== awaited) { setNotice(t('error', { message })); return }
+      settleAwaited()
+      reject(new Error(message))
+    })
+  })
+  /**
+   * Render a failed take again: its own operation, inputs, and params, as a new take based on it. This is the request
+   * the take editor's 渲染新版本 sends when nothing was edited.
+   * @param node - the failed take's node.
+   */
+  const retryTake = (node: CanvasNode): void => {
+    const record = node.record
+    const operation = record?.operation ?? null
+    if (record === null || operation === null) return
+    setRetryingFrom(record.id)
+    startRender({
+      project: projectId, operation, inputs: record.inputs.map(input => ({ role: input.role, ref: referenceText(input.ref) })),
+      params: record.params, surface: 'canvas', intent: t('intent.retryTake', { title: nodeTitle(node, t) }), based_on: record.id,
+      ...session === null ? {} : { session },
+    }).catch((error: unknown) => { setNotice(t('error', { message: error instanceof Error ? error.message : String(error) })) })
   }
   const accepts = (event: ReactDragEvent): boolean => event.dataTransfer.types.includes(DV_ASSET_DRAG_TYPE) || event.dataTransfer.types.includes('Files')
   // A drag the canvas accepts stops here, so the chat composer's document-level file listeners neither show their drop
@@ -442,21 +634,24 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     })
   }
 
-  // The surface is the app background tinted one step darker (lighter in the dark theme), under a dot grid that pans and zooms.
-  const grid = 24 * viewport.zoom
+  // The surface is the app background under a dot grid that pans and zooms with the nodes.
+  const grid = GRID * viewport.zoom
   const root: CSSProperties = {
-    position: 'relative', width: '100%', height: '100%', minHeight: 320, overflow: 'hidden', backgroundColor: 'var(--dsw-alias-bg-base)',
-    color: 'var(--dsw-alias-label-primary)',
-    backgroundImage: 'radial-gradient(var(--dsw-alias-border-l3) 1.2px, transparent 1.2px), linear-gradient(var(--dsw-alias-interactive-bg-hover), var(--dsw-alias-interactive-bg-hover))',
-    backgroundSize: `${String(grid)}px ${String(grid)}px, auto`, backgroundPosition: `${String(viewport.x)}px ${String(viewport.y)}px, 0 0`,
+    position: 'relative', width: '100%', height: '100%', minHeight: 320, overflow: 'hidden', backgroundColor: 'var(--dv-bg)',
+    color: 'var(--dv-text)', fontFamily: 'var(--dv-font-sans)', fontSize: 13, lineHeight: '20px',
+    backgroundImage: 'radial-gradient(var(--dv-grid) 1px, transparent 1px)',
+    backgroundSize: `${String(grid)}px ${String(grid)}px`, backgroundPosition: `${String(viewport.x)}px ${String(viewport.y)}px`,
     cursor: gesture.current?.kind === 'pan' ? 'grabbing' : 'default', touchAction: 'none',
-    boxShadow: dragOver ? 'inset 0 0 0 2px var(--dsw-alias-button-primary-fill)' : 'none',
+    boxShadow: dragOver ? 'inset 0 0 0 2px var(--dv-accent)' : 'none',
   }
   const floating: CSSProperties = {
-    background: 'var(--dsw-alias-bg-layer-3)', border: '1px solid var(--dsw-alias-border-l3)', boxShadow: '0 4px 14px rgba(0, 0, 0, 0.08)', zIndex: 5,
+    background: 'var(--dv-surface-2)', boxShadow: '0 0 0 1px var(--dv-line-strong), var(--dv-shadow-1)', zIndex: 5,
   }
-  const toolButton: CSSProperties = { border: 'none', borderRadius: 6, background: 'transparent', color: 'var(--dsw-alias-label-primary)', padding: '6px 10px', cursor: 'pointer', font: 'inherit' }
-  const centered: CSSProperties = { position: 'absolute', inset: 0, margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center', fontSize: 14, color: 'var(--dsw-alias-label-tertiary)' }
+  const toolButton: CSSProperties = {
+    height: 28, minWidth: 28, border: 'none', borderRadius: 'var(--dv-radius-sm)', color: 'var(--dv-text-2)', padding: '0 6px', cursor: 'pointer',
+    fontFamily: 'inherit', fontSize: 12, lineHeight: '16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  }
+  const centered: CSSProperties = { position: 'absolute', inset: 0, margin: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, textAlign: 'center', fontSize: 14, lineHeight: '22px', color: 'var(--dv-text-2)' }
   let content: ReactNode = null
   if (graph === null) {
     content = <p style={centered}>{base.error !== null ? t('error', { message: base.error }) : t('loading')}</p>
@@ -464,27 +659,33 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
     content = <p style={{ ...centered, pointerEvents: 'none' }}>{t('canvas.empty')}</p>
   } else {
     const byId = new Map(graph.nodes.map(node => [node.id, node]))
+    const heightOf = (node: CanvasNode): number => nodeHeight(node, plans.get(node.id)?.frames.some(frame => frame !== null) === true)
+    // The selected node's edges are drawn last, so they stay on top of the others.
+    const touchesSelected = (edge: CanvasEdge): boolean => selected !== null && (edge.from === selected || edge.to === selected)
+    const edges = [...graph.edges.filter(edge => !touchesSelected(edge)), ...graph.edges.filter(touchesSelected)]
     content = (
       <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${String(viewport.x)}px, ${String(viewport.y)}px) scale(${String(viewport.zoom)})`, transformOrigin: '0 0' }}>
         <svg style={{ position: 'absolute', left: 0, top: 0, width: 1, height: 1, overflow: 'visible', pointerEvents: 'none' }} aria-hidden="true">
-          {graph.edges.map((edge) => {
+          {edges.map((edge) => {
             const from = byId.get(edge.from)
             const to = byId.get(edge.to)
             if (from === undefined || to === undefined) return null
             const a = positionOf(from)
             const b = positionOf(to)
             const x1 = a.x + NODE_WIDTH
-            const y1 = a.y + NODE_HEIGHT / 2
+            const y1 = a.y + heightOf(from) / 2
             const x2 = b.x
-            const y2 = b.y + NODE_HEIGHT / 2
+            const y2 = b.y + heightOf(to) / 2
             const bend = Math.max(40, Math.abs(x2 - x1) / 2)
+            const highlighted = touchesSelected(edge)
             return (
               <path
                 key={`${edge.from}>${edge.to}`}
                 d={`M ${String(x1)} ${String(y1)} C ${String(x1 + bend)} ${String(y1)}, ${String(x2 - bend)} ${String(y2)}, ${String(x2)} ${String(y2)}`}
                 fill="none"
-                style={{ stroke: EDGE_COLOR[edge.kind] }}
-                strokeWidth={2.5}
+                style={{ stroke: highlighted ? 'var(--dv-accent)' : EDGE_COLOR[edge.kind], strokeOpacity: highlighted ? 0.9 : 0.6 }}
+                strokeWidth={highlighted ? 2 : 1.5}
+                vectorEffect="non-scaling-stroke"
                 strokeDasharray={edge.kind === 'take' ? '6 5' : undefined}
                 data-edge={`${edge.from}>${edge.to}`}
               />
@@ -493,6 +694,7 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
         </svg>
         {[...graph.nodes.filter(node => node.id !== topNode), ...graph.nodes.filter(node => node.id === topNode)].map((node) => {
           const position = positionOf(node)
+          const plan = plans.get(node.id)
           return (
             <NodeCard
               key={node.id}
@@ -503,13 +705,20 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
               zoom={viewport.zoom}
               t={t}
               onPointerDown={onNodeDown(node)}
+              {...plan === undefined ? {} : { plan: plan.latest, frames: plan.frames }}
+              {...node.kind === 'take' && node.flags.failed ? { onRetry: () => { retryTake(node) }, retrying: retryingFrom === node.id } : {}}
+              unseen={seenIds !== null && isFinishedTake(node) && !seenIds.has(node.id)}
             />
           )
         })}
       </div>
     )
   }
-  const editing = graph?.nodes.find(node => node.id === selected) ?? null
+  // The editor on screen lags `editing` while it shrinks back into its node.
+  const nodeCard = (id: string): Element | null =>
+    [...container.current?.querySelectorAll('[data-node-id]') ?? []].find(card => card.getAttribute('data-node-id') === id) ?? null
+  const editorZoom = useZoomPresence(editing, nodeCard)
+  const editingNode = graph?.nodes.find(node => node.id === editorZoom.shown) ?? null
   return (
     <div
       ref={container}
@@ -525,31 +734,42 @@ export function CanvasView({ projectId, client: given, session = null, t: givenT
       onDragLeave={(event) => { if (event.currentTarget === event.target) setDragOver(false) }}
       onDrop={onDrop}
     >
+      <style>{CANVAS_CSS}</style>
       {content}
-      {notice !== null ? <p role="alert" style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', margin: 0, padding: '6px 10px', borderRadius: 8, background: 'var(--dsw-alias-bg-layer-3)', border: '1px solid var(--dsw-alias-state-error-primary)', color: 'var(--dsw-alias-state-error-primary)', fontSize: 13, zIndex: 6 }}>{notice}</p> : null}
-      <div style={{ ...floating, position: 'absolute', left: 12, bottom: 12, display: 'flex', alignItems: 'center', gap: 2, padding: 3, borderRadius: 10, fontSize: 13 }} onPointerDown={(event) => { event.stopPropagation() }}>
-        <button type="button" aria-label={t('canvas.zoomOut')} style={toolButton} onClick={() => { zoomBy(1 / 1.2) }}>−</button>
-        <span style={{ minWidth: 44, textAlign: 'center' }}>{`${String(Math.round(viewport.zoom * 100))}%`}</span>
-        <button type="button" aria-label={t('canvas.zoomIn')} style={toolButton} onClick={() => { zoomBy(1.2) }}>＋</button>
-        <button type="button" style={toolButton} onClick={() => { autoFit.current = true; fit(); scheduleSave() }}>{t('canvas.fit')}</button>
+      {notice !== null ? <p role="alert" style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', margin: 0, padding: '6px 10px', borderRadius: 'var(--dv-radius-md)', background: 'var(--dv-surface-1)', border: '1px solid var(--dv-danger)', color: 'var(--dv-danger)', fontSize: 13, lineHeight: '20px', zIndex: 6 }}>{notice}</p> : null}
+      <div role="toolbar" aria-label={t('canvas.zoom')} style={{ ...floating, position: 'absolute', left: 16, bottom: 16, display: 'flex', alignItems: 'center', gap: 2, padding: 4, borderRadius: 10 }} onPointerDown={(event) => { event.stopPropagation() }}>
+        <button type="button" className="dv-canvas-btn" aria-label={t('canvas.zoomOut')} title={t('canvas.zoomOut')} style={toolButton} onClick={() => { zoomBy(1 / 1.2) }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" aria-hidden="true"><path d="M5 12h14" /></svg>
+        </button>
+        <span style={{ minWidth: 44, textAlign: 'center', fontFamily: 'var(--dv-font-mono)', fontVariantNumeric: 'tabular-nums', fontSize: 12, lineHeight: '16px', color: 'var(--dv-text-2)' }}>{`${String(Math.round(viewport.zoom * 100))}%`}</span>
+        <button type="button" className="dv-canvas-btn" aria-label={t('canvas.zoomIn')} title={t('canvas.zoomIn')} style={toolButton} onClick={() => { zoomBy(1.2) }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+        <button type="button" className="dv-canvas-btn" style={{ ...toolButton, padding: '0 8px' }} onClick={() => { autoFit.current = true; fit(); scheduleSave() }}>{t('canvas.fit')}</button>
       </div>
-      {editing !== null && graph !== null
+      {editingNode !== null && graph !== null
         ? (
-          <NodeEditor
-            key={editing.id}
-            node={editing}
-            state={graph.state}
-            client={client}
-            project={projectId}
-            session={session}
-            t={t}
-            onClose={() => { setSelected(null) }}
-            run={run}
-            onRemoveFromCanvas={(assetId) => {
-              setSelected(null)
-              void run(() => changePlacement(assetId, false))
-            }}
-          />
+          <>
+            <div ref={editorZoom.fadeRef} aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'var(--dv-overlay)', zIndex: 9 }} />
+            <NodeEditor
+              key={editingNode.id}
+              node={editingNode}
+              zoomRef={editorZoom.targetRef}
+              state={graph.state}
+              client={client}
+              project={projectId}
+              session={session}
+              t={t}
+              onClose={() => { setEditing(null) }}
+              run={run}
+              onRender={startRender}
+              onRemoveFromCanvas={(assetId) => {
+                setEditing(null)
+                setSelected(null)
+                void run(() => changePlacement(assetId, false))
+              }}
+            />
+          </>
         )
         : null}
     </div>

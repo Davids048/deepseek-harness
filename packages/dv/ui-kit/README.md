@@ -34,18 +34,19 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 
 | Module | Content |
 | --- | --- |
-| `types.ts` | `WireState` (`head` is the current position, `tip` the last step of the history list), `WireLine` (`{tip, at}`, the answer of undo and redo), `ProjectRecord`, `Asset`, `ProjectAsset` (an asset with this project's import name and time and `made_by`), `Timeline`, `Clip`, `WireOperation`, `WireProject`, `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry` (`{record, place}`), `WireHistory`, `PlanVersion`, `Shot` (with its render `mode`, `ref2va` or `t2va`, and `continue_previous`): the JSON `@dv/api` sends and receives, as structural types |
-| `api.ts` | `DvClient` (`listProjects`, `getState` (the current state), `listOperations`, `runOperation`, `importAsset`, `undo` (one step back), `moveTo` (to a step of the history list), `redo` (one step forward), `acceptStale`, `listHistory`, `placeOnCanvas` (`asset.place` or `asset.unplace` on the canvas surface), project, layout (positions and viewport), workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
+| `types.ts` | `WireState` (`head` is the current position, `tip` the last step of the history list), `WireLine` (`{tip, at}`, the answer of undo and redo), `ProjectRecord`, `Asset`, `ProjectAsset` (an asset with this project's import name and time and `made_by`), `Timeline`, `Clip`, `WireOperation`, `WireProject`, `WireProjectSummary` and `WireProjectCover` (a project card's cover, shot count, duration, and last edit time), `ProjectEvent`, `OperationRequest`, `HistoryQuery`, `HistoryEntry` (`{record, place}`), `WireHistory`, `PlanVersion`, `Shot` (with its render `mode`, `ref2va` or `t2va`, and `continue_previous`): the JSON `@dv/api` sends and receives, as structural types |
+| `api.ts` | `DvClient` (`listProjects`, `listProjectSummaries` (`GET /api/dv/projects/summary`), `getState` (the current state), `listOperations`, `runOperation`, `importAsset`, `undo` (one step back), `moveTo` (to a step of the history list), `redo` (one step forward), `acceptStale`, `listHistory`, `placeOnCanvas` (`asset.place` or `asset.unplace` on the canvas surface), project, layout (positions and viewport), workspace, and session calls, `subscribe`), `ViewSurface`, `DvApiError`, `assetUrl` |
 | `form.ts` | `fieldsOf(params, values)`, `paramsOf(fields)`, `FieldParseError`: one control per schema property, typed coercion |
 | `timeline.ts` | `FALLBACK_CLIP_SECONDS`, `timelineName(timeline, numbered)`, `formatSeconds` |
 | `references.ts` | `shotReferences(version, shot)`, `referenceImages(state, references)`, `pictureParts(prompt)`: the reference images a shot sends to the video model in the order its prompt names them `Picture 1`, `Picture 2`, …, and the prompt split at those tokens; a `t2va` shot has no reference images |
 | `state.ts` | `assetIndex`, `videoAssets` |
-| `useProject.ts` | `useProjects`, `useOperations`, `useProjectState`: loaders that refetch on every project event |
+| `useProject.ts` | `useProjects`, `useOperations`, `useProjectState`: loaders that refetch on every project event; `useLoader(load, deps)`, the request lifecycle they share, which aborts a stale request and keeps the last value while it reloads |
 | `useView.ts` | `useViewSession(client, surface, session?)`: the project choice, the project's current state, the operations, the last failure, and the project-bar callbacks; `sessionFromLocation` reads the chat session from the page's `?session=` so the view opens on that session's project |
-| `ProjectBar.tsx` | The Sidebar bar (test ID `dv-kit-project-bar`): the project picker, a new-project button, and undo; its copy arrives as `labels`, already localized by the owning plugin |
+| `ProjectBar.tsx` | The Sidebar bar (test ID `dv-kit-project-bar`): the project picker, a new-project button, and undo, drawn as 28 px secondary controls with the `--dv-*` theme tokens; its copy arrives as `labels`, already localized by the owning plugin |
 | `compose.ts`, `workspace-events.ts` | The window events `dv:compose`, `dv:timeline-insert`, `dv:canvas-focus`, `dv:history-focus`, `dv:trajectory-focus`, `dv:timeline-focus` (`DV_*_EVENT`) and the asset drag type `application/x-dv-asset` |
 | `tool-labels.ts` | `DV_TOOL_LABELS`: the zh and en label of every `dv_*` tool, shown by the composer's tool cards and the History panel |
 | `current-project.ts`, `current-timeline.ts` | The open project and the selected timeline, kept on `window.__dvCurrentProject` and `window.__dvCurrentTimeline` and announced with `dv:current-project` and `dv:current-timeline` |
+| `zoom.ts` | `useZoomPresence(value, openerOf, onOpened?)`: the zoom transition of the pop-ups (the chat video player, the canvas node editor, the asset pool preview). The pop-up grows out of the element that opened it in 300 ms and shrinks back into it in 250 ms while its backdrop fades; it stays on screen until it has shrunk back, whatever closed it. When the opener is gone or off screen, the pop-up scales a little and fades instead; under `prefers-reduced-motion` it only fades. A pop-up closed while it still grows shrinks from where it is on screen. `mediaBox(width, height, maxWidth, maxHeight)` sizes an image or a video of known dimensions before it loads, so a pop-up whose media sets its size has its final box when the transition measures it |
 | `locale.ts` | `useText`, `pickText`: the Chinese or English string of a pair, following `<html lang>` |
 
 `subscribe` uses `EventSource` when the browser has it and polls every three seconds otherwise. Every bundle that follows a project shares one stream per project through `window.__dvEventSources`; `window.__dvStreams` counts the open streams.
@@ -58,7 +59,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`DvClient` decodes every error body into a `DvApiError` that keeps the HTTP status and the `ProjectError` code. `useLoader` keeps the last value while a reload is in flight and ignores a response whose inputs changed; `useProjectState` reads the project's current state and folds several project events of one burst into one refetch, so an undo or redo made anywhere refreshes every view. The types in `types.ts` copy the `@dv/project` and component types by hand because host packages cannot be imported into a browser bundle; a record arrives as `ProjectRecord` with its inputs' `ref` as the stored object.
+`DvClient` decodes every error body into a `DvApiError` that keeps the HTTP status and the `ProjectError` code; `listProjectSummaries` also checks every field type of the summaries and throws an `Error` for a malformed answer. `useLoader` keeps the last value while a reload is in flight and ignores a response whose inputs changed; `useProjectState` reads the project's current state and folds several project events of one burst into one refetch, so an undo or redo made anywhere refreshes every view. The types in `types.ts` copy the `@dv/project` and component types by hand because host packages cannot be imported into a browser bundle; a record arrives as `ProjectRecord` with its inputs' `ref` as the stored object.
 
 | File | Content |
 | --- | --- |
@@ -66,6 +67,7 @@ import { DV_TIMELINE_INSERT_EVENT } from '@dv/ui-kit/workspace-events.ts'
 | [`src/client/form.ts`](src/client/form.ts) | The form model |
 | [`src/client/timeline.ts`](src/client/timeline.ts) | Timeline helpers |
 | [`src/client/references.ts`](src/client/references.ts) | Shot reference images and `Picture N` tokens |
+| [`src/client/zoom.ts`](src/client/zoom.ts) | The pop-up zoom transition |
 | [`src/client/useProject.ts`](src/client/useProject.ts), [`src/client/useView.ts`](src/client/useView.ts) | The hooks |
 | [`src/client/ProjectBar.tsx`](src/client/ProjectBar.tsx) | The shared bar |
 

@@ -1,8 +1,9 @@
 /**
  * Navigation the DreamVerse shell performs through DSH services. The shell's open project decides the center, and the
  * DSH main session follows it: opening a project moves the main session to that project's latest chat session, or to a
- * blank session in the project's Workspace when it has none, so the right panel (对话 / 素材库 / 轨迹) always belongs to
- * the project in the center. The actions also create, rename, and delete projects and chat sessions.
+ * blank session in the project's Workspace when it has none, so the right panel (对话 / 素材库 / 历史) always belongs to
+ * the project in the center. The actions also create, rename, and delete projects and chat sessions, and fold DSH's
+ * left sidebar and right panel.
  *
  * @module @dv/ui-shell/actions
  */
@@ -15,6 +16,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { pickText } from '@dv/ui-kit/locale.ts'
 import type { WireSession } from '@dv/ui-kit/types.ts'
+import { createSidebarFold } from './sidebar.ts'
 import { getShell, markSessionChoice, refreshLinks, setShell, shellClient } from './store.ts'
 
 /** The right-panel kind of the asset pool tab that `@dv/ui-asset-pool` registers. */
@@ -63,10 +65,17 @@ export interface ShellActions {
    * DreamVerse when missing. DSH's first-use default Workspace is replaced by it.
    */
   entryWorkspace(): Promise<WorkspaceView>
-  /** Expand the right panel and open 轨迹, 素材库, and 对话, with 对话 in front. Throws while no session seat is mounted. */
+  /** Expand the right panel and open 对话, 素材库, and 历史, with 对话 in front. Throws while no session seat is mounted. */
   showPanels(): void
   /** Collapse the right panel of the mounted session. */
   hidePanels(): void
+  /**
+   * Collapse DSH's left sidebar when it is expanded, remembering that the shell collapsed it. Takes effect at once for
+   * a following collapse or restore, before DSH's frame renders the fold.
+   */
+  collapseSidebar(): void
+  /** Expand DSH's left sidebar when the shell collapsed it and the user has not folded or unfolded it from DSH's rail since. */
+  restoreSidebar(): void
   /** The session whose right-panel seat is mounted, observed by the center. */
   mountedSeat: { getSnapshot(): SessionId | undefined; subscribe(fn: () => void): () => void }
   /** Whether the right panel is expanded, observed by the center to show its open button only while it is hidden. */
@@ -281,6 +290,23 @@ export function createActions(ctx: ClientContext): ShellActions {
     await openBlank(workspaceId, () => getShell().projectId === projectId)
   }
 
+  // The left sidebar fold: the open workspace collapses it, and 首页 expands it again.
+  const sidebar = createSidebarFold(() => {
+    const layout = ctx.get('layout')
+    layout?.toggleSidebar()
+    return layout !== undefined
+  })
+  ctx.effect(() => () => { sidebar.dispose() }, 'ui-shell: left sidebar fold observer')
+
+  const showPanels = (): void => {
+    // 对话 opens first so it leads the tab strip, then 素材库 and 历史; reopening 对话 brings it to the front. 轨迹 opens
+    // only from the right-panel guide.
+    ctx.sidebarRight.openTab('dv-chat')
+    ctx.sidebarRight.openTab(ASSET_POOL_KIND)
+    ctx.sidebarRight.openTab(HISTORY_KIND)
+    ctx.sidebarRight.openTab('dv-chat')
+  }
+
   return {
     async newProject() {
       const links = getShell().links ?? await refreshLinks()
@@ -344,17 +370,12 @@ export function createActions(ctx: ClientContext): ShellActions {
       await renameWorkspace(created.workspaceId, 'DreamVerse')
       return created
     },
-    showPanels() {
-      // 对话 opens first so it leads the tab strip, then 素材库, 历史 and 轨迹; reopening 对话 brings it to the front.
-      ctx.sidebarRight.openTab('dv-chat')
-      ctx.sidebarRight.openTab(ASSET_POOL_KIND)
-      ctx.sidebarRight.openTab(HISTORY_KIND)
-      ctx.sidebarRight.openTab('dv-trajectory')
-      ctx.sidebarRight.openTab('dv-chat')
-    },
+    showPanels,
     hidePanels() {
       if (ctx.sidebarRight.isExpanded()) ctx.sidebarRight.toggleExpanded()
     },
+    collapseSidebar: () => { sidebar.collapse() },
+    restoreSidebar: () => { sidebar.restore() },
     mountedSeat: ctx.sidebarRight.mounted,
     panelExpanded: ctx.sidebarRight.expanded,
   }

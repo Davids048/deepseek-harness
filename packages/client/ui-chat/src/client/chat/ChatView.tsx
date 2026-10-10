@@ -1,7 +1,7 @@
 // An enclosing `[data-conversation-scroll]` owns scrolling when present;
 // otherwise this view owns it. Each row subscribes to one stable node key.
 
-import { memo, useCallback, useMemo, useRef, useState, type ComponentProps } from 'react'
+import { memo, useCallback, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import type {
   NodeKey, RenderEntry, RenderMessageImages,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -9,6 +9,7 @@ import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import {
   Button, IconChevronDownOutlineRegular, MarkdownDelegateProvider, Modal,
+  type MarkdownElement, type MarkdownElementRenderer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps, OpenFileOptions } from '../contract/slots.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
@@ -100,7 +101,7 @@ const ChatNodeList = memo(function ChatNodeList({ entries, useChatGroup, pending
 export function ChatView({
   useSession, useChat, useChatNode, useChatNodeProcess, useChatGroup, useConversation, useSessions, useStore, actions, renderSlot,
   sessionId, openFile, openSkill, openExternalLink, loadOlder, loadThrough, loadImage, inspectCall, chatScroll, forkAt, fileMentions,
-  usePresentation, useProjection, t,
+  usePresentation, useProjection, t, renderSlotChain, useMarkdownReplaced,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const groupedEntries = useConversation(snapshot => snapshot.views.grouped('chat')?.entries)
@@ -202,6 +203,13 @@ export function ChatView({
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
     [loadImage, renderSlot],
   )
+  // Without chain entries, settled Markdown keeps its default DOM: no slot outlet wraps each link, image, or table.
+  // Links and images sit in paragraphs, so their outlets use an inline anchor.
+  const markdownReplaced = useMarkdownReplaced(replaced => replaced)
+  const renderMarkdownElement = useMemo<MarkdownElementRenderer | undefined>(() => markdownReplaced
+    ? (element: MarkdownElement, fallback: ReactNode) => renderSlotChain(
+      'conversation.chat.markdown', { element, fallback }, { fallback, inline: element.kind !== 'table' })
+    : undefined, [markdownReplaced, renderSlotChain])
 
   const firstKey = order[0]
   const firstSeq = firstKey === undefined ? null : nodeStore.get(firstKey)?.anchorSeq ?? null
@@ -245,7 +253,8 @@ export function ChatView({
                 </button>
               </div>
             )}
-            <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={requestOpenFile} fileImages={fileImages}>
+            <MarkdownDelegateProvider openExternalLink={openExternalLink} openFile={requestOpenFile} fileImages={fileImages}
+              renderElement={renderMarkdownElement}>
               <ChatNodeList
                 entries={entries}
                 pendingInputs={pendingInputs}

@@ -22,7 +22,7 @@ export interface CanvasInjected {
 /** The body's composed props: the tab it draws, the API client, and its copy. */
 export type CanvasBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & CanvasInjected & PropsLocale<'dvCanvas'>
 
-const root: CSSProperties = { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, fontSize: 12 }
+const root: CSSProperties = { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0, fontSize: 12, lineHeight: '16px' }
 
 /**
  * The project and undo bar's copy in the canvas namespace.

@@ -26,7 +26,7 @@ kind: "package-reference"
 
 在叠了 `dsh-web-app`（提供右侧栏和客户端模块加载器）和 `@dv/api`（提供面板调用的路由）的 profile 里挂载插件。先构建浏览器 bundle：`pnpm run build` 会写出 `lib/client.js`。
 
-面板请求项目历史列表中的步骤，最新的在前。每行显示带主体的工具名称（修改分镜计划 p1 → v2、参考图生成镜头 7、新建角色「名字」）、谁做的（你、智能体、自动）、多久以前、状态，以及一张缩略图（图片；视频用其版本的静帧，没有静帧时用视频画面；其他文件没有缩略图）。智能体行的第二行显示记录自身的 `intent`，即智能体为这次调用给出的理由。分镜计划批准安排的渲染和时间线记录（`report.scheduled`）折叠在批准行下面，由 渲染 n 个镜头 开关展开。当前位置的一行带 当前，它之后的行变灰。其他每一行末尾有一个 ⋮ 按钮（更多操作），它的菜单提供 回到这一步（`/api/dv/undo` 带 `to` = 该步骤），把当前位置移到那一步，可在当前一步之前或之后。
+面板请求项目历史列表中的步骤，最新的在前。每行显示带主体的工具名称（修改分镜计划 p1 → v2、参考图生成镜头 7、新建角色「名字」）、谁做的（你、智能体、自动）、多久以前、状态，以及只有渲染行才有的一张缩略图（版本的静帧，没有静帧时用视频画面，什么都没产出时用空方块，让渲染行保持对齐）；其他行只显示文字。智能体行的第二行显示记录自身的 `intent`，即智能体为这次调用给出的理由。分镜计划批准安排的渲染和时间线记录（`report.scheduled`）折叠在批准行下面，由 渲染 n 个镜头 开关展开。当前位置的一行带 当前，它之后的行变灰：文字变淡，缩略图变成黑白。其他每一行末尾有一个 ⋮ 按钮（更多操作），它的菜单提供 回到这一步（`/api/dv/undo` 带 `to` = 该步骤），把当前位置移到那一步，可在当前一步之前或之后。
 
 ```yaml
 - id: dv-ui-history
@@ -59,9 +59,11 @@ Host 半边不注册任何东西。浏览器半边注册 `dv-history` 标签类�
 
 | 文件 | 内容 |
 | --- | --- |
+| [`src/css-modules.d.ts`](src/css-modules.d.ts) | CSS Module 导入的类型 |
 | [`src/client/index.ts`](src/client/index.ts) | 注册，以及收到 `dv:history-focus` 时打开标签 |
 | [`src/client/definition.ts`](src/client/definition.ts) | 标签类型 |
 | [`src/client/HistoryPanel.tsx`](src/client/HistoryPanel.tsx) | 面板、带撤销和重做按钮的顶部、带 ⋮ 菜单的行、预览和标签主体 |
+| [`src/client/HistoryPanel.module.css`](src/client/HistoryPanel.module.css) | 面板的样式 |
 | [`src/client/rows.ts`](src/client/rows.ts) | 操作行和批准折叠、带主体的名称、缩略图、相对时间和中间区域定位 |
 
 </details>

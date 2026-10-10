@@ -3,12 +3,14 @@
  * - an `@` source listing the bound project's clips, characters, and assets;
  * - a 引用 row in the composer's ＋ menu that opens that `@` list at the end of the draft;
  * - an invisible `conversation.input.left` entry that makes each session's composer a `dv:compose` target;
+ * - thumbnail cards for the project's video and image assets in settled chat Markdown (`chat-media.ts`);
  * - the `dv_shot_render_ref2va` and `dv_shot_render_t2va` tool cards, which show the prompt, status, and rendered video;
  * - creator-facing names for the other `dv_*` tools in their chat rows and in the running group title;
  * - 在历史中查看 on every settled row whose tool is not read-only, including failed calls, which dispatches
  *   `dv:history-focus`;
  * - an empty `conversation.input.permission` entry that hides DSH's file-permission chip;
- * - the `dv:compose` prefill from the canvas and asset pool views, which also brings the 对话 tab to the front.
+ * - the `dv:compose` prefill from the canvas and asset pool views, which also brings the 对话 tab to the front;
+ * - a stylesheet that draws the 对话 tab's composer card, ＋ button, and send button with the DreamVerse theme tokens.
  *
  * @module @dv/ui-composer/client
  */
@@ -23,11 +25,14 @@ import { createElement, useEffect, type ComponentType } from 'react'
 import { DV_COMPOSE_EVENT, type DvComposeDetail } from '@dv/ui-kit/compose.ts'
 import { getCurrentProject } from '@dv/ui-kit/current-project.ts'
 import { pickText } from '@dv/ui-kit/locale.ts'
+import { registerChatMedia } from './chat-media.ts'
 import { deliverCompose, mountComposer } from './compose.ts'
 import { MENTION_SOURCE, projectMentionSource } from './mention.ts'
 import { DV_TOOL_LABELS } from '@dv/ui-kit/tool-labels.ts'
 import { addToolNames } from './tool-labels.ts'
 import { RenderCard, ToolLabelRow } from './views.tsx'
+// The DreamVerse look of the DSH composer card in the 对话 tab; the bundle injects the sheet when the plugin loads.
+import './composer.css'
 
 export { projectItems, referenceText, MENTION_SOURCE } from './mention.ts'
 export { uriOf } from './compose.ts'
@@ -62,6 +67,7 @@ interface CommandMenu {
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.inputTriggers.registerSource(projectMentionSource()), 'dv-composer: @ source')
+  registerChatMedia(ctx)
 
   /** The input facade of one session, while its scope and conversation service exist. */
   const inputOf = (sessionId: SessionId): SessionInput | undefined => {

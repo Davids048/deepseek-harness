@@ -22,6 +22,16 @@ export function timelineName(timeline: Pick<Timeline, 'id' | 'name'>, numbered: 
 }
 
 /**
+ * A duration as whole minutes and seconds, such as `0:30`.
+ * @param seconds - the duration in seconds.
+ * @returns the clock text.
+ */
+export function clockText(seconds: number): string {
+  const whole = Math.round(seconds)
+  return `${String(Math.floor(whole / 60))}:${String(whole % 60).padStart(2, '0')}`
+}
+
+/**
  * Format seconds as `m:ss.s`.
  * @param seconds - a duration or position.
  * @returns the text.

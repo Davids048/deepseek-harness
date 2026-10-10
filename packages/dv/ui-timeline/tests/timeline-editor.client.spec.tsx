@@ -42,7 +42,7 @@ describe('TimelineView', () => {
     expect(clip(2).style.width).toBe('120px')
     expect(clip(2).getAttribute('data-clip-stale')).toBe('true')
     expect(clip(2).getAttribute('data-clip')).toBe('cl2')
-    expect(view.getByTestId('dv-timeline-time').textContent).toBe('0:00.0 / 0:07.0')
+    expect(view.getByTestId('dv-timeline-time').textContent).toBe('00:00.00 / 00:07.00')
     await waitFor(() => { expect(getCurrentTimeline()).toEqual({ projectId: 'p1', timelineId: 't1' }) })
     fireEvent.click(view.getAllByRole('tab')[1] as HTMLElement)
     expect(view.container.querySelectorAll('[data-clip]')).toHaveLength(1)
@@ -75,7 +75,7 @@ describe('TimelineView', () => {
 
     fireEvent.pointerDown(view.getByTestId('dv-timeline-ruler'), { clientX: 60 })
     fireEvent.pointerUp(view.getByTestId('dv-timeline-ruler'), { clientX: 60 })
-    fireEvent.click(view.getByText('拆分'))
+    fireEvent.click(view.getByRole('button', { name: '拆分' }))
     await waitFor(() => { expect(requests()).toHaveLength(2) })
     expect(requests()[1]).toMatchObject({ operation: 'timeline.clip_split', params: { clip: 'cl1', at_sec: 1.5 } })
 
@@ -119,18 +119,57 @@ describe('TimelineView', () => {
     expect(frames()[0]?.getAttribute('src')).toBe('/dv/assets/shot1.mp4')
     fireEvent.pointerDown(view.getByTestId('dv-timeline-ruler'), { clientX: 200 })
     fireEvent.pointerUp(view.getByTestId('dv-timeline-ruler'), { clientX: 200 })
-    expect(view.getByTestId('dv-timeline-time').textContent).toBe('0:05.0 / 0:07.0')
+    expect(view.getByTestId('dv-timeline-time').textContent).toBe('00:05.00 / 00:07.00')
 
     await waitFor(() => { expect(getCurrentTimeline()).toEqual({ projectId: 'p1', timelineId: 't1' }) })
     fireEvent.click(view.getAllByRole('tab')[1] as HTMLElement)
-    expect(view.getByTestId('dv-timeline-time').textContent).toBe('0:00.0 / 0:03.0')
+    expect(view.getByTestId('dv-timeline-time').textContent).toBe('00:00.00 / 00:03.00')
     expect(frames()[0]?.getAttribute('src')).toBe('/dv/assets/imported.mp4')
 
     fireEvent.click(view.getAllByRole('tab')[2] as HTMLElement)
-    expect(view.getByTestId('dv-timeline-time').textContent).toBe('0:00.0 / 0:00.0')
+    expect(view.getByTestId('dv-timeline-time').textContent).toBe('00:00.00 / 00:00.00')
     expect(frames().map(frame => frame.hasAttribute('src'))).toEqual([false, false])
     expect(frames().map(frame => frame.style.visibility)).toEqual(['hidden', 'hidden'])
     expect(view.getByTestId('dv-timeline-viewer-empty').textContent).toBe('这条时间线还没有片段，从素材库拖入或点 ＋ 插入')
+  })
+
+  it('skips the playhead 5 s back and forward within the timeline, by button and by J and L', async () => {
+    const { view, track } = mount()
+    await track()
+    const time = (): string | null => view.getByTestId('dv-timeline-time').textContent
+    fireEvent.click(view.getByRole('button', { name: '前进 5 秒' }))
+    expect(time()).toBe('00:05.00 / 00:07.00')
+    fireEvent.click(view.getByRole('button', { name: '前进 5 秒' }))
+    expect(time()).toBe('00:07.00 / 00:07.00')
+    fireEvent.keyDown(view.getByTestId('dv-timeline-editor'), { key: 'j' })
+    expect(time()).toBe('00:02.00 / 00:07.00')
+    fireEvent.click(view.getByRole('button', { name: '后退 5 秒' }))
+    expect(time()).toBe('00:00.00 / 00:07.00')
+    fireEvent.keyDown(view.getByTestId('dv-timeline-editor'), { key: 'ArrowRight', shiftKey: true })
+    expect(time()).toBe('00:05.00 / 00:07.00')
+  })
+
+  it('cycles the playback speed of both video elements and keeps it for the browser session', async () => {
+    window.sessionStorage.clear()
+    const { view, track } = mount()
+    await track()
+    const speed = view.getByTestId('dv-timeline-speed')
+    const rates = (): number[] => [...view.getByTestId('dv-timeline-viewer').querySelectorAll('video')].map(video => video.playbackRate)
+    expect(speed.textContent).toBe('1×')
+    expect(rates()).toEqual([1, 1])
+    fireEvent.click(speed)
+    expect(speed.textContent).toBe('1.5×')
+    expect(rates()).toEqual([1.5, 1.5])
+    fireEvent.click(speed)
+    fireEvent.click(speed)
+    expect(speed.textContent).toBe('0.5×')
+    expect(speed.getAttribute('aria-label')).toBe('播放速度 0.5×，点击切换')
+    view.unmount()
+    const again = mount()
+    await again.track()
+    expect(again.view.getByTestId('dv-timeline-speed').textContent).toBe('0.5×')
+    expect([...again.view.getByTestId('dv-timeline-viewer').querySelectorAll('video')].map(video => video.playbackRate)).toEqual([0.5, 0.5])
+    window.sessionStorage.clear()
   })
 
   it('shares the selected timeline on window and follows a timeline another bundle publishes', async () => {
@@ -163,11 +202,11 @@ describe('TimelineView', () => {
   it('edits the project at once, with the chat session beside it recorded on each edit; undo and redo move the current position', async () => {
     const { fetch, writes } = scriptedFetch({ state: () => ({ ...fixtureState(), tip: 'later' }) })
     const editing = render(<TimelineView projectId="p1" session="s5" client={new DvClient(fetch)} />)
-    await waitFor(() => { expect((editing.getByText('拆分') as HTMLButtonElement).disabled).toBe(false) })
+    await waitFor(() => { expect((editing.getByRole('button', { name: '拆分' }) as HTMLButtonElement).disabled).toBe(false) })
     // Redo is enabled while a step lies after the current position.
-    expect((editing.getByText('重做') as HTMLButtonElement).disabled).toBe(false)
-    fireEvent.click(editing.getByText('撤销'))
-    fireEvent.click(editing.getByText('重做'))
+    expect((editing.getByRole('button', { name: '重做' }) as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(editing.getByRole('button', { name: '撤销' }))
+    fireEvent.click(editing.getByRole('button', { name: '重做' }))
     await waitFor(() => {
       expect(writes.filter(write => write.path === '/api/dv/undo' || write.path === '/api/dv/redo')).toEqual([
         { path: '/api/dv/undo', body: { project: 'p1' } }, { path: '/api/dv/redo', body: { project: 'p1' } },
@@ -219,7 +258,7 @@ describe('TimelineView', () => {
     const { view } = mount()
     await view.findByRole('list', { name: 'Video track' })
     expect(view.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Timeline 1', '片尾'])
-    expect(view.getByText('Split')).toBeTruthy()
+    expect(view.getByRole('button', { name: 'Split' })).toBeTruthy()
   })
 
   it('exports the shown timeline with one deliver.timeline_export call', async () => {
