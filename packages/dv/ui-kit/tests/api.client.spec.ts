@@ -75,8 +75,8 @@ describe('DvClient', () => {
 
   it('reads every project summary, or one project\'s, in one request and refuses a malformed answer', async () => {
     const summaries = [
-      { project: 'p1', cover: { video: 'shot1.mp4', image: 'shot1-last.png' }, shots: 2, duration_sec: 59.5, edited_at: '2026-10-05T00:00:00Z' },
-      { project: 'p2', cover: null, shots: 0, duration_sec: 0, edited_at: null },
+      { project: 'p1', cover: { video: 'shot1.mp4', image: null }, edited_at: '2026-10-05T00:00:00Z' },
+      { project: 'p2', cover: null, edited_at: null },
     ]
     const paths: string[] = []
     const answering = (body: unknown): typeof fetch => (input) => {
@@ -86,7 +86,10 @@ describe('DvClient', () => {
     expect(await new DvClient(answering(summaries)).listProjectSummaries()).toEqual(summaries)
     expect(await new DvClient(answering(summaries.slice(1))).listProjectSummaries(undefined, 'p2')).toEqual(summaries.slice(1))
     expect(paths).toEqual(['/api/dv/projects/summary', '/api/dv/projects/summary?project=p2'])
-    for (const malformed of [{ projects: summaries }, [{ ...summaries[0], shots: '2' }], [{ ...summaries[1], cover: { video: 1, image: null } }]]) {
+    const malformedBodies = [
+      { projects: summaries }, [{ ...summaries[0], edited_at: 5 }], [{ ...summaries[1], cover: { video: 1, image: null } }],
+    ]
+    for (const malformed of malformedBodies) {
       await expect(new DvClient(answering(malformed)).listProjectSummaries()).rejects.toThrow('malformed /api/dv/projects/summary')
     }
   })

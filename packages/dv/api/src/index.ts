@@ -133,7 +133,7 @@ export default class DvApi extends Service {
       },
       {
         path: ROUTES.projectSummaries, methods: ['GET'], requestBody: 'buffered',
-        fetch: request => answer(() => api.listProjectSummaries(query(request, 'project'))),
+        fetch: request => answer(() => api.listProjectSummaries(query(request, 'project'), query(request, 'timeline'))),
       },
       {
         path: ROUTES.state, methods: ['GET'], requestBody: 'buffered',

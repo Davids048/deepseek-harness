@@ -1,6 +1,6 @@
 /**
- * Project covers and card metadata for the entry page and the session switcher: the cover, the shot count and total
- * duration, and the last edit time that `GET /api/dv/projects/summary` computes from each project's records.
+ * Project covers and card metadata for the entry page and the session switcher: the cover and the last edit time that
+ * `GET /api/dv/projects/summary` computes from each project's current state.
  *
  * @module @dv/ui-shell/cover
  */
@@ -13,17 +13,20 @@ import { shellClient } from './store.ts'
 import css from './shell.module.css'
 
 /**
- * Read project card summaries in one request when the component mounts and again whenever `refresh` changes, keeping
- * the last summaries while a read is in flight or after it failed.
+ * Read project card summaries in one request when the component mounts and again whenever `refresh` or `timeline`
+ * changes, keeping the last summaries while a read is in flight or after it failed.
  * @param project - the one project to summarize, or null for every project.
  * @param refresh - a value whose change asks for a fresh read, such as the listed project IDs or a refetched state.
+ * @param timeline - with `project`, the selected timeline, whose first clip is the cover.
  * @returns the summaries by project ID, or null until the first read succeeds.
  */
-export function useProjectSummaries(project: string | null, refresh: unknown): ReadonlyMap<string, WireProjectSummary> | null {
+export function useProjectSummaries(
+  project: string | null, refresh: unknown, timeline: string | null = null,
+): ReadonlyMap<string, WireProjectSummary> | null {
   return useLoader(async (signal) => {
-    const list = await shellClient.listProjectSummaries(signal, project)
+    const list = await shellClient.listProjectSummaries(signal, project, timeline)
     return new Map(list.map(summary => [summary.project, summary]))
-  }, [project, refresh]).value
+  }, [project, refresh, timeline]).value
 }
 
 /**

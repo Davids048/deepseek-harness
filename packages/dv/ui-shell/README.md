@@ -37,7 +37,7 @@ The Host half registers nothing. The browser half registers the center, the navi
 | --- | --- |
 | Page load, then every 4 seconds | `GET /api/dv/workspaces` for the projects, their Workspaces, and the session bindings |
 | 新建项目 / Create project | `POST /api/dv/projects` with the first free title 未命名项目 / Untitled project (numbered), then `POST /api/dv/workspaces` to link the Workspace created for it; a blank chat session opens in it |
-| Entry page with projects | One `GET /api/dv/projects/summary` for every card's cover (the first finished `shot.render_*` take, else the first imported image), total duration, shot count, and last edit time; read again when the project list changes |
+| Entry page with projects | One `GET /api/dv/projects/summary` for every card's cover (the first clip with media on the project's first timeline, else the first image the project made) and last edit time; read again when the project list changes. The switcher's cover uses the selected timeline |
 | Workspace of an open project | `GET /api/dv/projects/summary?project=<id>` for the session switcher's cover, again after every change of the project |
 | Open a project (navigator row, recent project card, or session switcher) | `GET /api/dv/workspaces/sessions` for its stored chat sessions; the main session moves to its latest non-blank chat session, else to a blank one |
 | ＋ on a project row, 新建会话 / New chat in the session switcher, or DSH's New Session | a blank chat session in the project's Workspace; on the entry page, DSH's New Session equals 首页 |
@@ -71,7 +71,7 @@ The workspace sends the chat session to the canvas and the timeline editor only 
 | [`src/client/store.ts`](src/client/store.ts) | The shared state (open project, view, timeline, main session, links), the URL hash mirror, and the session → project lookup |
 | [`src/client/Center.tsx`](src/client/Center.tsx) | The center: URL restore, the entry page, template chips, recent projects, the workspace top bar, the views, and the window event listeners |
 | [`src/client/SessionSwitcher.tsx`](src/client/SessionSwitcher.tsx) | The session switcher button and menu of the workspace top bar |
-| [`src/client/cover.tsx`](src/client/cover.tsx) | Project covers, shot counts, durations, and last edit times read from `/api/dv/projects/summary` |
+| [`src/client/cover.tsx`](src/client/cover.tsx) | Project covers and last edit times read from `/api/dv/projects/summary` |
 | [`src/client/sessions.ts`](src/client/sessions.ts) | The chat sessions of one project, shared by the navigator and the session switcher |
 | [`src/client/sidebar.ts`](src/client/sidebar.ts) | The fold state of DSH's left sidebar and the shell's collapse and restore |
 | [`src/client/right-panel.ts`](src/client/right-panel.ts) | The right panel's 448 px default width |

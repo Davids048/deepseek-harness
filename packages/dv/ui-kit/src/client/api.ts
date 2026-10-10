@@ -134,7 +134,7 @@ function isProjectSummary(value: unknown): value is WireProjectSummary {
   if (typeof value !== 'object' || value === null) return false
   const fields = value as Record<string, unknown>
   return typeof fields['project'] === 'string' && (fields['cover'] === null || isProjectCover(fields['cover']))
-    && typeof fields['shots'] === 'number' && typeof fields['duration_sec'] === 'number' && isStringOrNull(fields['edited_at'])
+    && isStringOrNull(fields['edited_at'])
 }
 
 /** Every `/api/dv` call of the browser: project state, operations, history, undo and redo, layout, workspaces. */
@@ -154,11 +154,15 @@ export class DvClient {
    * Read the card summary of every project, or of one project, in one request.
    * @param signal - cancels the request.
    * @param project - the one project to summarize; null summarizes every project.
-   * @returns per project, the cover, the shot count and total duration of its plans, and the last edit time.
+   * @param timeline - with `project`, the timeline whose first clip is the cover when the project has it.
+   * @returns per project, the cover and the last edit time.
    * @throws Error when the response is not a list of summaries.
    */
-  async listProjectSummaries(signal?: AbortSignal, project: string | null = null): Promise<WireProjectSummary[]> {
-    const body = await this.get<unknown>('/api/dv/projects/summary', project === null ? {} : { project }, signal)
+  async listProjectSummaries(
+    signal?: AbortSignal, project: string | null = null, timeline: string | null = null,
+  ): Promise<WireProjectSummary[]> {
+    const query = { ...project === null ? {} : { project }, ...project === null || timeline === null ? {} : { timeline } }
+    const body = await this.get<unknown>('/api/dv/projects/summary', query, signal)
     if (!Array.isArray(body) || !body.every(isProjectSummary)) throw new Error('ui-kit: malformed /api/dv/projects/summary response')
     return body
   }

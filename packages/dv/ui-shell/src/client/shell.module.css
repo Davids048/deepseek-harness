@@ -157,21 +157,6 @@
   box-shadow: 0 0 0 1px var(--dv-line-strong), var(--dv-shadow-1);
 }
 
-/* The total duration on a project card's cover. */
-.cardDuration {
-  position: absolute;
-  right: 10px;
-  bottom: 10px;
-  padding: 2px 8px;
-  border-radius: var(--dv-radius-sm);
-  background: rgba(10, 11, 13, 0.72);
-  color: #fff;
-  font-family: var(--dv-font-mono);
-  font-size: 12px;
-  line-height: 16px;
-  font-variant-numeric: tabular-nums;
-}
-
 .coverMedia {
   display: block;
   width: 100%;

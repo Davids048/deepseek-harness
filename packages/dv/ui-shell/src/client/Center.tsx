@@ -18,14 +18,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ConversationViewsProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { PropsRenderFactories, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { DV_CURRENT_TIMELINE_EVENT, getTimelineOf, publishCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
+import { DV_CURRENT_TIMELINE_EVENT, getTimelineOf, publishCurrentTimeline, useCurrentTimeline } from '@dv/ui-kit/current-timeline.ts'
 import { pickText, useText } from '@dv/ui-kit/locale.ts'
 import { useProjectState } from '@dv/ui-kit/useProject.ts'
 import {
   DV_CANVAS_FOCUS_EVENT, DV_TIMELINE_FOCUS_EVENT, DV_TIMELINE_INSERT_EVENT, type DvWorkspaceEventMap,
 } from '@dv/ui-kit/workspace-events.ts'
 import type { WireProjectSummary, WireWorkspaces } from '@dv/ui-kit/types.ts'
-import { clockText } from '@dv/ui-kit/timeline.ts'
 import type { ShellActions } from './actions.ts'
 import { CoverFrame, editedText, useProjectSummaries } from './cover.tsx'
 import { SidebarRightIcon } from './icons.tsx'
@@ -287,7 +286,7 @@ function RecentProjects({ shell }: ShellInjected): ReactNode {
 }
 
 /**
- * One recent project: its 16:9 cover with the total duration, its title, and its shot count and last edit time.
+ * One recent project: its 16:9 cover, its title, and its last edit time.
  * @param props - the shell actions, the project, and its summary (null while the summaries load).
  * @returns the card.
  */
@@ -296,16 +295,10 @@ function ProjectCard(
     ShellInjected & { projectId: string; title: string; createdAt: string; summary: WireProjectSummary | null },
 ): ReactNode {
   const t = useText()
-  const shots = summary?.shots ?? 0
-  const meta = [
-    shots > 0 ? t(`${String(shots)} 个镜头`, `${String(shots)} ${shots === 1 ? 'shot' : 'shots'}`) : null,
-    editedText(summary?.edited_at ?? createdAt, t),
-  ].filter(part => part !== null).join(' · ')
+  const meta = editedText(summary?.edited_at ?? createdAt, t)
   return (
     <button type="button" className={css.card} onClick={() => { run(() => shell.openProject(projectId)) }}>
-      <CoverFrame cover={summary?.cover ?? null} className={css.cardCover}>
-        {summary !== null && summary.duration_sec > 0 && <span className={css.cardDuration}>{clockText(summary.duration_sec)}</span>}
-      </CoverFrame>
+      <CoverFrame cover={summary?.cover ?? null} className={css.cardCover} />
       <span className={css.cardText}>
         <span className={css.cardTitle}>{title}</span>
         <span className={css.cardMeta}>{meta}</span>
@@ -334,8 +327,10 @@ function WorkspacePage(props: CenterProps & { projectId: string; sessionInProjec
   // The chat session the workspace sits beside, recorded as the `session` of the views' edits; none until the main
   // session belongs to this project.
   const session = sessionInProject ? sessionId ?? null : null
-  // The switcher's cover, read again whenever the current state is refetched after a project change.
-  const cover = useProjectSummaries(projectId, state.value)?.get(projectId)?.cover ?? null
+  // The switcher's cover: the first clip of the selected timeline, read again whenever the current state is refetched
+  // after a project change or another timeline is selected.
+  const selectedTimeline = useCurrentTimeline(projectId)
+  const cover = useProjectSummaries(projectId, state.value, selectedTimeline)?.get(projectId)?.cover ?? null
   const mounted = useSyncExternalStore(shell.mountedSeat.subscribe, shell.mountedSeat.getSnapshot)
   // The right panel's own strip holds its collapse control while it is shown, so the open button sits in the same
   // top-right corner only while the panel is hidden.

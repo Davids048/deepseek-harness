@@ -259,26 +259,29 @@ export class ApiHandlers {
 
   /**
    * The card summary of every project, in the order of `dvProject.listProjects()`, or of the one project the request
-   * names: the cover, shot count, total duration, and last edit time, read from the project's current state. In the list
-   * of every project, a project whose state cannot be read or summarized gets an empty entry (`cover` null, `shots` and
-   * `duration_sec` 0, `edited_at` null) and a console warning, so the other projects still arrive.
+   * names: the cover and the last edit time, read from the project's current state. In the list of every project, a
+   * project whose state cannot be read or summarized gets an empty entry (`cover` and `edited_at` null) and a console
+   * warning, so the other projects still arrive.
    * @param project - the raw `project` query value; null summarizes every project.
+   * @param timeline - the raw `timeline` query value: with `project`, the timeline whose first clip is the cover when the
+   *   project has it; ignored for the list of every project.
    * @returns one summary per project.
    * @throws ApiRequestError `invalid_params` when `project` is malformed, `unknown_project` when it names no project;
    *   with `project`, also whatever its state read throws.
    */
-  listProjectSummaries(project: string | null = null): WireProjectSummary[] {
+  listProjectSummaries(project: string | null = null, timeline: string | null = null): WireProjectSummary[] {
     const mimeOf = (id: AssetId): string | null => this.assetOrNull(id)?.mime ?? null
-    const summarize = (projectId: ProjectId): WireProjectSummary =>
-      summarizeProject(projectId, this.services.project.getState(projectId), mimeOf)
-    if (project !== null) return [summarize(this.requireProject(project))]
+    if (project !== null) {
+      const projectId = this.requireProject(project)
+      return [summarizeProject(projectId, this.services.project.getState(projectId), mimeOf, timeline)]
+    }
     return this.services.project.listProjects().map((info) => {
       try {
-        return summarize(info.id)
+        return summarizeProject(info.id, this.services.project.getState(info.id), mimeOf)
       } catch (error) {
         // One unreadable project must not hide the cards of the others.
         console.warn(`dvApi: project ${info.id} summary failed: ${messageOf(error)}`)
-        return { project: info.id, cover: null, shots: 0, duration_sec: 0, edited_at: null }
+        return { project: info.id, cover: null, edited_at: null }
       }
     })
   }

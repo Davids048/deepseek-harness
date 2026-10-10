@@ -29,8 +29,6 @@ import type {
 } from '@dv/project'
 import type { RenderModelFacts, RenderStreamEvent, Ref2vaRenderer, T2vaRenderer } from '@dv/render-modes'
 import { shotReducer } from './reducer.ts'
-
-export { RENDER_OPERATIONS } from './reducer.ts'
 import { backendSeconds, baseMime, imageLabels, number, shotGeometry, text, type ShotGeometry } from './render.ts'
 
 export type * from './types.ts'

@@ -37,7 +37,7 @@ Host 半边不注册任何东西。浏览器半边以优先级 -1 注册中间�
 | --- | --- |
 | 页面加载，之后每 4 秒 | `GET /api/dv/workspaces`，读取项目、其 Workspace 和会话绑定 |
 | 新建项目 | `POST /api/dv/projects`，标题取第一个未被占用的 未命名项目（带编号），然后 `POST /api/dv/workspaces` 关联为它创建的 Workspace；在其中打开一个空白对话 |
-| 有项目的首页 | 一次 `GET /api/dv/projects/summary` 得到每张卡片的封面（第一个完成的 `shot.render_*` 镜头，否则是第一张导入的图片）、总时长、镜头数和最后编辑时间；项目列表变化时重新读取 |
+| 有项目的首页 | 一次 `GET /api/dv/projects/summary` 得到每张卡片的封面（项目第一条时间线上第一个有素材的片段，否则是项目产出的第一张图片）和最后编辑时间；项目列表变化时重新读取。切换器的封面使用选中的时间线 |
 | 打开项目的工作区 | `GET /api/dv/projects/summary?project=<id>` 得到会话切换器的封面，项目每次变化后重新读取 |
 | 打开项目（导航行、最近项目卡片或会话切换器） | `GET /api/dv/workspaces/sessions` 读取其存储的对话；主会话移到其最近的非空白对话，否则移到一个空白对话 |
 | 项目行上的 ＋、会话切换器里的 新建会话，或 DSH 的新会话 | 在项目的 Workspace 里新建空白对话；在首页上，DSH 的新会话等于 首页 |
@@ -71,7 +71,7 @@ Host 半边不注册任何东西。浏览器半边以优先级 -1 注册中间�
 | [`src/client/store.ts`](src/client/store.ts) | 共享状态（打开的项目、视图、时间线、主会话、关联）、URL hash 同步，以及会话 → 项目查找 |
 | [`src/client/Center.tsx`](src/client/Center.tsx) | 中间区域：URL 恢复、首页、模板标签、最近项目、工作区顶栏、视图，以及窗口事件监听 |
 | [`src/client/SessionSwitcher.tsx`](src/client/SessionSwitcher.tsx) | 工作区顶栏的会话切换按钮和菜单 |
-| [`src/client/cover.tsx`](src/client/cover.tsx) | 从 `/api/dv/projects/summary` 读取的项目封面、镜头数、时长和最后编辑时间 |
+| [`src/client/cover.tsx`](src/client/cover.tsx) | 从 `/api/dv/projects/summary` 读取的项目封面和最后编辑时间 |
 | [`src/client/sessions.ts`](src/client/sessions.ts) | 一个项目的对话，导航和会话切换器共用 |
 | [`src/client/sidebar.ts`](src/client/sidebar.ts) | DSH 左侧栏的折叠状态，以及外壳的收起和恢复 |
 | [`src/client/right-panel.ts`](src/client/right-panel.ts) | 右侧面板 448 px 的默认宽度 |

@@ -1,11 +1,11 @@
 /**
- * Project card summaries: the cover, the shot count and duration, and the last edit time of a project's current state,
- * and the `/api/dv/projects/summary` route over the real Project service.
+ * Project card summaries: the cover and the last edit time of a project's current state, and the
+ * `/api/dv/projects/summary` route over the real Project service.
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { ConnectionFetchRoute } from '@deepseek-ai/dsh-client-connection'
 import type { AssetId, ProjectId, ProjectRecord, RecordId, RecordOrigin, SessionId, TurnId } from '@dv/project'
-import type { PlanId, PlanVersion } from '@dv/shot-plan'
+import type { Clip, ClipId, TimelineId } from '@dv/timeline'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DvApi, { ROUTES } from '../src/index.ts'
 import { summarizeProject, type SummarySource } from '../src/summaries.ts'
@@ -45,20 +45,19 @@ function record(id: string, operation: string, fields: Partial<ProjectRecord> = 
 const assets = (...ids: string[]): AssetId[] => ids.map(id => brandString<AssetId>(id))
 
 /**
- * A plan version with the given shot durations.
- * @param version - the 1-based version.
- * @param durations - one entry per shot; undefined for a shot without a duration.
- * @returns the version.
+ * A clip of a timeline.
+ * @param id - the clip ID.
+ * @param asset - the asset it plays, or null for a placeholder whose render is not done.
+ * @returns the clip.
  */
-function planVersion(version: number, durations: Array<number | undefined>): PlanVersion {
-  return {
-    version, created_by: brandString<RecordId>(`plan-${String(version)}`), approved_by: null,
-    shots: durations.map(duration => ({ prompt: 'shot', mode: 'ref2va' as const, ...duration === undefined ? {} : { duration_sec: duration } })),
-  }
+function clip(id: string, asset: string | null): Clip {
+  const played = asset === null ? null : brandString<AssetId>(asset)
+  return { id: brandString<ClipId>(id), asset: played, source: null, in_sec: null, out_sec: null }
 }
 
 /**
- * A current state with an imported reference, two finished renders after a failed one, and one plan of two versions.
+ * A current state with an imported reference, two finished renders after a failed one, and two timelines: `t1` starts
+ * with a placeholder clip before the clip of `shot1.mp4`, and `t2` plays `shot2.mp4`.
  * @returns the state slices.
  */
 function state(): SummarySource {
@@ -68,13 +67,18 @@ function state(): SummarySource {
         records: [
           record('u1', 'asset.import', { outputs: assets('notes.txt', 'ref.png') }),
           record('f0', 'shot.render_t2va', { status: 'failed' }),
-          record('g1', 'shot.render_ref2va', { outputs: assets('shot1-last.png', 'shot1.mp4') }),
+          record('g1', 'shot.render_ref2va', { outputs: assets('shot1.mp4', 'shot1-last.png') }),
           record('g2', 'shot.render_ref2va', { outputs: assets('shot2.mp4', 'shot2-last.png') }),
           record('t1', 'timeline.create', { created_at: '2026-10-06T00:00:00Z', finished_at: '2026-10-06T00:00:05Z' }),
         ],
         stale: {}, superseded: {}, created_by: {},
       },
-      plan: { plans: { [brandString<PlanId>('p1')]: [planVersion(1, [5]), planVersion(2, [4.5, undefined, 55])] } },
+      timeline: {
+        timelines: [
+          { id: brandString<TimelineId>('t1'), name: '', clips: [clip('c0', null), clip('c1', 'shot1.mp4'), clip('c2', 'shot2.mp4')] },
+          { id: brandString<TimelineId>('t2'), name: '', clips: [clip('c3', 'shot2.mp4')] },
+        ],
+      },
     },
   }
 }
@@ -82,19 +86,23 @@ function state(): SummarySource {
 describe('summarizeProject', () => {
   const projectId = brandString<ProjectId>('p1')
 
-  it('takes the video and last-frame image of the first finished render, the latest plan shots, and the last record time', () => {
+  it('takes the first clip with media of the first timeline, and the last record time', () => {
     expect(summarizeProject(projectId, state(), mimeOf)).toEqual({
-      project: 'p1', cover: { video: 'shot1.mp4', image: 'shot1-last.png' }, shots: 3, duration_sec: 59.5, edited_at: '2026-10-06T00:00:05Z',
+      project: 'p1', cover: { video: 'shot1.mp4', image: null }, edited_at: '2026-10-06T00:00:05Z',
     })
   })
 
-  it('falls back to the first imported image, and reports no cover and no records on an empty state', () => {
+  it('takes the named timeline when the project has it, else the first timeline', () => {
+    expect(summarizeProject(projectId, state(), mimeOf, 't2').cover).toEqual({ video: 'shot2.mp4', image: null })
+    expect(summarizeProject(projectId, state(), mimeOf, 't9').cover).toEqual({ video: 'shot1.mp4', image: null })
+  })
+
+  it('falls back to the first finished image without a timeline clip, and reports no cover and no records on an empty state', () => {
     const source = state()
-    source.components.proj.records = source.components.proj.records.filter(entry => entry.operation?.startsWith('shot.render_') !== true)
-    expect(summarizeProject(projectId, source, mimeOf)).toMatchObject({ cover: { video: null, image: 'ref.png' } })
+    source.components.timeline.timelines = []
+    expect(summarizeProject(projectId, source, mimeOf).cover).toEqual({ video: null, image: 'ref.png' })
     source.components.proj.records = []
-    source.components.plan.plans = {}
-    expect(summarizeProject(projectId, source, mimeOf)).toEqual({ project: 'p1', cover: null, shots: 0, duration_sec: 0, edited_at: null })
+    expect(summarizeProject(projectId, source, mimeOf)).toEqual({ project: 'p1', cover: null, edited_at: null })
   })
 })
 
@@ -157,12 +165,12 @@ describe(ROUTES.projectSummaries, () => {
     }
     const all = await read('')
     expect(all.status).toBe(200)
-    const summaries = all.json as Array<{ project: string; cover: unknown; shots: number; duration_sec: number; edited_at: string | null }>
+    const summaries = all.json as Array<{ project: string; cover: unknown; edited_at: string | null }>
     const byProject = new Map(summaries.map(summary => [summary.project, summary]))
     expect([...byProject.keys()].sort()).toEqual([imported, chatted, blank].sort())
-    expect(byProject.get(imported)).toMatchObject({ cover: { video: null, image: mainImage }, shots: 0, duration_sec: 0 })
+    expect(byProject.get(imported)).toMatchObject({ cover: { video: null, image: mainImage } })
     expect(byProject.get(chatted)).toMatchObject({ cover: { video: null, image: chatImage } })
-    expect(byProject.get(blank)).toMatchObject({ cover: null, shots: 0, duration_sec: 0 })
+    expect(byProject.get(blank)).toMatchObject({ cover: null })
     for (const summary of summaries) expect(Number.isNaN(Date.parse(summary.edited_at ?? ''))).toBe(false)
     // `project` narrows the list to one project and is checked like every project the routes name.
     expect(await read(`?project=${chatted}`)).toEqual({ status: 200, json: [byProject.get(chatted)] })
@@ -189,7 +197,7 @@ describe(ROUTES.projectSummaries, () => {
     const response = await route.fetch(new Request(`http://localhost${ROUTES.projectSummaries}`))
     expect(response.status).toBe(200)
     const summaries = await response.json() as Array<{ project: string; edited_at: string | null }>
-    const empty = { project: broken, cover: null, shots: 0, duration_sec: 0, edited_at: null }
+    const empty = { project: broken, cover: null, edited_at: null }
     expect(summaries.find(summary => summary.project === broken)).toEqual(empty)
     expect(summaries.find(summary => summary.project === healthy)?.edited_at).toEqual(expect.any(String))
     expect(warn).toHaveBeenCalledWith(expect.stringContaining(`project ${broken} summary failed: records.jsonl is corrupt`))
