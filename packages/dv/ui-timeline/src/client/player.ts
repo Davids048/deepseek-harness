@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { assetUrl } from '@dv/ui-kit/api.ts'
-import { clipIndexAt, readyIndexFrom } from './timelines.ts'
+import { clipIndexAt, readyIndexFrom, skipTarget } from './timelines.ts'
 import type { TrackClip } from './timelines.ts'
 
 /** What the viewer and the toolbar read and call. */
@@ -21,6 +21,8 @@ export interface TimelinePlayer {
   pause: () => void
   /** Show the frame at a timeline time; pauses playback. */
   seek: (position: number) => void
+  /** Move the playhead by a number of seconds, clamped to the timeline; playback continues when it lands on a ready clip. */
+  skip: (seconds: number) => void
 }
 
 /**
@@ -71,9 +73,10 @@ function blank(element: HTMLVideoElement): void {
  * @param timelineId - the ID of the shown timeline, or null when the project has none.
  * @param clips - the placed clips of the shown timeline.
  * @param total - the timeline's length in seconds.
+ * @param rate - the playback speed both elements play at, where 1 is normal speed.
  * @returns the player.
  */
-export function useTimelinePlayer(timelineId: string | null, clips: TrackClip[], total: number): TimelinePlayer {
+export function useTimelinePlayer(timelineId: string | null, clips: TrackClip[], total: number, rate = 1): TimelinePlayer {
   const first = useRef<HTMLVideoElement>(null)
   const second = useRef<HTMLVideoElement>(null)
   const frontRef = useRef<0 | 1>(0)
@@ -133,6 +136,26 @@ export function useTimelinePlayer(timelineId: string | null, clips: TrackClip[],
     setPlaying(true)
   }, [position, total, seek])
 
+  const skip = useCallback((seconds: number) => {
+    const target = skipTarget(position, seconds, total)
+    const resume = playing && target < total - 0.05
+    seek(target)
+    const shown = element(frontRef.current)
+    if (!resume || shown === null || clipsRef.current[current.current]?.status !== 'ready') return
+    start(shown)
+    setPlaying(true)
+  }, [position, playing, total, seek])
+
+  // Loading a source resets `playbackRate` to `defaultPlaybackRate`, so both are set and the speed survives clip changes.
+  useEffect(() => {
+    for (const which of [0, 1] as const) {
+      const target = element(which)
+      if (target === null) continue
+      target.defaultPlaybackRate = rate
+      target.playbackRate = rate
+    }
+  }, [rate])
+
   // While playing, follow the front element every frame and switch elements at each out point.
   useEffect(() => {
     if (!playing) return
@@ -182,5 +205,5 @@ export function useTimelinePlayer(timelineId: string | null, clips: TrackClip[],
     seek(switched ? 0 : Math.min(position, total))
   }, [timelineId, layout])
 
-  return { elements: [first, second], front, position: positionOf === timelineId ? position : 0, playing, play, pause, seek }
+  return { elements: [first, second], front, position: positionOf === timelineId ? position : 0, playing, play, pause, seek, skip }
 }

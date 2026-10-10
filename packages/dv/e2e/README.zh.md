@@ -39,7 +39,7 @@ DSH_PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome-linux/chrome \
 
 | 故事文件 | 故事覆盖的内容 |
 | --- | --- |
-| [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | 画布的适配、平移、缩放和浮动编辑器；版本和分镜计划的版本；时间线标签、播放、拆分、裁剪、重排、撤销和重做以及导出；没有分支控件、回到这一步 回到更早的状态并再往前移到之后的那一步，以及过期标记 |
+| [`tests/stories/canvas-timeline.e2e.ts`](tests/stories/canvas-timeline.e2e.ts) | 画布的适配、平移、缩放和节点编辑面板；版本和分镜计划的版本；时间线标签、播放、拆分、裁剪、重排、撤销和重做以及导出；没有分支控件、回到这一步 回到更早的状态并再往前移到之后的那一步，以及过期标记 |
 | [`tests/stories/assets.e2e.ts`](tests/stories/assets.e2e.ts) | 素材库面板：经文件选择器、拖放区和对话导入；项目的每个素材：导入的素材在其步骤被丢弃之后仍列出，渲染只在其步骤位于当前位置或之前时列出；预览；插入时间线和画布 |
 | [`tests/stories/history.e2e.ts`](tests/stories/history.e2e.ts) | 历史面板：行的顺序、名称、批准折叠、在画布或时间线上定位、实时更新、撤销、重做和 回到这一步 移动 当前 而不加行、当前 之后变灰的步骤被新编辑丢弃，以及 Ctrl+Z 和 Shift+Ctrl+Z |
 | [`tests/stories/chat.e2e.ts`](tests/stories/chat.e2e.ts) | 对话及其输入框：跨轮次立即成为历史步骤的智能体修改、撤销之后智能体的修改丢弃被撤销的步骤、在对话中确认、附上的图片、`@` 提及，以及模型请求收到的内容 |
@@ -57,7 +57,7 @@ DSH_PLAYWRIGHT_EXECUTABLE_PATH=/path/to/chrome-linux/chrome \
 
 | 文件 | 内容 |
 | --- | --- |
-| [`tests/harness.ts`](tests/harness.ts) | `bootHarness`、`startFakeBackend`、`waitFor` 和 Playwright 导出 |
+| [`tests/harness.ts`](tests/harness.ts) | `bootHarness`、`startFakeBackend`、`waitFor`、`escapeRegExp` 和 Playwright 导出 |
 | [`tests/scripted-model.ts`](tests/scripted-model.ts) | `startScriptedModel`、`textOf`、`assetIdOf` |
 | [`tests/fake-backend-main.ts`](tests/fake-backend-main.ts) | 把假后端作为长期运行的进程启动，供手动浏览器测试使用 |
 | [`vitest.e2e.config.ts`](vitest.e2e.config.ts) | 故事测试配置：一次一个文件，测试超时 180 秒 |

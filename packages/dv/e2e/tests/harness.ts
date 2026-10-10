@@ -334,3 +334,12 @@ export async function waitFor<T>(check: () => Promise<T | null | undefined | fal
     await new Promise(resolve => setTimeout(resolve, 250))
   }
 }
+
+/**
+ * Escape a literal string for use inside a regular expression, so a title such as `a+b (1)` matches only itself.
+ * @param text - the literal text.
+ * @returns the text with every regular-expression metacharacter escaped.
+ */
+export function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
