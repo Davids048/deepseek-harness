@@ -7,7 +7,7 @@ import { crc32, deflateSync } from 'node:zlib'
 import type { Browser, BrowserContext, Locator, Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { ProjectRecord, WireState } from '@dv/ui-kit/types.ts'
-import { bootHarness, playwright, waitFor, type BootedHarness } from '../harness.ts'
+import { bootHarness, escapeRegExp, playwright, waitFor, type BootedHarness } from '../harness.ts'
 import { assetIdOf, startScriptedModel, type ScriptedModel, type ScriptedRule } from '../scripted-model.ts'
 
 /**
@@ -111,7 +111,7 @@ describe('The asset pool panel', () => {
   const assetsPanel = (page: Page): Locator => page.locator('[data-testid="dv-asset-pool-panel"]:visible')
   /** The thumbnails of one media-type section of the asset pool panel, found by its heading (图片 · 2). */
   const sectionThumbs = (page: Page, title: string): Locator =>
-    assetsPanel(page).locator('section').filter({ has: page.locator('h3', { hasText: new RegExp(`^${title} · `) }) })
+    assetsPanel(page).locator('section').filter({ has: page.locator('h3', { hasText: new RegExp(`^${escapeRegExp(title)} · `) }) })
       .locator('[data-asset-id]')
   const crumb = (page: Page): Locator => page.locator('[data-dv-workspace] header').first()
 
@@ -123,9 +123,17 @@ describe('The asset pool panel', () => {
     return { id: created.id, title }
   }
 
-  /** Open a project the way a user does: click its row in the navigator. */
+  /**
+   * Open a project the way a user does: click its row in the navigator on the entry page, or, inside a workspace, where
+   * the left sidebar is collapsed, pick it under 其他项目 in the session switcher of the top bar.
+   */
   async function openProject(page: Page, title: string): Promise<void> {
-    await nav(page).getByText(title, { exact: true }).first().click()
+    if (await page.locator('[data-dv-workspace]').count() > 0) {
+      await crumb(page).locator('button[aria-haspopup="menu"]').click()
+      await page.getByRole('menu').getByRole('menuitem', { name: title, exact: true }).click()
+    } else {
+      await nav(page).getByText(title, { exact: true }).first().click()
+    }
     await waitFor(async () => (await crumb(page).innerText().catch(() => '')).startsWith(title), `the workspace of ${title}`, 30_000)
   }
 
@@ -180,10 +188,12 @@ describe('The asset pool panel', () => {
 
   /** Open the 素材库 / Asset pool tab of the right panel. */
   async function openAssets(page: Page, lang: 'zh' | 'en' = 'zh'): Promise<void> {
-    // The tab strip of the right panel; the right-panel button reopens a collapsed panel.
+    // The tab strip of the right panel; the open button at the right of the top bar reopens a collapsed panel.
     const tab = page.locator('[role="tab"]', { hasText: lang === 'zh' ? /^素材库$/ : /^Asset pool$/ }).filter({ visible: true }).first()
     // The panels open by themselves once the project's chat session is in place; wait for that before reopening them.
-    if (!await tab.waitFor({ timeout: 5000 }).then(() => true, () => false)) await page.getByRole('button', { name: lang === 'zh' ? '打开右侧面板' : 'Open the right panel', exact: true }).click()
+    if (!await tab.waitFor({ timeout: 5000 }).then(() => true, () => false)) {
+      await page.getByRole('button', { name: lang === 'zh' ? '打开右侧面板' : 'Open the right panel', exact: true }).click()
+    }
     // A project switch remounts the right panel's session seat, so the tab found first can be replaced mid-click.
     for (let attempt = 0; attempt < 4; attempt++) {
       if (await tab.click({ timeout: 3000 }).then(() => true, () => false)) break
