@@ -310,7 +310,7 @@ describe('dvApi', () => {
     expect(Array.isArray(operations.json)).toBe(true)
     expect(await call(fixture, ROUTES.operation, { method: 'POST', body: { project: projectId, operation: 'no.such', surface: 'canvas' } }))
       .toMatchObject({ status: 404, json: { code: 'unknown_operation' } })
-    expect(Object.keys(ROUTES)).toEqual(['projects', 'state', 'operations', 'operation', 'undo', 'redo', 'acceptStale', 'history'])
+    expect(Object.keys(ROUTES)).toEqual(['projects', 'projectSummaries', 'state', 'operations', 'operation', 'undo', 'redo', 'acceptStale', 'history'])
     for (const gone of ['/api/dv/branches/create', '/api/dv/branches/switch', '/api/dv/branches/rename']) {
       expect(fixture.connection.routes.has(gone)).toBe(false)
     }
