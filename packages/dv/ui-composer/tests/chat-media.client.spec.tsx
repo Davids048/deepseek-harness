@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** The DreamVerse thumbnail cards of chat Markdown: element selection, the cards, and the chain registration. */
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import type { MarkdownElement, MarkdownTableCell } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { DvClient } from '@dv/ui-kit/api.ts'
@@ -28,10 +28,16 @@ function selectChatMedia(element: MarkdownElement, kinds: AssetKinds): ChatMedia
   return reference === null ? null : resolveChatMedia(reference, kinds)
 }
 
-beforeEach(() => { document.documentElement.lang = 'zh-CN' })
+// jsdom cannot play media; the player starts its video through `play()` once it is open.
+let play: MockInstance<HTMLMediaElement['play']>
+beforeEach(() => {
+  document.documentElement.lang = 'zh-CN'
+  play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+})
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  play.mockRestore()
   publishCurrentProject(null)
 })
 
@@ -115,6 +121,8 @@ describe('ChatMediaView', () => {
     expect(container.contains(player)).toBe(false)
     expect(player.querySelector('video')?.getAttribute('src')).toBe('/dv/assets/v1.mp4')
     expect(player.querySelector('video')?.hasAttribute('controls')).toBe(true)
+    // Without the Web Animations API the player is open at once, and its video starts.
+    expect(play.mock.contexts).toEqual([player.querySelector('video')])
     expect(container.querySelectorAll('video')).toHaveLength(1)
     expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭' }))
     fireEvent.keyDown(window, { key: 'Escape' })
@@ -151,7 +159,8 @@ describe('ChatMediaView', () => {
     view({ kind: 'image', asset: 'i1.png', alt: 'Costume' })
     expect(screen.getByRole('img', { name: 'Costume' }).getAttribute('src')).toBe('/dv/assets/i1.png')
     fireEvent.click(screen.getByRole('button', { name: 'View large image: Costume' }))
-    expect(screen.getByRole('dialog', { name: 'Image preview' })).toBeTruthy()
+    const viewer = screen.getByRole('dialog', { name: 'Image preview' })
+    expect(viewer.querySelector('img')?.getAttribute('src')).toBe('/dv/assets/i1.png')
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('dialog')).toBeNull()
   })
@@ -331,7 +340,7 @@ describe('registerChatMedia', () => {
     await vi.waitFor(() => { expect(view.getByRole('button', { name: '播放: 镜头 1' })).toBeTruthy() })
     expect(view.getByRole('link', { name: '配乐' })).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: '播放: 镜头 1' }))
-    const player = document.querySelector('[data-testid="dv-chat-video-player"] video')
+    const player = document.querySelector('[data-testid="dv-chat-media-viewer"] video')
     expect(player).not.toBeNull()
 
     // Another shot finishes rendering: the index changes, and the open player stays the same DOM node.
@@ -342,7 +351,7 @@ describe('registerChatMedia', () => {
       await vi.waitFor(() => { expect(fetchImpl.mock.calls.length).toBeGreaterThan(fetches) })
       await new Promise(resolve => setTimeout(resolve, 0))
     })
-    expect(document.querySelector('[data-testid="dv-chat-video-player"] video')).toBe(player)
+    expect(document.querySelector('[data-testid="dv-chat-media-viewer"] video')).toBe(player)
     await runtime.dispose()
   })
 })
